@@ -1322,7 +1322,7 @@ button:disabled {
 
 .account-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 980px;
   border-collapse: collapse;
 }
 
@@ -1348,6 +1348,16 @@ button:disabled {
 
 .account-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.table-action-button {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+}
+
+.spin-icon {
+  animation: spin 760ms linear infinite;
 }
 
 .settings-row {

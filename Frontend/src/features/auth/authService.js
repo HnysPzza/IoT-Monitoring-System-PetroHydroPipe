@@ -1,6 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
-const USE_MOCK_LOGIN = import.meta.env.VITE_USE_MOCK_LOGIN !== 'false'
-const USER_ACCOUNTS_STORAGE_KEY = 'iot_monitoring_user_accounts'
+const USE_MOCK_LOGIN = import.meta.env.VITE_USE_MOCK_LOGIN === 'true'
+const MOCK_PASSWORD = 'password123'
 
 function delay(ms) {
   return new Promise((resolve) => {
@@ -52,37 +52,14 @@ const MOCK_USERS = {
   },
 }
 
-function getStoredMockAccount(username) {
-  try {
-    const storedAccounts = window.localStorage.getItem(USER_ACCOUNTS_STORAGE_KEY)
-    const accounts = storedAccounts ? JSON.parse(storedAccounts) : []
-
-    return accounts.find((account) => account.username.toLowerCase() === username.toLowerCase() && account.status === 'Active')
-  } catch {
-    return null
-  }
-}
-
 export async function login({ username, password }) {
   if (USE_MOCK_LOGIN) {
     await delay(700)
 
     const normalizedUsername = username.trim().toLowerCase()
-    const storedAccount = getStoredMockAccount(normalizedUsername)
-
-    if (storedAccount && storedAccount.password === password) {
-      return {
-        token: `mock-${storedAccount.username}-token`,
-        user: {
-          name: storedAccount.name,
-          role: storedAccount.role,
-        },
-      }
-    }
-
     const mockUser = MOCK_USERS[normalizedUsername]
 
-    if (mockUser && password === 'password123') {
+    if (mockUser && password === MOCK_PASSWORD) {
       return mockUser
     }
 
