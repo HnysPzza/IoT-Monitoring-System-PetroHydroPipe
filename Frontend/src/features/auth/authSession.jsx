@@ -1,9 +1,10 @@
-import { createContext, useContext, useMemo, useState } from 'react'
-import { login as loginRequest } from '../../features/auth/authService.js'
+import { createContext, useMemo, useState } from 'react'
+import { login as loginRequest } from './authService.js'
 
 const AUTH_STORAGE_KEY = 'iot_monitoring_auth'
-const AuthContext = createContext(null)
+export const AuthContext = createContext(null)
 
+// Reads the saved JWT/user payload so reloads keep the user signed in.
 function readStoredAuth() {
   try {
     const stored = window.localStorage.getItem(AUTH_STORAGE_KEY)
@@ -16,6 +17,7 @@ function readStoredAuth() {
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(readStoredAuth)
 
+  // Login is the bridge from the UI to authService, then stores the returned token locally.
   async function login(credentials) {
     const nextAuth = await loginRequest(credentials)
     setAuth(nextAuth)
@@ -28,6 +30,7 @@ export function AuthProvider({ children }) {
     window.localStorage.removeItem(AUTH_STORAGE_KEY)
   }
 
+  // Shared auth object used by protected routes, API calls, and dashboard user display.
   const value = useMemo(
     () => ({
       token: auth?.token || null,
@@ -40,14 +43,4 @@ export function AuthProvider({ children }) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-
-  if (!context) {
-    throw new Error('useAuth must be used inside AuthProvider.')
-  }
-
-  return context
 }

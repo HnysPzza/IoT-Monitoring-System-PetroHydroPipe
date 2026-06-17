@@ -1,5 +1,6 @@
 function validateRequest(schema) {
   return (req, res, next) => {
+    // Zod validates all request inputs before controllers run.
     const parsed = schema.safeParse({
       body: req.body,
       params: req.params,
@@ -16,6 +17,7 @@ function validateRequest(schema) {
       })
     }
 
+    // Controllers use req.validated instead of raw request values.
     req.validated = parsed.data
     return next()
   }

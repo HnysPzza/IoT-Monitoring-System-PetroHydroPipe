@@ -11,6 +11,7 @@ values
 on conflict (name) do update
 set description = excluded.description;
 
+-- First admin account for real backend login during development.
 insert into users (
   role_id,
   name,
@@ -40,6 +41,7 @@ set
   status = excluded.status,
   must_change_password = excluded.must_change_password;
 
+-- Current machine used by the first IoT monitoring milestone.
 insert into machines (machine_code, name, status, location)
 values
   ('M-01', 'Spiral Mill 01', 'Idle', 'Production Floor')
@@ -49,6 +51,7 @@ set
   status = excluded.status,
   location = excluded.location;
 
+-- Five sensors attached to Spiral Mill 01; each maps to one ESP32 device.
 insert into sensors (
   machine_id,
   sensor_code,
@@ -65,11 +68,11 @@ select
 from machines
 cross join (
   values
-    ('S-01', 'esp32-m01-s01', 'Sensor 01'),
-    ('S-02', 'esp32-m01-s02', 'Sensor 02'),
-    ('S-03', 'esp32-m01-s03', 'Sensor 03'),
-    ('S-04', 'esp32-m01-s04', 'Sensor 04'),
-    ('S-05', 'esp32-m01-s05', 'Sensor 05')
+    ('S-01', 'esp32-m01-s01', 'Raw Material Detection'),
+    ('S-02', 'esp32-m01-s02', 'Outside Filler'),
+    ('S-03', 'esp32-m01-s03', 'Coil Joint'),
+    ('S-04', 'esp32-m01-s04', 'Inside Filler'),
+    ('S-05', 'esp32-m01-s05', 'Production Output Cutting')
 ) as sensor_seed(sensor_code, esp32_device_id, label)
 where machines.machine_code = 'M-01'
 on conflict (sensor_code) do update

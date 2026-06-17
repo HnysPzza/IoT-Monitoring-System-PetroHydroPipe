@@ -1,8 +1,9 @@
 import { Activity, BarChart3, Bell, Gauge, History, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../../../shared/session/AuthContext.jsx'
-import { dashboardPageMeta, navItems, overviewMockData } from '../../../shared/data/dashboardMock.js'
+import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { dashboardPageMeta, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { getDashboardOverview } from '../overview/dashboardService.js'
 
 const icons = {
   gauge: Gauge,
@@ -19,6 +20,7 @@ function DashboardClock() {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
+    // Local clock updates the topbar without using backend data.
     const timerId = window.setInterval(() => {
       setNow(new Date())
     }, 1000)
@@ -48,22 +50,56 @@ function DashboardClock() {
 export default function AdminDashboard() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const { user, logout } = useAuth()
+  const [alerts, setAlerts] = useState([])
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false)
+  const { token, user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
+  // Sidebar items are filtered by the role stored in the auth token response.
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => item.roles.includes(user?.role)),
     [user?.role],
   )
 
   const pageMeta = dashboardPageMeta[location.pathname] || dashboardPageMeta['/dashboard']
+  const activeAlertCount = alerts.length
 
+  // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
     setIsDrawerOpen(false)
+    setIsAlertsOpen(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadAlertState() {
+      if (!token) return
+
+      try {
+        const payload = await getDashboardOverview(token)
+        if (isMounted) {
+          setAlerts(payload.alerts || [])
+        }
+      } catch {
+        if (isMounted) {
+          setAlerts([])
+        }
+      }
+    }
+
+    loadAlertState()
+    const refreshId = window.setInterval(loadAlertState, 60000)
+
+    return () => {
+      isMounted = false
+      window.clearInterval(refreshId)
+    }
+  }, [token])
+
   function handleLogout() {
+    // Clears local auth, then returns the user to the login page.
     logout()
     navigate('/login', { replace: true })
   }
@@ -154,14 +190,41 @@ export default function AdminDashboard() {
 
           <div className="topbar-trailing">
             <DashboardClock />
-            <button className="icon-button dashboard-icon-button notification-button" type="button" aria-label={`Unread alerts: ${overviewMockData.unreadAlerts}`}>
+            <button
+              className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
+              type="button"
+              aria-label={activeAlertCount > 0 ? `Open alerts, ${activeAlertCount} active` : 'Open alerts, none active'}
+              aria-expanded={isAlertsOpen}
+              onClick={() => setIsAlertsOpen((value) => !value)}
+            >
               <Bell size={18} aria-hidden="true" />
-              {overviewMockData.unreadAlerts > 0 ? <span className="notification-dot" aria-hidden="true" /> : null}
+              {activeAlertCount > 0 ? <span className="notification-badge" aria-hidden="true">{activeAlertCount}</span> : null}
             </button>
+            {isAlertsOpen ? (
+              <div className="alerts-popover" role="dialog" aria-label="Active alerts">
+                <div className="alerts-popover-header">
+                  <strong>Active alerts</strong>
+                  <span>{activeAlertCount}</span>
+                </div>
+                {activeAlertCount > 0 ? (
+                  <ul>
+                    {alerts.map((alert) => (
+                      <li key={alert.id}>
+                        <TriangleAlert size={15} aria-hidden="true" />
+                        <span>{alert.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No active alerts.</p>
+                )}
+              </div>
+            ) : null}
           </div>
         </header>
 
         <section className="dashboard-content">
+          {/* Nested /dashboard routes render here. */}
           <Outlet />
         </section>
       </div>

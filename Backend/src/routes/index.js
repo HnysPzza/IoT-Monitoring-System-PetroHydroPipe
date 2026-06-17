@@ -1,0 +1,22 @@
+const express = require('express')
+const auditRoutes = require('../modules/audit/audit.routes')
+const authRoutes = require('../modules/auth/auth.routes')
+const dashboardRoutes = require('../modules/dashboard/dashboard.routes')
+const downtimeRoutes = require('../modules/downtime/downtime.routes')
+const iotRoutes = require('../modules/iot/iot.routes')
+const machinesRoutes = require('../modules/machines/machines.routes')
+const reportsRoutes = require('../modules/reports/reports.routes')
+const usersRoutes = require('../modules/users/users.routes')
+
+const router = express.Router()
+
+router.use('/auth', authRoutes)
+router.use('/users', usersRoutes)
+router.use('/machines', machinesRoutes)
+router.use('/iot', iotRoutes)
+router.use('/dashboard', dashboardRoutes)
+router.use('/downtime', downtimeRoutes)
+router.use('/reports', reportsRoutes)
+router.use('/audit', auditRoutes)
+
+module.exports = router

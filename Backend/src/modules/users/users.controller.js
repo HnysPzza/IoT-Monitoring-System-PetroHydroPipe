@@ -11,11 +11,16 @@ async function listRoles(req, res) {
 }
 
 async function createUser(req, res) {
-  const user = await usersService.createUser(req.validated.body)
+  // Service handles role validation, duplicate checks, and password hashing.
+  const user = await usersService.createUser({
+    ...req.validated.body,
+    actorUserId: req.user.sub,
+  })
   res.status(201).json({ user })
 }
 
 async function updateUserStatus(req, res) {
+  // actorUserId prevents the current admin from deactivating their own account.
   const user = await usersService.updateUserStatus({
     userId: req.validated.params.id,
     status: req.validated.body.status,
@@ -25,7 +30,18 @@ async function updateUserStatus(req, res) {
   res.json({ user })
 }
 
+async function archiveUser(req, res) {
+  // actorUserId prevents the current admin from archiving their own account.
+  const archivedUser = await usersService.archiveUser({
+    userId: req.validated.params.id,
+    actorUserId: req.user.sub,
+  })
+
+  res.json({ user: archivedUser })
+}
+
 module.exports = {
+  archiveUser,
   createUser,
   listRoles,
   listUsers,

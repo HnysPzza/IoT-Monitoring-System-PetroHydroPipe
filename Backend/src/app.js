@@ -4,21 +4,30 @@ const helmet = require('helmet')
 const morgan = require('morgan')
 const env = require('./config/env')
 const errorHandler = require('./middleware/errorHandler')
-const auditRoutes = require('./modules/audit/audit.routes')
-const authRoutes = require('./modules/auth/auth.routes')
-const dashboardRoutes = require('./modules/dashboard/dashboard.routes')
-const downtimeRoutes = require('./modules/downtime/downtime.routes')
-const iotRoutes = require('./modules/iot/iot.routes')
-const machinesRoutes = require('./modules/machines/machines.routes')
-const usersRoutes = require('./modules/users/users.routes')
+const routes = require('./routes')
 
 const app = express()
+const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+const isDevelopment = env.NODE_ENV === 'development'
 
+function corsOrigin(origin, callback) {
+  if (!origin || corsOrigins.includes(origin)) {
+    return callback(null, true)
+  }
+
+  return callback(null, false)
+}
+
+// Global middleware runs before every API route.
 app.use(helmet())
-app.use(cors({ origin: env.CORS_ORIGIN }))
-app.use(express.json())
-app.use(morgan('dev'))
+app.use(cors({ origin: corsOrigin }))
+app.use(express.json({ limit: '100kb' }))
 
+if (isDevelopment) {
+  app.use(morgan('dev'))
+}
+
+// Health stays public so frontend/dev tools can verify the backend is running.
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -26,14 +35,10 @@ app.get('/api/health', (req, res) => {
   })
 })
 
-app.use('/api/auth', authRoutes)
-app.use('/api/users', usersRoutes)
-app.use('/api/machines', machinesRoutes)
-app.use('/api/iot', iotRoutes)
-app.use('/api/dashboard', dashboardRoutes)
-app.use('/api/downtime', downtimeRoutes)
-app.use('/api/audit', auditRoutes)
+// Feature route prefixes. Some modules are placeholders until later phases.
+app.use('/api', routes)
 
+// Unknown API paths return a consistent JSON error.
 app.use((req, res) => {
   res.status(404).json({
     error: {
@@ -43,6 +48,7 @@ app.use((req, res) => {
   })
 })
 
+// Central error handler must be mounted last.
 app.use(errorHandler)
 
 module.exports = app

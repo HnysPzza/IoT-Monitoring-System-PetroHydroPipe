@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 
+/* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
   --c-bg: #0B1220;
   --c-surface: #111827;
@@ -45,6 +46,12 @@
   --status-downtime-text: #FFD7D7;
   --status-downtime-bg: rgba(239, 68, 68, 0.14);
   --status-downtime-border: rgba(239, 68, 68, 0.3);
+  --status-active-text: #CFFAE6;
+  --status-active-bg: rgba(16, 185, 129, 0.14);
+  --status-active-border: rgba(16, 185, 129, 0.28);
+  --status-inactive-text: #E5E7EB;
+  --status-inactive-bg: rgba(107, 114, 128, 0.18);
+  --status-inactive-border: rgba(156, 163, 175, 0.28);
   --subtle-border: rgba(176, 187, 247, 0.14);
   --card-border: rgba(176, 187, 247, 0.16);
   --shadow-soft: 0 18px 48px rgba(0, 0, 0, 0.18);
@@ -52,6 +59,7 @@
   --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Light theme overrides dashboard surfaces while the login background keeps its own look. */
 :root[data-theme='light'] {
   --c-bg: #F5F7FF;
   --c-surface: #FFFFFF;
@@ -95,9 +103,27 @@
   --status-downtime-text: #991B1B;
   --status-downtime-bg: rgba(239, 68, 68, 0.12);
   --status-downtime-border: rgba(185, 28, 28, 0.24);
+  --status-active-text: #065F46;
+  --status-active-bg: rgba(16, 185, 129, 0.12);
+  --status-active-border: rgba(5, 150, 105, 0.28);
+  --status-inactive-text: #475569;
+  --status-inactive-bg: rgba(100, 116, 139, 0.12);
+  --status-inactive-border: rgba(100, 116, 139, 0.24);
   --subtle-border: rgba(89, 205, 233, 0.14);
   --card-border: rgba(89, 205, 233, 0.16);
   --shadow-soft: 0 18px 48px rgba(15, 23, 42, 0.12);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 * {
@@ -143,6 +169,7 @@ button:disabled {
   min-height: 100vh;
 }
 
+/* Login screen layout and background image overlay. */
 .login-page {
   --c-bg: #0B1220;
   --c-surface: #111827;
@@ -520,6 +547,20 @@ button:disabled {
   animation: spin 760ms linear infinite;
 }
 
+.dashboard-route-loading {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--c-text-2);
+  background:
+    var(--dashboard-bg),
+    var(--c-bg);
+  font-weight: 700;
+}
+
+/* Dashboard shell: sidebar, topbar, mobile drawer, and main content area. */
 .dashboard-shell {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -533,9 +574,10 @@ button:disabled {
   position: sticky;
   top: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: 260px;
-  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
   padding: 20px 16px;
   overflow: hidden;
   border-right: 1px solid var(--subtle-border);
@@ -636,10 +678,24 @@ button:disabled {
 
 .sidebar-nav {
   display: grid;
-  grid-auto-rows: minmax(48px, 1fr);
+  grid-auto-rows: minmax(48px, auto);
   gap: 8px;
-  align-content: stretch;
+  align-content: start;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--card-border) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--card-border);
 }
 
 .sidebar-link {
@@ -660,6 +716,21 @@ button:disabled {
 .dashboard-sidebar.is-collapsed .sidebar-link {
   grid-template-columns: 36px;
   justify-content: center;
+  min-height: 48px;
+  padding: 6px;
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-footer,
+.dashboard-sidebar.is-collapsed .sidebar-user {
+  justify-items: center;
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-user {
+  display: grid;
+  grid-template-columns: 36px;
+  justify-content: start;
+  gap: 0;
+  width: 100%;
   min-height: 48px;
   padding: 6px;
 }
@@ -706,6 +777,8 @@ button:disabled {
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--subtle-border);
+  min-width: 0;
+  background: var(--sidebar-bg);
 }
 
 .sidebar-avatar,
@@ -721,8 +794,23 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.dashboard-sidebar.is-collapsed .sidebar-avatar {
+  width: 36px;
+  height: 36px;
+  background: var(--icon-bg);
+}
+
 .sidebar-user-name {
   font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-logout {
@@ -775,18 +863,101 @@ button:disabled {
   background: var(--panel-bg);
 }
 
+.topbar-trailing {
+  position: relative;
+}
+
 .notification-button {
   position: relative;
 }
 
-.notification-dot {
+.notification-button.is-alerting {
+  color: var(--status-downtime-text);
+  border-color: var(--status-downtime-border);
+  background: var(--status-downtime-bg);
+}
+
+.notification-badge {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
+  top: -6px;
+  right: -6px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
+  color: #fff;
   background: var(--c-danger);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.alerts-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 40;
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  color: var(--c-text);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.alerts-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.alerts-popover-header strong {
+  font-size: 0.9rem;
+}
+
+.alerts-popover-header span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 999px;
+  color: var(--status-downtime-text);
+  background: var(--status-downtime-bg);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.alerts-popover ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alerts-popover li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--status-downtime-border);
+  border-radius: 8px;
+  color: var(--status-downtime-text);
+  background: var(--status-downtime-bg);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.alerts-popover p {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 0.84rem;
 }
 
 .dashboard-content {
@@ -796,6 +967,13 @@ button:disabled {
 .overview-layout {
   display: grid;
   gap: 24px;
+}
+
+.overview-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.8fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .alerts-stack,
@@ -817,6 +995,297 @@ button:disabled {
 
 .machine-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Live, downtime, and reports pages share dense operational workspace spacing. */
+.live-layout,
+.downtime-layout,
+.reports-layout,
+.machines-layout,
+.audit-layout {
+  display: grid;
+  gap: 20px;
+}
+
+.live-hero-card,
+.live-controls-card,
+.downtime-controls-card,
+.reports-controls-card,
+.machine-admin-hero,
+.audit-controls-card {
+  min-width: 0;
+}
+
+.live-machine-grid,
+.reports-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reports-summary-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.live-machine-grid div {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  min-height: 88px;
+  padding: 14px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.live-machine-grid strong {
+  color: var(--c-text);
+  font-size: 1rem;
+}
+
+.machine-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.machine-admin-grid article,
+.settings-profile-card {
+  display: grid;
+  gap: 8px;
+  min-height: 96px;
+  padding: 14px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.machine-admin-grid span,
+.settings-profile-card p {
+  margin: 0;
+  color: var(--c-text-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.machine-admin-grid strong,
+.settings-profile-card strong {
+  color: var(--c-text);
+  font-size: 0.98rem;
+}
+
+.machine-status-admin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.admin-sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.admin-sensor-card {
+  align-content: stretch;
+  grid-template-rows: auto 1fr auto;
+  min-height: 320px;
+}
+
+.production-analytics-card {
+  display: grid;
+  gap: 18px;
+}
+
+.industrial-chart-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.industrial-chart-card::before {
+  position: absolute;
+  inset: 0;
+  border-top: 1px solid rgba(89, 205, 233, 0.22);
+  content: '';
+  pointer-events: none;
+}
+
+/* Recharts analytics panels: production comparison and downtime impact. */
+.analytics-mode-toggle {
+  min-width: 270px;
+}
+
+.analytics-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-summary-row > div {
+  display: grid;
+  gap: 6px;
+  min-height: 74px;
+  padding: 14px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.industrial-kpi-strip > div {
+  min-height: 82px;
+  border-color: var(--card-border);
+}
+
+.analytics-summary-row strong {
+  color: var(--c-text);
+  font-size: 1.08rem;
+}
+
+.analytics-delta {
+  align-content: center;
+  justify-items: start;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+}
+
+.analytics-delta.is-positive {
+  color: var(--status-active-text);
+}
+
+.analytics-delta.is-negative {
+  color: var(--status-downtime-text);
+}
+
+.analytics-chart {
+  min-height: 320px;
+  padding: 18px 12px 10px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    var(--panel-bg);
+  background-size: 100% 48px;
+}
+
+.industrial-recharts-panel {
+  min-height: 340px;
+  background:
+    linear-gradient(90deg, rgba(89, 205, 233, 0.06), transparent 34%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    var(--panel-bg);
+  background-size: auto, 100% 52px, auto;
+}
+
+.analytics-insight {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.analytics-insight.is-positive {
+  color: var(--status-active-text);
+  border-color: var(--status-active-border);
+  background: var(--status-active-bg);
+}
+
+.analytics-insight.is-warning {
+  color: var(--status-downtime-text);
+  border-color: var(--status-downtime-border);
+  background: var(--status-downtime-bg);
+}
+
+.live-metric-label,
+.table-muted {
+  color: var(--c-text-2);
+  font-size: 0.76rem;
+}
+
+.live-metric-label {
+  display: block;
+  margin: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.live-controls-card,
+.downtime-controls-card,
+.reports-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.live-filter-group {
+  display: inline-grid;
+  grid-template-columns: repeat(4, minmax(82px, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.live-refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  color: var(--c-text-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+}
+
+.live-sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.live-sensor-card {
+  align-content: start;
+}
+
+.live-sensor-meta {
+  grid-template-columns: 1fr;
+}
+
+.live-purpose-row,
+.live-network-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--c-text-2);
+  line-height: 1.5;
+}
+
+.live-purpose-row {
+  padding-top: 4px;
+  font-size: 0.84rem;
+}
+
+.live-network-card {
+  min-height: 52px;
+  padding: 14px 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
 }
 
 .section-card,
@@ -967,6 +1436,18 @@ button:disabled {
   background: var(--status-downtime-bg);
 }
 
+.status-badge.status-active {
+  color: var(--status-active-text);
+  border-color: var(--status-active-border);
+  background: var(--status-active-bg);
+}
+
+.status-badge.status-inactive {
+  color: var(--status-inactive-text);
+  border-color: var(--status-inactive-border);
+  background: var(--status-inactive-bg);
+}
+
 .machine-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1069,88 +1550,41 @@ button:disabled {
 .trend-chart-panel {
   position: relative;
   display: grid;
+  grid-template-rows: minmax(260px, 1fr) auto;
   gap: 12px;
   min-height: 280px;
 }
 
-.trend-svg {
-  display: block;
-  width: 100%;
-  min-height: 260px;
+.recharts-panel {
+  min-height: 300px;
 }
 
-.trend-grid-line {
-  stroke: var(--subtle-border);
-  stroke-width: 1;
-}
-
-.trend-axis-label {
-  fill: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
-}
-
-.trend-area {
-  fill: url('#downtimeAreaGradient');
-}
-
-.trend-line {
-  fill: none;
-  stroke: url('#downtimeLineGradient');
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 3;
-}
-
-.trend-point {
-  fill: var(--c-surface);
-  stroke: #59CDE9;
-  stroke-width: 2.5;
-  transition: r 160ms var(--ease-std), stroke-width 160ms var(--ease-std);
-}
-
-.trend-point.is-active {
-  r: 6px;
-  stroke-width: 3.5;
-}
-
-.trend-hit-point {
-  fill: transparent;
-  cursor: pointer;
-  outline: 0;
-}
-
-.trend-hit-point:focus-visible {
-  stroke: #59CDE9;
-  stroke-width: 2;
-}
-
-.trend-tooltip {
-  position: absolute;
-  z-index: 2;
+.recharts-tooltip-card {
   display: grid;
-  gap: 3px;
-  min-width: 132px;
+  gap: 5px;
+  min-width: 156px;
   padding: 10px 12px;
   border: 1px solid var(--card-border);
   border-radius: 8px;
   color: var(--c-text);
   background: var(--panel-bg);
   box-shadow: var(--shadow-soft);
-  transform: translate(-50%, calc(-100% - 12px));
-  pointer-events: none;
 }
 
-.trend-tooltip strong,
-.trend-tooltip span {
+.industrial-tooltip {
+  min-width: 190px;
+}
+
+.recharts-tooltip-card strong,
+.recharts-tooltip-card span {
   font-family: 'IBM Plex Mono', monospace;
 }
 
-.trend-tooltip strong {
+.recharts-tooltip-card strong {
   font-size: 0.78rem;
 }
 
-.trend-tooltip span {
+.recharts-tooltip-card span {
   color: var(--c-text-2);
   font-size: 0.72rem;
 }
@@ -1159,6 +1593,32 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.downtime-marker-ring {
+  fill: rgba(239, 68, 68, 0.2);
+  stroke: rgba(239, 68, 68, 0.46);
+  stroke-width: 1.5;
+}
+
+.downtime-marker-dot {
+  fill: #EF4444;
+}
+
+.downtime-threshold-note {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--status-downtime-border);
+  border-radius: 8px;
+  color: var(--status-downtime-text);
+  background: var(--status-downtime-bg);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
 }
 
 .trend-data-row span {
@@ -1221,6 +1681,26 @@ button:disabled {
   gap: 24px;
 }
 
+.settings-profile-section {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-profile-card {
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+}
+
+.settings-profile-card p {
+  margin-bottom: 4px;
+}
+
 .users-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
@@ -1228,15 +1708,26 @@ button:disabled {
 }
 
 .users-create-card,
+.users-primary-column,
 .role-summary-card,
 .users-table-card {
   min-width: 0;
+}
+
+.users-primary-column {
+  display: grid;
+  gap: 12px;
+}
+
+.users-notice {
+  align-self: start;
 }
 
 .users-table-card {
   grid-column: 1 / -1;
 }
 
+/* Admin user account form and table styles. */
 .account-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1253,6 +1744,7 @@ button:disabled {
 
 .account-field input,
 .account-field select {
+  color-scheme: dark;
   min-height: 48px;
   width: 100%;
   min-width: 0;
@@ -1263,6 +1755,79 @@ button:disabled {
   background: var(--c-surface2);
   font: inherit;
   font-weight: 500;
+}
+
+:root[data-theme='light'] .account-field input,
+:root[data-theme='light'] .account-field select {
+  color-scheme: light;
+}
+
+.filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: var(--c-text);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.machine-status-admin .filter-field {
+  width: min(100%, 260px);
+  min-width: 220px;
+}
+
+.admin-sensor-card .filter-field {
+  align-self: end;
+  width: 100%;
+  min-width: 0;
+}
+
+.filter-field span {
+  color: var(--c-text-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.filter-field input,
+.filter-field select,
+.inline-select {
+  color-scheme: dark;
+  min-height: 42px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--c-text);
+  background: var(--c-surface2);
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+:root[data-theme='light'] .filter-field input,
+:root[data-theme='light'] .filter-field select,
+:root[data-theme='light'] .inline-select {
+  color-scheme: light;
+}
+
+.filter-field select option,
+.inline-select option,
+.account-field select option {
+  color: var(--c-text);
+  background: var(--c-surface);
+}
+
+.filter-field input:focus,
+.filter-field select:focus,
+.inline-select:focus {
+  border-color: var(--c-primary);
+  outline: 0;
+  background: var(--input-focus-bg);
+  box-shadow: var(--input-focus-shadow);
+}
+
+.inline-select {
+  width: 100%;
+  min-width: 180px;
 }
 
 .account-field input:focus,
@@ -1318,12 +1883,30 @@ button:disabled {
 .account-table-wrap {
   width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 8px;
 }
 
 .account-table {
   width: 100%;
   min-width: 980px;
   border-collapse: collapse;
+}
+
+.downtime-table {
+  min-width: 1180px;
+}
+
+.reports-table {
+  min-width: 720px;
+}
+
+.audit-table {
+  min-width: 1100px;
+}
+
+.downtime-table td {
+  vertical-align: top;
 }
 
 .account-table th,
@@ -1354,6 +1937,141 @@ button:disabled {
   min-height: 40px;
   padding: 0 14px;
   font-size: 0.82rem;
+}
+
+.table-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.table-action-button.table-action-activate {
+  color: var(--status-active-text);
+  border-color: var(--status-active-border);
+  background: var(--status-active-bg);
+}
+
+.table-action-button.table-action-deactivate {
+  color: var(--status-downtime-text);
+  border-color: var(--status-downtime-border);
+  background: var(--status-downtime-bg);
+}
+
+.table-action-button.table-action-archive {
+  color: var(--status-downtime-text);
+  border-color: var(--status-downtime-border);
+  background: var(--status-downtime-bg);
+}
+
+.table-action-button.table-action-activate:hover:not(:disabled),
+.table-action-button.table-action-deactivate:hover:not(:disabled),
+.table-action-button.table-action-archive:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.reports-action {
+  min-height: 44px;
+}
+
+.audit-controls-card .reports-controls {
+  align-items: flex-start;
+}
+
+.audit-refresh-button {
+  align-self: flex-start;
+  margin-top: 22px;
+  min-height: 42px;
+}
+
+.audit-note {
+  flex: 1 1 280px;
+  justify-content: flex-start;
+}
+
+.audit-action-label,
+.audit-entity-label {
+  display: block;
+}
+
+.audit-action-label {
+  color: var(--c-text);
+  font-weight: 700;
+}
+
+.audit-entity-label {
+  margin-top: 4px;
+  color: var(--c-text-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+}
+
+.audit-details-button {
+  min-height: 36px;
+}
+
+.audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 1100px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--subtle-border);
+}
+
+.audit-pagination span {
+  color: var(--c-text-2);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.audit-technical-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 1100px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.audit-technical-panel p {
+  margin: 0;
+  color: var(--c-text);
+  font-weight: 700;
+}
+
+.audit-technical-panel dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.audit-technical-panel div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.audit-technical-panel dt,
+.audit-technical-panel dd {
+  margin: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.76rem;
+}
+
+.audit-technical-panel dt {
+  color: var(--c-text-2);
+}
+
+.audit-technical-panel dd {
+  min-width: 0;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .spin-icon {
@@ -1515,8 +2233,21 @@ button:disabled {
   }
 
   .section-grid,
-  .machine-grid {
+  .machine-grid,
+  .overview-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .live-sensor-grid,
+  .admin-sensor-grid,
+  .reports-summary-grid,
+  .settings-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .live-machine-grid,
+  .machine-admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1548,6 +2279,8 @@ button:disabled {
     position: fixed;
     left: 0;
     width: min(320px, 82vw);
+    height: 100dvh;
+    max-height: 100dvh;
     transform: translateX(-100%);
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
   }
@@ -1584,9 +2317,34 @@ button:disabled {
   .dashboard-content {
     padding: 20px;
   }
+
+  .live-controls-card,
+  .downtime-controls-card,
+  .reports-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .live-filter-group,
+  .trend-mode-toggle,
+  .analytics-mode-toggle,
+  .filter-field,
+  .reports-action,
+  .audit-refresh-button {
+    width: 100%;
+  }
+
+  .audit-refresh-button {
+    margin-top: 0;
+  }
 }
 
 @media (max-width: 640px) {
+  .machine-status-admin .filter-field {
+    width: 100%;
+    min-width: 0;
+  }
+
   .brand-content,
   .form-panel {
     padding: 24px 16px;
@@ -1607,13 +2365,35 @@ button:disabled {
     justify-content: space-between;
   }
 
+  .alerts-popover {
+    left: 0;
+    right: auto;
+    width: 100%;
+  }
+
   .dashboard-clock {
     white-space: normal;
   }
 
   .kpi-grid,
+  .live-machine-grid,
+  .live-sensor-grid,
+  .admin-sensor-grid,
+  .machine-admin-grid,
+  .reports-summary-grid,
+  .settings-profile-grid,
+  .analytics-summary-row,
   .machine-meta {
     grid-template-columns: 1fr;
+  }
+
+  .analytics-chart {
+    overflow-x: auto;
+    min-height: 300px;
+  }
+
+  .analytics-insight {
+    width: 100%;
   }
 
   .trend-controls,
@@ -1630,8 +2410,8 @@ button:disabled {
     width: 100%;
   }
 
-  .trend-svg {
-    min-height: 220px;
+  .trend-chart-panel {
+    grid-template-rows: minmax(220px, 1fr) auto;
   }
 
   .permission-card {
@@ -1653,6 +2433,43 @@ button:disabled {
 
   .theme-toggle {
     width: 100%;
+  }
+
+  .account-table-wrap {
+    margin-inline: -4px;
+    padding-bottom: 8px;
+  }
+
+  .account-table {
+    min-width: 760px;
+  }
+
+  .audit-table {
+    min-width: 920px;
+  }
+
+  .downtime-table {
+    min-width: 980px;
+  }
+
+  .reports-table {
+    min-width: 640px;
+  }
+
+  .account-table th,
+  .account-table td {
+    padding: 12px 10px;
+    font-size: 0.82rem;
+  }
+
+  .table-action-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .table-action-button {
+    width: 100%;
+    justify-content: center;
   }
 }
 

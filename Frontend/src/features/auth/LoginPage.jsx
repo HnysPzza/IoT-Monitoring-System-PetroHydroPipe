@@ -9,7 +9,7 @@ import {
   User,
   Zap,
 } from 'lucide-react'
-import { useAuth } from '../../shared/session/AuthContext.jsx'
+import { useAuth } from '../../shared/hooks/useAuth.js'
 
 const initialValues = {
   username: '',
@@ -45,11 +45,13 @@ export default function LoginPage() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
+  // Focus username first so operators can start typing immediately.
   useEffect(() => {
     usernameRef.current?.focus()
   }, [])
 
   useEffect(() => {
+    // If the user is already logged in, skip the login page.
     if (isAuthenticated) {
       navigate('/dashboard', { replace: true })
     }
@@ -105,6 +107,7 @@ export default function LoginPage() {
 
     try {
       setSubmitState('loading')
+      // Calls AuthContext.login, which stores the returned backend/mock auth payload.
       await login({
         username: values.username.trim(),
         password: values.password,
@@ -138,7 +141,7 @@ export default function LoginPage() {
             />
             <div className="logo-fallback" aria-hidden="true">
               <Zap size={22} />
-              <span>PHP Corp.</span>
+              <span>PetroHydroPipe</span>
             </div>
           </div>
 
@@ -153,7 +156,7 @@ export default function LoginPage() {
       </section>
 
       <section className="form-panel" aria-labelledby="login-title">
-        <form className="login-card" onSubmit={handleSubmit} noValidate>
+        <form id="login-form" name="login" className="login-card" onSubmit={handleSubmit} autoComplete="on" noValidate>
           <span className="security-badge">
             <ShieldCheck size={16} aria-hidden="true" />
             SECURED SYSTEM ACCESS
@@ -185,7 +188,7 @@ export default function LoginPage() {
                 id="username"
                 name="username"
                 type="text"
-                placeholder="e.g. admin"
+                placeholder="Enter username"
                 value={values.username}
                 onChange={updateField}
                 onBlur={handleBlur}

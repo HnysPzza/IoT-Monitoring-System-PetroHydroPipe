@@ -1,3 +1,5 @@
+const logger = require('../utils/logger')
+
 function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return next(err)
@@ -7,7 +9,8 @@ function errorHandler(err, req, res, next) {
   const isServerError = status >= 500
 
   if (isServerError) {
-    console.error(err)
+    // Log server errors internally, but do not expose details to clients.
+    logger.error(err.stack || err.message || 'Unexpected server error.')
   }
 
   return res.status(status).json({

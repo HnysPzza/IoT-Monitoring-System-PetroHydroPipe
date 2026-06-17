@@ -1,9 +1,10 @@
 import { ShieldAlert } from 'lucide-react'
-import { useAuth } from '../session/AuthContext.jsx'
+import { useAuth } from '../hooks/useAuth.js'
 
 export default function RequireRole({ roles, children }) {
   const { user } = useAuth()
 
+  // Allows direct URL access only when the logged-in role is permitted.
   if (roles.includes(user?.role)) {
     return children
   }

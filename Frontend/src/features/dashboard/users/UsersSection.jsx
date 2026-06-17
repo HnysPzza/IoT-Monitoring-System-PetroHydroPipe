@@ -1,85 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, LoaderCircle, Plus, UserPlus, Users } from 'lucide-react'
-import { useAuth } from '../../../shared/session/AuthContext.jsx'
-import { createUser, getRoles, getUsers, updateUserStatus } from './usersService.js'
-
-const initialForm = {
-  name: '',
-  username: '',
-  email: '',
-  role: '',
-  password: '',
-}
-
-function normalizeUsername(username) {
-  return username.trim().toLowerCase()
-}
-
-function validateAccount(values, accounts) {
-  const errors = {}
-  const username = normalizeUsername(values.username)
-  const email = values.email.trim().toLowerCase()
-
-  if (!values.name.trim()) {
-    errors.name = 'Full name is required.'
-  }
-
-  if (!username) {
-    errors.username = 'Username is required.'
-  } else if (!/^[a-z0-9._-]+$/.test(username)) {
-    errors.username = 'Use lowercase letters, numbers, dots, dashes, or underscores only.'
-  } else if (accounts.some((account) => account.username.toLowerCase() === username)) {
-    errors.username = 'This username already exists.'
-  }
-
-  if (!email) {
-    errors.email = 'Email is required.'
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.email = 'Enter a valid email address.'
-  } else if (accounts.some((account) => account.email?.toLowerCase() === email)) {
-    errors.email = 'This email already exists.'
-  }
-
-  if (!values.role) {
-    errors.role = 'Select a role.'
-  }
-
-  if (!values.password) {
-    errors.password = 'Temporary password is required.'
-  } else if (values.password.length < 8) {
-    errors.password = 'Temporary password must be at least 8 characters.'
-  }
-
-  return errors
-}
-
-function getStatusClass(status) {
-  return status === 'Active' ? 'status-running' : 'status-downtime'
-}
-
-function formatDate(value) {
-  if (!value) {
-    return 'Not available'
-  }
-
-  return new Date(value).toLocaleDateString('en-PH', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-  })
-}
+import { useAuth } from '../../../shared/hooks/useAuth.js'
+import RoleSummary from './RoleSummary.jsx'
+import UserAccountForm from './UserAccountForm.jsx'
+import UsersNotice from './UsersNotice.jsx'
+import UsersTable from './UsersTable.jsx'
+import { archiveUser, createUser, getRoles, getUsers, updateUserStatus } from './usersService.js'
+import { initialUserForm, normalizeUsername, validateAccount } from './usersUtils.js'
 
 export default function UsersSection() {
   const { token, user } = useAuth()
   const [accounts, setAccounts] = useState([])
   const [roles, setRoles] = useState([])
-  const [form, setForm] = useState(initialForm)
+  const [form, setForm] = useState(initialUserForm)
   const [errors, setErrors] = useState({})
   const [notice, setNotice] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [updatingUserId, setUpdatingUserId] = useState('')
+  const [archivingUserId, setArchivingUserId] = useState('')
 
+  // Role cards are derived from the backend user list, not stored separately.
   const roleCounts = useMemo(
     () => roles.map((role) => ({
       role: role.name,
@@ -92,6 +32,7 @@ export default function UsersSection() {
     let isMounted = true
 
     async function loadUsersPage() {
+      // Loads protected user data and roles using the JWT from AuthContext.
       setIsLoading(true)
       setNotice(null)
 
@@ -134,6 +75,7 @@ export default function UsersSection() {
   }, [token])
 
   function updateField(field, value) {
+    // Clears the field error as soon as the admin edits that field again.
     setForm((current) => ({ ...current, [field]: value }))
     setErrors((current) => ({ ...current, [field]: '' }))
     setNotice(null)
@@ -153,6 +95,7 @@ export default function UsersSection() {
     setNotice(null)
 
     try {
+      // Backend hashes the password and stores the account in Supabase.
       const payload = await createUser(token, {
         name: form.name.trim(),
         username: normalizeUsername(form.username),
@@ -163,7 +106,7 @@ export default function UsersSection() {
 
       setAccounts((current) => [payload.user, ...current])
       setForm({
-        ...initialForm,
+        ...initialUserForm,
         role: form.role,
       })
       setNotice({
@@ -186,6 +129,7 @@ export default function UsersSection() {
     setNotice(null)
 
     try {
+      // Activate/deactivate is persisted by the backend; the table updates from the returned user.
       const payload = await updateUserStatus(token, account.id, nextStatus)
       setAccounts((current) => current.map((item) => (item.id === payload.user.id ? payload.user : item)))
       setNotice({
@@ -202,194 +146,57 @@ export default function UsersSection() {
     }
   }
 
+  async function handleArchiveAccount(account) {
+    const confirmed = window.confirm(`Archive ${account.username}? This removes access and hides the account from the normal user list.`)
+
+    if (!confirmed) {
+      return
+    }
+
+    setArchivingUserId(account.id)
+    setNotice(null)
+
+    try {
+      const payload = await archiveUser(token, account.id)
+      setAccounts((current) => current.filter((item) => item.id !== payload.user.id))
+      setNotice({
+        type: 'success',
+        message: `${payload.user.username} was archived and can no longer log in.`,
+      })
+    } catch (error) {
+      setNotice({
+        type: 'error',
+        message: error.message || 'Unable to archive user account.',
+      })
+    } finally {
+      setArchivingUserId('')
+    }
+  }
+
   return (
     <div className="users-layout">
-      <section className="section-card users-create-card" aria-labelledby="create-account-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Admin only</p>
-            <h2 id="create-account-title">Create user account</h2>
-          </div>
-          <span className="section-chip">
-            <UserPlus size={16} aria-hidden="true" />
-            Role access
-          </span>
-        </div>
-
-        {notice ? (
-          <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>
-            {notice.type === 'error' ? <AlertCircle size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
-            <span>{notice.message}</span>
-          </div>
-        ) : null}
-
-        <form className="account-form" onSubmit={handleSubmit} noValidate>
-          <label className="account-field">
-            <span>Full name</span>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(event) => updateField('name', event.target.value)}
-              aria-invalid={Boolean(errors.name)}
-              aria-describedby={errors.name ? 'account-name-error' : undefined}
-              disabled={isLoading}
-            />
-            {errors.name ? <small id="account-name-error" role="alert">{errors.name}</small> : null}
-          </label>
-
-          <label className="account-field">
-            <span>Username</span>
-            <input
-              type="text"
-              value={form.username}
-              onChange={(event) => updateField('username', event.target.value)}
-              aria-invalid={Boolean(errors.username)}
-              aria-describedby={errors.username ? 'account-username-error' : undefined}
-              disabled={isLoading}
-            />
-            {errors.username ? <small id="account-username-error" role="alert">{errors.username}</small> : null}
-          </label>
-
-          <label className="account-field">
-            <span>Email</span>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) => updateField('email', event.target.value)}
-              aria-invalid={Boolean(errors.email)}
-              aria-describedby={errors.email ? 'account-email-error' : undefined}
-              disabled={isLoading}
-            />
-            {errors.email ? <small id="account-email-error" role="alert">{errors.email}</small> : null}
-          </label>
-
-          <label className="account-field">
-            <span>Role</span>
-            <select value={form.role} onChange={(event) => updateField('role', event.target.value)} disabled={isLoading || roles.length === 0}>
-              {roles.map((role) => (
-                <option key={role.id} value={role.name}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
-            {errors.role ? <small role="alert">{errors.role}</small> : null}
-          </label>
-
-          <label className="account-field">
-            <span>Temporary password</span>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) => updateField('password', event.target.value)}
-              aria-invalid={Boolean(errors.password)}
-              aria-describedby={errors.password ? 'account-password-error' : undefined}
-              disabled={isLoading}
-            />
-            {errors.password ? <small id="account-password-error" role="alert">{errors.password}</small> : null}
-          </label>
-
-          <button className="btn btn-primary account-submit" type="submit" disabled={isLoading || isSubmitting}>
-            {isSubmitting ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
-            {isSubmitting ? 'Creating...' : 'Create account'}
-          </button>
-        </form>
-      </section>
-
-      <aside className="section-card role-summary-card" aria-labelledby="role-summary-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Access summary</p>
-            <h2 id="role-summary-title">Accounts by role</h2>
-          </div>
-          <span className="section-chip">
-            <Users size={16} aria-hidden="true" />
-            {accounts.length} total
-          </span>
-        </div>
-
-        {isLoading ? (
-          <div className="role-count-list" aria-label="Loading role summary">
-            <span className="skeleton skeleton-label" />
-            <span className="skeleton skeleton-label" />
-            <span className="skeleton skeleton-label" />
-          </div>
-        ) : (
-          <div className="role-count-list">
-            {roleCounts.map((item) => (
-              <div key={item.role} className="role-count-row">
-                <span>{item.role}</span>
-                <strong>{item.count}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-      </aside>
-
-      <section className="section-card users-table-card" aria-labelledby="accounts-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Directory</p>
-            <h2 id="accounts-title">User accounts</h2>
-          </div>
-        </div>
-
-        <div className="account-table-wrap">
-          <table className="account-table">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Username</th>
-                <th scope="col">Email</th>
-                <th scope="col">Role</th>
-                <th scope="col">Status</th>
-                <th scope="col">Created</th>
-                <th scope="col">Last login</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan="8">Loading user accounts...</td>
-                </tr>
-              ) : accounts.length === 0 ? (
-                <tr>
-                  <td colSpan="8">No user accounts found.</td>
-                </tr>
-              ) : (
-                accounts.map((account) => {
-                  const isCurrentUser = account.id === user?.id
-                  const nextStatus = account.status === 'Active' ? 'Inactive' : 'Active'
-
-                  return (
-                    <tr key={account.id}>
-                      <td>{account.name}</td>
-                      <td>{account.username}</td>
-                      <td>{account.email}</td>
-                      <td>{account.role}</td>
-                      <td>
-                        <span className={`status-badge ${getStatusClass(account.status)}`}>{account.status}</span>
-                      </td>
-                      <td>{formatDate(account.createdAt)}</td>
-                      <td>{formatDate(account.lastLoginAt)}</td>
-                      <td>
-                        <button
-                          className="btn btn-secondary table-action-button"
-                          type="button"
-                          onClick={() => handleStatusChange(account)}
-                          disabled={updatingUserId === account.id || (isCurrentUser && nextStatus === 'Inactive')}
-                        >
-                          {updatingUserId === account.id ? 'Updating...' : nextStatus}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <div className="users-primary-column">
+        <UsersNotice notice={notice} />
+        <UserAccountForm
+          errors={errors}
+          form={form}
+          isLoading={isLoading}
+          isSubmitting={isSubmitting}
+          onFieldChange={updateField}
+          onSubmit={handleSubmit}
+          roles={roles}
+        />
+      </div>
+      <RoleSummary accountCount={accounts.length} isLoading={isLoading} roleCounts={roleCounts} />
+      <UsersTable
+        accounts={accounts}
+        currentUserId={user?.id}
+        archivingUserId={archivingUserId}
+        isLoading={isLoading}
+        onArchiveAccount={handleArchiveAccount}
+        onStatusChange={handleStatusChange}
+        updatingUserId={updatingUserId}
+      />
     </div>
   )
 }

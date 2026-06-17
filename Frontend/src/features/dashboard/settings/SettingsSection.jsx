@@ -1,5 +1,13 @@
-import { Moon, Sun } from 'lucide-react'
-import { useTheme } from '../../../shared/session/ThemeContext.jsx'
+import { Database, Factory, Moon, Server, Sun, Wifi } from 'lucide-react'
+import { useTheme } from '../../../shared/hooks/useTheme.js'
+
+const systemProfile = [
+  { id: 'company', label: 'Company/System', value: 'PetroHydroPipe IoT Monitoring', icon: Factory },
+  { id: 'backend', label: 'Backend Mode', value: 'Node/Express API', icon: Server },
+  { id: 'machine', label: 'Current Machine Count', value: '1 machine', icon: Factory },
+  { id: 'sensors', label: 'Sensor Count', value: '5 ESP32 sensors', icon: Wifi },
+  { id: 'database', label: 'Database', value: 'Supabase PostgreSQL', icon: Database },
+]
 
 export default function SettingsSection() {
   const { theme, setTheme } = useTheme()
@@ -19,6 +27,7 @@ export default function SettingsSection() {
         </div>
 
         <div className="theme-toggle" role="group" aria-label="Interface theme">
+          {/* ThemeContext writes this choice to localStorage and <html data-theme>. */}
           <button
             className={`theme-option ${theme === 'dark' ? 'is-selected' : ''}`}
             type="button"
@@ -39,6 +48,33 @@ export default function SettingsSection() {
           </button>
         </div>
       </div>
+
+      <section className="settings-profile-section" aria-labelledby="system-profile-title">
+        <div className="section-heading">
+          <div>
+            <p className="section-eyebrow">System profile</p>
+            <h2 id="system-profile-title">Read-only deployment details</h2>
+          </div>
+        </div>
+
+        <div className="settings-profile-grid">
+          {systemProfile.map((item) => {
+            const Icon = item.icon
+
+            return (
+              <article key={item.id} className="settings-profile-card">
+                <span className="sidebar-link-icon" aria-hidden="true">
+                  <Icon size={18} />
+                </span>
+                <div>
+                  <p>{item.label}</p>
+                  <strong>{item.value}</strong>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
     </section>
   )
 }

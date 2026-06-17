@@ -1,20 +1,23 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { useAuth } from '../shared/session/AuthContext.jsx'
+import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
-import AdminDashboard from '../features/dashboard/layout/AdminDashboard.jsx'
-import AuditSection from '../features/dashboard/audit/AuditSection.jsx'
-import DashboardSection from '../features/dashboard/overview/DashboardSection.jsx'
-import DowntimeSection from '../features/dashboard/downtime/DowntimeSection.jsx'
-import LiveSection from '../features/dashboard/live/LiveSection.jsx'
-import MachinesSection from '../features/dashboard/machines/MachinesSection.jsx'
-import ReportsSection from '../features/dashboard/reports/ReportsSection.jsx'
-import SettingsSection from '../features/dashboard/settings/SettingsSection.jsx'
-import UsersSection from '../features/dashboard/users/UsersSection.jsx'
+
+const AdminDashboard = lazy(() => import('../features/dashboard/layout/AdminDashboard.jsx'))
+const AuditSection = lazy(() => import('../features/dashboard/audit/AuditSection.jsx'))
+const DashboardSection = lazy(() => import('../features/dashboard/overview/DashboardSection.jsx'))
+const DowntimeSection = lazy(() => import('../features/dashboard/downtime/DowntimeSection.jsx'))
+const LiveSection = lazy(() => import('../features/dashboard/live/LiveSection.jsx'))
+const MachinesSection = lazy(() => import('../features/dashboard/machines/MachinesSection.jsx'))
+const ReportsSection = lazy(() => import('../features/dashboard/reports/ReportsSection.jsx'))
+const SettingsSection = lazy(() => import('../features/dashboard/settings/SettingsSection.jsx'))
+const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuth()
 
+  // Guard dashboard pages; unauthenticated users always go back to login.
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
   }
@@ -22,28 +25,79 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+function DashboardLoadingFallback() {
+  return (
+    <div className="dashboard-route-loading" role="status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      <span>Loading dashboard</span>
+    </div>
+  )
+}
+
+function LazyDashboardRoute({ children }) {
+  return (
+    <Suspense fallback={<DashboardLoadingFallback />}>
+      {children}
+    </Suspense>
+  )
+}
+
 export default function App() {
   return (
     <Routes>
+      {/* Main route map. Dashboard children render inside AdminDashboard through <Outlet />. */}
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <AdminDashboard />
+            <LazyDashboardRoute>
+              <AdminDashboard />
+            </LazyDashboardRoute>
           </ProtectedRoute>
         }
       >
-        <Route index element={<DashboardSection />} />
-        <Route path="live" element={<LiveSection />} />
-        <Route path="downtime" element={<DowntimeSection />} />
-        <Route path="reports" element={<ReportsSection />} />
+        <Route
+          index
+          element={
+            <LazyDashboardRoute>
+              <DashboardSection />
+            </LazyDashboardRoute>
+          }
+        />
+        <Route
+          path="live"
+          element={
+            <LazyDashboardRoute>
+              <LiveSection />
+            </LazyDashboardRoute>
+          }
+        />
+        <Route
+          path="downtime"
+          element={
+            <LazyDashboardRoute>
+              <DowntimeSection />
+            </LazyDashboardRoute>
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <LazyDashboardRoute>
+              <ReportsSection />
+            </LazyDashboardRoute>
+          }
+        />
         <Route
           path="users"
           element={
+            /* Admin-only account management route. */
             <RequireRole roles={['Admin']}>
-              <UsersSection />
+              <LazyDashboardRoute>
+                <UsersSection />
+              </LazyDashboardRoute>
             </RequireRole>
           }
         />
@@ -51,7 +105,9 @@ export default function App() {
           path="machines"
           element={
             <RequireRole roles={['Admin', 'Engineering Supervisor']}>
-              <MachinesSection />
+              <LazyDashboardRoute>
+                <MachinesSection />
+              </LazyDashboardRoute>
             </RequireRole>
           }
         />
@@ -59,7 +115,9 @@ export default function App() {
           path="audit"
           element={
             <RequireRole roles={['Admin']}>
-              <AuditSection />
+              <LazyDashboardRoute>
+                <AuditSection />
+              </LazyDashboardRoute>
             </RequireRole>
           }
         />
@@ -67,7 +125,9 @@ export default function App() {
           path="settings"
           element={
             <RequireRole roles={['Admin']}>
-              <SettingsSection />
+              <LazyDashboardRoute>
+                <SettingsSection />
+              </LazyDashboardRoute>
             </RequireRole>
           }
         />

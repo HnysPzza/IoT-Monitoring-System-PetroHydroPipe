@@ -1,5 +1,6 @@
 const { z } = require('zod')
 
+// Username format matches the frontend validation and database lookup style.
 const usernameSchema = z
   .string()
   .trim()
@@ -7,6 +8,7 @@ const usernameSchema = z
   .regex(/^[a-z0-9._-]+$/, 'Use lowercase letters, numbers, dots, dashes, or underscores only.')
 
 const createUserSchema = z.object({
+  // Admin-created accounts are validated before reaching the service layer.
   body: z.object({
     name: z.string().trim().min(1, 'Full name is required.'),
     username: usernameSchema,
@@ -17,6 +19,7 @@ const createUserSchema = z.object({
 })
 
 const updateUserStatusSchema = z.object({
+  // Status updates only allow activate/deactivate, never delete.
   params: z.object({
     id: z.string().uuid('Invalid user id.'),
   }),
@@ -25,7 +28,14 @@ const updateUserStatusSchema = z.object({
   }),
 })
 
+const archiveUserSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid user id.'),
+  }),
+})
+
 module.exports = {
+  archiveUserSchema,
   createUserSchema,
   updateUserStatusSchema,
 }

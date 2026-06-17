@@ -1,10 +1,12 @@
 const jwt = require('jsonwebtoken')
 const env = require('../config/env')
+const authService = require('../modules/auth/auth.service')
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const authorization = req.get('authorization') || ''
   const [scheme, token] = authorization.split(' ')
 
+  // Protected routes require Authorization: Bearer <jwt-token>.
   if (scheme !== 'Bearer' || !token) {
     return res.status(401).json({
       error: {
@@ -19,9 +21,21 @@ function authenticate(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, env.JWT_SECRET)
+    // JWT identifies the user; current role/status is refreshed from the database.
+    const tokenPayload = jwt.verify(token, env.JWT_SECRET)
+    const currentUser = await authService.getAuthenticatedUser(tokenPayload)
+    req.tokenPayload = tokenPayload
+    req.authenticatedUser = currentUser
+    req.user = {
+      ...currentUser,
+      sub: currentUser.id,
+    }
     return next()
-  } catch {
+  } catch (error) {
+    if (error.status) {
+      return next(error)
+    }
+
     return res.status(401).json({
       error: {
         code: 'UNAUTHENTICATED',

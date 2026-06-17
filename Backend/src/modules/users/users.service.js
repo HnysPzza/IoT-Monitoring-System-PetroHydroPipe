@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs')
-const { getSupabaseClient } = require('../../config/supabase')
+const { getSupabaseClient } = require('../../database/client')
+const { recordAuditLog } = require('../audit/audit.service')
 
 const PASSWORD_SALT_ROUNDS = 10
 
@@ -19,6 +20,7 @@ function getRoleName(userRecord) {
 }
 
 function toUserResponse(userRecord) {
+  // Public user shape for the frontend table; password_hash is intentionally excluded.
   return {
     id: userRecord.id,
     name: userRecord.name,
@@ -29,6 +31,7 @@ function toUserResponse(userRecord) {
     mustChangePassword: Boolean(userRecord.must_change_password),
     createdAt: userRecord.created_at,
     lastLoginAt: userRecord.last_login_at,
+    deletedAt: userRecord.deleted_at,
   }
 }
 
@@ -42,6 +45,7 @@ function getUserSelect() {
     must_change_password,
     created_at,
     last_login_at,
+    deleted_at,
     roles (
       name
     )
@@ -49,11 +53,13 @@ function getUserSelect() {
 }
 
 async function listUsers() {
+  // Admin directory reads users joined with their role names.
   const supabase = getSupabaseClient()
 
   const { data, error } = await supabase
     .from('users')
     .select(getUserSelect())
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -64,6 +70,7 @@ async function listUsers() {
 }
 
 async function listRoles() {
+  // Frontend role dropdown is loaded from the database, not hardcoded.
   const supabase = getSupabaseClient()
 
   const { data, error } = await supabase
@@ -95,6 +102,7 @@ async function findRoleByName(roleName) {
 }
 
 async function assertUniqueUsernameAndEmail(username, email) {
+  // Duplicate checks run before insert so the UI can show clear conflict messages.
   const supabase = getSupabaseClient()
   const normalizedUsername = username.trim().toLowerCase()
   const normalizedEmail = email.trim().toLowerCase()
@@ -127,6 +135,7 @@ async function fetchUserById(userId) {
     .from('users')
     .select(getUserSelect())
     .eq('id', userId)
+    .is('deleted_at', null)
     .maybeSingle()
 
   if (error) {
@@ -141,6 +150,7 @@ async function fetchUserById(userId) {
 }
 
 async function createUser(values) {
+  // New accounts start active and must change the temporary password later.
   const normalizedUsername = values.username.trim().toLowerCase()
   const normalizedEmail = values.email.trim().toLowerCase()
   const role = await findRoleByName(values.role.trim())
@@ -172,7 +182,20 @@ async function createUser(values) {
     throw createUserError(500, 'USER_CREATE_FAILED', 'Unable to create user account.')
   }
 
-  return toUserResponse(data)
+  const user = toUserResponse(data)
+  await recordAuditLog({
+    userId: values.actorUserId,
+    action: 'USER_CREATED',
+    entityType: 'user',
+    entityId: user.id,
+    metadata: {
+      targetUsername: user.username,
+      targetRole: user.role,
+      targetStatus: user.status,
+    },
+  })
+
+  return user
 }
 
 async function updateUserStatus({ userId, status, actorUserId }) {
@@ -194,10 +217,65 @@ async function updateUserStatus({ userId, status, actorUserId }) {
     throw createUserError(500, 'USER_STATUS_UPDATE_FAILED', 'Unable to update user status.')
   }
 
-  return toUserResponse(data)
+  const user = toUserResponse(data)
+  await recordAuditLog({
+    userId: actorUserId,
+    action: 'USER_STATUS_UPDATED',
+    entityType: 'user',
+    entityId: user.id,
+    metadata: {
+      targetUsername: user.username,
+      targetRole: user.role,
+      newStatus: user.status,
+    },
+  })
+
+  return user
+}
+
+async function archiveUser({ userId, actorUserId }) {
+  if (userId === actorUserId) {
+    throw createUserError(400, 'SELF_ARCHIVE_BLOCKED', 'You cannot archive your own account.')
+  }
+
+  const existingUser = toUserResponse(await fetchUserById(userId))
+  const supabase = getSupabaseClient()
+  const { data, error } = await supabase
+    .from('users')
+    .update({
+      status: 'Inactive',
+      deleted_at: new Date().toISOString(),
+      deleted_by: actorUserId,
+    })
+    .eq('id', userId)
+    .is('deleted_at', null)
+    .select(getUserSelect())
+    .single()
+
+  if (error) {
+    throw createUserError(500, 'USER_ARCHIVE_FAILED', 'Unable to archive user account.')
+  }
+
+  const archivedUser = toUserResponse(data)
+  await recordAuditLog({
+    userId: actorUserId,
+    action: 'USER_ARCHIVED',
+    entityType: 'user',
+    entityId: archivedUser.id,
+    metadata: {
+      targetUsername: existingUser.username,
+      targetRole: existingUser.role,
+      previousStatus: existingUser.status,
+      newStatus: archivedUser.status,
+      archivedAt: archivedUser.deletedAt,
+    },
+  })
+
+  return archivedUser
 }
 
 module.exports = {
+  archiveUser,
   createUser,
   listRoles,
   listUsers,

@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useEffect, useState } from 'react'
 
 const THEME_STORAGE_KEY = 'iot_monitoring_theme'
-const ThemeContext = createContext(null)
+export const ThemeContext = createContext(null)
 
+// Starts from saved theme first, then falls back to the user's system preference.
 function getInitialTheme() {
   if (typeof window === 'undefined') {
     return 'dark'
@@ -20,20 +21,11 @@ function getInitialTheme() {
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(getInitialTheme)
 
+  // The CSS uses data-theme on <html> to switch dashboard colors.
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
 
   return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme() {
-  const context = useContext(ThemeContext)
-
-  if (!context) {
-    throw new Error('useTheme must be used inside ThemeProvider.')
-  }
-
-  return context
 }

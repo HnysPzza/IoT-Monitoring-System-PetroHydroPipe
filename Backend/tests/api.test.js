@@ -1,0 +1,547 @@
+const assert = require('node:assert/strict')
+const test = require('node:test')
+const jwt = require('jsonwebtoken')
+const {
+  assertError,
+  loadAppWithMocks,
+  requestJson,
+  withTestServer,
+} = require('./helpers/appTestUtils')
+
+const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
+const userId = '11111111-1111-4111-8111-111111111111'
+const machineId = '22222222-2222-4222-8222-222222222222'
+const sensorId = '33333333-3333-4333-8333-333333333333'
+
+function createToken(role = 'Admin') {
+  return jwt.sign(
+    {
+      username: role.toLowerCase().replaceAll(' ', ''),
+      role,
+    },
+    JWT_SECRET,
+    { subject: userId, expiresIn: '1h' },
+  )
+}
+
+function authHeader(role = 'Admin') {
+  return {
+    Authorization: `Bearer ${createToken(role)}`,
+  }
+}
+
+function createHttpError(status, code, message) {
+  const error = new Error(message)
+  error.status = status
+  error.code = code
+  return error
+}
+
+test('GET /api/health returns backend health', async () => {
+  const app = loadAppWithMocks()
+
+  await withTestServer(app, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/health')
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(body, {
+      status: 'ok',
+      service: 'iot-monitoring-backend',
+    })
+  })
+})
+
+test('POST /api/auth/login succeeds with valid credentials', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': {
+      login: async ({ username, password }) => {
+        assert.equal(username, 'admin')
+        assert.equal(password, 'password123')
+        return {
+          token: 'test-token',
+          user: {
+            id: userId,
+            name: 'admin',
+            username: 'admin',
+            email: 'admin@petrohydropipe.local',
+            role: 'Admin',
+            mustChangePassword: true,
+          },
+        }
+      },
+      getAuthenticatedUser: async () => ({}),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { username: 'admin', password: 'password123' },
+    })
+
+    assert.equal(response.status, 200)
+    assert.equal(body.token, 'test-token')
+    assert.equal(body.user.role, 'Admin')
+  })
+})
+
+test('POST /api/auth/login rejects invalid credentials and missing fields', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': {
+      login: async () => {
+        throw createHttpError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.')
+      },
+      getAuthenticatedUser: async () => ({}),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const invalidLogin = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { username: 'admin', password: 'wrongpass' },
+    })
+
+    assert.equal(invalidLogin.response.status, 401)
+    assertError(invalidLogin.body, 'INVALID_CREDENTIALS')
+
+    const missingFields = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: {},
+    })
+
+    assert.equal(missingFields.response.status, 400)
+    assertError(missingFields.body, 'VALIDATION_ERROR')
+  })
+})
+
+test('POST /api/auth/login returns 429 after repeated attempts', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': {
+      login: async () => {
+        throw createHttpError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.')
+      },
+      getAuthenticatedUser: async () => ({}),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    let latestResult = null
+
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      latestResult = await requestJson(baseUrl, '/api/auth/login', {
+        method: 'POST',
+        body: { username: 'admin', password: 'wrongpass' },
+      })
+    }
+
+    assert.equal(latestResult.response.status, 429)
+    assertError(latestResult.body, 'RATE_LIMITED')
+  })
+})
+
+test('protected users routes return 401 without token and 403 for non-admin role', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/users/users.service.js': {
+      listUsers: async () => [],
+      listRoles: async () => [],
+      createUser: async () => ({}),
+      updateUserStatus: async () => ({}),
+      archiveUser: async () => ({}),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const noToken = await requestJson(baseUrl, '/api/users')
+
+    assert.equal(noToken.response.status, 401)
+    assertError(noToken.body, 'UNAUTHENTICATED')
+
+    const blockedRole = await requestJson(baseUrl, '/api/users', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(blockedRole.response.status, 403)
+    assertError(blockedRole.body, 'FORBIDDEN')
+  })
+})
+
+test('protected routes use current database user state instead of trusting stale JWT claims', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': {
+      login: async () => ({}),
+      getAuthenticatedUser: async (tokenPayload) => ({
+        id: tokenPayload.sub,
+        name: tokenPayload.username,
+        username: tokenPayload.username,
+        role: 'Production Supervisor',
+        mustChangePassword: false,
+      }),
+    },
+    'src/modules/users/users.service.js': {
+      listUsers: async () => [],
+      listRoles: async () => [],
+      createUser: async () => ({}),
+      updateUserStatus: async () => ({}),
+      archiveUser: async () => ({}),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/users', {
+      headers: authHeader('Admin'),
+    })
+
+    assert.equal(result.response.status, 403)
+    assertError(result.body, 'FORBIDDEN')
+  })
+})
+
+test('protected routes block inactive and archived current users', async () => {
+  const usersServiceMock = {
+    listUsers: async () => [],
+    listRoles: async () => [],
+    createUser: async () => ({}),
+    updateUserStatus: async () => ({}),
+    archiveUser: async () => ({}),
+  }
+
+  for (const blockedError of [
+    createHttpError(403, 'ACCOUNT_INACTIVE', 'User account is inactive.'),
+    createHttpError(403, 'ACCOUNT_ARCHIVED', 'User account is archived.'),
+  ]) {
+    const app = loadAppWithMocks({
+      'src/modules/auth/auth.service.js': {
+        login: async () => ({}),
+        getAuthenticatedUser: async () => {
+          throw blockedError
+        },
+      },
+      'src/modules/users/users.service.js': usersServiceMock,
+    })
+
+    await withTestServer(app, async (baseUrl) => {
+      const result = await requestJson(baseUrl, '/api/users', {
+        headers: authHeader('Admin'),
+      })
+
+      assert.equal(result.response.status, 403)
+      assertError(result.body, blockedError.code)
+    })
+  }
+})
+
+test('app middleware applies JSON body limit and CORS allowlist behavior', async () => {
+  const app = loadAppWithMocks()
+
+  await withTestServer(app, async (baseUrl) => {
+    const oversized = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { payload: 'x'.repeat(120000) },
+    })
+
+    assert.equal(oversized.response.status, 413)
+
+    const allowedOrigin = await requestJson(baseUrl, '/api/health', {
+      headers: { Origin: 'http://localhost:5173' },
+    })
+
+    assert.equal(allowedOrigin.response.headers.get('access-control-allow-origin'), 'http://localhost:5173')
+
+    const blockedOrigin = await requestJson(baseUrl, '/api/health', {
+      headers: { Origin: 'https://not-allowed.example.com' },
+    })
+
+    assert.equal(blockedOrigin.response.headers.get('access-control-allow-origin'), null)
+  })
+})
+
+test('admin can list, create, and archive users through mocked service', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/users/users.service.js': {
+      listUsers: async () => [{ id: userId, username: 'admin', role: 'Admin', status: 'Active' }],
+      listRoles: async () => [{ id: 'role-admin', name: 'Admin' }],
+      createUser: async (values) => ({
+        id: '44444444-4444-4444-8444-444444444444',
+        username: values.username,
+        email: values.email,
+        role: values.role,
+        status: 'Active',
+      }),
+      updateUserStatus: async ({ userId: targetUserId, status }) => ({ id: targetUserId, status }),
+      archiveUser: async ({ userId: targetUserId }) => ({ id: targetUserId, username: 'operator01', status: 'Inactive' }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const users = await requestJson(baseUrl, '/api/users', {
+      headers: authHeader(),
+    })
+
+    assert.equal(users.response.status, 200)
+    assert.equal(users.body.users.length, 1)
+
+    const created = await requestJson(baseUrl, '/api/users', {
+      method: 'POST',
+      headers: authHeader(),
+      body: {
+        name: 'Operator One',
+        username: 'operator01',
+        email: 'operator01@petrohydropipe.local',
+        role: 'Production Supervisor',
+        password: 'temporary123',
+      },
+    })
+
+    assert.equal(created.response.status, 201)
+    assert.equal(created.body.user.username, 'operator01')
+
+    const archived = await requestJson(baseUrl, `/api/users/${userId}/archive`, {
+      method: 'PATCH',
+      headers: authHeader(),
+    })
+
+    assert.equal(archived.response.status, 200)
+    assert.equal(archived.body.user.status, 'Inactive')
+  })
+})
+
+test('machine routes allow admin status update and block production supervisor', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/machines/machines.service.js': {
+      listMachines: async () => [{ id: machineId, machineCode: 'M-01', name: 'Spiral Mill 01', status: 'Idle' }],
+      listSensorsByMachine: async () => [{ id: sensorId, sensorCode: 'S-01', status: 'Active' }],
+      updateMachineStatus: async ({ machineId: targetMachineId, status }) => ({ id: targetMachineId, status }),
+      updateSensorStatus: async ({ sensorId: targetSensorId, status }) => ({ id: targetSensorId, status }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const blocked = await requestJson(baseUrl, '/api/machines', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(blocked.response.status, 403)
+    assertError(blocked.body, 'FORBIDDEN')
+
+    const updated = await requestJson(baseUrl, `/api/machines/${machineId}/status`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: { status: 'Running' },
+    })
+
+    assert.equal(updated.response.status, 200)
+    assert.equal(updated.body.machine.status, 'Running')
+  })
+})
+
+test('dashboard overview route returns backend summary for allowed roles', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/dashboard/dashboard.service.js': {
+      getOverview: async ({ trendMode }) => ({
+        alerts: [],
+        summary: [{ id: 'pipes', label: 'Total Pipes Today', value: '5 pcs', helper: 'From S-05 output cutting events' }],
+        productionAnalytics: {
+          day: { currentTotal: 5, previousTotal: 4, targetTotal: 1400, unit: 'pcs', points: [] },
+          week: { currentTotal: 5, previousTotal: 4, targetTotal: 7600, unit: 'pcs', points: [] },
+          month: { currentTotal: 5, previousTotal: 4, targetTotal: 30000, unit: 'pcs', points: [] },
+        },
+        downtimeImpact: { thresholdMinutes: 30, points: [{ label: trendMode || 'week', minutes: 0 }] },
+        availability: [{ machineId: 'Spiral Mill 01', percent: 100 }],
+        unreadAlerts: 0,
+      }),
+      getDowntimeImpact: async ({ trendMode }) => ({
+        thresholdMinutes: 30,
+        points: [{ label: trendMode || 'week', minutes: 12, estimatedLoss: 28, cause: 'Corrective Maintenance' }],
+      }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(result.response.status, 200)
+    assert.equal(result.body.summary[0].id, 'pipes')
+
+    const chart = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(chart.response.status, 200)
+    assert.equal(chart.body.downtimeImpact.points[0].label, 'today')
+
+    const noToken = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today')
+
+    assert.equal(noToken.response.status, 401)
+    assertError(noToken.body, 'UNAUTHENTICATED')
+
+    const invalid = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=year', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(invalid.response.status, 400)
+    assertError(invalid.body, 'VALIDATION_ERROR')
+  })
+})
+
+test('downtime routes list and update records', async () => {
+  const downtimeId = '55555555-5555-4555-8555-555555555555'
+  const app = loadAppWithMocks({
+    'src/modules/downtime/downtime.service.js': {
+      listDowntime: async () => ({
+        records: [{ id: downtimeId, status: 'Open', cause: 'Pending Cause Review' }],
+        summary: { open: 1, resolved: 0, minutes: 10, loss: 23 },
+      }),
+      updateDowntime: async ({ downtimeId: targetId, values }) => ({
+        record: { id: targetId, status: values.status || 'Open', cause: values.cause || 'Pending Cause Review' },
+      }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const list = await requestJson(baseUrl, '/api/downtime?status=Open', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(list.response.status, 200)
+    assert.equal(list.body.records.length, 1)
+
+    const updated = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Production Supervisor'),
+      body: { status: 'Resolved' },
+    })
+
+    assert.equal(updated.response.status, 200)
+    assert.equal(updated.body.record.status, 'Resolved')
+  })
+})
+
+test('reports summary is restricted to management roles', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/reports/reports.service.js': {
+      getSummary: async ({ type }) => ({
+        reportType: type,
+        summary: [{ id: 'production', label: 'Production Count', value: '5 pcs' }],
+        rows: [],
+      }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const blocked = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(blocked.response.status, 403)
+    assertError(blocked.body, 'FORBIDDEN')
+
+    const allowed = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+      headers: authHeader('Operation Manager'),
+    })
+
+    assert.equal(allowed.response.status, 200)
+    assert.equal(allowed.body.report.reportType, 'daily')
+  })
+})
+
+test('POST /api/iot/events rejects invalid ESP32 device authentication', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      createSensorEvent: async () => {
+        throw createHttpError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
+      },
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      body: {
+        eventType: 'pulse',
+        signal: 'active',
+        recordedAt: '2026-06-11T00:00:00.000Z',
+        metadata: { sequence: 1 },
+      },
+    })
+
+    assert.equal(result.response.status, 401)
+    assertError(result.body, 'DEVICE_UNAUTHORIZED')
+  })
+})
+
+test('POST /api/iot/events returns 429 after repeated device events', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      createSensorEvent: async () => ({
+        id: 'event-1',
+        sensorCode: 'S-01',
+        eventType: 'pulse',
+        signal: 'active',
+        recordedAt: '2026-06-11T00:00:00.000Z',
+      }),
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    let latestResult = null
+
+    for (let attempt = 0; attempt < 121; attempt += 1) {
+      latestResult = await requestJson(baseUrl, '/api/iot/events', {
+        method: 'POST',
+        headers: {
+          'x-device-id': 'esp32-m01-s01',
+          'x-device-key': 'test-device-key',
+        },
+        body: {
+          eventType: 'pulse',
+          signal: 'active',
+          recordedAt: '2026-06-11T00:00:00.000Z',
+          metadata: { sequence: attempt + 1 },
+        },
+      })
+    }
+
+    assert.equal(latestResult.response.status, 429)
+    assertError(latestResult.body, 'RATE_LIMITED')
+  })
+})
+
+test('audit list is admin-only and returns paginated response', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/audit/audit.service.js': {
+      listAuditLogs: async ({ page, limit }) => ({
+        logs: [{ id: 'audit-1', action: 'LOGIN_SUCCESS', entityType: 'auth', createdAt: '2026-06-11T00:00:00.000Z' }],
+        pagination: {
+          page,
+          limit,
+          total: 1,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      }),
+      recordAuditLog: async () => {},
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const blocked = await requestJson(baseUrl, '/api/audit', {
+      headers: authHeader('Engineering Supervisor'),
+    })
+
+    assert.equal(blocked.response.status, 403)
+    assertError(blocked.body, 'FORBIDDEN')
+
+    const allowed = await requestJson(baseUrl, '/api/audit?page=1&limit=25', {
+      headers: authHeader(),
+    })
+
+    assert.equal(allowed.response.status, 200)
+    assert.equal(allowed.body.logs.length, 1)
+    assert.equal(allowed.body.pagination.limit, 25)
+  })
+})

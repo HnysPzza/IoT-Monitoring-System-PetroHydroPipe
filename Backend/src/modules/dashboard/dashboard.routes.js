@@ -1,14 +1,17 @@
 const express = require('express')
+const asyncHandler = require('../../utils/asyncHandler')
+const authenticate = require('../../middleware/authenticate')
+const authorizeRole = require('../../middleware/authorizeRole')
+const validateRequest = require('../../middleware/validateRequest')
+const dashboardController = require('./dashboard.controller')
+const { downtimeImpactQuerySchema, overviewQuerySchema } = require('./dashboard.model')
 
 const router = express.Router()
 
-router.use((req, res) => {
-  res.status(501).json({
-    error: {
-      code: 'NOT_IMPLEMENTED',
-      message: 'Dashboard routes are reserved for a future phase.',
-    },
-  })
-})
+router.use(authenticate)
+router.use(authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']))
+
+router.get('/downtime-impact', validateRequest(downtimeImpactQuerySchema), asyncHandler(dashboardController.getDowntimeImpact))
+router.get('/overview', validateRequest(overviewQuerySchema), asyncHandler(dashboardController.getOverview))
 
 module.exports = router

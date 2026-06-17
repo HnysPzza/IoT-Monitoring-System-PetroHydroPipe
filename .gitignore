@@ -15,6 +15,9 @@ dist/
 Frontend/dist/
 Backend/dist/
 
+# Local generated documentation
+docs/
+
 # Logs
 *.log
 npm-debug.log*

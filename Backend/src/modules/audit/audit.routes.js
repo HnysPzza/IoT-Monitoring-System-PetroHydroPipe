@@ -1,14 +1,16 @@
 const express = require('express')
+const asyncHandler = require('../../utils/asyncHandler')
+const authenticate = require('../../middleware/authenticate')
+const authorizeRole = require('../../middleware/authorizeRole')
+const validateRequest = require('../../middleware/validateRequest')
+const auditController = require('./audit.controller')
+const { listAuditLogsSchema } = require('./audit.model')
 
 const router = express.Router()
 
-router.use((req, res) => {
-  res.status(501).json({
-    error: {
-      code: 'NOT_IMPLEMENTED',
-      message: 'Audit routes are reserved for a future phase.',
-    },
-  })
-})
+router.use(authenticate)
+router.use(authorizeRole('Admin'))
+
+router.get('/', validateRequest(listAuditLogsSchema), asyncHandler(auditController.listAuditLogs))
 
 module.exports = router
