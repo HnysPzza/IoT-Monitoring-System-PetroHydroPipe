@@ -11,6 +11,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `migrations/002_update_sensor_identity_labels.sql` aligns existing sensor labels with the Phase 9 identity map.
 - `migrations/003_add_user_archiving.sql` adds archive fields so user accounts are hidden without deleting history.
 - `migrations/004_supabase_security_cleanup.sql` fixes Supabase advisor warnings for function permissions/search path and adds a downtime sensor index.
+- `migrations/005_create_alerts.sql` adds persistent alert acknowledgement records for realtime dashboard notifications.
 
 ## Tables
 
@@ -22,6 +23,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `downtime_events`: machine downtime records with start/end timestamps and duration.
 - `production_counts`: summarized production counts for dashboard/reporting windows.
 - `audit_logs`: user/system activity history for accountability.
+- `alerts`: active, acknowledged, and resolved operational alerts.
 
 ## How To Run In Supabase
 
@@ -75,16 +77,22 @@ Use the backend simulator while the physical ESP32 devices are not built yet.
    npm run dev
    ```
 
-5. Send one deterministic batch of 5 ESP32 events:
+5. Send one randomized batch of 5 ESP32 events:
 
    ```bash
    npm run iot:simulate:once
    ```
 
-6. Or keep sending events on an interval:
+6. Or keep sending randomized events on an interval:
 
    ```bash
    npm run iot:simulate
+   ```
+
+7. For repeatable debugging, run deterministic mode:
+
+   ```bash
+   npm run iot:simulate:once -- --deterministic
    ```
 
 The simulator uses the real ingestion endpoint:
@@ -93,7 +101,7 @@ The simulator uses the real ingestion endpoint:
 POST /api/iot/events
 ```
 
-It keeps event history in `sensor_events`, updates `sensors.status`, and updates `machines.status`. Refresh `/dashboard/live` to see the latest backend data.
+It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one sensor per batch to send a downtime/fault event. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
 
 Local simulator environment values:
 

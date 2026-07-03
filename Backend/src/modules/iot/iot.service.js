@@ -2,12 +2,19 @@ const bcrypt = require('bcryptjs')
 const { getSupabaseClient } = require('../../database/client')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
 const { recordAuditLog } = require('../audit/audit.service')
+const alertsService = require('../alerts/alerts.service')
+
+const AUDITABLE_SENSOR_EVENT_TYPES = new Set(['downtime', 'fault', 'recovered'])
 
 function createIotError(status, code, message) {
   const error = new Error(message)
   error.status = status
   error.code = code
   return error
+}
+
+function shouldRecordSensorEventAudit(eventType) {
+  return AUDITABLE_SENSOR_EVENT_TYPES.has(eventType)
 }
 
 function getMachineRecord(sensorRecord) {
@@ -174,6 +181,43 @@ async function updateMachineStatus(machineId) {
   return status
 }
 
+async function syncAlertState({ sensor, machine, eventRecord, payload, recordedAt }) {
+  try {
+    if (payload.eventType === 'downtime' || payload.eventType === 'fault') {
+      await alertsService.createOrUpdateSensorAlert({
+        sensor,
+        machine,
+        eventRecord,
+        eventType: payload.eventType,
+        signal: payload.signal,
+        recordedAt,
+      })
+      return
+    }
+
+    if (payload.eventType === 'pulse' || payload.eventType === 'recovered') {
+      await alertsService.resolveAlertForSource({
+        sourceType: 'sensor',
+        sourceId: sensor.id,
+        metadata: {
+          sensorCode: sensor.sensor_code,
+          machineCode: machine.machine_code,
+          eventId: eventRecord.id,
+          eventType: payload.eventType,
+          signal: payload.signal,
+          recordedAt,
+        },
+      })
+    }
+  } catch (error) {
+    console.warn('Unable to sync alert state for sensor event.', {
+      sensorCode: sensor.sensor_code,
+      eventType: payload.eventType,
+      error: error.message,
+    })
+  }
+}
+
 async function createSensorEvent({ deviceId, deviceKey, payload }) {
   const sensor = await authenticateDevice({ deviceId, deviceKey })
   const machine = getMachineRecord(sensor)
@@ -215,19 +259,23 @@ async function createSensorEvent({ deviceId, deviceKey, payload }) {
   }
 
   await updateMachineStatus(machine.id)
-  await recordAuditLog({
-    action: 'IOT_EVENT_RECEIVED',
-    entityType: 'sensor_event',
-    entityId: eventRecord.id,
-    metadata: {
-      deviceId,
-      sensorCode: sensor.sensor_code,
-      machineCode: machine.machine_code,
-      eventType: payload.eventType,
-      signal: payload.signal,
-      recordedAt,
-    },
-  })
+  await syncAlertState({ sensor, machine, eventRecord, payload, recordedAt })
+
+  if (shouldRecordSensorEventAudit(payload.eventType)) {
+    await recordAuditLog({
+      action: 'IOT_EVENT_RECEIVED',
+      entityType: 'sensor_event',
+      entityId: eventRecord.id,
+      metadata: {
+        deviceId,
+        sensorCode: sensor.sensor_code,
+        machineCode: machine.machine_code,
+        eventType: payload.eventType,
+        signal: payload.signal,
+        recordedAt,
+      },
+    })
+  }
 
   return toEventResponse(eventRecord, sensor)
 }
@@ -306,4 +354,5 @@ module.exports = {
   authenticateDevice,
   createSensorEvent,
   getLiveFeed,
+  shouldRecordSensorEventAudit,
 }

@@ -446,6 +446,86 @@ test('reports summary is restricted to management roles', async () => {
   })
 })
 
+test('alert routes list, acknowledge, and protect realtime stream', async () => {
+  const alertId = '77777777-7777-4777-8777-777777777777'
+  const app = loadAppWithMocks({
+    'src/modules/alerts/alerts.service.js': {
+      listAlerts: async () => ([
+        {
+          id: alertId,
+          severity: 'Critical',
+          status: 'Active',
+          title: 'Inside Filler downtime detected',
+          message: 'S-04 Inside Filler has no pulse.',
+        },
+      ]),
+      acknowledgeAlert: async ({ alertId: targetAlertId, actorUser }) => ({
+        id: targetAlertId,
+        severity: 'Critical',
+        status: 'Acknowledged',
+        title: 'Inside Filler downtime detected',
+        message: 'S-04 Inside Filler has no pulse.',
+        acknowledgedAt: '2026-06-11T00:00:00.000Z',
+        acknowledgedBy: {
+          id: actorUser.id,
+          name: actorUser.name,
+          role: actorUser.role,
+        },
+      }),
+      subscribeToAlertEvents: (listener) => {
+        setImmediate(() => {
+          listener({
+            type: 'alert.created',
+            alert: {
+              id: alertId,
+              severity: 'Critical',
+              status: 'Active',
+              title: 'Inside Filler downtime detected',
+              message: 'S-04 Inside Filler has no pulse.',
+            },
+          })
+        })
+
+        return () => {}
+      },
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const noToken = await requestJson(baseUrl, '/api/alerts')
+
+    assert.equal(noToken.response.status, 401)
+    assertError(noToken.body, 'UNAUTHENTICATED')
+
+    const listed = await requestJson(baseUrl, '/api/alerts', {
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(listed.response.status, 200)
+    assert.equal(listed.body.alerts[0].message, 'S-04 Inside Filler has no pulse.')
+
+    const acknowledged = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
+      method: 'PATCH',
+      headers: authHeader('Production Supervisor'),
+    })
+
+    assert.equal(acknowledged.response.status, 200)
+    assert.equal(acknowledged.body.alert.status, 'Acknowledged')
+
+    const controller = new AbortController()
+    const stream = await fetch(`${baseUrl}/api/alerts/stream`, {
+      headers: authHeader('Production Supervisor'),
+      signal: controller.signal,
+    })
+    const reader = stream.body.getReader()
+    const { value } = await reader.read()
+    controller.abort()
+
+    assert.equal(stream.status, 200)
+    assert.match(Buffer.from(value).toString('utf8'), /event: heartbeat|event: alert\.created/)
+  })
+})
+
 test('POST /api/iot/events rejects invalid ESP32 device authentication', async () => {
   const app = loadAppWithMocks({
     'src/modules/iot/iot.service.js': {

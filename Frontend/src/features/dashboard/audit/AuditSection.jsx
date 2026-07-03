@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, History, RotateCw, Search } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getAuditLogs } from './auditService.js'
@@ -9,9 +9,11 @@ import {
   getReadableAction,
   getReadableActor,
   getReadableDetails,
+  getReadableDetailItems,
   getReadableEntity,
   getReadableSource,
   getReadableTarget,
+  getTechnicalDetailItems,
 } from './auditFormatters.js'
 
 const AUDIT_PAGE_SIZE = 25
@@ -35,6 +37,7 @@ export default function AuditSection() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedLogId, setExpandedLogId] = useState(null)
+  const [technicalLogId, setTechnicalLogId] = useState(null)
 
   async function loadAuditLogs({ silent = false } = {}) {
     if (silent) {
@@ -64,6 +67,7 @@ export default function AuditSection() {
         hasPreviousPage: page > 1,
       })
       setExpandedLogId(null)
+      setTechnicalLogId(null)
     } catch (error) {
       setNotice({ type: 'error', message: error.message || 'Unable to load audit logs.' })
       setLogs([])
@@ -90,6 +94,11 @@ export default function AuditSection() {
   function updateDateFilter(value) {
     setDateFilter(value)
     setPage(1)
+  }
+
+  function toggleExpandedLog(logId) {
+    setTechnicalLogId(null)
+    setExpandedLogId((currentId) => (currentId === logId ? null : logId))
   }
 
   return (
@@ -177,81 +186,96 @@ export default function AuditSection() {
           <div className="skeleton skeleton-panel" />
         ) : (
           <div className="account-table-wrap">
-          <table className="account-table audit-table">
-            <thead>
-              <tr>
-                <th scope="col">Date/Time</th>
-                <th scope="col">Action</th>
-                <th scope="col">Who did it</th>
-                <th scope="col">Affected item</th>
-                <th scope="col">Result / Details</th>
-                <th scope="col">Source</th>
-                <th scope="col">Technical</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.length === 0 ? (
+            <table className="account-table audit-table">
+              <thead>
                 <tr>
-                  <td colSpan="7">No audit records match the selected filters.</td>
+                  <th scope="col">Date/Time</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">Who did it</th>
+                  <th scope="col">Affected item</th>
+                  <th scope="col">Result / Details</th>
+                  <th scope="col">Source</th>
+                  <th scope="col">Details</th>
                 </tr>
-              ) : (
-                logs.map((log) => (
-                  <tr key={log.id}>
-                    <td>{formatDateTime(log.createdAt)}</td>
-                    <td>
-                      <span className="audit-action-label">{getReadableAction(log)}</span>
-                      <span className="audit-entity-label">{getReadableEntity(log)}</span>
-                    </td>
-                    <td>{getReadableActor(log)}</td>
-                    <td>{getReadableTarget(log)}</td>
-                    <td>{getReadableDetails(log)}</td>
-                    <td>{getReadableSource(log)}</td>
-                    <td>
-                      <button
-                        className="btn btn-secondary table-action-button audit-details-button"
-                        type="button"
-                        aria-expanded={expandedLogId === log.id}
-                        onClick={() => setExpandedLogId((currentId) => (currentId === log.id ? null : log.id))}
-                      >
-                        Details
-                      </button>
-                    </td>
+              </thead>
+              <tbody>
+                {logs.length === 0 ? (
+                  <tr>
+                    <td colSpan="7">No audit records match the selected filters.</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          {expandedLogId ? (
-            <div className="audit-technical-panel" aria-live="polite">
-              {logs.filter((log) => log.id === expandedLogId).map((log) => (
-                <div key={log.id}>
-                  <p>Technical details</p>
-                  <dl>
-                    <div>
-                      <dt>Log ID</dt>
-                      <dd>{log.id}</dd>
-                    </div>
-                    <div>
-                      <dt>Raw action</dt>
-                      <dd>{log.action}</dd>
-                    </div>
-                    <div>
-                      <dt>Entity type</dt>
-                      <dd>{log.entityType}</dd>
-                    </div>
-                    <div>
-                      <dt>Entity ID</dt>
-                      <dd>{log.entityId || 'None'}</dd>
-                    </div>
-                    <div>
-                      <dt>Metadata</dt>
-                      <dd>{JSON.stringify(log.metadata || {}, null, 2)}</dd>
-                    </div>
-                  </dl>
-                </div>
-              ))}
-            </div>
-          ) : null}
+                ) : (
+                  logs.map((log) => (
+                    <Fragment key={log.id}>
+                      <tr className={expandedLogId === log.id ? 'is-expanded' : ''}>
+                        <td>{formatDateTime(log.createdAt)}</td>
+                        <td>
+                          <span className="audit-action-label">{getReadableAction(log)}</span>
+                          <span className="audit-entity-label">{getReadableEntity(log)}</span>
+                        </td>
+                        <td>{getReadableActor(log)}</td>
+                        <td>{getReadableTarget(log)}</td>
+                        <td>{getReadableDetails(log)}</td>
+                        <td>{getReadableSource(log)}</td>
+                        <td>
+                          <button
+                            className="btn btn-secondary table-action-button audit-details-button"
+                            type="button"
+                            aria-expanded={expandedLogId === log.id}
+                            aria-controls={`audit-details-${log.id}`}
+                            onClick={() => toggleExpandedLog(log.id)}
+                          >
+                            {expandedLogId === log.id ? 'Hide details' : 'View details'}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedLogId === log.id ? (
+                        <tr className="audit-details-row">
+                          <td colSpan="7">
+                            <div id={`audit-details-${log.id}`} className="audit-details-panel" aria-live="polite">
+                              <div>
+                                <p className="audit-details-heading">Readable details</p>
+                                <dl className="audit-details-grid">
+                                  {getReadableDetailItems(log).map((item) => (
+                                    <div key={item.label}>
+                                      <dt>{item.label}</dt>
+                                      <dd>{item.value}</dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                              </div>
+                              <div className="audit-technical-toggle-row">
+                                <button
+                                  className="btn btn-secondary table-action-button audit-details-button"
+                                  type="button"
+                                  aria-expanded={technicalLogId === log.id}
+                                  aria-controls={`audit-technical-${log.id}`}
+                                  onClick={() => setTechnicalLogId((currentId) => (currentId === log.id ? null : log.id))}
+                                >
+                                  {technicalLogId === log.id ? 'Hide technical details' : 'Show technical details'}
+                                </button>
+                              </div>
+                              {technicalLogId === log.id ? (
+                                <div id={`audit-technical-${log.id}`} className="audit-technical-panel">
+                                  <p>Technical details</p>
+                                  <dl>
+                                    {getTechnicalDetailItems(log).map((item) => (
+                                      <div key={item.label}>
+                                        <dt>{item.label}</dt>
+                                        <dd>{item.value}</dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
           <div className="audit-pagination" aria-label="Audit pagination">
             <button
               className="btn btn-secondary table-action-button"

@@ -14,6 +14,9 @@ const actionLabels = {
   IOT_EVENT_RECEIVED: 'Sensor event received',
   IOT_DEVICE_AUTH_FAILED: 'ESP32 device rejected',
   IOT_MACHINE_STATUS_UPDATED: 'Machine status updated by sensor data',
+  ALERT_CREATED: 'Alert created',
+  ALERT_ACKNOWLEDGED: 'Alert acknowledged',
+  ALERT_RESOLVED: 'Alert resolved',
 }
 
 export const auditActionOptions = [
@@ -42,6 +45,35 @@ const loginFailureReasons = {
   archived_account: 'the account has been archived',
 }
 
+const technicalLabels = {
+  alertId: 'Alert ID',
+  acknowledgedAfterRecovery: 'Acknowledged after recovery',
+  cause: 'Cause',
+  deviceId: 'ESP32 device',
+  entityId: 'Entity ID',
+  eventId: 'Event ID',
+  eventType: 'Event type',
+  machineCode: 'Machine code',
+  machineName: 'Machine',
+  newStatus: 'New status',
+  reason: 'Reason',
+  recordedAt: 'Recorded at',
+  recoveredAt: 'Recovered at',
+  recoveryEventId: 'Recovery event ID',
+  recoveryEventType: 'Recovery event type',
+  recoveryPending: 'Recovery pending',
+  recoverySignal: 'Recovery signal',
+  sensorCode: 'Sensor',
+  sensorLabel: 'Sensor label',
+  signal: 'Signal',
+  source: 'Source',
+  status: 'Status',
+  targetRole: 'Target role',
+  targetUsername: 'Target username',
+  title: 'Alert title',
+  username: 'Username',
+}
+
 function getSensorName(sensorCode) {
   if (!sensorCode) {
     return null
@@ -51,7 +83,55 @@ function getSensorName(sensorCode) {
 }
 
 function getMachineName(log) {
-  return log.metadata?.machineCode || 'Spiral Mill 01'
+  return log.metadata?.machineName || log.metadata?.machineCode || 'Spiral Mill 01'
+}
+
+function formatMaybeDate(value) {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const timestamp = Date.parse(value)
+
+  if (Number.isNaN(timestamp) || !value.includes('T')) {
+    return null
+  }
+
+  return formatDateTime(value)
+}
+
+function formatTechnicalValue(key, value) {
+  if (value === null || value === undefined || value === '') {
+    return 'None'
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No'
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map((item) => formatTechnicalValue(key, item)).join(', ') : 'None'
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([nestedKey, nestedValue]) => `${cleanCode(nestedKey)}: ${formatTechnicalValue(nestedKey, nestedValue)}`)
+      .join('; ')
+  }
+
+  if (key.toLowerCase().includes('at')) {
+    return formatMaybeDate(value) || String(value)
+  }
+
+  if (key.toLowerCase().includes('signal')) {
+    return getSignalLabel(value)
+  }
+
+  if (key.toLowerCase().includes('eventtype')) {
+    return cleanCode(value)
+  }
+
+  return String(value)
 }
 
 export function formatDateTime(value) {
@@ -141,12 +221,24 @@ export function getReadableDetails(log) {
       return `${metadata.deviceId || 'ESP32 device'} was rejected because ${loginFailureReasons[metadata.reason] || cleanCode(metadata.reason).toLowerCase()}.`
     case 'IOT_MACHINE_STATUS_UPDATED':
       return `${getMachineName(log)} changed to ${status} from ESP32 sensor data.`
+    case 'ALERT_CREATED':
+      return `${metadata.title || 'An alert'} was created for ${sensor}.`
+    case 'ALERT_ACKNOWLEDGED':
+      return `${metadata.title || 'An alert'} was acknowledged.`
+    case 'ALERT_RESOLVED':
+      return metadata.reason === 'acknowledged_after_recovery'
+        ? `${metadata.title || 'An alert'} was resolved after recovery was acknowledged.`
+        : `${metadata.title || 'An alert'} was resolved.`
     default:
       return 'System action was recorded.'
   }
 }
 
 export function getReadableSource(log) {
+  if (log.action?.startsWith('ALERT_')) {
+    return 'Alert system'
+  }
+
   if (log.action?.startsWith('IOT_') || log.metadata?.deviceId || log.metadata?.source === 'esp32_event') {
     return 'ESP32 sensor data'
   }
@@ -160,4 +252,30 @@ export function getReadableSource(log) {
   }
 
   return 'System'
+}
+
+export function getReadableDetailItems(log) {
+  return [
+    { label: 'What happened', value: getReadableDetails(log) },
+    { label: 'Who did it', value: getReadableActor(log) },
+    { label: 'Affected item', value: getReadableTarget(log) },
+    { label: 'Result', value: getReadableAction(log) },
+    { label: 'Source', value: getReadableSource(log) },
+    { label: 'Time recorded', value: formatDateTime(log.createdAt) },
+  ]
+}
+
+export function getTechnicalDetailItems(log) {
+  const metadataItems = Object.entries(log.metadata || {}).map(([key, value]) => ({
+    label: technicalLabels[key] || cleanCode(key),
+    value: formatTechnicalValue(key, value),
+  }))
+
+  return [
+    { label: 'Log ID', value: log.id },
+    { label: 'Action code', value: log.action },
+    { label: 'Entity type', value: log.entityType || 'None' },
+    { label: 'Entity ID', value: log.entityId || 'None' },
+    ...metadataItems,
+  ]
 }

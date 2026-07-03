@@ -1,9 +1,9 @@
-import { Activity, BarChart3, Bell, Gauge, History, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
+import { Activity, BarChart3, Bell, Check, Gauge, History, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { dashboardPageMeta, navItems } from '../../../shared/constants/dashboardMeta.js'
-import { getDashboardOverview } from '../overview/dashboardService.js'
+import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
 
 const icons = {
   gauge: Gauge,
@@ -47,10 +47,19 @@ function DashboardClock() {
   )
 }
 
+function getAlertStatusLabel(alert) {
+  if (alert.status === 'Active' && alert.metadata?.recoveryPending) {
+    return 'Recovered, waiting for acknowledgement'
+  }
+
+  return alert.status
+}
+
 export default function AdminDashboard() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
+  const [acknowledgingAlertIds, setAcknowledgingAlertIds] = useState([])
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const { token, user, logout } = useAuth()
   const navigate = useNavigate()
@@ -63,7 +72,25 @@ export default function AdminDashboard() {
   )
 
   const pageMeta = dashboardPageMeta[location.pathname] || dashboardPageMeta['/dashboard']
-  const activeAlertCount = alerts.length
+  const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
+  const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
+  const activeAlertCount = activeAlerts.length
+
+  function mergeAlertUpdate(currentAlerts, incomingAlert) {
+    if (!incomingAlert) return currentAlerts
+
+    if (incomingAlert.status === 'Resolved') {
+      return currentAlerts.filter((alert) => alert.id !== incomingAlert.id)
+    }
+
+    const alertExists = currentAlerts.some((alert) => alert.id === incomingAlert.id)
+
+    if (!alertExists) {
+      return [incomingAlert, ...currentAlerts]
+    }
+
+    return currentAlerts.map((alert) => (alert.id === incomingAlert.id ? incomingAlert : alert))
+  }
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
@@ -72,13 +99,16 @@ export default function AdminDashboard() {
   }, [location.pathname])
 
   useEffect(() => {
+    if (!token) return undefined
+
     let isMounted = true
+    let pollingId = null
 
     async function loadAlertState() {
       if (!token) return
 
       try {
-        const payload = await getDashboardOverview(token)
+        const payload = await getAlerts(token)
         if (isMounted) {
           setAlerts(payload.alerts || [])
         }
@@ -89,14 +119,44 @@ export default function AdminDashboard() {
       }
     }
 
+    function startFallbackPolling() {
+      if (pollingId) return
+
+      pollingId = window.setInterval(loadAlertState, 10000)
+    }
+
     loadAlertState()
-    const refreshId = window.setInterval(loadAlertState, 60000)
+    const unsubscribe = subscribeToAlerts(token, {
+      onEvent: (event) => {
+        if (!event?.payload?.alert) return
+
+        setAlerts((currentAlerts) => mergeAlertUpdate(currentAlerts, event.payload.alert))
+      },
+      onFallback: startFallbackPolling,
+    })
 
     return () => {
       isMounted = false
-      window.clearInterval(refreshId)
+      unsubscribe()
+
+      if (pollingId) {
+        window.clearInterval(pollingId)
+      }
     }
   }, [token])
+
+  async function handleAcknowledgeAlert(alertId) {
+    if (!token) return
+
+    setAcknowledgingAlertIds((currentIds) => [...currentIds, alertId])
+
+    try {
+      const payload = await acknowledgeAlert(token, alertId)
+      setAlerts((currentAlerts) => mergeAlertUpdate(currentAlerts, payload.alert))
+    } finally {
+      setAcknowledgingAlertIds((currentIds) => currentIds.filter((id) => id !== alertId))
+    }
+  }
 
   function handleLogout() {
     // Clears local auth, then returns the user to the login page.
@@ -203,15 +263,30 @@ export default function AdminDashboard() {
             {isAlertsOpen ? (
               <div className="alerts-popover" role="dialog" aria-label="Active alerts">
                 <div className="alerts-popover-header">
-                  <strong>Active alerts</strong>
+                  <strong>Notifications</strong>
                   <span>{activeAlertCount}</span>
                 </div>
-                {activeAlertCount > 0 ? (
+                {alerts.length > 0 ? (
                   <ul>
-                    {alerts.map((alert) => (
-                      <li key={alert.id}>
+                    {[...activeAlerts, ...acknowledgedAlerts].map((alert) => (
+                      <li key={alert.id} className={alert.status === 'Acknowledged' ? 'is-acknowledged' : ''}>
                         <TriangleAlert size={15} aria-hidden="true" />
-                        <span>{alert.message}</span>
+                        <div className="alert-popover-copy">
+                          <span className="alert-popover-title">{alert.title}</span>
+                          <span>{alert.message}</span>
+                          <span className="alert-popover-meta">{getAlertStatusLabel(alert)}</span>
+                        </div>
+                        {alert.status === 'Active' ? (
+                          <button
+                            className="btn btn-secondary alert-acknowledge-button"
+                            type="button"
+                            disabled={acknowledgingAlertIds.includes(alert.id)}
+                            onClick={() => handleAcknowledgeAlert(alert.id)}
+                          >
+                            <Check size={14} aria-hidden="true" />
+                            Acknowledge
+                          </button>
+                        ) : null}
                       </li>
                     ))}
                   </ul>

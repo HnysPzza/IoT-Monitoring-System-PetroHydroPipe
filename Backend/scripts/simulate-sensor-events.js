@@ -3,6 +3,7 @@ require('dotenv').config({ quiet: true })
 const BASE_URL = process.env.IOT_SIM_BASE_URL || 'http://localhost:3000'
 const INTERVAL_MS = Number.parseInt(process.env.IOT_SIM_INTERVAL_MS || '5000', 10)
 const RUN_ONCE = process.argv.includes('--once')
+const DETERMINISTIC_MODE = process.argv.includes('--deterministic')
 
 const devices = [
   {
@@ -10,59 +11,35 @@ const devices = [
     deviceId: 'esp32-m01-s01',
     keyEnv: 'IOT_SIM_S01_KEY',
     label: 'Raw Material Detection',
-    events: [
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'idle', signal: 'idle' },
-    ],
   },
   {
     sensorCode: 'S-02',
     deviceId: 'esp32-m01-s02',
     keyEnv: 'IOT_SIM_S02_KEY',
     label: 'Outside Filler',
-    events: [
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'recovered', signal: 'active' },
-    ],
   },
   {
     sensorCode: 'S-03',
     deviceId: 'esp32-m01-s03',
     keyEnv: 'IOT_SIM_S03_KEY',
     label: 'Coil Joint',
-    events: [
-      { eventType: 'idle', signal: 'idle' },
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'idle', signal: 'idle' },
-    ],
   },
   {
     sensorCode: 'S-04',
     deviceId: 'esp32-m01-s04',
     keyEnv: 'IOT_SIM_S04_KEY',
     label: 'Inside Filler',
-    events: [
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'downtime', signal: 'no_pulse' },
-      { eventType: 'recovered', signal: 'active' },
-    ],
   },
   {
     sensorCode: 'S-05',
     deviceId: 'esp32-m01-s05',
     keyEnv: 'IOT_SIM_S05_KEY',
     label: 'Production Output Cutting',
-    events: [
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'pulse', signal: 'active' },
-      { eventType: 'pulse', signal: 'active' },
-    ],
   },
 ]
 
 let batchNumber = 0
+let previousIssueSensorCode = null
 
 function getMissingKeys() {
   return devices
@@ -70,8 +47,45 @@ function getMissingKeys() {
     .map((device) => device.keyEnv)
 }
 
-function pickEvent(device, index) {
-  return device.events[index % device.events.length]
+function pickIssueDevice() {
+  if (DETERMINISTIC_MODE) {
+    return devices[(batchNumber - 1) % devices.length]
+  }
+
+  const candidates = previousIssueSensorCode
+    ? devices.filter((device) => device.sensorCode !== previousIssueSensorCode)
+    : devices
+  const index = Math.floor(Math.random() * candidates.length)
+
+  return candidates[index]
+}
+
+function pickIssueEvent() {
+  if (DETERMINISTIC_MODE) {
+    return batchNumber % 2 === 0
+      ? { eventType: 'downtime', signal: 'no_pulse', expectedAlertAction: 'creates or updates alert' }
+      : { eventType: 'fault', signal: 'fault', expectedAlertAction: 'creates or updates alert' }
+  }
+
+  return Math.random() < 0.7
+    ? { eventType: 'downtime', signal: 'no_pulse', expectedAlertAction: 'creates or updates alert' }
+    : { eventType: 'fault', signal: 'fault', expectedAlertAction: 'creates or updates alert' }
+}
+
+function pickNormalEvent(device) {
+  if (device.sensorCode === previousIssueSensorCode) {
+    return { eventType: 'recovered', signal: 'active', expectedAlertAction: 'resolves previous alert', priority: 3 }
+  }
+
+  if (DETERMINISTIC_MODE) {
+    return { eventType: 'pulse', signal: 'active', expectedAlertAction: 'keeps or restores normal state', priority: 2 }
+  }
+
+  if (Math.random() < 0.15) {
+    return { eventType: 'idle', signal: 'idle', expectedAlertAction: 'no alert expected', priority: 2 }
+  }
+
+  return { eventType: 'pulse', signal: 'active', expectedAlertAction: 'resolves any old alert', priority: 2 }
 }
 
 async function postEvent(device, event, sequence) {
@@ -108,17 +122,26 @@ async function postEvent(device, event, sequence) {
 
 async function runBatch() {
   batchNumber += 1
-  const events = devices.map((device, index) => ({
+  const issueDevice = pickIssueDevice()
+  const issueEvent = {
+    ...pickIssueEvent(),
+    priority: 1,
+  }
+  const events = devices.map((device) => ({
     device,
-    event: pickEvent(device, batchNumber + index),
-  }))
+    event: device.sensorCode === issueDevice.sensorCode ? issueEvent : pickNormalEvent(device),
+  })).sort((left, right) => left.event.priority - right.event.priority)
 
   console.log(`Sending ESP32 simulator batch ${batchNumber} to ${BASE_URL}`)
+  console.log(`Issue sensor: ${issueDevice.sensorCode} ${issueDevice.label} (${issueEvent.eventType} / ${issueEvent.signal})`)
 
+  // Send the new issue first, then recover old issues, so the notification bell does not briefly drop to zero.
   for (const { device, event } of events) {
     const savedEvent = await postEvent(device, event, batchNumber)
-    console.log(`${savedEvent.recordedAt} | ${device.sensorCode} | ${savedEvent.eventType} | ${savedEvent.signal}`)
+    console.log(`${savedEvent.recordedAt} | ${device.sensorCode} ${device.label} | ${savedEvent.eventType} | ${savedEvent.signal} | ${event.expectedAlertAction}`)
   }
+
+  previousIssueSensorCode = issueDevice.sensorCode
 }
 
 async function main() {

@@ -1,4 +1,5 @@
 const express = require('express')
+const alertsRoutes = require('../modules/alerts/alerts.routes')
 const auditRoutes = require('../modules/audit/audit.routes')
 const authRoutes = require('../modules/auth/auth.routes')
 const dashboardRoutes = require('../modules/dashboard/dashboard.routes')
@@ -11,6 +12,7 @@ const usersRoutes = require('../modules/users/users.routes')
 const router = express.Router()
 
 router.use('/auth', authRoutes)
+router.use('/alerts', alertsRoutes)
 router.use('/users', usersRoutes)
 router.use('/machines', machinesRoutes)
 router.use('/iot', iotRoutes)
