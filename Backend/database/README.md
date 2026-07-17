@@ -12,6 +12,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `migrations/003_add_user_archiving.sql` adds archive fields so user accounts are hidden without deleting history.
 - `migrations/004_supabase_security_cleanup.sql` fixes Supabase advisor warnings for function permissions/search path and adds a downtime sensor index.
 - `migrations/005_create_alerts.sql` adds persistent alert acknowledgement records for realtime dashboard notifications.
+- `migrations/006_downtime_open_record_unique_index.sql` adds idempotent event IDs, atomic IoT/downtime RPCs, and downtime state constraints.
 
 ## Tables
 
@@ -38,6 +39,14 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
    - 1 admin user
    - 1 machine
    - 5 sensors
+
+For migration `006`, run it in staging first. It stops without changing the database if duplicate open downtime rows exist. After applying it, verify the database contract from `Backend`:
+
+```bash
+npm run db:verify:downtime
+```
+
+Deploy the backend only after verification passes. To roll back the application, deploy the previous backend version first. The added column, constraints, indexes, and functions can remain in place because they are backward-compatible with earlier read paths; do not drop `device_event_id` after new events have been ingested.
 
 ## ESP32 Device Keys
 
@@ -95,11 +104,19 @@ Use the backend simulator while the physical ESP32 devices are not built yet.
    npm run iot:simulate:once -- --deterministic
    ```
 
+8. To verify issue creation, duplicate retry handling, stale-event handling, and recovery on the dedicated S-04 simulator path:
+
+   ```bash
+   npm run iot:simulate:verify
+   ```
+
 The simulator uses the real ingestion endpoint:
 
 ```text
 POST /api/iot/events
 ```
+
+Every event body includes a client-generated UUID `eventId`. Retrying the same `eventId` returns the stored event without replaying sensor, machine, alert, or downtime transitions. Older out-of-order events are retained in history with `stateApplied: false` and cannot overwrite current state.
 
 It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one sensor per batch to send a downtime/fault event. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
 

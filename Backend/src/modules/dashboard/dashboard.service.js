@@ -1,4 +1,14 @@
 const { getSupabaseClient } = require('../../database/client')
+const {
+  addBusinessDays,
+  addBusinessMonths,
+  formatBusinessTime,
+  formatBusinessWeekday,
+  parseBusinessDate,
+  startOfBusinessDay,
+  startOfBusinessMonth,
+  startOfBusinessWeek,
+} = require('../../shared/businessTime')
 const { getSensorLabel } = require('../../shared/sensorIdentity')
 
 const OUTPUT_SENSOR_CODE = 'S-05'
@@ -17,65 +27,36 @@ function createDashboardError(status, code, message) {
   return error
 }
 
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
-}
-
-function addDays(date, days) {
-  const nextDate = new Date(date)
-  nextDate.setDate(nextDate.getDate() + days)
-  return nextDate
-}
-
-function addMonths(date, months) {
-  const nextDate = new Date(date)
-  nextDate.setMonth(nextDate.getMonth() + months)
-  return nextDate
-}
-
-function startOfWeek(date) {
-  const nextDate = startOfDay(date)
-  const day = nextDate.getDay() || 7
-  nextDate.setDate(nextDate.getDate() - day + 1)
-  return nextDate
-}
-
-function startOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1)
-}
-
 function parseAnchorDate(value) {
-  if (!value) return startOfDay(new Date())
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day || 1)
+  return parseBusinessDate(value)
 }
 
 function getWindowForMode(mode, anchorDate) {
   if (mode === 'month') {
-    const start = startOfMonth(anchorDate)
-    return { start, end: addMonths(start, 1) }
+    const start = startOfBusinessMonth(anchorDate)
+    return { start, end: addBusinessMonths(start, 1) }
   }
 
   if (mode === 'week') {
-    const start = startOfWeek(anchorDate)
-    return { start, end: addDays(start, 7) }
+    const start = startOfBusinessWeek(anchorDate)
+    return { start, end: addBusinessDays(start, 7) }
   }
 
-  const start = startOfDay(anchorDate)
-  return { start, end: addDays(start, 1) }
+  const start = startOfBusinessDay(anchorDate)
+  return { start, end: addBusinessDays(start, 1) }
 }
 
 function getPreviousWindow(mode, window) {
   if (mode === 'month') {
-    const start = addMonths(window.start, -1)
+    const start = addBusinessMonths(window.start, -1)
     return { start, end: window.start }
   }
 
   if (mode === 'week') {
-    return { start: addDays(window.start, -7), end: window.start }
+    return { start: addBusinessDays(window.start, -7), end: window.start }
   }
 
-  return { start: addDays(window.start, -1), end: window.start }
+  return { start: addBusinessDays(window.start, -1), end: window.start }
 }
 
 function minutesBetween(start, end) {
@@ -209,29 +190,28 @@ function getDowntimeMinutes(rows) {
 function getModePointBoundaries(mode, window) {
   if (mode === 'month') {
     return Array.from({ length: 4 }, (_, index) => {
-      const start = addDays(window.start, index * 7)
-      const end = index === 3 ? window.end : addDays(window.start, (index + 1) * 7)
+      const start = addBusinessDays(window.start, index * 7)
+      const end = index === 3 ? window.end : addBusinessDays(window.start, (index + 1) * 7)
       return { label: `W${index + 1}`, shift: `Week ${index + 1}`, start, end }
     })
   }
 
   if (mode === 'week') {
     return Array.from({ length: 7 }, (_, index) => {
-      const start = addDays(window.start, index)
+      const start = addBusinessDays(window.start, index)
       return {
-        label: start.toLocaleDateString('en-PH', { weekday: 'short' }),
+        label: formatBusinessWeekday(start),
         shift: `Day ${index + 1}`,
         start,
-        end: addDays(start, 1),
+        end: addBusinessDays(start, 1),
       }
     })
   }
 
   return [6, 9, 12, 15, 18, 21].map((hour) => {
-    const start = new Date(window.start)
-    start.setHours(hour, 0, 0, 0)
+    const start = new Date(window.start.getTime() + (hour * 60 * 60 * 1000))
     return {
-      label: start.toLocaleTimeString('en-PH', { hour: 'numeric', hour12: true }).replace(' ', ''),
+      label: formatBusinessTime(start, { hour: 'numeric', hour12: true }).replace(' ', ''),
       shift: hour < 15 ? 'Shift A' : 'Shift B',
       start: window.start,
       end: start,
@@ -364,7 +344,7 @@ async function getOverview(filters = {}) {
   const mode = filters.trendMode || 'week'
   const anchorDate = parseAnchorDate(filters.date)
   const { machine, sensors } = await getMachineAndSensors()
-  const todayWindow = getWindowForMode('today', startOfDay(new Date()))
+  const todayWindow = getWindowForMode('today', startOfBusinessDay())
   const trendWindow = getWindowForMode(mode, anchorDate)
   const [todayDowntimeRows, trendDowntimeRows, productionAnalytics] = await Promise.all([
     getDowntimeRows(machine.id, todayWindow),

@@ -8,6 +8,8 @@ const actionLabels = {
   USER_CREATED: 'User account created',
   USER_STATUS_UPDATED: 'User account status changed',
   USER_ARCHIVED: 'User account archived',
+  DOWNTIME_CREATED: 'Downtime record created',
+  DOWNTIME_AUTO_RESOLVED: 'Downtime automatically resolved',
   DOWNTIME_UPDATED: 'Downtime record updated',
   MACHINE_STATUS_UPDATED: 'Machine status changed',
   SENSOR_STATUS_UPDATED: 'Sensor status changed',
@@ -209,6 +211,14 @@ export function getReadableDetails(log) {
       return `${targetUser} was changed to ${status}.`
     case 'USER_ARCHIVED':
       return `${targetUser} was archived and can no longer log in.`
+    case 'DOWNTIME_CREATED': {
+      const cause = metadata.cause || 'Pending Cause Review'
+      return cause === 'Pending Cause Review'
+        ? `Downtime record was created for ${sensor}. Cause needs review.`
+        : `Downtime record was created for ${sensor} with cause ${cause}.`
+    }
+    case 'DOWNTIME_AUTO_RESOLVED':
+      return `Downtime record for ${sensor} was automatically resolved after sensor recovery.`
     case 'DOWNTIME_UPDATED':
       return `Downtime record was updated to ${metadata.status || 'reviewed'} with cause ${metadata.cause || 'not set'}.`
     case 'MACHINE_STATUS_UPDATED':

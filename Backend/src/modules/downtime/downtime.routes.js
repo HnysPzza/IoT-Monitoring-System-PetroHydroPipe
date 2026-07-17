@@ -7,11 +7,13 @@ const downtimeController = require('./downtime.controller')
 const { listDowntimeSchema, updateDowntimeSchema } = require('./downtime.model')
 
 const router = express.Router()
+const downtimeViewRoles = ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']
+const downtimeEditRoles = ['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor']
 
 router.use(authenticate)
-router.use(authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']))
 
-router.get('/', validateRequest(listDowntimeSchema), asyncHandler(downtimeController.listDowntime))
-router.patch('/:id', validateRequest(updateDowntimeSchema), asyncHandler(downtimeController.updateDowntime))
+router.get('/', authorizeRole(downtimeViewRoles), validateRequest(listDowntimeSchema), asyncHandler(downtimeController.listDowntime))
+router.get('/stream', authorizeRole(downtimeViewRoles), asyncHandler(downtimeController.streamDowntime))
+router.patch('/:id', authorizeRole(downtimeEditRoles), validateRequest(updateDowntimeSchema), asyncHandler(downtimeController.updateDowntime))
 
 module.exports = router

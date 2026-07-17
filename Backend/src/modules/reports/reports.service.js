@@ -1,4 +1,13 @@
 const { getSupabaseClient } = require('../../database/client')
+const {
+  addBusinessDays,
+  addBusinessMonths,
+  formatBusinessDate,
+  parseBusinessDate,
+  startOfBusinessDay,
+  startOfBusinessMonth,
+  startOfBusinessWeek,
+} = require('../../shared/businessTime')
 
 const LOSS_PER_DOWNTIME_MINUTE = 2.3
 
@@ -9,50 +18,21 @@ function createReportError(status, code, message) {
   return error
 }
 
-function parseDate(value) {
-  if (!value) return new Date()
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day || 1)
-}
-
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
-}
-
-function addDays(date, days) {
-  const nextDate = new Date(date)
-  nextDate.setDate(nextDate.getDate() + days)
-  return nextDate
-}
-
-function addMonths(date, months) {
-  const nextDate = new Date(date)
-  nextDate.setMonth(nextDate.getMonth() + months)
-  return nextDate
-}
-
-function startOfWeek(date) {
-  const nextDate = startOfDay(date)
-  const day = nextDate.getDay() || 7
-  nextDate.setDate(nextDate.getDate() - day + 1)
-  return nextDate
-}
-
 function getWindow(type, dateValue) {
-  const date = parseDate(dateValue)
+  const date = parseBusinessDate(dateValue)
 
   if (type === 'monthly') {
-    const start = new Date(date.getFullYear(), date.getMonth(), 1)
-    return { start, end: addMonths(start, 1) }
+    const start = startOfBusinessMonth(date)
+    return { start, end: addBusinessMonths(start, 1) }
   }
 
   if (type === 'weekly') {
-    const start = startOfWeek(date)
-    return { start, end: addDays(start, 7) }
+    const start = startOfBusinessWeek(date)
+    return { start, end: addBusinessDays(start, 7) }
   }
 
-  const start = startOfDay(date)
-  return { start, end: addDays(start, 1) }
+  const start = startOfBusinessDay(date)
+  return { start, end: addBusinessDays(start, 1) }
 }
 
 function getRelationRecord(value) {
@@ -191,7 +171,7 @@ async function getSummary({ type = 'daily', date } = {}) {
 
   return {
     reportType: type,
-    selectedDate: date || startOfDay(new Date()).toISOString().slice(0, 10),
+    selectedDate: date || formatBusinessDate(),
     summary: [
       { id: 'production', label: 'Production Count', value: `${formatNumber(productionTotal)} pcs`, helper: `From ${machine.name}` },
       { id: 'events', label: 'Downtime Events', value: String(downtimeRows.length), helper: 'Open and resolved events' },

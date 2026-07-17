@@ -1,8 +1,10 @@
 const bcrypt = require('bcryptjs')
 const { getSupabaseClient } = require('../../database/client')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
+const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
 const alertsService = require('../alerts/alerts.service')
+const downtimeService = require('../downtime/downtime.service')
 
 const AUDITABLE_SENSOR_EVENT_TYPES = new Set(['downtime', 'fault', 'recovered'])
 
@@ -25,34 +27,26 @@ function getMachineRecord(sensorRecord) {
   return sensorRecord.machines || null
 }
 
-function mapEventToSensorStatus(eventType) {
-  if (eventType === 'pulse' || eventType === 'recovered') return 'Active'
-  if (eventType === 'idle') return 'Inactive'
-  return 'Fault'
-}
-
 function mapSensorStatusToLiveStatus(status) {
   if (status === 'Active') return 'Running'
   if (status === 'Fault') return 'Downtime'
   return 'Idle'
 }
 
-function getMachineStatusFromSensors(sensors) {
-  if (sensors.some((sensor) => sensor.status === 'Fault')) return 'Downtime'
-  if (sensors.some((sensor) => sensor.status === 'Active')) return 'Running'
-  return 'Idle'
-}
-
-function toEventResponse(eventRecord, sensorRecord) {
+function toEventResponse(eventRecord, sensorRecord, processing = {}) {
   const machine = getMachineRecord(sensorRecord)
 
   return {
     id: eventRecord.id,
+    eventId: eventRecord.device_event_id,
     sensorCode: sensorRecord.sensor_code,
     machineCode: machine?.machine_code || null,
     eventType: eventRecord.event_type,
     signal: eventRecord.event_value?.signal || null,
     recordedAt: eventRecord.recorded_at,
+    duplicate: Boolean(processing.duplicate),
+    stale: Boolean(processing.stale),
+    stateApplied: Boolean(processing.state_applied),
   }
 }
 
@@ -147,38 +141,31 @@ async function authenticateDevice({ deviceId, deviceKey }) {
   return sensor
 }
 
-async function updateMachineStatus(machineId) {
+async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
   const supabase = getSupabaseClient()
-  const { data: sensors, error: sensorsError } = await supabase
-    .from('sensors')
-    .select('id, status')
-    .eq('machine_id', machineId)
-
-  if (sensorsError) {
-    throw createIotError(500, 'SENSOR_STATUS_QUERY_FAILED', 'Unable to evaluate machine status.')
-  }
-
-  const status = getMachineStatusFromSensors(sensors || [])
-  const { error } = await supabase
-    .from('machines')
-    .update({ status })
-    .eq('id', machineId)
+  const { data, error } = await supabase
+    .rpc('ingest_iot_sensor_event', {
+      p_device_event_id: payload.eventId,
+      p_sensor_id: sensor.id,
+      p_machine_id: machine.id,
+      p_event_type: payload.eventType,
+      p_event_value: {
+        signal: payload.signal,
+        metadata: payload.metadata || {},
+      },
+      p_recorded_at: recordedAt,
+    })
+    .single()
 
   if (error) {
-    throw createIotError(500, 'MACHINE_STATUS_UPDATE_FAILED', 'Unable to update machine status.')
+    if (error.code === '22023') {
+      throw createIotError(400, 'SENSOR_EVENT_REJECTED', 'Sensor event timestamp or state is invalid.')
+    }
+
+    throw createIotError(500, 'SENSOR_EVENT_PROCESSING_FAILED', 'Unable to process sensor event.')
   }
 
-  await recordAuditLog({
-    action: 'IOT_MACHINE_STATUS_UPDATED',
-    entityType: 'machine',
-    entityId: machineId,
-    metadata: {
-      newStatus: status,
-      source: 'esp32_event',
-    },
-  })
-
-  return status
+  return data
 }
 
 async function syncAlertState({ sensor, machine, eventRecord, payload, recordedAt }) {
@@ -210,10 +197,50 @@ async function syncAlertState({ sensor, machine, eventRecord, payload, recordedA
       })
     }
   } catch (error) {
-    console.warn('Unable to sync alert state for sensor event.', {
+    logger.warn('Unable to sync alert state for sensor event.', {
       sensorCode: sensor.sensor_code,
       eventType: payload.eventType,
+      eventId: payload.eventId,
       error: error.message,
+    })
+  }
+}
+
+async function recordStateTransitionAudits({ sensor, machine, eventRecord, payload, processing }) {
+  if (processing.previous_machine_status !== processing.new_machine_status) {
+    await recordAuditLog({
+      action: 'IOT_MACHINE_STATUS_UPDATED',
+      entityType: 'machine',
+      entityId: machine.id,
+      metadata: {
+        machineCode: machine.machine_code,
+        machineName: machine.name,
+        previousStatus: processing.previous_machine_status,
+        newStatus: processing.new_machine_status,
+        source: 'esp32_event',
+      },
+    })
+  }
+
+  if (processing.downtime_action) {
+    await recordAuditLog({
+      action: processing.downtime_action === 'created' ? 'DOWNTIME_CREATED' : 'DOWNTIME_AUTO_RESOLVED',
+      entityType: 'downtime',
+      entityId: processing.downtime_id,
+      metadata: {
+        sensorCode: sensor.sensor_code,
+        machineName: machine.name,
+        eventId: eventRecord.id,
+        deviceEventId: payload.eventId,
+        eventType: payload.eventType,
+        startedAt: processing.downtime_started_at,
+        endedAt: processing.downtime_ended_at,
+        durationMinutes: processing.downtime_duration_seconds == null
+          ? null
+          : Math.round(processing.downtime_duration_seconds / 60),
+        cause: processing.downtime_cause,
+        status: processing.downtime_action === 'created' ? 'Open' : 'Resolved',
+      },
     })
   }
 }
@@ -227,41 +254,33 @@ async function createSensorEvent({ deviceId, deviceKey, payload }) {
   }
 
   const recordedAt = payload.recordedAt || new Date().toISOString()
-  const sensorStatus = mapEventToSensorStatus(payload.eventType)
-  const supabase = getSupabaseClient()
-
-  const { data: eventRecord, error: eventError } = await supabase
-    .from('sensor_events')
-    .insert({
-      sensor_id: sensor.id,
-      machine_id: machine.id,
-      event_type: payload.eventType,
-      event_value: {
-        signal: payload.signal,
-        metadata: payload.metadata || {},
-      },
-      recorded_at: recordedAt,
-    })
-    .select('id, event_type, event_value, recorded_at')
-    .single()
-
-  if (eventError) {
-    throw createIotError(500, 'SENSOR_EVENT_CREATE_FAILED', 'Unable to save sensor event.')
+  const processing = await processSensorEvent({ sensor, machine, payload, recordedAt })
+  const eventRecord = {
+    id: processing.sensor_event_id,
+    device_event_id: processing.device_event_id,
+    event_type: processing.event_type,
+    event_value: processing.event_value,
+    recorded_at: processing.recorded_at,
   }
 
-  const { error: sensorError } = await supabase
-    .from('sensors')
-    .update({ status: sensorStatus })
-    .eq('id', sensor.id)
+  if (processing.state_applied) {
+    if (processing.downtime_action) {
+      downtimeService.publishDowntimeEvent(
+        processing.downtime_action === 'created' ? 'downtime.created' : 'downtime.resolved',
+        {
+          id: processing.downtime_id,
+          status: processing.downtime_action === 'created' ? 'Open' : 'Resolved',
+          sensorCode: sensor.sensor_code,
+          machineCode: machine.machine_code,
+        },
+      )
+    }
 
-  if (sensorError) {
-    throw createIotError(500, 'SENSOR_STATUS_UPDATE_FAILED', 'Unable to update sensor status.')
+    await syncAlertState({ sensor, machine, eventRecord, payload, recordedAt })
+    await recordStateTransitionAudits({ sensor, machine, eventRecord, payload, processing })
   }
 
-  await updateMachineStatus(machine.id)
-  await syncAlertState({ sensor, machine, eventRecord, payload, recordedAt })
-
-  if (shouldRecordSensorEventAudit(payload.eventType)) {
+  if (!processing.duplicate && shouldRecordSensorEventAudit(payload.eventType)) {
     await recordAuditLog({
       action: 'IOT_EVENT_RECEIVED',
       entityType: 'sensor_event',
@@ -270,14 +289,17 @@ async function createSensorEvent({ deviceId, deviceKey, payload }) {
         deviceId,
         sensorCode: sensor.sensor_code,
         machineCode: machine.machine_code,
+        deviceEventId: payload.eventId,
         eventType: payload.eventType,
         signal: payload.signal,
         recordedAt,
+        stale: processing.stale,
+        stateApplied: processing.state_applied,
       },
     })
   }
 
-  return toEventResponse(eventRecord, sensor)
+  return toEventResponse(eventRecord, sensor, processing)
 }
 
 async function getLiveFeed() {

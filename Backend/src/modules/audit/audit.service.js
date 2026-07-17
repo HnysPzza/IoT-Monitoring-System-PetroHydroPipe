@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../../database/client')
+const { getBusinessDayRange } = require('../../shared/businessTime')
 
 const DEFAULT_AUDIT_LIMIT = 25
 const MAX_AUDIT_LIMIT = 100
@@ -37,10 +38,6 @@ function toAuditLogResponse(logRecord) {
     metadata: logRecord.metadata || {},
     createdAt: logRecord.created_at,
   }
-}
-
-function getEndOfDayIso(dateValue) {
-  return `${dateValue}T23:59:59.999Z`
 }
 
 async function listAuditLogs(filters = {}) {
@@ -85,11 +82,13 @@ async function listAuditLogs(filters = {}) {
   }
 
   if (filters.dateFrom) {
-    query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`)
+    const { start } = getBusinessDayRange(filters.dateFrom)
+    query = query.gte('created_at', start.toISOString())
   }
 
   if (filters.dateTo) {
-    query = query.lte('created_at', getEndOfDayIso(filters.dateTo))
+    const { end } = getBusinessDayRange(filters.dateTo)
+    query = query.lt('created_at', end.toISOString())
   }
 
   const { data, error, count } = await query

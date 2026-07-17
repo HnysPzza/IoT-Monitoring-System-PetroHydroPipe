@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Clock, PackageMinus, TriangleAlert } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock, PackageMinus, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getDowntimeStatusClass } from '../../../shared/utils/statusClasses.js'
-import { getDowntimeRecords, updateDowntimeRecord } from './downtimeService.js'
+import { getDowntimeRecords, subscribeToDowntime, updateDowntimeRecord } from './downtimeService.js'
 
 const statusFilters = ['All', 'Open', 'Resolved']
 const downtimeCauses = [
@@ -15,47 +15,103 @@ const downtimeCauses = [
   'Flux Refill',
   'Pending Cause Review',
 ]
+const downtimeEditRoles = new Set(['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor'])
 
 function getRecordLabel(record) {
-  const sensorName = record.sensor ? formatSensorName(record.sensor) : 'selected sensor'
+  const sensorName = record.sensorLabel || (record.sensor ? formatSensorName(record.sensor) : 'selected sensor')
   return `${record.machine || 'Machine'} / ${sensorName}`
 }
 
+function getDisplayLabel(record) {
+  if (record.displayLabel) return record.displayLabel
+  return record.sensor ? `${record.sensor} ${formatShortDateTime(record.startedAt)}` : formatShortDateTime(record.startedAt)
+}
+
+function getManilaDateInputValue() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
 export default function DowntimeSection() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const canEditDowntime = downtimeEditRoles.has(user?.role)
   const [records, setRecords] = useState([])
   const [summary, setSummary] = useState({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
+  const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('All')
   const [causeFilter, setCauseFilter] = useState('All')
-  const [dateFilter, setDateFilter] = useState(() => new Date().toISOString().slice(0, 10))
+  const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [notice, setNotice] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [updatingRecordId, setUpdatingRecordId] = useState('')
+  const [expandedRecordId, setExpandedRecordId] = useState('')
+  const [draftNotes, setDraftNotes] = useState({})
 
-  async function loadDowntimeRecords() {
-    setIsLoading(true)
-    setNotice(null)
+  const loadDowntimeRecords = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setIsLoading(true)
+      setNotice(null)
+    }
 
     try {
       const payload = await getDowntimeRecords(token, {
         status: statusFilter,
         cause: causeFilter,
         date: dateFilter,
+        page,
+        limit: 25,
       })
       setRecords(payload.records || [])
       setSummary(payload.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 })
+      setPagination(payload.pagination || { page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
+      if (!silent) {
+        setExpandedRecordId('')
+        setDraftNotes({})
+      }
     } catch (error) {
-      setNotice({ type: 'error', message: error.message || 'Unable to load downtime records.' })
-      setRecords([])
-      setSummary({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+      if (!silent) {
+        setNotice({ type: 'error', message: error.message || 'Unable to load downtime records.' })
+        setRecords([])
+        setSummary({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+        setPagination({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
+      }
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
-  }
+  }, [causeFilter, dateFilter, page, statusFilter, token])
 
   useEffect(() => {
     loadDowntimeRecords()
-  }, [causeFilter, dateFilter, statusFilter, token])
+  }, [loadDowntimeRecords])
+
+  useEffect(() => {
+    if (!token) return undefined
+
+    let pollingId = null
+
+    function startFallbackPolling() {
+      if (pollingId) return
+      pollingId = window.setInterval(() => loadDowntimeRecords({ silent: true }), 10000)
+    }
+
+    const unsubscribe = subscribeToDowntime(token, {
+      onEvent: (event) => {
+        if (!event?.payload?.downtime) return
+        loadDowntimeRecords({ silent: true })
+      },
+      onFallback: startFallbackPolling,
+    })
+
+    return () => {
+      unsubscribe()
+      if (pollingId) window.clearInterval(pollingId)
+    }
+  }, [loadDowntimeRecords, token])
 
   async function updateCause(recordId, cause) {
     setUpdatingRecordId(recordId)
@@ -67,6 +123,21 @@ export default function DowntimeSection() {
       setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} cause updated to ${payload.record.cause}.` })
     } catch (error) {
       setNotice({ type: 'error', message: error.message || 'Unable to update downtime cause.' })
+    } finally {
+      setUpdatingRecordId('')
+    }
+  }
+
+  async function saveNotes(recordId) {
+    setUpdatingRecordId(recordId)
+    setNotice(null)
+
+    try {
+      const payload = await updateDowntimeRecord(token, recordId, { notes: draftNotes[recordId] || '' })
+      setRecords((current) => current.map((record) => (record.id === payload.record.id ? payload.record : record)))
+      setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} notes saved.` })
+    } catch (error) {
+      setNotice({ type: 'error', message: error.message || 'Unable to update downtime notes.' })
     } finally {
       setUpdatingRecordId('')
     }
@@ -85,6 +156,21 @@ export default function DowntimeSection() {
     } finally {
       setUpdatingRecordId('')
     }
+  }
+
+  function toggleRecordDetails(record) {
+    setExpandedRecordId((currentId) => {
+      const nextId = currentId === record.id ? '' : record.id
+
+      if (nextId) {
+        setDraftNotes((currentDrafts) => ({
+          ...currentDrafts,
+          [record.id]: currentDrafts[record.id] ?? record.notes ?? '',
+        }))
+      }
+
+      return nextId
+    })
   }
 
   return (
@@ -127,7 +213,10 @@ export default function DowntimeSection() {
               className={`trend-mode-button ${statusFilter === status ? 'is-selected' : ''}`}
               type="button"
               aria-pressed={statusFilter === status}
-              onClick={() => setStatusFilter(status)}
+              onClick={() => {
+                setStatusFilter(status)
+                setPage(1)
+              }}
             >
               {status}
             </button>
@@ -139,7 +228,10 @@ export default function DowntimeSection() {
             id="downtime-cause-filter"
             name="downtimeCause"
             value={causeFilter}
-            onChange={(event) => setCauseFilter(event.target.value)}
+            onChange={(event) => {
+              setCauseFilter(event.target.value)
+              setPage(1)
+            }}
             autoComplete="off"
           >
             <option value="All">All causes</option>
@@ -155,7 +247,10 @@ export default function DowntimeSection() {
             name="downtimeDate"
             type="date"
             value={dateFilter}
-            onChange={(event) => setDateFilter(event.target.value)}
+            onChange={(event) => {
+              setDateFilter(event.target.value)
+              setPage(1)
+            }}
             autoComplete="off"
           />
         </label>
@@ -187,7 +282,7 @@ export default function DowntimeSection() {
                 <th scope="col">Ended</th>
                 <th scope="col">Duration</th>
                 <th scope="col">Status</th>
-                <th scope="col">Notes</th>
+                <th scope="col">Details</th>
                 <th scope="col">Action</th>
               </tr>
             </thead>
@@ -198,48 +293,161 @@ export default function DowntimeSection() {
                 </tr>
               ) : (
                 records.map((record) => (
-                  <tr key={record.id}>
-                    <td>{record.id}</td>
-                    <td>{record.machine}<br /><span className="table-muted">{formatSensorName(record.sensor)}</span></td>
-                    <td>
-                      <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {record.id}</label>
-                      <select
-                        id={`downtime-cause-${record.id}`}
-                        name={`downtimeCause-${record.id}`}
-                        className="inline-select"
-                        value={record.cause}
-                        disabled={updatingRecordId === record.id}
-                        onChange={(event) => updateCause(record.id, event.target.value)}
-                        autoComplete="off"
-                      >
-                        {downtimeCauses.map((cause) => (
-                          <option key={cause} value={cause}>{cause}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>{formatShortDateTime(record.startedAt)}</td>
-                    <td>{formatShortDateTime(record.endedAt, 'Still open')}</td>
-                    <td>{record.durationMinutes} min</td>
-                    <td><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>
-                    <td>{record.notes}</td>
-                    <td>
-                      <button
-                        className="btn btn-secondary table-action-button table-action-activate"
-                        type="button"
-                        disabled={record.status === 'Resolved' || updatingRecordId === record.id}
-                        onClick={() => resolveRecord(record.id)}
-                      >
-                        <CheckCircle2 size={16} aria-hidden="true" />
-                        {updatingRecordId === record.id ? 'Saving' : 'Resolve'}
-                      </button>
-                    </td>
-                  </tr>
+                  <Fragment key={record.id}>
+                    <tr className={`${expandedRecordId === record.id ? 'is-expanded' : ''} ${record.needsCauseReview ? 'needs-cause-review' : ''}`}>
+                      <td>
+                        <span className="audit-action-label">{getDisplayLabel(record)}</span>
+                        {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
+                      </td>
+                      <td>{record.machine}<br /><span className="table-muted">{record.sensorLabel || formatSensorName(record.sensor)}</span></td>
+                      <td>
+                        <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
+                        <select
+                          id={`downtime-cause-${record.id}`}
+                          name={`downtimeCause-${record.id}`}
+                          className="inline-select"
+                          value={record.cause}
+                          disabled={!canEditDowntime || !record.isCauseEditable || updatingRecordId === record.id}
+                          onChange={(event) => updateCause(record.id, event.target.value)}
+                          autoComplete="off"
+                          title={record.isCauseEditable ? 'Select downtime cause' : 'Cause is assigned automatically by the sensor'}
+                        >
+                          {downtimeCauses.map((cause) => (
+                            <option key={cause} value={cause}>{cause}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{formatShortDateTime(record.startedAt)}</td>
+                      <td>{formatShortDateTime(record.endedAt, 'Still open')}</td>
+                      <td>{record.durationMinutes} min</td>
+                      <td><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>
+                      <td>
+                        <button
+                          className="btn btn-secondary table-action-button"
+                          type="button"
+                          aria-expanded={expandedRecordId === record.id}
+                          aria-controls={`downtime-details-${record.id}`}
+                          onClick={() => toggleRecordDetails(record)}
+                        >
+                          {expandedRecordId === record.id ? 'Hide details' : 'View details'}
+                        </button>
+                      </td>
+                      <td>
+                        {canEditDowntime ? (
+                          <button
+                            className="btn btn-secondary table-action-button table-action-activate"
+                            type="button"
+                            disabled={record.status === 'Resolved' || updatingRecordId === record.id}
+                            onClick={() => resolveRecord(record.id)}
+                          >
+                            <CheckCircle2 size={16} aria-hidden="true" />
+                            {updatingRecordId === record.id ? 'Saving' : 'Resolve'}
+                          </button>
+                        ) : <span className="table-muted">Read only</span>}
+                      </td>
+                    </tr>
+                    {expandedRecordId === record.id ? (
+                      <tr className="audit-details-row downtime-details-row">
+                        <td colSpan="9">
+                          <div id={`downtime-details-${record.id}`} className="audit-details-panel downtime-details-panel">
+                            <div>
+                              <p className="audit-details-heading">Downtime review</p>
+                              <dl className="audit-details-grid">
+                                <div>
+                                  <dt>What happened</dt>
+                                  <dd>{getRecordLabel(record)} stopped for {record.durationMinutes} min.</dd>
+                                </div>
+                                <div>
+                                  <dt>Machine</dt>
+                                  <dd>{record.machine}</dd>
+                                </div>
+                                <div>
+                                  <dt>Sensor</dt>
+                                  <dd>{record.sensorLabel || formatSensorName(record.sensor)}</dd>
+                                </div>
+                                <div>
+                                  <dt>Started</dt>
+                                  <dd>{formatShortDateTime(record.startedAt)}</dd>
+                                </div>
+                                <div>
+                                  <dt>Ended</dt>
+                                  <dd>{formatShortDateTime(record.endedAt, 'Still open')}</dd>
+                                </div>
+                                <div>
+                                  <dt>Cause rule</dt>
+                                  <dd>
+                                    {record.isCauseEditable
+                                      ? 'Main sensor downtime needs manual cause review.'
+                                      : 'Cause was assigned automatically from the sensor location.'}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Estimated loss</dt>
+                                  <dd>{record.estimatedLoss} pcs</dd>
+                                </div>
+                              </dl>
+                            </div>
+                            <label className="downtime-notes-editor" htmlFor={`downtime-notes-${record.id}`}>
+                              <span>Review notes</span>
+                              <textarea
+                                id={`downtime-notes-${record.id}`}
+                                name={`downtimeNotes-${record.id}`}
+                                value={draftNotes[record.id] ?? record.notes ?? ''}
+                                onChange={(event) => setDraftNotes((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [record.id]: event.target.value,
+                                }))}
+                                rows={3}
+                                maxLength={1000}
+                                disabled={!canEditDowntime || updatingRecordId === record.id}
+                              />
+                            </label>
+                            {canEditDowntime ? <div className="downtime-detail-actions">
+                              <button
+                                className="btn btn-secondary table-action-button"
+                                type="button"
+                                disabled={updatingRecordId === record.id || (draftNotes[record.id] ?? record.notes ?? '') === (record.notes ?? '')}
+                                onClick={() => saveNotes(record.id)}
+                              >
+                                {updatingRecordId === record.id ? 'Saving' : 'Save notes'}
+                              </button>
+                            </div> : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))
               )}
             </tbody>
           </table>
           </div>
         )}
+        {pagination.totalPages > 1 ? (
+          <nav className="table-pagination" aria-label="Downtime record pages">
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Previous downtime page"
+              title="Previous page"
+              disabled={!pagination.hasPreviousPage || isLoading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+            </button>
+            <span>Page {pagination.page} of {pagination.totalPages}</span>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Next downtime page"
+              title="Next page"
+              disabled={!pagination.hasNextPage || isLoading}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              <ChevronRight size={18} aria-hidden="true" />
+            </button>
+          </nav>
+        ) : null}
       </section>
 
       <section className="section-card live-network-card">

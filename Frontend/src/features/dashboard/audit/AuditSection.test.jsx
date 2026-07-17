@@ -66,9 +66,9 @@ describe('AuditSection', () => {
 
     renderWithAuth(<AuditSection />)
 
-    expect(await screen.findByText(/alert created/i)).toBeInTheDocument()
+    const detailsButton = await screen.findByRole('button', { name: /view details/i })
 
-    await user.click(screen.getByRole('button', { name: /view details/i }))
+    await user.click(detailsButton)
 
     expect(screen.getByText('Readable details')).toBeInTheDocument()
     expect(screen.getByText('What happened')).toBeInTheDocument()

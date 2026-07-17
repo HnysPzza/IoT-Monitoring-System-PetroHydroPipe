@@ -396,6 +396,16 @@ test('downtime routes list and update records', async () => {
       updateDowntime: async ({ downtimeId: targetId, values }) => ({
         record: { id: targetId, status: values.status || 'Open', cause: values.cause || 'Pending Cause Review' },
       }),
+      subscribeToDowntimeEvents: (listener) => {
+        setImmediate(() => {
+          listener({
+            type: 'downtime.created',
+            downtime: { id: downtimeId, status: 'Open', sensorCode: 'S-03' },
+          })
+        })
+
+        return () => {}
+      },
     },
   })
 
@@ -407,6 +417,18 @@ test('downtime routes list and update records', async () => {
     assert.equal(list.response.status, 200)
     assert.equal(list.body.records.length, 1)
 
+    const controller = new AbortController()
+    const stream = await fetch(`${baseUrl}/api/downtime/stream`, {
+      headers: authHeader('Production Supervisor'),
+      signal: controller.signal,
+    })
+    const reader = stream.body.getReader()
+    const { value } = await reader.read()
+    controller.abort()
+
+    assert.equal(stream.status, 200)
+    assert.match(Buffer.from(value).toString('utf8'), /event: heartbeat|event: downtime\.created/)
+
     const updated = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',
       headers: authHeader('Production Supervisor'),
@@ -415,6 +437,27 @@ test('downtime routes list and update records', async () => {
 
     assert.equal(updated.response.status, 200)
     assert.equal(updated.body.record.status, 'Resolved')
+
+    const clearNotes = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Production Supervisor'),
+      body: { notes: '' },
+    })
+    assert.equal(clearNotes.response.status, 200)
+
+    const reopen = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Production Supervisor'),
+      body: { status: 'Open' },
+    })
+    assert.equal(reopen.response.status, 400)
+
+    const assistantEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Asst. Operation Manager'),
+      body: { notes: 'Unauthorized edit' },
+    })
+    assert.equal(assistantEdit.response.status, 403)
   })
 })
 
@@ -540,6 +583,7 @@ test('POST /api/iot/events rejects invalid ESP32 device authentication', async (
     const result = await requestJson(baseUrl, '/api/iot/events', {
       method: 'POST',
       body: {
+        eventId: '11111111-1111-4111-8111-111111111111',
         eventType: 'pulse',
         signal: 'active',
         recordedAt: '2026-06-11T00:00:00.000Z',
@@ -549,6 +593,33 @@ test('POST /api/iot/events rejects invalid ESP32 device authentication', async (
 
     assert.equal(result.response.status, 401)
     assertError(result.body, 'DEVICE_UNAUTHORIZED')
+  })
+})
+
+test('POST /api/iot/events requires an idempotency UUID and matching signal', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      createSensorEvent: async () => ({ id: 'event-1' }),
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const missingEventId = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      body: { eventType: 'pulse', signal: 'active' },
+    })
+    const mismatchedSignal = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      body: {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        eventType: 'downtime',
+        signal: 'active',
+      },
+    })
+
+    assert.equal(missingEventId.response.status, 400)
+    assert.equal(mismatchedSignal.response.status, 400)
   })
 })
 
@@ -577,6 +648,7 @@ test('POST /api/iot/events returns 429 after repeated device events', async () =
           'x-device-key': 'test-device-key',
         },
         body: {
+          eventId: '11111111-1111-4111-8111-111111111111',
           eventType: 'pulse',
           signal: 'active',
           recordedAt: '2026-06-11T00:00:00.000Z',

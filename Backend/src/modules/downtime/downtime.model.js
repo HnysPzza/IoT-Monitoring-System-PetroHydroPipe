@@ -14,6 +14,8 @@ const listDowntimeSchema = z.object({
     status: z.enum(['All', 'Open', 'Resolved']).optional(),
     cause: z.string().trim().optional(),
     date: z.string().date('Invalid downtime date.').optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
   }),
 })
 
@@ -23,9 +25,9 @@ const updateDowntimeSchema = z.object({
   }),
   body: z.object({
     cause: downtimeCauseSchema.optional(),
-    status: z.enum(['Open', 'Resolved']).optional(),
+    status: z.literal('Resolved').optional(),
     notes: z.string().trim().max(1000, 'Notes are too long.').optional(),
-  }).refine((body) => body.cause || body.status || body.notes, {
+  }).refine((body) => body.cause !== undefined || body.status !== undefined || body.notes !== undefined, {
     message: 'At least one downtime field is required.',
   }),
 })

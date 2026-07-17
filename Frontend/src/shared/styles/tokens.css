@@ -1944,6 +1944,21 @@ button:disabled {
   vertical-align: top;
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  color: var(--c-text-2);
+  font-size: 0.84rem;
+}
+
+.table-pagination .icon-button {
+  width: 36px;
+  height: 36px;
+}
+
 .account-table th,
 .account-table td {
   padding: 14px 12px;
@@ -2050,6 +2065,23 @@ button:disabled {
   background: color-mix(in srgb, var(--panel-bg) 88%, var(--brand-accent) 12%);
 }
 
+.downtime-table tbody tr.needs-cause-review td {
+  background: color-mix(in srgb, var(--panel-bg) 86%, var(--status-idle-bg) 14%);
+}
+
+.pending-review-chip {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 4px 7px;
+  border: 1px solid var(--status-idle-border);
+  border-radius: 999px;
+  color: var(--status-idle-text);
+  background: var(--status-idle-bg);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
 .audit-details-row td {
   padding-top: 0;
   background: color-mix(in srgb, var(--panel-bg) 92%, var(--brand-accent) 8%);
@@ -2105,6 +2137,45 @@ button:disabled {
 .audit-technical-toggle-row {
   display: flex;
   justify-content: flex-start;
+}
+
+.downtime-details-panel {
+  box-shadow: none;
+}
+
+.downtime-notes-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.downtime-notes-editor span {
+  color: var(--c-text-2);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.downtime-notes-editor textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  color: var(--c-text);
+  background: var(--c-surface);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.downtime-notes-editor textarea:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.downtime-detail-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .audit-pagination {

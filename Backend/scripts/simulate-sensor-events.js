@@ -1,9 +1,12 @@
 require('dotenv').config({ quiet: true })
+const { randomUUID } = require('node:crypto')
 
 const BASE_URL = process.env.IOT_SIM_BASE_URL || 'http://localhost:3000'
 const INTERVAL_MS = Number.parseInt(process.env.IOT_SIM_INTERVAL_MS || '5000', 10)
 const RUN_ONCE = process.argv.includes('--once')
 const DETERMINISTIC_MODE = process.argv.includes('--deterministic')
+const verificationArgument = process.argv.find((argument) => argument.startsWith('--verify-sensor='))
+const VERIFICATION_SENSOR_CODE = verificationArgument?.slice('--verify-sensor='.length).toUpperCase() || null
 
 const devices = [
   {
@@ -88,7 +91,7 @@ function pickNormalEvent(device) {
   return { eventType: 'pulse', signal: 'active', expectedAlertAction: 'resolves any old alert', priority: 2 }
 }
 
-async function postEvent(device, event, sequence) {
+async function postEvent(device, event, sequence, overrides = {}) {
   const response = await fetch(`${BASE_URL}/api/iot/events`, {
     method: 'POST',
     headers: {
@@ -97,9 +100,10 @@ async function postEvent(device, event, sequence) {
       'x-device-key': process.env[device.keyEnv],
     },
     body: JSON.stringify({
+      eventId: overrides.eventId || randomUUID(),
       eventType: event.eventType,
       signal: event.signal,
-      recordedAt: new Date().toISOString(),
+      recordedAt: overrides.recordedAt || new Date().toISOString(),
       metadata: {
         simulator: true,
         sensorCode: device.sensorCode,
@@ -144,6 +148,47 @@ async function runBatch() {
   previousIssueSensorCode = issueDevice.sensorCode
 }
 
+async function runVerificationLifecycle() {
+  const device = devices.find((candidate) => candidate.sensorCode === VERIFICATION_SENSOR_CODE)
+  if (!device) {
+    throw new Error(`Unknown verification sensor ${VERIFICATION_SENSOR_CODE}.`)
+  }
+
+  const issueAt = new Date()
+  const issueEventId = randomUUID()
+  const issue = { eventType: 'fault', signal: 'fault' }
+  const recovered = { eventType: 'recovered', signal: 'active' }
+
+  console.log(`Verifying idempotent downtime lifecycle for ${device.sensorCode} against ${BASE_URL}`)
+  const createdEvent = await postEvent(device, issue, 1, {
+    eventId: issueEventId,
+    recordedAt: issueAt.toISOString(),
+  })
+  const duplicateEvent = await postEvent(device, issue, 1, {
+    eventId: issueEventId,
+    recordedAt: issueAt.toISOString(),
+  })
+  const staleEvent = await postEvent(device, recovered, 2, {
+    recordedAt: new Date(issueAt.getTime() - 1000).toISOString(),
+  })
+
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  const recoveredEvent = await postEvent(device, recovered, 3)
+
+  const checks = [
+    [createdEvent.stateApplied && !createdEvent.duplicate && !createdEvent.stale, 'issue event was not applied'],
+    [duplicateEvent.duplicate && !duplicateEvent.stateApplied, 'duplicate retry was not idempotent'],
+    [staleEvent.stale && !staleEvent.stateApplied, 'stale recovery changed current state'],
+    [recoveredEvent.stateApplied && !recoveredEvent.stale, 'final recovery was not applied'],
+  ]
+  const failedCheck = checks.find(([passed]) => !passed)
+  if (failedCheck) {
+    throw new Error(`Verification failed: ${failedCheck[1]}.`)
+  }
+
+  console.log(`Verified ${device.sensorCode}: issue applied, duplicate ignored, stale recovery ignored, final recovery applied.`)
+}
+
 async function main() {
   const missingKeys = getMissingKeys()
 
@@ -156,6 +201,11 @@ async function main() {
   if (!Number.isFinite(INTERVAL_MS) || INTERVAL_MS < 1000) {
     console.error('IOT_SIM_INTERVAL_MS must be at least 1000.')
     process.exit(1)
+  }
+
+  if (VERIFICATION_SENSOR_CODE) {
+    await runVerificationLifecycle()
+    return
   }
 
   await runBatch()
