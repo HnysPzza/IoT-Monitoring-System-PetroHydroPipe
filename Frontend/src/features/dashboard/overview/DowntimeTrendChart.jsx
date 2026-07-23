@@ -1,10 +1,11 @@
 import { AlertTriangle } from 'lucide-react'
-import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 export const trendModes = [
+  { id: 'hour', label: 'Last Hour', disabled: true },
   { id: 'today', label: 'Today' },
-  { id: 'week', label: 'This week' },
-  { id: 'month', label: 'Month' },
+  { id: 'week', label: 'Weekly' },
+  { id: 'month', label: 'Monthly' },
 ]
 
 export function startOfDay(date) {
@@ -25,11 +26,16 @@ function addDays(date, days) {
 }
 
 export function toDateInputValue(date) {
-  return date.toISOString().slice(0, 10)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function toMonthInputValue(date) {
-  return date.toISOString().slice(0, 7)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
 }
 
 export function fromDateInputValue(value) {
@@ -95,53 +101,26 @@ function ChartTooltip({ active, payload, label }) {
   )
 }
 
-function HighDowntimeMarker(props) {
-  const { cx, cy, payload, thresholdMinutes } = props
-
-  if (!payload || payload.minutes < thresholdMinutes) {
-    return null
-  }
-
-  return (
-    <g transform={`translate(${cx - 8}, ${cy - 8})`}>
-      <circle className="downtime-marker-ring" cx="8" cy="8" r="8" />
-      <circle className="downtime-marker-dot" cx="8" cy="8" r="4" />
-    </g>
-  )
-}
-
 export default function DowntimeTrendChart({ data, thresholdMinutes = 30 }) {
   return (
-    <div className="trend-chart-panel" role="img" aria-label="Downtime trend chart in minutes">
+    <div className="trend-chart-panel" role="img" aria-label="Downtime by period bar chart in minutes">
       <ResponsiveContainer width="100%" height={260} minWidth={0}>
-        <AreaChart data={data} margin={{ top: 10, right: 18, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id="downtimeAreaGradient" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#59CDE9" stopOpacity={0.34} />
-              <stop offset="100%" stopColor="#59CDE9" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
+        <BarChart data={data} margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
           <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
           <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
-          <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#59CDE9', strokeOpacity: 0.32 }} />
-          {/* Anything above this line gets a red marker so downtime issues are easy to spot. */}
-          <ReferenceLine y={thresholdMinutes} stroke="#EF4444" strokeDasharray="6 6" label={{ value: 'Downtime limit', fill: 'var(--status-downtime-text)', fontSize: 12 }} />
-          <Area
-            type="monotone"
-            dataKey="minutes"
-            stroke="#59CDE9"
-            strokeWidth={3}
-            fill="url(#downtimeAreaGradient)"
-            dot={{ r: 4, strokeWidth: 2, stroke: '#59CDE9', fill: 'var(--c-surface)' }}
-            activeDot={{ r: 6, strokeWidth: 3, stroke: '#59CDE9', fill: 'var(--c-surface)' }}
-          />
-          <Scatter data={data} dataKey="minutes" shape={(props) => <HighDowntimeMarker {...props} thresholdMinutes={thresholdMinutes} />} />
-        </AreaChart>
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
+          <ReferenceLine y={thresholdMinutes} stroke="#EF4444" strokeDasharray="6 6" label={{ value: '30 min limit', fill: 'var(--status-downtime-text)', fontSize: 11 }} />
+          <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
+            {data.map((item) => (
+              <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? '#EF4444' : '#F59E0B'} />
+            ))}
+          </Bar>
+        </BarChart>
       </ResponsiveContainer>
       <div className="downtime-threshold-note">
         <AlertTriangle size={15} aria-hidden="true" />
-        <span>Red markers indicate downtime points above {thresholdMinutes} minutes.</span>
+        <span>Red bars indicate periods at or above {thresholdMinutes} minutes.</span>
       </div>
       <div className="trend-data-row" aria-hidden="true">
         {data.slice(-4).map((item) => (

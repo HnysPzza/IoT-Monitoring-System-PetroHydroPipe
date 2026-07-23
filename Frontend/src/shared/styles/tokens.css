@@ -573,6 +573,7 @@ button:disabled {
   background: var(--sidebar-bg);
   transition: width 200ms var(--ease-std), transform 200ms var(--ease-std);
   z-index: 30;
+  color: var(--c-text);
 }
 
 .dashboard-sidebar.is-collapsed {
@@ -787,7 +788,7 @@ button:disabled {
 }
 
 :root[data-theme='light'] .sidebar-link-label {
-  color: inherit;
+  color: var(--c-text-2);
 }
 
 .sidebar-link.is-active .sidebar-link-label {
@@ -1043,6 +1044,17 @@ button:disabled {
   align-items: start;
 }
 
+.overview-charts-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(380px, 0.9fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.overview-charts-grid > * {
+  min-width: 0;
+}
+
 .alerts-stack,
 .kpi-grid,
 .section-grid,
@@ -1166,6 +1178,11 @@ button:disabled {
 .production-analytics-card {
   display: grid;
   gap: 18px;
+}
+
+.overview-charts-grid .production-analytics-card,
+.downtime-chart-card {
+  align-content: start;
 }
 
 .industrial-chart-card {
@@ -1363,6 +1380,42 @@ button:disabled {
   border-radius: 12px;
   background: var(--card-bg);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px 18px;
+  margin: 0 8px 4px;
+  color: var(--c-text-2);
+  font-size: 0.72rem;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.legend-line {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid;
+}
+
+.legend-current {
+  border-color: #1677FF;
+}
+
+.legend-previous {
+  border-color: #B0BBF7;
+  border-top-style: dashed;
+}
+
+.legend-target {
+  border-color: #10B981;
+  border-top-style: dashed;
 }
 
 .section-card {
@@ -1575,9 +1628,27 @@ button:disabled {
 }
 
 .trend-mode-button.is-selected {
-  color: var(--c-text);
-  border-color: var(--card-border);
-  background: var(--hover-bg);
+  color: #FFFFFF;
+  border-color: var(--c-primary);
+  background: var(--c-primary);
+}
+
+.trend-mode-button:disabled {
+  opacity: 0.5;
+}
+
+.downtime-chart-card .trend-mode-toggle {
+  grid-template-columns: repeat(4, minmax(72px, 1fr));
+}
+
+.downtime-chart-card .section-heading {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.downtime-chart-card .trend-controls {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .trend-calendar-control {
@@ -1625,6 +1696,137 @@ button:disabled {
   grid-template-rows: minmax(260px, 1fr) auto;
   gap: 12px;
   min-height: 280px;
+}
+
+.machine-health-card {
+  overflow: hidden;
+}
+
+.overview-sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overview-sensor-card {
+  display: grid;
+  align-content: space-between;
+  gap: 22px;
+  min-width: 0;
+  min-height: 154px;
+  padding: 16px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.overview-sensor-card.status-running {
+  border-top: 3px solid var(--c-success);
+}
+
+.overview-sensor-card.status-idle {
+  border-top: 3px solid var(--c-primary);
+}
+
+.overview-sensor-card.status-downtime {
+  border-top: 3px solid var(--c-danger);
+}
+
+.overview-sensor-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.sensor-state-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--status-active-text);
+  background: var(--status-active-bg);
+}
+
+.overview-sensor-card.status-downtime .sensor-state-icon {
+  color: var(--status-downtime-text);
+  background: var(--status-downtime-bg);
+}
+
+.overview-sensor-heading p,
+.overview-sensor-heading h3 {
+  margin: 0;
+}
+
+.overview-sensor-heading p {
+  color: var(--c-text-3);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.overview-sensor-heading h3 {
+  margin-top: 4px;
+  color: var(--c-text);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.overview-sensor-footer {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  color: var(--c-text-3);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--c-primary);
+  content: '';
+}
+
+.stat-card-success::before {
+  background: var(--c-success);
+}
+
+.stat-card-warning::before {
+  background: #F59E0B;
+}
+
+.stat-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stat-card-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--c-primary);
+  background: var(--panel-bg-soft);
+}
+
+.stat-card-success .stat-card-icon {
+  color: var(--status-active-text);
+  background: var(--status-active-bg);
+}
+
+.stat-card-warning .stat-card-icon {
+  color: #B45309;
+  background: rgba(245, 158, 11, 0.12);
 }
 
 .recharts-panel {
@@ -2438,8 +2640,13 @@ button:disabled {
 
   .section-grid,
   .machine-grid,
-  .overview-summary-grid {
+  .overview-summary-grid,
+  .overview-charts-grid {
     grid-template-columns: 1fr;
+  }
+
+  .overview-sensor-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .live-sensor-grid,
@@ -2545,6 +2752,10 @@ button:disabled {
   .audit-details-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .overview-sensor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -2564,26 +2775,54 @@ button:disabled {
   }
 
   .dashboard-topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    min-height: 68px;
+    padding: 10px 16px;
+  }
+
+  .topbar-leading {
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .topbar-leading > div {
+    min-width: 0;
+  }
+
+  .topbar-label {
+    font-size: 1rem;
+  }
+
+  .topbar-subtitle {
+    display: none;
   }
 
   .topbar-trailing {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 
   .alerts-popover {
-    left: 0;
-    right: auto;
-    width: 100%;
+    position: fixed;
+    top: 76px;
+    left: 16px;
+    right: 16px;
+    width: auto;
   }
 
   .dashboard-clock {
     white-space: normal;
   }
 
+  .dashboard-clock span {
+    display: none;
+  }
+
   .kpi-grid,
+  .overview-sensor-grid,
   .live-machine-grid,
   .live-sensor-grid,
   .admin-sensor-grid,

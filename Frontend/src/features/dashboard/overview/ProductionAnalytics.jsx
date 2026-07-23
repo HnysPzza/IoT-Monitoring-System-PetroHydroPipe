@@ -1,5 +1,5 @@
 import { Gauge, Target, TrendingDown, TrendingUp } from 'lucide-react'
-import { Area, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatNumber } from '../../../shared/utils/formatters.js'
 
 const analyticsModes = [
@@ -80,6 +80,11 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
       </div>
 
       <div className="analytics-chart industrial-recharts-panel" aria-label={`${selected.label} production output comparison chart`}>
+        <div className="chart-legend" aria-label="Production chart legend">
+          <span><i className="legend-line legend-current" aria-hidden="true" />{selected.currentLabel}</span>
+          <span><i className="legend-line legend-previous" aria-hidden="true" />{selected.previousLabel}</span>
+          <span><i className="legend-line legend-target" aria-hidden="true" />Target pace</span>
+        </div>
         <ResponsiveContainer width="100%" height={320} minWidth={0}>
           {/* ComposedChart layers current output, previous output, and target pace in one view. */}
           <ComposedChart data={selected.points} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
@@ -93,10 +98,7 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={formatNumber} width={58} />
             <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: '#59CDE9', strokeOpacity: 0.24 }} />
-            <Legend iconType="line" wrapperStyle={{ color: 'var(--c-text-2)', fontSize: 12 }} />
-            <ReferenceLine y={selected.targetTotal / selected.points.length} stroke="#10B981" strokeDasharray="5 5" label={{ value: 'Target pace', fill: 'var(--status-active-text)', fontSize: 12 }} />
-            <Area type="monotone" dataKey="current" name={selected.currentLabel} fill="url(#productionCurrentArea)" stroke="none" />
-            <Line type="monotone" dataKey="current" name={selected.currentLabel} stroke="#59CDE9" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} />
+            <Area type="monotone" dataKey="current" name={selected.currentLabel} fill="url(#productionCurrentArea)" stroke="#1677FF" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} />
             <Line type="monotone" dataKey="previous" name={selected.previousLabel} stroke="#B0BBF7" strokeWidth={2.5} strokeDasharray="7 7" dot={false} />
             <Line type="monotone" dataKey="target" name="Target pace" stroke="#10B981" strokeWidth={2} strokeDasharray="4 6" dot={false} />
           </ComposedChart>
