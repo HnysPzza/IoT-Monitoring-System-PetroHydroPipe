@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap');
 
 /* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
@@ -6,7 +6,7 @@
   --c-surface: #111827;
   --c-surface2: #1F2937;
   --c-border: #374151;
-  --c-primary: #59CDE9;
+  --c-primary: #1677FF;
   --c-accent: #59CDE9;
   --c-text: #F9FAFB;
   --c-text-2: #B0BBF7;
@@ -61,12 +61,12 @@
 
 /* Light theme overrides dashboard surfaces while the login background keeps its own look. */
 :root[data-theme='light'] {
-  --c-bg: #F5F7FF;
+  --c-bg: #F4F7FA;
   --c-surface: #FFFFFF;
-  --c-surface2: #EEF2FF;
-  --c-border: #C8D2FF;
-  --c-primary: #59CDE9;
-  --c-accent: #59CDE9;
+  --c-surface2: #F1F5F9;
+  --c-border: #CBD5E1;
+  --c-primary: #1677FF;
+  --c-accent: #1677FF;
   --c-text: #0B1220;
   --c-text-2: #334155;
   --c-text-3: #64748B;
@@ -75,14 +75,14 @@
   --brand-panel-bg: rgba(255, 255, 255, 0.58);
   --form-panel-bg: rgba(238, 242, 255, 0.72);
   --glass-card-bg: rgba(255, 255, 255, 0.7);
-  --dashboard-bg: linear-gradient(rgba(245, 247, 255, 0.92), rgba(238, 242, 255, 0.98));
-  --sidebar-bg: rgba(255, 255, 255, 0.94);
-  --topbar-bg: rgba(255, 255, 255, 0.88);
-  --card-bg: rgba(255, 255, 255, 0.84);
-  --panel-bg: rgba(238, 242, 255, 0.96);
-  --panel-bg-soft: rgba(89, 205, 233, 0.16);
-  --icon-bg: rgba(89, 205, 233, 0.2);
-  --hover-bg: rgba(89, 205, 233, 0.18);
+  --dashboard-bg: linear-gradient(rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.98));
+  --sidebar-bg: #0B1B29;
+  --topbar-bg: rgba(255, 255, 255, 0.94);
+  --card-bg: rgba(255, 255, 255, 0.96);
+  --panel-bg: #F8FAFC;
+  --panel-bg-soft: #EFF6FF;
+  --icon-bg: #EAF2FF;
+  --hover-bg: rgba(22, 119, 255, 0.1);
   --placeholder-text: rgba(100, 116, 139, 0.72);
   --input-focus-bg: rgba(89, 205, 233, 0.06);
   --input-focus-shadow: 0 0 0 3px rgba(89, 205, 233, 0.12);
@@ -109,9 +109,9 @@
   --status-inactive-text: #475569;
   --status-inactive-bg: rgba(100, 116, 139, 0.12);
   --status-inactive-border: rgba(100, 116, 139, 0.24);
-  --subtle-border: rgba(89, 205, 233, 0.14);
-  --card-border: rgba(89, 205, 233, 0.16);
-  --shadow-soft: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --subtle-border: #E2E8F0;
+  --card-border: #D9E2EC;
+  --shadow-soft: 0 18px 48px rgba(15, 23, 42, 0.1);
 }
 
 .sr-only {
@@ -144,7 +144,7 @@ body {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     var(--c-bg);
   background-size: 40px 40px;
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 
 button,
@@ -252,32 +252,14 @@ button:disabled {
   display: none;
 }
 
-.eyebrow,
 .version,
 .field-error,
 .caps-warning,
-.security-badge,
-.stat-label,
 .stat-value,
-.stat-helper,
 .machine-id,
-.machine-meta dt,
 .machine-meta dd,
-.section-eyebrow,
-.section-chip,
-.dashboard-clock,
-.topbar-label,
-.topbar-subtitle,
-.sidebar-brand-name,
-.sidebar-brand-subtitle,
-.sidebar-link-label,
-.sidebar-user-name,
-.sidebar-user-role,
-.trend-bar-label,
 .trend-bar-value,
-.availability-copy p,
-.availability-copy span,
-.notice {
+.availability-copy span {
   font-family: 'IBM Plex Mono', monospace;
 }
 
@@ -565,30 +547,37 @@ button:disabled {
   display: grid;
   grid-template-columns: auto 1fr;
   min-height: 100vh;
+  overflow-x: clip;
   background:
     var(--dashboard-bg),
     var(--c-bg);
 }
 
 .dashboard-sidebar {
+  --c-text: #F8FAFC;
+  --c-text-2: #AFC0CE;
+  --card-border: rgba(175, 192, 206, 0.16);
+  --subtle-border: rgba(175, 192, 206, 0.15);
+  --icon-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg: rgba(22, 119, 255, 0.14);
   position: sticky;
   top: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: 260px;
+  width: 236px;
   height: 100dvh;
   max-height: 100vh;
-  padding: 20px 16px;
+  padding: 16px 12px;
   overflow: hidden;
   border-right: 1px solid var(--subtle-border);
   background: var(--sidebar-bg);
-  transition: width 180ms var(--ease-std), transform 180ms var(--ease-std);
+  transition: width 200ms var(--ease-std), transform 200ms var(--ease-std);
   z-index: 30;
 }
 
 .dashboard-sidebar.is-collapsed {
-  width: 88px;
-  padding: 20px 12px;
+  width: 76px;
+  padding: 16px 10px;
 }
 
 .sidebar-header,
@@ -608,9 +597,10 @@ button:disabled {
 }
 
 .sidebar-header {
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  min-height: 48px;
+  margin-bottom: 16px;
 }
 
 .dashboard-sidebar.is-collapsed .sidebar-header {
@@ -627,8 +617,8 @@ button:disabled {
 }
 
 .sidebar-logo {
-  width: 52px;
-  height: 52px;
+  width: 42px;
+  height: 42px;
   object-fit: contain;
   flex: 0 0 auto;
 }
@@ -651,7 +641,8 @@ button:disabled {
 }
 
 .sidebar-brand-name {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  letter-spacing: -0.02em;
 }
 
 .sidebar-brand-subtitle,
@@ -672,14 +663,14 @@ button:disabled {
 .dashboard-sidebar.is-collapsed .sidebar-brand,
 .dashboard-sidebar.is-collapsed .sidebar-link-copy,
 .dashboard-sidebar.is-collapsed .sidebar-user-copy,
+.dashboard-sidebar.is-collapsed .sidebar-nav-heading,
 .dashboard-sidebar.is-collapsed .sidebar-logout {
   display: none;
 }
 
 .sidebar-nav {
   display: grid;
-  grid-auto-rows: minmax(48px, auto);
-  gap: 8px;
+  gap: 18px;
   align-content: start;
   min-height: 0;
   overflow-y: auto;
@@ -687,6 +678,30 @@ button:disabled {
   padding-right: 2px;
   scrollbar-width: thin;
   scrollbar-color: var(--card-border) transparent;
+}
+
+.sidebar-nav-group,
+.sidebar-nav-links {
+  display: grid;
+}
+
+.sidebar-nav-group {
+  gap: 6px;
+}
+
+.sidebar-nav-links {
+  gap: 4px;
+}
+
+.sidebar-nav-heading {
+  margin: 0;
+  padding: 0 10px;
+  color: #7890A2;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+  text-transform: uppercase;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -703,14 +718,14 @@ button:disabled {
   grid-template-columns: 36px 1fr;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
+  min-height: 46px;
   padding: 6px 10px;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   color: inherit;
   text-decoration: none;
-  transition: border-color 160ms var(--ease-std), background 160ms var(--ease-std);
+  transition: border-color 180ms var(--ease-std), background 180ms var(--ease-std), color 180ms var(--ease-std);
 }
 
 .dashboard-sidebar.is-collapsed .sidebar-link {
@@ -741,13 +756,20 @@ button:disabled {
   background: var(--hover-bg);
 }
 
+.sidebar-link.is-active {
+  border-color: rgba(96, 165, 250, 0.42);
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #1677FF, #0E62E8);
+  box-shadow: 0 8px 22px rgba(22, 119, 255, 0.22);
+}
+
 .sidebar-link-icon {
   display: grid;
   width: 36px;
   height: 36px;
   place-items: center;
   border-radius: 8px;
-  background: var(--icon-bg);
+  background: transparent;
   color: var(--c-text);
 }
 
@@ -760,12 +782,12 @@ button:disabled {
 }
 
 .sidebar-link-label {
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
 }
 
 :root[data-theme='light'] .sidebar-link-label {
-  color: #0B1220;
+  color: inherit;
 }
 
 .sidebar-link.is-active .sidebar-link-label {
@@ -775,7 +797,7 @@ button:disabled {
 .sidebar-footer {
   display: grid;
   gap: 12px;
-  padding-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--subtle-border);
   min-width: 0;
   background: var(--sidebar-bg);
@@ -815,10 +837,22 @@ button:disabled {
 
 .sidebar-logout {
   width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  padding-inline: 12px;
+  color: var(--c-text);
+  border-color: transparent;
+  background: transparent;
+}
+
+.sidebar-logout:hover {
+  border-color: var(--card-border);
+  background: var(--hover-bg);
 }
 
 .dashboard-main {
   min-width: 0;
+  overflow-x: clip;
 }
 
 .dashboard-topbar {
@@ -829,11 +863,12 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 72px;
-  padding: 16px 24px;
+  min-height: 76px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--subtle-border);
   background: var(--topbar-bg);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 12px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(12px);
 }
 
 .topbar-leading,
@@ -843,8 +878,9 @@ button:disabled {
 
 .topbar-label {
   margin: 0;
-  font-size: 0.72rem;
-  text-transform: uppercase;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .topbar-subtitle,
@@ -854,13 +890,26 @@ button:disabled {
 }
 
 .dashboard-clock {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
   margin: 0;
   white-space: nowrap;
 }
 
+.dashboard-clock strong {
+  color: var(--c-text);
+  font-size: 0.84rem;
+}
+
+.dashboard-clock span {
+  color: var(--c-text-3);
+  font-size: 0.7rem;
+}
+
 .dashboard-icon-button {
   border: 1px solid var(--card-border);
-  background: var(--panel-bg);
+  background: var(--card-bg);
 }
 
 .topbar-trailing {
@@ -872,26 +921,7 @@ button:disabled {
 }
 
 .notification-button.is-alerting {
-  color: var(--status-downtime-text);
-  border-color: var(--status-downtime-border);
-  background: var(--status-downtime-bg);
-}
-
-.notification-badge {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  color: #fff;
-  background: var(--c-danger);
-  font-size: 0.68rem;
-  font-weight: 800;
-  line-height: 1;
+  color: var(--c-danger);
 }
 
 .alerts-popover {
@@ -996,6 +1026,8 @@ button:disabled {
 }
 
 .dashboard-content {
+  width: min(100%, 1680px);
+  margin-inline: auto;
   padding: 24px;
 }
 
@@ -1328,12 +1360,13 @@ button:disabled {
 .machine-card,
 .placeholder-card {
   border: 1px solid var(--subtle-border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--card-bg);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
 .section-card {
-  padding: 20px;
+  padding: 22px;
 }
 
 .dashboard-alert {
@@ -1352,7 +1385,8 @@ button:disabled {
 .placeholder-card h1 {
   margin: 4px 0 0;
   color: var(--c-text);
-  font-size: 1.2rem;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
 }
 
 .section-copy p,
@@ -1373,8 +1407,10 @@ button:disabled {
 
 .section-eyebrow {
   margin: 0;
-  color: var(--c-accent);
-  font-size: 0.74rem;
+  color: var(--c-text-3);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -1391,13 +1427,14 @@ button:disabled {
 .stat-card {
   display: grid;
   gap: 12px;
-  padding: 18px;
+  padding: 20px;
 }
 
 .stat-label {
   margin: 0;
   color: var(--c-text-2);
   font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .stat-value {
@@ -2252,7 +2289,7 @@ button:disabled {
   gap: 24px;
   padding: 18px;
   border: 1px solid var(--subtle-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--panel-bg);
 }
 

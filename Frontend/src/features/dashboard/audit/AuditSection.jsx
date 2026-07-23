@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, History, RotateCw, Search } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, History, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getAuditLogs } from './auditService.js'
 import {
@@ -113,7 +113,7 @@ export default function AuditSection() {
       <section className="section-card audit-controls-card" aria-labelledby="audit-title">
         <div className="section-heading">
           <div>
-            <p className="section-eyebrow">Backend-backed</p>
+            <p className="section-eyebrow">Accountability</p>
             <h2 id="audit-title">Audit activity log</h2>
           </div>
           <span className="section-chip">
@@ -166,10 +166,6 @@ export default function AuditSection() {
             <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
             {isRefreshing ? 'Refreshing' : 'Refresh'}
           </button>
-          <div className="live-network-card audit-note">
-            <Search size={17} aria-hidden="true" />
-            <span>Audit rows are stored in Supabase and include actions from all roles plus system/device events.</span>
-          </div>
         </div>
       </section>
 

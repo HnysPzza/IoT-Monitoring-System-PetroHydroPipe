@@ -1,8 +1,8 @@
-import { Activity, BarChart3, Bell, Check, Gauge, History, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
+import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
-import { dashboardPageMeta, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
 
 const icons = {
@@ -31,19 +31,21 @@ function DashboardClock() {
   }, [])
 
   return (
-    <p className="dashboard-clock" aria-live="off">
-      {now.toLocaleTimeString('en-PH', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })}{' - '}
-      {now.toLocaleDateString('en-PH', {
-        weekday: 'long',
-        month: 'long',
-        day: '2-digit',
-        year: 'numeric',
-      })}
-    </p>
+    <time className="dashboard-clock" dateTime={now.toISOString()}>
+      <strong>
+        {now.toLocaleTimeString('en-PH', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}
+      </strong>
+      <span>
+        {now.toLocaleDateString('en-PH', {
+          month: 'short',
+          day: '2-digit',
+          year: 'numeric',
+        })}
+      </span>
+    </time>
   )
 }
 
@@ -66,8 +68,13 @@ export default function AdminDashboard() {
   const location = useLocation()
 
   // Sidebar items are filtered by the role stored in the auth token response.
-  const visibleNavItems = useMemo(
-    () => navItems.filter((item) => item.roles.includes(user?.role)),
+  const visibleNavGroups = useMemo(
+    () => navGroups
+      .map((group) => ({
+        ...group,
+        items: navItems.filter((item) => item.group === group.id && item.roles.includes(user?.role)),
+      }))
+      .filter((group) => group.items.length > 0),
     [user?.role],
   )
 
@@ -193,24 +200,32 @@ export default function AdminDashboard() {
         </div>
 
         <nav className="sidebar-nav" aria-label="Dashboard sections">
-          {visibleNavItems.map((item) => {
-            const Icon = icons[item.icon]
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === '/dashboard'}
-                className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''}`}
-              >
-                <span className="sidebar-link-icon" aria-hidden="true">
-                  <Icon size={18} />
-                </span>
-                <span className="sidebar-link-copy">
-                  <span className="sidebar-link-label">{item.label}</span>
-                </span>
-              </NavLink>
-            )
-          })}
+          {visibleNavGroups.map((group) => (
+            <div className="sidebar-nav-group" key={group.id}>
+              <p className="sidebar-nav-heading">{group.label}</p>
+              <div className="sidebar-nav-links">
+                {group.items.map((item) => {
+                  const Icon = icons[item.icon]
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/dashboard'}
+                      title={isSidebarCollapsed ? item.label : undefined}
+                      className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''}`}
+                    >
+                      <span className="sidebar-link-icon" aria-hidden="true">
+                        <Icon size={18} />
+                      </span>
+                      <span className="sidebar-link-copy">
+                        <span className="sidebar-link-label">{item.label}</span>
+                      </span>
+                    </NavLink>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
@@ -224,7 +239,8 @@ export default function AdminDashboard() {
             </div>
           </div>
           <button className="btn btn-secondary sidebar-logout" type="button" onClick={handleLogout}>
-            Logout
+            <LogOut size={18} aria-hidden="true" />
+            <span>Logout</span>
           </button>
         </div>
       </aside>
@@ -258,7 +274,7 @@ export default function AdminDashboard() {
               onClick={() => setIsAlertsOpen((value) => !value)}
             >
               <Bell size={18} aria-hidden="true" />
-              {activeAlertCount > 0 ? <span className="notification-badge" aria-hidden="true">{activeAlertCount}</span> : null}
+              <span className="sr-only">{activeAlertCount > 0 ? `${activeAlertCount} active alerts` : 'No active alerts'}</span>
             </button>
             {isAlertsOpen ? (
               <div className="alerts-popover" role="dialog" aria-label="Active alerts">

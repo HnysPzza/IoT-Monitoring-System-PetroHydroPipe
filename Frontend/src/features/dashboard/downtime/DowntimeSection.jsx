@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock, PackageMinus, TriangleAlert } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
@@ -448,12 +448,6 @@ export default function DowntimeSection() {
             </button>
           </nav>
         ) : null}
-      </section>
-
-      <section className="section-card live-network-card">
-        <Clock size={18} aria-hidden="true" />
-        <span>Downtime records, cause assignment, and resolve actions are stored through the backend API.</span>
-        <PackageMinus size={18} aria-hidden="true" />
       </section>
     </div>
   )

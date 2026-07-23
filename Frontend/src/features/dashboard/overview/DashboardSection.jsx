@@ -62,7 +62,7 @@ function OverviewEmptyState({ notice }) {
         <div className="section-copy">
           <p className="section-eyebrow">No data</p>
           <h1 id="overview-empty-title">No overview data available</h1>
-          <p>Backend overview data is empty or unavailable for the selected range.</p>
+          <p>No overview data is available for the selected range.</p>
         </div>
       </section>
     </div>

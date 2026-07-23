@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, PauseCircle, Radio, RotateCw, Wifi, Wrench } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, Wifi, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
@@ -101,7 +101,7 @@ export default function LiveSection() {
               <strong>{machine.location || 'Not set'}</strong>
             </div>
             <div>
-              <span className="live-metric-label">Last Backend Update</span>
+              <span className="live-metric-label">Last Update</span>
               <strong>{formatLiveDateTime(machine.lastUpdated)}</strong>
             </div>
             <div>
@@ -115,7 +115,7 @@ export default function LiveSection() {
           <div className="section-copy">
             <p className="section-eyebrow">No live source</p>
             <h1 id="live-empty-title">Live feed is unavailable</h1>
-            <p>Check the backend connection and confirm Spiral Mill 01 exists in Supabase.</p>
+            <p>Check the machine connection and refresh the live feed.</p>
           </div>
         </section>
       )}
@@ -135,7 +135,7 @@ export default function LiveSection() {
           ))}
         </div>
         <div className="live-refresh">
-          <span>Backend data {machine?.lastUpdated ? formatLiveDateTime(machine.lastUpdated) : 'not loaded'}</span>
+          <span>Last update {machine?.lastUpdated ? formatLiveDateTime(machine.lastUpdated) : 'not available'}</span>
           <button className="btn btn-secondary table-action-button" type="button" disabled={isRefreshing} onClick={() => loadLiveFeed({ silent: true })}>
             <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
             {isRefreshing ? 'Refreshing' : 'Refresh'}
@@ -149,7 +149,7 @@ export default function LiveSection() {
             <div className="section-copy">
               <p className="section-eyebrow">No matching sensors</p>
               <h1 id="live-filter-empty-title">No sensors match this filter</h1>
-              <p>Try another status filter or refresh the backend live feed.</p>
+              <p>Try another status filter or refresh the live feed.</p>
             </div>
           </section>
         ) : (
@@ -188,11 +188,6 @@ export default function LiveSection() {
             </article>
           ))
         )}
-      </section>
-
-      <section className="section-card live-network-card">
-        <Radio size={18} aria-hidden="true" />
-        <span>Backend mode: live values come from Supabase sensor events submitted by authenticated ESP32 devices.</span>
       </section>
     </div>
   )

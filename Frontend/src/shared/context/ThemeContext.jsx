@@ -3,10 +3,10 @@ import { createContext, useEffect, useState } from 'react'
 const THEME_STORAGE_KEY = 'iot_monitoring_theme'
 export const ThemeContext = createContext(null)
 
-// Starts from saved theme first, then falls back to the user's system preference.
+// Starts from the saved theme, then uses the dashboard's light operational theme.
 function getInitialTheme() {
   if (typeof window === 'undefined') {
-    return 'dark'
+    return 'light'
   }
 
   const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
@@ -15,7 +15,7 @@ function getInitialTheme() {
     return storedTheme
   }
 
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  return 'light'
 }
 
 export function ThemeProvider({ children }) {

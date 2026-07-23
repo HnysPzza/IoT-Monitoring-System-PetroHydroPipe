@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, Cpu, Factory, MapPin, RadioTower, RotateCw, Save } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, Cpu, Factory, MapPin, RadioTower, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
@@ -15,7 +15,7 @@ function EmptyMachinesState() {
       <div className="section-copy">
         <p className="section-eyebrow">No records</p>
         <h1 id="machines-empty-title">No machines found</h1>
-        <p>Seed Spiral Mill 01 and its 5 ESP32 sensors in Supabase to manage machine setup here.</p>
+        <p>Add Spiral Mill 01 and its five sensors to manage machine setup here.</p>
       </div>
     </section>
   )
@@ -264,11 +264,6 @@ export default function MachinesSection() {
             ))}
           </div>
         )}
-      </section>
-
-      <section className="section-card live-network-card">
-        <Save size={18} aria-hidden="true" />
-        <span>Machine and sensor status changes are saved to Supabase and prepare the system for ESP32 ingestion.</span>
       </section>
     </div>
   )
