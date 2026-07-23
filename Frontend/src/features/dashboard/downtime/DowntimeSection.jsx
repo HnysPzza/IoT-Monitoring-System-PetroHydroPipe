@@ -278,8 +278,6 @@ export default function DowntimeSection() {
                 <th scope="col">Event</th>
                 <th scope="col">Machine/Sensor</th>
                 <th scope="col">Cause</th>
-                <th scope="col">Started</th>
-                <th scope="col">Ended</th>
                 <th scope="col">Duration</th>
                 <th scope="col">Status</th>
                 <th scope="col">Details</th>
@@ -289,18 +287,18 @@ export default function DowntimeSection() {
             <tbody>
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan="9">No downtime records match the selected filters.</td>
+                  <td colSpan="7">No downtime records match the selected filters.</td>
                 </tr>
               ) : (
                 records.map((record) => (
                   <Fragment key={record.id}>
                     <tr className={`${expandedRecordId === record.id ? 'is-expanded' : ''} ${record.needsCauseReview ? 'needs-cause-review' : ''}`}>
-                      <td>
+                      <td data-label="Event">
                         <span className="audit-action-label">{getDisplayLabel(record)}</span>
                         {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
                       </td>
-                      <td>{record.machine}<br /><span className="table-muted">{record.sensorLabel || formatSensorName(record.sensor)}</span></td>
-                      <td>
+                      <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{record.sensorLabel || formatSensorName(record.sensor)}</span></td>
+                      <td data-label="Cause">
                         <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
                         <select
                           id={`downtime-cause-${record.id}`}
@@ -317,11 +315,9 @@ export default function DowntimeSection() {
                           ))}
                         </select>
                       </td>
-                      <td>{formatShortDateTime(record.startedAt)}</td>
-                      <td>{formatShortDateTime(record.endedAt, 'Still open')}</td>
-                      <td>{record.durationMinutes} min</td>
-                      <td><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>
-                      <td>
+                      <td data-label="Duration">{record.durationMinutes} min</td>
+                      <td data-label="Status"><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>
+                      <td data-label="Details">
                         <button
                           className="btn btn-secondary table-action-button"
                           type="button"
@@ -332,7 +328,7 @@ export default function DowntimeSection() {
                           {expandedRecordId === record.id ? 'Hide details' : 'View details'}
                         </button>
                       </td>
-                      <td>
+                      <td data-label="Action">
                         {canEditDowntime ? (
                           <button
                             className="btn btn-secondary table-action-button table-action-activate"
@@ -348,7 +344,7 @@ export default function DowntimeSection() {
                     </tr>
                     {expandedRecordId === record.id ? (
                       <tr className="audit-details-row downtime-details-row">
-                        <td colSpan="9">
+                        <td colSpan="7">
                           <div id={`downtime-details-${record.id}`} className="audit-details-panel downtime-details-panel">
                             <div>
                               <p className="audit-details-heading">Downtime review</p>

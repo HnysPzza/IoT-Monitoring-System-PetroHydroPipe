@@ -105,7 +105,7 @@ export default function LiveSection() {
               <strong>{formatLiveDateTime(machine.lastUpdated)}</strong>
             </div>
             <div>
-              <span className="live-metric-label">ESP32 Sensors</span>
+              <span className="live-metric-label">Inductive Sensors</span>
               <strong>{machine.activeSensors} active</strong>
             </div>
           </div>
@@ -143,7 +143,7 @@ export default function LiveSection() {
         </div>
       </section>
 
-      <section className="live-sensor-grid" aria-label="Five ESP32 sensor statuses">
+      <section className="live-sensor-grid" aria-label="Five inductive proximity sensor statuses">
         {filteredSensors.length === 0 ? (
           <section className="section-card section-placeholder" aria-labelledby="live-filter-empty-title">
             <div className="section-copy">
@@ -167,10 +167,6 @@ export default function LiveSection() {
               </div>
 
               <dl className="machine-meta live-sensor-meta">
-                <div>
-                  <dt>ESP32 ID</dt>
-                  <dd>{sensor.esp32DeviceId}</dd>
-                </div>
                 <div>
                   <dt>Signal</dt>
                   <dd>{formatSignal(sensor.signal)}</dd>

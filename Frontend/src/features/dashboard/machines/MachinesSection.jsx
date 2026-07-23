@@ -172,7 +172,7 @@ export default function MachinesSection() {
           </article>
           <article>
             <RadioTower size={18} aria-hidden="true" />
-            <span>ESP32 Sensors</span>
+            <span>Inductive Sensors</span>
             <strong>{selectedMachine.sensorCount} connected</strong>
           </article>
           <article>
@@ -205,8 +205,8 @@ export default function MachinesSection() {
       <section className="section-card" aria-labelledby="sensor-admin-title">
         <div className="section-heading">
           <div>
-            <p className="section-eyebrow">ESP32 configuration</p>
-            <h2 id="sensor-admin-title">Connected sensors</h2>
+            <p className="section-eyebrow">Sensor configuration</p>
+            <h2 id="sensor-admin-title">Five inductive proximity sensors</h2>
           </div>
           <span className="section-chip">
             <Cpu size={16} aria-hidden="true" />
@@ -232,7 +232,7 @@ export default function MachinesSection() {
 
                 <dl className="machine-meta live-sensor-meta">
                   <div>
-                    <dt>ESP32 ID</dt>
+                    <dt>Device ID</dt>
                     <dd>{sensor.esp32DeviceId}</dd>
                   </div>
                   <div>

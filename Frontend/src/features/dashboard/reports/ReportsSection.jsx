@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Download, FileText, Lock } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, FileText } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { getReportSummary, reportTypes } from './reportsService.js'
@@ -21,7 +21,6 @@ function toCsv(rows) {
 }
 
 function downloadCsv(filename, rows) {
-  // Browser-only CSV download; PDF export waits for backend generation.
   const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -31,10 +30,19 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url)
 }
 
+function getManilaDateInputValue() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
 export default function ReportsSection() {
   const { token } = useAuth()
   const [reportType, setReportType] = useState('daily')
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [selectedDate, setSelectedDate] = useState(getManilaDateInputValue)
   const [report, setReport] = useState({ summary: [], rows: [] })
   const [notice, setNotice] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -125,10 +133,6 @@ export default function ReportsSection() {
             <Download size={17} aria-hidden="true" />
             Export CSV
           </button>
-          <button className="btn btn-secondary reports-action" type="button" disabled>
-            <Lock size={17} aria-hidden="true" />
-            PDF Export (Coming Soon)
-          </button>
         </div>
       </section>
 
@@ -179,11 +183,11 @@ export default function ReportsSection() {
               ) : (
                 report.rows.map((row) => (
                   <tr key={`${row.cause}-${row.sensor}`}>
-                    <td>{row.cause}</td>
-                    <td>{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
-                    <td>{row.events}</td>
-                    <td>{row.durationMinutes} min</td>
-                    <td>{row.estimatedLoss} pcs</td>
+                    <td data-label="Cause">{row.cause}</td>
+                    <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
+                    <td data-label="Events">{row.events}</td>
+                    <td data-label="Duration">{row.durationMinutes} min</td>
+                    <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
                   </tr>
                 ))
               )}
