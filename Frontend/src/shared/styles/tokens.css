@@ -751,10 +751,15 @@ button:disabled {
   padding: 6px;
 }
 
-.sidebar-link:hover,
-.sidebar-link.is-active {
-  border-color: var(--card-border);
-  background: var(--hover-bg);
+.sidebar-link:hover:not(.is-active) {
+  border-color: rgba(96, 165, 250, 0.36);
+  color: #FFFFFF;
+  background: rgba(22, 119, 255, 0.28);
+}
+
+.sidebar-link:hover .sidebar-link-icon,
+.sidebar-link:hover .sidebar-link-label {
+  color: #FFFFFF;
 }
 
 .sidebar-link.is-active {
@@ -762,6 +767,12 @@ button:disabled {
   color: #FFFFFF;
   background: linear-gradient(135deg, #1677FF, #0E62E8);
   box-shadow: 0 8px 22px rgba(22, 119, 255, 0.22);
+}
+
+.sidebar-link.is-active:hover {
+  border-color: rgba(147, 197, 253, 0.64);
+  background: linear-gradient(135deg, #2D8BFF, #1677FF);
+  box-shadow: 0 10px 26px rgba(22, 119, 255, 0.32);
 }
 
 .sidebar-link-icon {
