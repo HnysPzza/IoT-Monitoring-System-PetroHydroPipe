@@ -252,7 +252,6 @@ button:disabled {
   display: none;
 }
 
-.version,
 .field-error,
 .caps-warning,
 .stat-value,
@@ -285,12 +284,6 @@ button:disabled {
   margin: 16px 0 0;
   color: var(--c-text-2);
   font-size: 1.08rem;
-}
-
-.version {
-  margin: 24px 0 0;
-  color: var(--c-text-3);
-  font-size: 0.88rem;
 }
 
 .form-panel {

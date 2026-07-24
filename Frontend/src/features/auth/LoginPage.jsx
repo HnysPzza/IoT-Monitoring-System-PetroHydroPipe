@@ -151,7 +151,6 @@ export default function LoginPage() {
             <p className="facility">Dunggoan, Danao City, Cebu</p>
           </div>
 
-          <p className="version">Frontend milestone v0.1.0</p>
         </div>
       </section>
 
