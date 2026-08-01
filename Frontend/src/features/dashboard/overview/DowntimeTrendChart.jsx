@@ -110,10 +110,10 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30 }) {
           <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
           <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
           <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
-          <ReferenceLine y={thresholdMinutes} stroke="#EF4444" strokeDasharray="6 6" label={{ value: '30 min limit', fill: 'var(--status-downtime-text)', fontSize: 11 }} />
+          <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" label={{ value: `${thresholdMinutes} min limit`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
           <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
             {data.map((item) => (
-              <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? '#EF4444' : '#F59E0B'} />
+              <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />
             ))}
           </Bar>
         </BarChart>

@@ -90,17 +90,17 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
           <ComposedChart data={selected.points} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="productionCurrentArea" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#59CDE9" stopOpacity={0.28} />
-                <stop offset="100%" stopColor="#59CDE9" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="var(--chart-current)" stopOpacity={0.28} />
+                <stop offset="100%" stopColor="var(--chart-current)" stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="2 8" vertical={false} />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={formatNumber} width={58} />
-            <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: '#59CDE9', strokeOpacity: 0.24 }} />
-            <Area type="monotone" dataKey="current" name={selected.currentLabel} fill="url(#productionCurrentArea)" stroke="#1677FF" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} />
-            <Line type="monotone" dataKey="previous" name={selected.previousLabel} stroke="#B0BBF7" strokeWidth={2.5} strokeDasharray="7 7" dot={false} />
-            <Line type="monotone" dataKey="target" name="Target pace" stroke="#10B981" strokeWidth={2} strokeDasharray="4 6" dot={false} />
+            <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.24 }} />
+            <Area type="monotone" dataKey="current" name={selected.currentLabel} fill="url(#productionCurrentArea)" stroke="var(--chart-current)" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} />
+            <Line type="monotone" dataKey="previous" name={selected.previousLabel} stroke="var(--chart-previous)" strokeWidth={2.5} strokeDasharray="7 7" dot={false} />
+            <Line type="monotone" dataKey="target" name="Target pace" stroke="var(--chart-target)" strokeWidth={2} strokeDasharray="4 6" dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

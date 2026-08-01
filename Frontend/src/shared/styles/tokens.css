@@ -13,6 +13,11 @@
   --c-text-3: #B0BBF7;
   --c-success: #10B981;
   --c-danger: #EF4444;
+  --chart-current: #59CDE9;
+  --chart-previous: #B0BBF7;
+  --chart-target: #34D399;
+  --chart-warning: #FBBF24;
+  --chart-danger: #F87171;
   --grid-line: rgba(55, 65, 81, 0.16);
   --login-overlay: linear-gradient(to right, rgba(10, 42, 136, 0.68), rgba(89, 205, 233, 0.42));
   --brand-panel-bg: rgba(17, 24, 39, 0.56);
@@ -70,6 +75,11 @@
   --c-text: #0B1220;
   --c-text-2: #334155;
   --c-text-3: #64748B;
+  --chart-current: #0B63CE;
+  --chart-previous: #6366F1;
+  --chart-target: #047857;
+  --chart-warning: #B45309;
+  --chart-danger: #B91C1C;
   --grid-line: rgba(89, 205, 233, 0.16);
   --login-overlay: linear-gradient(to right, rgba(10, 42, 136, 0.68), rgba(89, 205, 233, 0.42));
   --brand-panel-bg: rgba(255, 255, 255, 0.58);
@@ -769,13 +779,13 @@ button:disabled {
 .sidebar-link.is-active {
   border-color: rgba(96, 165, 250, 0.42);
   color: #FFFFFF;
-  background: linear-gradient(135deg, #1677FF, #0E62E8);
+  background: linear-gradient(135deg, #0E62E8, #0B57D0);
   box-shadow: 0 8px 22px rgba(22, 119, 255, 0.22);
 }
 
 .sidebar-link.is-active:hover {
   border-color: rgba(147, 197, 253, 0.64);
-  background: linear-gradient(135deg, #2D8BFF, #1677FF);
+  background: linear-gradient(135deg, #1769E0, #1265D8);
   box-shadow: 0 10px 26px rgba(22, 119, 255, 0.32);
 }
 
@@ -807,6 +817,7 @@ button:disabled {
 }
 
 .sidebar-link.is-active .sidebar-link-label {
+  color: #FFFFFF;
   font-weight: 800;
 }
 
@@ -1433,16 +1444,16 @@ button:disabled {
 }
 
 .legend-current {
-  border-color: #1677FF;
+  border-color: var(--chart-current);
 }
 
 .legend-previous {
-  border-color: #B0BBF7;
+  border-color: var(--chart-previous);
   border-top-style: dashed;
 }
 
 .legend-target {
-  border-color: #10B981;
+  border-color: var(--chart-target);
   border-top-style: dashed;
 }
 
