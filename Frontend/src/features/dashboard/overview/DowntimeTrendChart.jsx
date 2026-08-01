@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer,
 
 export const trendModes = [
   { id: 'hour', label: 'Last Hour', disabled: true },
-  { id: 'today', label: 'Today' },
+  { id: 'today', label: 'Daily' },
   { id: 'week', label: 'Weekly' },
   { id: 'month', label: 'Monthly' },
 ]
