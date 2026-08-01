@@ -676,6 +676,7 @@ button:disabled {
   width: 44px;
   min-width: 44px;
   min-height: 44px;
+  justify-content: center;
   justify-self: center;
   padding: 0;
 }
