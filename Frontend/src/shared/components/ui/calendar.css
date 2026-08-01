@@ -88,6 +88,16 @@
   font-family: 'Inter', sans-serif;
 }
 
+.shadcn-calendar-loading {
+  display: grid;
+  width: 264px;
+  min-height: 284px;
+  place-items: center;
+  color: var(--c-text-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .shadcn-calendar-months,
 .shadcn-calendar-month {
   display: grid;
@@ -252,4 +262,3 @@
     transition: none;
   }
 }
-

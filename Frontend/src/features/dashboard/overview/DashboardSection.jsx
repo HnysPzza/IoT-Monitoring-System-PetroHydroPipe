@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CalendarDays, CircleCheck, Clock3, Factory, PackageCheck, PauseCircle, Target } from 'lucide-react'
+import { AlertTriangle, CircleCheck, Clock3, Factory, PackageCheck, PauseCircle, Target } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getLiveFeed } from '../live/liveService.js'
 import DowntimeTrendChart, {
-  fromDateInputValue,
-  fromMonthInputValue,
   getTrendRangeLabel,
   startOfDay,
   toDateInputValue,
@@ -15,6 +13,7 @@ import DowntimeTrendChart, {
   trendModes,
 } from './DowntimeTrendChart.jsx'
 import ProductionAnalytics from './ProductionAnalytics.jsx'
+import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 
 function SkeletonBlock({ className = '' }) {
@@ -101,7 +100,6 @@ export default function DashboardSection() {
   const trendData = downtimeImpact?.points || []
   const trendRangeLabel = getTrendRangeLabel(trendMode, trendAnchorDate)
   const calendarValue = trendMode === 'month' ? toMonthInputValue(trendAnchorDate) : toDateInputValue(trendAnchorDate)
-  const calendarMax = trendMode === 'month' ? toMonthInputValue(today) : toDateInputValue(today)
 
   useEffect(() => {
     let isMounted = true
@@ -293,24 +291,13 @@ export default function DashboardSection() {
                   </button>
                 ))}
               </div>
-              <div className="trend-calendar-control">
-                <CalendarDays size={18} aria-hidden="true" />
-                <label htmlFor="overview-downtime-chart-date">
-                  <span>{trendRangeLabel}</span>
-                  <input
-                    id="overview-downtime-chart-date"
-                    name="overviewDowntimeChartDate"
-                    type={trendMode === 'month' ? 'month' : 'date'}
-                    value={calendarValue}
-                    max={calendarMax}
-                    autoComplete="off"
-                    aria-label={trendMode === 'month' ? 'Select chart month' : 'Select chart date'}
-                    onChange={(event) => {
-                      setTrendAnchorDate(trendMode === 'month' ? fromMonthInputValue(event.target.value) : fromDateInputValue(event.target.value))
-                    }}
-                  />
-                </label>
-              </div>
+              <TrendCalendarControl
+                mode={trendMode}
+                selectedDate={trendAnchorDate}
+                maxDate={today}
+                rangeLabel={trendRangeLabel}
+                onDateChange={setTrendAnchorDate}
+              />
             </div>
           </div>
           {downtimeChartNotice ? (

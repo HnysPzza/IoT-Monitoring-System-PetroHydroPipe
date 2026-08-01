@@ -30,11 +30,11 @@ describe('TrendCalendarControl', () => {
 
     const trigger = screen.getByRole('button', { name: 'Select chart date' })
     await user.click(trigger)
-    await user.click(screen.getByRole('button', { name: /july 14th, 2026/i }))
+    await user.click(await screen.findByRole('button', { name: /july 14th, 2026/i }))
 
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 14))
     expect(trigger).toHaveFocus()
-  })
+  }, 15000)
 
   it('normalizes a monthly selection to the first local day of the month', async () => {
     const user = userEvent.setup()
@@ -44,7 +44,7 @@ describe('TrendCalendarControl', () => {
     })
 
     await user.click(screen.getByRole('button', { name: 'Select chart month' }))
-    await user.click(screen.getByRole('button', { name: /july 8th, 2026/i }))
+    await user.click(await screen.findByRole('button', { name: /july 8th, 2026/i }))
 
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 1))
   })
@@ -58,7 +58,7 @@ describe('TrendCalendarControl', () => {
 
     const trigger = screen.getByRole('button', { name: 'Select chart date' })
     await user.click(trigger)
-    expect(screen.getByRole('button', { name: /july 21st, 2026/i })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: /july 21st, 2026/i })).toBeDisabled()
     await user.keyboard('{Escape}')
 
     expect(trigger).toHaveFocus()
@@ -69,7 +69,7 @@ describe('TrendCalendarControl', () => {
     const { onDateChange } = renderCalendar()
 
     await user.click(screen.getByRole('button', { name: 'Select chart date' }))
-    expect(screen.getByRole('grid')).toBeInTheDocument()
+    expect(await screen.findByRole('grid')).toBeInTheDocument()
     await user.click(document.body)
 
     expect(screen.queryByRole('grid')).not.toBeInTheDocument()

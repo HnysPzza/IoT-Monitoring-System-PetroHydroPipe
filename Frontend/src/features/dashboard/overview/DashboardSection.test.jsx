@@ -97,4 +97,46 @@ describe('DashboardSection', () => {
     expect(getLiveFeed).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Production Output')).toBeInTheDocument()
   })
+
+  it('keeps weekly and monthly request parameters unchanged after calendar selection', async () => {
+    await import('../../../shared/components/ui/Calendar.jsx')
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 6, 20, 12))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue({
+      downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Mon', minutes: 10 }] },
+    })
+
+    try {
+      renderWithAuth(<DashboardSection />)
+      expect(await screen.findByText('Production Output')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Weekly' }))
+      await user.click(screen.getByRole('button', { name: 'Select chart date' }))
+      await user.click(await screen.findByRole('button', { name: /july 14th, 2026/i }))
+
+      await waitFor(() => {
+        expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
+          'test-token',
+          { trendMode: 'week', date: '2026-07-14' },
+        )
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Monthly' }))
+      await user.click(screen.getByRole('button', { name: 'Select chart month' }))
+      await user.click(await screen.findByRole('button', { name: /july 8th, 2026/i }))
+
+      await waitFor(() => {
+        expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
+          'test-token',
+          { trendMode: 'month', date: '2026-07' },
+        )
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  }, 15000)
 })

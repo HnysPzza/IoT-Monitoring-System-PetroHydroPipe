@@ -1694,45 +1694,6 @@ button:disabled {
   justify-content: flex-start;
 }
 
-.trend-calendar-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 7px 12px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  color: var(--c-text-2);
-  background: var(--panel-bg);
-}
-
-.trend-calendar-control label {
-  display: grid;
-  gap: 2px;
-}
-
-.trend-calendar-control span {
-  color: var(--c-text-2);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.trend-calendar-control input {
-  min-height: 28px;
-  min-width: 156px;
-  border: 0;
-  color: var(--c-text);
-  background: transparent;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.trend-calendar-control input:focus,
-.trend-calendar-control input:focus-visible {
-  outline: 0;
-}
-
 .trend-chart-panel {
   position: relative;
   display: grid;
@@ -2900,14 +2861,6 @@ button:disabled {
 
   .live-filter-group {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .trend-calendar-control input {
-    width: 100%;
-  }
-
-  .trend-calendar-control label {
-    width: 100%;
   }
 
   .trend-chart-panel {

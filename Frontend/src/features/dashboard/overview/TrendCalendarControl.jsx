@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { CalendarDays, ChevronDown } from 'lucide-react'
-import { Calendar } from '../../../shared/components/ui/Calendar.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 import '../../../shared/components/ui/calendar.css'
+
+const Calendar = lazy(() => import('../../../shared/components/ui/Calendar.jsx').then((module) => ({ default: module.Calendar })))
 
 export function normalizeCalendarSelection(mode, date) {
   if (mode === 'month') {
@@ -42,14 +43,16 @@ export default function TrendCalendarControl({ mode, selectedDate, maxDate, rang
           </button>
         </PopoverTrigger>
         <PopoverContent aria-label={accessibleLabel}>
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            defaultMonth={selectedDate}
-            onSelect={handleSelect}
-            disabled={{ after: maxDate }}
-            autoFocus
-          />
+          <Suspense fallback={<div className="shadcn-calendar-loading" role="status">Loading calendar</div>}>
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              defaultMonth={selectedDate}
+              onSelect={handleSelect}
+              disabled={{ after: maxDate }}
+              autoFocus
+            />
+          </Suspense>
         </PopoverContent>
       </Popover>
     </div>
