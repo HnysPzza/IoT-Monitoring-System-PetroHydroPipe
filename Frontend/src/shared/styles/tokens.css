@@ -13,6 +13,7 @@
   --c-text-3: #B0BBF7;
   --c-success: #10B981;
   --c-danger: #EF4444;
+  --selected-control-bg: #0E62E8;
   --chart-current: #59CDE9;
   --chart-previous: #B0BBF7;
   --chart-target: #34D399;
@@ -1670,8 +1671,8 @@ button:disabled {
 
 .trend-mode-button.is-selected {
   color: #FFFFFF;
-  border-color: var(--c-primary);
-  background: var(--c-primary);
+  border-color: var(--selected-control-bg);
+  background: var(--selected-control-bg);
 }
 
 .trend-mode-button:disabled {
