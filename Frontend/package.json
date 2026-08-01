@@ -7,8 +7,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "date-fns": "^4.4.0",
     "lucide-react": "^1.17.0",
+    "radix-ui": "^1.6.7",
     "react": "^19.2.7",
+    "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
