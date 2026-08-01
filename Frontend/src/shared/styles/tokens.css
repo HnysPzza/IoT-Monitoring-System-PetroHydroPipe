@@ -760,7 +760,7 @@ button:disabled {
 .dashboard-sidebar.is-collapsed .sidebar-user {
   display: grid;
   grid-template-columns: 36px;
-  justify-content: start;
+  justify-content: center;
   gap: 0;
   width: 100%;
   min-height: 48px;
