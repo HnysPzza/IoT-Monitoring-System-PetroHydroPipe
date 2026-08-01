@@ -114,7 +114,7 @@ export default function LiveSection() {
         <section className="section-card section-placeholder" aria-labelledby="live-empty-title">
           <div className="section-copy">
             <p className="section-eyebrow">No live source</p>
-            <h1 id="live-empty-title">Live feed is unavailable</h1>
+            <h2 id="live-empty-title">Live feed is unavailable</h2>
             <p>Check the machine connection and refresh the live feed.</p>
           </div>
         </section>
@@ -148,7 +148,7 @@ export default function LiveSection() {
           <section className="section-card section-placeholder" aria-labelledby="live-filter-empty-title">
             <div className="section-copy">
               <p className="section-eyebrow">No matching sensors</p>
-              <h1 id="live-filter-empty-title">No sensors match this filter</h1>
+              <h2 id="live-filter-empty-title">No sensors match this filter</h2>
               <p>Try another status filter or refresh the live feed.</p>
             </div>
           </section>

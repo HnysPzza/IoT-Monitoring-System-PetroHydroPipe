@@ -1473,6 +1473,7 @@ button:disabled {
 
 .section-heading h2,
 .section-copy h1,
+.section-copy h2,
 .machine-card h3,
 .placeholder-card h1 {
   margin: 4px 0 0;
@@ -1483,6 +1484,7 @@ button:disabled {
 
 .section-copy p,
 .section-copy h1,
+.section-copy h2,
 .permission-card p,
 .permission-card h1,
 .placeholder-card p,
@@ -2541,12 +2543,12 @@ button:disabled {
   gap: 8px;
 }
 
-.settings-copy h2,
+.settings-copy h3,
 .settings-copy p {
   margin: 0;
 }
 
-.settings-copy h2 {
+.settings-copy h3 {
   color: var(--c-text);
   font-size: 1rem;
 }

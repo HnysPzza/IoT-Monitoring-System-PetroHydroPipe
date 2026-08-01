@@ -8,13 +8,13 @@ export default function SettingsSection() {
     <section className="section-card settings-panel" aria-labelledby="settings-title">
       <div className="section-copy">
         <p className="section-eyebrow">Display preferences</p>
-        <h1 id="settings-title">Settings</h1>
+        <h2 id="settings-title">Settings</h2>
         <p>Choose the interface appearance that is most comfortable for this workstation.</p>
       </div>
 
       <div className="settings-row">
         <div className="settings-copy">
-          <h2>Interface theme</h2>
+          <h3>Interface theme</h3>
           <p>Switch between a high-contrast dark interface and a brighter light interface.</p>
         </div>
 

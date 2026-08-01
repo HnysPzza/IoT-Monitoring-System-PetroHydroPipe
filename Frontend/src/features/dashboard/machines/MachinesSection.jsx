@@ -14,7 +14,7 @@ function EmptyMachinesState() {
     <section className="section-card section-placeholder" aria-labelledby="machines-empty-title">
       <div className="section-copy">
         <p className="section-eyebrow">No records</p>
-        <h1 id="machines-empty-title">No machines found</h1>
+        <h2 id="machines-empty-title">No machines found</h2>
         <p>Add Spiral Mill 01 and its five sensors to manage machine setup here.</p>
       </div>
     </section>

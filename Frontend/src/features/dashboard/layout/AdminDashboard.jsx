@@ -353,7 +353,7 @@ export default function AdminDashboard() {
               <Menu size={20} aria-hidden="true" />
             </button>
             <div>
-              <p className="topbar-label">{pageMeta.title}</p>
+              <h1 className="topbar-label">{pageMeta.title}</h1>
               <p className="topbar-subtitle">{pageMeta.subtitle}</p>
             </div>
           </div>

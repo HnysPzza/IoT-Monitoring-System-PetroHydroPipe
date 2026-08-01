@@ -65,7 +65,7 @@ function OverviewEmptyState({ notice }) {
       <section className="section-card section-placeholder" aria-labelledby="overview-empty-title">
         <div className="section-copy">
           <p className="section-eyebrow">No data</p>
-          <h1 id="overview-empty-title">No overview data available</h1>
+          <h2 id="overview-empty-title">No overview data available</h2>
           <p>No overview data is available for the selected range.</p>
         </div>
       </section>

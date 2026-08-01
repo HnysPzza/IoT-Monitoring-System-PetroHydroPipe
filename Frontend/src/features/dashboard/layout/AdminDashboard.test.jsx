@@ -29,6 +29,14 @@ describe('AdminDashboard alerts', () => {
     subscribeToAlerts.mockReturnValue(() => {})
   })
 
+  it('uses the route title as the dashboard level-one heading', async () => {
+    getAlerts.mockResolvedValue({ alerts: [] })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
+  })
+
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
     const user = userEvent.setup()
 
