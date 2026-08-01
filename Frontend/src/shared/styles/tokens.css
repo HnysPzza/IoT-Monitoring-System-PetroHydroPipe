@@ -657,8 +657,19 @@ button:disabled {
 .dashboard-sidebar.is-collapsed .sidebar-brand,
 .dashboard-sidebar.is-collapsed .sidebar-link-copy,
 .dashboard-sidebar.is-collapsed .sidebar-user-copy,
-.dashboard-sidebar.is-collapsed .sidebar-nav-heading,
+.dashboard-sidebar.is-collapsed .sidebar-nav-heading {
+  display: none;
+}
+
 .dashboard-sidebar.is-collapsed .sidebar-logout {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  justify-self: center;
+  padding: 0;
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-logout span {
   display: none;
 }
 
@@ -2712,11 +2723,15 @@ button:disabled {
     height: 100dvh;
     max-height: 100dvh;
     transform: translateX(-100%);
+    visibility: hidden;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+    transition: transform 200ms var(--ease-std), visibility 0s linear 200ms;
   }
 
   .dashboard-sidebar.is-open {
     transform: translateX(0);
+    visibility: visible;
+    transition-delay: 0s;
   }
 
   .desktop-only {

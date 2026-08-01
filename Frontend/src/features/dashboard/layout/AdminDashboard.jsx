@@ -1,6 +1,6 @@
 import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
@@ -57,12 +57,21 @@ function getAlertStatusLabel(alert) {
   return alert.status
 }
 
+function matchesMobileDashboard() {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 900px)').matches
+}
+
 export default function AdminDashboard() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
   const [acknowledgingAlertIds, setAcknowledgingAlertIds] = useState([])
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
+  const alertsButtonRef = useRef(null)
+  const alertsPopoverRef = useRef(null)
+  const mobileMenuButtonRef = useRef(null)
+  const mobileCloseButtonRef = useRef(null)
   const { token, user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -104,6 +113,69 @@ export default function AdminDashboard() {
     setIsDrawerOpen(false)
     setIsAlertsOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined
+
+    const mediaQuery = window.matchMedia('(max-width: 900px)')
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches)
+
+    updateViewport()
+    mediaQuery.addEventListener('change', updateViewport)
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateViewport)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isDrawerOpen) return
+
+    mobileCloseButtonRef.current?.focus({ preventScroll: true })
+  }, [isDrawerOpen])
+
+  useEffect(() => {
+    if (!isAlertsOpen) return
+
+    alertsPopoverRef.current?.focus({ preventScroll: true })
+
+    function handlePointerDown(event) {
+      if (alertsPopoverRef.current?.contains(event.target) || alertsButtonRef.current?.contains(event.target)) {
+        return
+      }
+
+      setIsAlertsOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [isAlertsOpen])
+
+  useEffect(() => {
+    if (!isDrawerOpen && !isAlertsOpen) return undefined
+
+    function handleEscape(event) {
+      if (event.key !== 'Escape') return
+
+      if (isAlertsOpen) {
+        setIsAlertsOpen(false)
+        alertsButtonRef.current?.focus({ preventScroll: true })
+        return
+      }
+
+      setIsDrawerOpen(false)
+      mobileMenuButtonRef.current?.focus({ preventScroll: true })
+    }
+
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isAlertsOpen, isDrawerOpen])
 
   useEffect(() => {
     if (!token) return undefined
@@ -173,7 +245,11 @@ export default function AdminDashboard() {
 
   return (
     <main className="dashboard-shell">
-      <aside className={`dashboard-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}>
+      <aside
+        className={`dashboard-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
+        aria-hidden={isMobileViewport && !isDrawerOpen ? 'true' : undefined}
+        inert={isMobileViewport && !isDrawerOpen}
+      >
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <img className="sidebar-logo" src="/assets/logo.png" alt="PetroHydroPipe logo" />
@@ -190,10 +266,14 @@ export default function AdminDashboard() {
             <Menu size={20} aria-hidden="true" />
           </button>
           <button
+            ref={mobileCloseButtonRef}
             className="icon-button dashboard-icon-button mobile-only"
             type="button"
             aria-label="Close navigation"
-            onClick={() => setIsDrawerOpen(false)}
+            onClick={() => {
+              setIsDrawerOpen(false)
+              mobileMenuButtonRef.current?.focus({ preventScroll: true })
+            }}
           >
             <X size={20} aria-hidden="true" />
           </button>
@@ -238,23 +318,37 @@ export default function AdminDashboard() {
               <span className="sidebar-user-role">{user?.role || 'Admin'}</span>
             </div>
           </div>
-          <button className="btn btn-secondary sidebar-logout" type="button" onClick={handleLogout}>
+          <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>
             <LogOut size={18} aria-hidden="true" />
             <span>Logout</span>
           </button>
         </div>
       </aside>
 
-      {isDrawerOpen ? <button className="sidebar-backdrop mobile-only" type="button" aria-label="Close navigation overlay" onClick={() => setIsDrawerOpen(false)} /> : null}
+      {isDrawerOpen ? (
+        <button
+          className="sidebar-backdrop mobile-only"
+          type="button"
+          aria-label="Close navigation overlay"
+          onClick={() => {
+            setIsDrawerOpen(false)
+            mobileMenuButtonRef.current?.focus({ preventScroll: true })
+          }}
+        />
+      ) : null}
 
       <div className="dashboard-main">
         <header className="dashboard-topbar">
           <div className="topbar-leading">
             <button
+              ref={mobileMenuButtonRef}
               className="icon-button dashboard-icon-button mobile-only"
               type="button"
               aria-label="Open navigation"
-              onClick={() => setIsDrawerOpen(true)}
+              onClick={() => {
+                setIsAlertsOpen(false)
+                setIsDrawerOpen(true)
+              }}
             >
               <Menu size={20} aria-hidden="true" />
             </button>
@@ -267,17 +361,21 @@ export default function AdminDashboard() {
           <div className="topbar-trailing">
             <DashboardClock />
             <button
+              ref={alertsButtonRef}
               className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
               type="button"
               aria-label={activeAlertCount > 0 ? `Open alerts, ${activeAlertCount} active` : 'Open alerts, none active'}
               aria-expanded={isAlertsOpen}
-              onClick={() => setIsAlertsOpen((value) => !value)}
+              onClick={() => {
+                setIsDrawerOpen(false)
+                setIsAlertsOpen((value) => !value)
+              }}
             >
               <Bell size={18} aria-hidden="true" />
               <span className="sr-only">{activeAlertCount > 0 ? `${activeAlertCount} active alerts` : 'No active alerts'}</span>
             </button>
             {isAlertsOpen ? (
-              <div className="alerts-popover" role="dialog" aria-label="Active alerts">
+              <div ref={alertsPopoverRef} className="alerts-popover" role="dialog" aria-label="Active alerts" tabIndex="-1">
                 <div className="alerts-popover-header">
                   <strong>Notifications</strong>
                   <span>{activeAlertCount}</span>

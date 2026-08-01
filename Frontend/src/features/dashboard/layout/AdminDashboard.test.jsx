@@ -91,4 +91,36 @@ describe('AdminDashboard alerts', () => {
     })
     expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
   })
+
+  it('closes the alerts dialog with Escape and returns focus to the bell', async () => {
+    const user = userEvent.setup()
+
+    getAlerts.mockResolvedValue({ alerts: [activeAlert()] })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
+    await user.click(bell)
+
+    expect(screen.getByRole('dialog', { name: /active alerts/i })).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
+    expect(bell).toHaveFocus()
+  })
+
+  it('closes alerts before opening the mobile navigation drawer', async () => {
+    const user = userEvent.setup()
+
+    getAlerts.mockResolvedValue({ alerts: [activeAlert()] })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    await user.click(await screen.findByRole('button', { name: /open alerts, 1 active/i }))
+    await user.click(screen.getByRole('button', { name: /open navigation/i }))
+
+    expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveFocus()
+  })
 })
