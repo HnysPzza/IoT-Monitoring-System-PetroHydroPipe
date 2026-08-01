@@ -1090,6 +1090,15 @@ button:disabled {
   gap: 20px;
 }
 
+.live-layout > *,
+.downtime-layout > *,
+.reports-layout > *,
+.machines-layout > *,
+.audit-layout > *,
+.users-layout > * {
+  min-width: 0;
+}
+
 .live-hero-card,
 .live-controls-card,
 .downtime-controls-card,
@@ -1177,6 +1186,10 @@ button:disabled {
   align-content: stretch;
   grid-template-rows: auto 1fr auto;
   min-height: 320px;
+}
+
+.admin-sensor-card .machine-meta {
+  grid-template-columns: 1fr;
 }
 
 .production-analytics-card {
@@ -2160,6 +2173,8 @@ button:disabled {
 
 .account-table-wrap {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: 8px;
@@ -2637,7 +2652,7 @@ button:disabled {
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1280px) {
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
