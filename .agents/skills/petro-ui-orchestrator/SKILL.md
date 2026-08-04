@@ -34,6 +34,7 @@ Use current files as evidence; historical screenshots and prior audit claims may
 - Do not introduce speed, pressure, temperature, RPM, bar, Celsius, line efficiency, voltage sensing, or power-outage telemetry.
 - Do not guess unresolved sensor identity, downtime ownership, alert lifecycle, or production-target persistence rules.
 - Do not present planned backend capabilities as live.
+- Document every backend-dependent gap with its missing contract or capability and affected UI state; never merely hide the gap or fake it.
 - Keep design-only work frontend-only and preserve API calls, permissions, authentication, data meaning, and business behavior.
 - Treat Tailwind, shadcn additions, dependencies, global tokens, navigation, authentication UI, multi-route changes, and responsive rewrites as major.
 
