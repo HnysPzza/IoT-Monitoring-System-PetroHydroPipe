@@ -68,7 +68,7 @@ export const navItems = [
 
 export const navGroups = [
   { id: 'monitor', label: 'Monitor' },
-  { id: 'analyze', label: 'Analyze' },
+  { id: 'analyze', label: 'Analytics' },
   { id: 'admin', label: 'Admin' },
 ]
 

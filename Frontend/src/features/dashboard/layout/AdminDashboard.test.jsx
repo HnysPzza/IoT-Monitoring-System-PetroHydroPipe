@@ -37,6 +37,15 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
   })
 
+  it('labels the reporting navigation group as Analytics', () => {
+    getAlerts.mockResolvedValue({ alerts: [] })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    expect(screen.getByText('Analytics')).toBeInTheDocument()
+    expect(screen.queryByText('Analyze')).not.toBeInTheDocument()
+  })
+
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
     const user = userEvent.setup()
 
