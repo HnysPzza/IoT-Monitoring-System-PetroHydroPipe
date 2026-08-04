@@ -31,12 +31,13 @@ export default function TrendCalendarControl({ mode, selectedDate, maxDate, rang
           <button
             className="trend-calendar-trigger"
             type="button"
-            aria-label={accessibleLabel}
             aria-expanded={isOpen}
+            title={accessibleLabel}
           >
             <CalendarDays size={18} aria-hidden="true" />
             <span className="trend-calendar-copy">
-              <span className="trend-calendar-kicker">Selected period</span>
+              <span className="trend-calendar-kicker">SELECTED PERIOD</span>
+              {' '}
               <span className="trend-calendar-value">{rangeLabel}</span>
             </span>
             <ChevronDown className="trend-calendar-chevron" size={16} aria-hidden="true" />

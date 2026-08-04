@@ -25,11 +25,20 @@ function renderCalendar(overrides = {}) {
 }
 
 describe('TrendCalendarControl', () => {
+  it('includes the visible selected period in the trigger accessible name', () => {
+    renderCalendar()
+
+    const trigger = screen.getByText('Jul 15, 2026').closest('button')
+
+    expect(trigger).toHaveAccessibleName('SELECTED PERIOD Jul 15, 2026')
+    expect(trigger).not.toHaveAttribute('aria-label')
+  })
+
   it('opens the calendar and returns the selected local date', async () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar()
 
-    const trigger = screen.getByRole('button', { name: 'Select chart date' })
+    const trigger = screen.getByRole('button', { name: /selected period/i })
     await user.click(trigger)
     await user.click(await screen.findByRole('button', { name: /july 14th, 2026/i }))
 
@@ -44,7 +53,7 @@ describe('TrendCalendarControl', () => {
       rangeLabel: 'July 2026',
     })
 
-    await user.click(screen.getByRole('button', { name: 'Select chart month' }))
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     await user.click(await screen.findByRole('button', { name: /july 8th, 2026/i }))
 
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 1))
@@ -57,7 +66,7 @@ describe('TrendCalendarControl', () => {
       rangeLabel: 'Jul 13, 2026 - Jul 19, 2026',
     })
 
-    const trigger = screen.getByRole('button', { name: 'Select chart date' })
+    const trigger = screen.getByRole('button', { name: /selected period/i })
     await user.click(trigger)
     expect(await screen.findByRole('button', { name: /july 21st, 2026/i })).toBeDisabled()
     await user.keyboard('{Escape}')
@@ -69,7 +78,7 @@ describe('TrendCalendarControl', () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar()
 
-    await user.click(screen.getByRole('button', { name: 'Select chart date' }))
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     expect(await screen.findByRole('grid')).toBeInTheDocument()
     await user.click(document.body)
 

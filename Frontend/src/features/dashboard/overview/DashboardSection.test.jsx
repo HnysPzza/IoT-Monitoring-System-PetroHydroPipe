@@ -116,7 +116,7 @@ describe('DashboardSection', () => {
       expect(await screen.findByText('Production Output')).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: 'Weekly' }))
-      await user.click(screen.getByRole('button', { name: 'Select chart date' }))
+      await user.click(screen.getByRole('button', { name: /selected period/i }))
       await user.click(await screen.findByRole('button', { name: /july 14th, 2026/i }))
 
       await waitFor(() => {
@@ -127,7 +127,7 @@ describe('DashboardSection', () => {
       })
 
       await user.click(screen.getByRole('button', { name: 'Monthly' }))
-      await user.click(screen.getByRole('button', { name: 'Select chart month' }))
+      await user.click(screen.getByRole('button', { name: /selected period/i }))
       await user.click(await screen.findByRole('button', { name: /july 8th, 2026/i }))
 
       await waitFor(() => {
