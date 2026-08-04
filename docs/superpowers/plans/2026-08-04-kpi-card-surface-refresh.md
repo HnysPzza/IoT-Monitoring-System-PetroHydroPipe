@@ -13,7 +13,7 @@
 - Remove the colored vertical strip from all 13 rendered `.stat-card` KPI cards.
 - Do not replace the strip with a top, bottom, or opposite-side accent rail.
 - Keep Overview semantic icon colors.
-- Keep machine-health sensor top borders and alert severity treatments unchanged.
+- Replace machine-health sensor top rails with the layered surface while retaining status meaning through badges and icon tiles; keep alert severity treatments unchanged.
 - Preserve all markup, data, APIs, permissions, navigation, and behavior.
 - Add no dependency, component library, Tailwind utility, card hover motion, or pointer styling.
 - Preserve card padding, grids, responsive dimensions, text contrast, focus behavior, and reduced-motion behavior.
@@ -159,7 +159,7 @@ On Overview, temporarily emulate Slow 3G and reload. During the loading state, c
 
 Inspect all three routes with `document.documentElement.dataset.theme` set to `dark` and `light`. Confirm readable label/value/helper contrast, visible neutral borders, subtle non-striped tonal washes, and restrained shadows.
 
-On Overview, confirm the four icon tiles retain their success, warning, primary, or neutral tone. Confirm `.overview-sensor-card.status-running`, `.status-idle`, and `.status-downtime` retain their top status borders. Use source and computed-style inspection to confirm `.banner`, `.banner-error`, and `.banner-success` keep their existing severity-border rules; do not manufacture an application error merely to display one.
+On Overview, confirm the four KPI icon tiles retain their success, warning, primary, or neutral tone. Confirm `.overview-sensor-card.status-running`, `.status-idle`, and `.status-downtime` have equal border widths on every side, layered status-toned surfaces, and distinct badge/icon treatments. Use source and computed-style inspection to confirm `.banner`, `.banner-error`, and `.banner-success` keep their existing severity-border rules; do not manufacture an application error merely to display one.
 
 - [ ] **Step 4: Verify responsive behavior**
 
@@ -195,3 +195,18 @@ git show -- Frontend/src/shared/styles/tokens.css
 ```
 
 Expected: clean worktree; the implementation commit changes only the approved shared CSS; no React, backend, API, dependency, or functional changes appear.
+
+---
+
+### Follow-up: Machine Health cards and sidebar terminology
+
+**Files:**
+- Modify: `Frontend/src/shared/styles/tokens.css`
+- Modify: `Frontend/src/shared/constants/dashboardMeta.js`
+- Test: `Frontend/src/features/dashboard/layout/AdminDashboard.test.jsx`
+
+- [x] Replace all five Machine Health top status rails with the approved layered surface.
+- [x] Preserve running, idle, and downtime meaning through status-toned borders/washes, badges, and icon tiles.
+- [x] Rename the sidebar group label from `Analyze` to `Analytics` without changing its internal group id or routes.
+- [x] Verify both themes and 375, 768, 1024, and 1440 pixel widths.
+- [x] Add focused sidebar-label coverage and run the complete frontend test suite and production build.

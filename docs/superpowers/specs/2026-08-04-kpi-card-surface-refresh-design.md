@@ -10,6 +10,10 @@ Remove the colored vertical strip from every KPI/statistics card identified by t
 
 This is a visual-only change. Data, API requests, card content, semantics, navigation, permissions, and dashboard behavior remain unchanged.
 
+## Follow-up Scope
+
+The user subsequently expanded this treatment to the five Machine Health sensor cards and renamed the sidebar group label from `Analyze` to `Analytics`. The sensor cards therefore use the same layered-surface language without their former colored top rails. Running, idle, and downtime meaning remains visible through the existing status badge, status icon, and a restrained tone in the card surface.
+
 ## Audit Findings
 
 The colored left edge is generated globally in `Frontend/src/shared/styles/tokens.css` by `.stat-card::before`. Tone-specific rules change that strip to green or amber, while the base rule uses blue.
@@ -22,9 +26,8 @@ The rule currently affects 13 rendered KPI cards:
 
 Overview loading placeholders also use `.stat-card` and therefore inherit the same decorative rule while loading.
 
-The following treatments are intentionally outside this issue:
+The following treatments remain intentionally outside this issue:
 
-- Top borders on the five machine-health sensor cards. These communicate actual sensor state.
 - Error and success banner borders. These communicate notification severity.
 - Chart reference lines, status badges, selected controls, and navigation accents.
 
@@ -41,6 +44,8 @@ The tonal wash is decorative, low-opacity, and contained inside the card. It mus
 
 Overview icon tiles keep their current semantic green, amber, blue, and neutral treatments. This ensures meaning is communicated by icon, label, and text rather than by a colored card edge alone. Downtime and Reports cards keep their existing markup and use the default brand-toned surface wash.
 
+Machine Health cards use a per-status surface accent: green for running, blue for idle, and red for downtime. The accent is expressed through the subtle upper-right wash and neutral mixed border, not a top or side rail. Status badges and icon tiles remain the primary status indicators.
+
 ## Visual Constraints
 
 - No colored vertical border, rail, bar, or pseudo-element may remain on a `.stat-card` edge.
@@ -56,6 +61,7 @@ Overview icon tiles keep their current semantic green, amber, blue, and neutral 
 Primary implementation file:
 
 - `Frontend/src/shared/styles/tokens.css`
+- `Frontend/src/shared/constants/dashboardMeta.js`
 
 Expected selectors:
 
@@ -65,6 +71,10 @@ Expected selectors:
 - `.stat-card-warning`
 - `.stat-card-neutral`
 - Existing `.stat-card-icon` tone rules
+- `.overview-sensor-card`
+- `.overview-sensor-card.status-running`
+- `.overview-sensor-card.status-idle`
+- `.overview-sensor-card.status-downtime`
 
 No React component changes are expected unless browser verification reveals that a tone cannot be expressed with the existing classes. Any such change requires stopping and revising this design before implementation.
 
@@ -80,18 +90,18 @@ No React component changes are expected unless browser verification reveals that
 Completion requires all of the following evidence:
 
 1. Source audit confirms the `.stat-card::before`, `.stat-card-success::before`, and `.stat-card-warning::before` edge rules are gone.
-2. Browser-computed styles confirm all 13 rendered KPI cards have no colored left-edge pseudo-element.
+2. Browser-computed styles confirm all 13 rendered KPI cards and five Machine Health cards have no colored edge rail.
 3. Overview, Downtime, and Reports are visually checked in dark and light themes.
 4. Responsive checks pass at 375, 768, 1024, and 1440 pixel widths without horizontal overflow or card clipping.
 5. Overview loading cards retain a deliberate surface and do not expose an edge stripe.
-6. The five machine-health sensor top borders and alert severity treatments remain unchanged.
+6. The five Machine Health cards retain distinct badge/icon/surface status treatments, while alert severity borders remain unchanged.
 7. The complete frontend test suite passes.
 8. The production build succeeds.
 9. Git diff review confirms the change remains visual-only and scoped to the approved card treatment.
 
 ## Non-Goals
 
-- Redesigning sensor cards, charts, tables, alerts, navigation, or forms.
+- Redesigning charts, tables, alerts, navigation structure, or forms.
 - Changing the number or content of KPI cards.
 - Introducing a new component library or Tailwind dependency.
 - Changing backend data, endpoints, authentication, roles, or production calculations.
