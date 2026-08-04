@@ -1,0 +1,7 @@
+interface:
+  display_name: "Petro UI Orchestrator"
+  short_description: "PetroHydroPipe UI safety and review profile"
+  default_prompt: "Use $petro-ui-orchestrator to plan and implement this PetroHydroPipe UI change safely."
+
+policy:
+  allow_implicit_invocation: true
