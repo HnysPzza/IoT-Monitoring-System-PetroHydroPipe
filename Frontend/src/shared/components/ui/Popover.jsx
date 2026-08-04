@@ -1,4 +1,4 @@
-import { Popover as PopoverPrimitive } from 'radix-ui'
+import * as PopoverPrimitive from '@radix-ui/react-popover'
 
 export function Popover(props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -22,4 +22,3 @@ export function PopoverContent({ className = '', align = 'end', sideOffset = 8, 
     </PopoverPrimitive.Portal>
   )
 }
-
