@@ -1,5 +1,5 @@
 import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
