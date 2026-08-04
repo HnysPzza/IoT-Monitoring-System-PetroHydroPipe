@@ -1787,24 +1787,36 @@ button:disabled {
 }
 
 .stat-card {
+  --stat-accent: var(--c-primary);
   position: relative;
   overflow: hidden;
+  border-color: color-mix(in srgb, var(--subtle-border) 82%, var(--stat-accent) 18%);
+  background:
+    radial-gradient(
+      circle at 92% 8%,
+      color-mix(in srgb, var(--stat-accent) 9%, transparent) 0,
+      transparent 46%
+    ),
+    var(--card-bg);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--c-text) 5%, transparent),
+    0 10px 24px color-mix(in srgb, var(--stat-accent) 6%, transparent);
 }
 
-.stat-card::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--c-primary);
-  content: '';
+.stat-card-primary {
+  --stat-accent: var(--c-primary);
 }
 
-.stat-card-success::before {
-  background: var(--c-success);
+.stat-card-success {
+  --stat-accent: var(--c-success);
 }
 
-.stat-card-warning::before {
-  background: #F59E0B;
+.stat-card-warning {
+  --stat-accent: #F59E0B;
+}
+
+.stat-card-neutral {
+  --stat-accent: var(--c-text-3);
 }
 
 .stat-card-heading {
