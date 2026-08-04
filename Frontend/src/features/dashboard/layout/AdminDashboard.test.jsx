@@ -30,7 +30,7 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('uses the route title as the dashboard level-one heading', async () => {
-    getAlerts.mockResolvedValue({ alerts: [] })
+    getAlerts.mockReturnValue(new Promise(() => {}))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
@@ -38,7 +38,7 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('labels the reporting navigation group as Analytics', () => {
-    getAlerts.mockResolvedValue({ alerts: [] })
+    getAlerts.mockReturnValue(new Promise(() => {}))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
