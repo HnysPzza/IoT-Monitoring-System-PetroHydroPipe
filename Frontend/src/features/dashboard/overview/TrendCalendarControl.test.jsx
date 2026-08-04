@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
+import '../../../shared/components/ui/Calendar.jsx'
 
 const selectedDate = new Date(2026, 6, 15)
 const maxDate = new Date(2026, 6, 20)

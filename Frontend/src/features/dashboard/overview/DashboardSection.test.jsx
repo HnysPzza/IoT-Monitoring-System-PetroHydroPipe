@@ -5,6 +5,7 @@ import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import DashboardSection from './DashboardSection.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 import { getLiveFeed } from '../live/liveService.js'
+import '../../../shared/components/ui/Calendar.jsx'
 
 vi.mock('./dashboardService.js', () => ({
   getDashboardOverview: vi.fn(),
@@ -100,7 +101,6 @@ describe('DashboardSection', () => {
   })
 
   it('keeps weekly and monthly request parameters unchanged after calendar selection', async () => {
-    await import('../../../shared/components/ui/Calendar.jsx')
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.setSystemTime(new Date(2026, 6, 20, 12))
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
