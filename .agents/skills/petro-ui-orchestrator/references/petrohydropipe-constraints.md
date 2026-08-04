@@ -37,6 +37,8 @@ The alert lifecycle, manual downtime resolution, downtime-cause ownership, produ
 
 Apply the global source priority. Use `docs/For Corrections.md` to identify known drift rather than treating either documentation or current code as silently authoritative. Inspect relevant current code and tests before every recommendation.
 
+Treat `main` as this repository's current primary branch unless repository instructions or Git remote HEAD provide contrary current evidence. Protect the evidence-backed primary branch under the global branch policy.
+
 ## Required Browser Coverage
 
 - Widths: 375, 768, 1024, and 1440 pixels

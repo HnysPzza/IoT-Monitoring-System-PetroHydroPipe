@@ -1,0 +1,7 @@
+interface:
+  display_name: "UI Orchestrator"
+  short_description: "Two-gate UI planning and review workflow"
+  default_prompt: "Use $ui-orchestrator to plan and implement this UI change with independent reviews."
+
+policy:
+  allow_implicit_invocation: true

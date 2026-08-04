@@ -8,9 +8,11 @@ description: Apply the ui-orchestrator workflow to PetroHydroPipe frontend desig
 ## Compose the Global Workflow
 
 1. Announce that this project profile and `$ui-orchestrator` are being used.
-2. Read and follow `$ui-orchestrator` as the workflow source of truth.
-3. Read `references/petrohydropipe-constraints.md` before classifying or planning.
-4. If `$ui-orchestrator`, `ui-ux-pro-max`, Superpowers, collaboration tools, or two independent reviewers are unavailable, pause and ask the human how to proceed.
+2. Read `references/installation-contract.md` and verify the installed `$ui-orchestrator` package against its release manifest.
+3. If the global skill is missing or mismatched, pause for human review and human-authorized manual installation. Never copy the tracked release snapshot into the global skills directory automatically.
+4. Read and follow the verified `$ui-orchestrator` as the workflow source of truth. Treat `assets/ui-orchestrator/` only as a distribution snapshot, never as a second active workflow.
+5. Read `references/petrohydropipe-constraints.md` before classifying or planning.
+6. If `$ui-orchestrator`, `ui-ux-pro-max`, Superpowers, collaboration tools, or two independent reviewers are unavailable, pause and ask the human how to proceed.
 
 Do not duplicate or weaken the global review, gate, branch, or Git rules.
 
@@ -37,6 +39,7 @@ Use current files as evidence; historical screenshots and prior audit claims may
 - Document every backend-dependent gap with its missing contract or capability and affected UI state; never merely hide the gap or fake it.
 - Keep design-only work frontend-only and preserve API calls, permissions, authentication, data meaning, and business behavior.
 - Treat Tailwind, shadcn additions, dependencies, global tokens, navigation, authentication UI, multi-route changes, and responsive rewrites as major.
+- Treat the repository's current primary branch as `main` unless repository instructions or Git evidence establish a different primary branch; apply the global protected-branch policy to the detected branch.
 
 ## Preserve Current UI Contracts
 
