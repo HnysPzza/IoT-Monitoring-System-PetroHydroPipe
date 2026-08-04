@@ -4,7 +4,7 @@
 
 **Goal:** Remove the colored left-edge decoration from every KPI card and replace it with a restrained layered surface that preserves hierarchy in dark and light themes.
 
-**Architecture:** Keep the change inside the existing shared card CSS. A small Vitest source-contract test will protect the absence of edge pseudo-elements and the presence of the approved tone variables; browser inspection remains the authority for visual quality, theme behavior, and responsive layout.
+**Architecture:** Keep the change inside the existing shared card CSS. A rendered computed-style assertion will establish the current edge treatment as the failing baseline and then verify its removal; browser inspection remains the authority for visual quality, theme behavior, and responsive layout.
 
 **Tech Stack:** React 19, Vite, Vitest, CSS custom properties, Chrome DevTools MCP
 
@@ -23,58 +23,35 @@
 ### Task 1: Protect and implement the layered KPI surface
 
 **Files:**
-- Create: `Frontend/src/shared/styles/tokens.test.js`
 - Modify: `Frontend/src/shared/styles/tokens.css:1789-1835`
 
 **Interfaces:**
 - Consumes: Existing `.stat-card`, `.stat-card-primary`, `.stat-card-success`, `.stat-card-warning`, `.stat-card-neutral`, and `.stat-card-icon` class names.
-- Produces: CSS custom property `--stat-accent` on each tone; a radial surface wash, neutral border, inner highlight, and restrained shadow on `.stat-card`; no `.stat-card*::before` rules.
+- Produces: CSS custom property `--stat-accent` on each tone; a radial surface wash, neutral border, inner highlight, and restrained shadow on `.stat-card`; no rendered `.stat-card*::before` edge.
 
-- [ ] **Step 1: Add the failing CSS contract test**
+- [ ] **Step 1: Run the failing rendered-style assertion**
 
-Create `Frontend/src/shared/styles/tokens.test.js`:
+Open `http://localhost:5173/dashboard` in Chrome and evaluate:
 
 ```javascript
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-
-const css = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8')
-
-function declarationsFor(selector) {
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const matches = css.matchAll(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, 'g'))
-  return Array.from(matches, (match) => match[1]).join('\n')
-}
-
-describe('KPI stat-card surface', () => {
-  it('uses layered tone surfaces without colored edge pseudo-elements', () => {
-    expect(css).not.toMatch(/\.stat-card(?:-[\w-]+)?::before/)
-
-    const baseDeclarations = declarationsFor('.stat-card')
-    expect(baseDeclarations).toContain('--stat-accent: var(--c-primary)')
-    expect(baseDeclarations).toContain('radial-gradient(')
-    expect(baseDeclarations).toContain('box-shadow:')
-
-    expect(declarationsFor('.stat-card-primary')).toContain('--stat-accent: var(--c-primary)')
-    expect(declarationsFor('.stat-card-success')).toContain('--stat-accent: var(--c-success)')
-    expect(declarationsFor('.stat-card-warning')).toContain('--stat-accent: #F59E0B')
-    expect(declarationsFor('.stat-card-neutral')).toContain('--stat-accent: var(--c-text-3)')
+() => {
+  const cards = [...document.querySelectorAll('.stat-card')]
+  const violations = cards.filter((card) => {
+    const before = getComputedStyle(card, '::before')
+    return before.content !== 'none' && parseFloat(before.width) > 0 && before.backgroundColor !== 'rgba(0, 0, 0, 0)'
   })
-})
+
+  if (violations.length > 0) {
+    throw new Error(`${violations.length} KPI cards still render a colored edge.`)
+  }
+
+  return { cards: cards.length, violations: violations.length }
+}
 ```
 
-- [ ] **Step 2: Run the focused test and confirm the old design fails**
+Expected: FAIL with `4 KPI cards still render a colored edge.` This is the real rendered behavior shown in the reported issue.
 
-Run:
-
-```powershell
-cd Frontend
-npm.cmd test -- --run src/shared/styles/tokens.test.js
-```
-
-Expected: FAIL because `.stat-card::before` still exists and the layered `--stat-accent` rules do not.
-
-- [ ] **Step 3: Replace the edge rules with the approved layered surface**
+- [ ] **Step 2: Replace the edge rules with the approved layered surface**
 
 In the later `.stat-card` section of `Frontend/src/shared/styles/tokens.css`, replace the base and tone-specific pseudo-element rules with:
 
@@ -115,29 +92,30 @@ In the later `.stat-card` section of `Frontend/src/shared/styles/tokens.css`, re
 
 Keep the existing `.stat-card-heading`, `.stat-card-icon`, `.stat-card-success .stat-card-icon`, and `.stat-card-warning .stat-card-icon` rules unchanged.
 
-- [ ] **Step 4: Run the focused test and confirm it passes**
+- [ ] **Step 3: Re-run the rendered-style assertion on all affected routes**
 
-Run:
+Run the Step 1 assertion on:
 
-```powershell
-cd Frontend
-npm.cmd test -- --run src/shared/styles/tokens.test.js
+```text
+http://localhost:5173/dashboard
+http://localhost:5173/dashboard/downtime
+http://localhost:5173/dashboard/reports
 ```
 
-Expected: one test file and one test pass.
+Expected results are `{ cards: 4, violations: 0 }`, `{ cards: 4, violations: 0 }`, and `{ cards: 5, violations: 0 }`.
 
-- [ ] **Step 5: Review and commit the implementation unit**
+- [ ] **Step 4: Review and commit the implementation unit**
 
 Run:
 
 ```powershell
 git diff --check
-git diff -- Frontend/src/shared/styles/tokens.css Frontend/src/shared/styles/tokens.test.js
-git add -- Frontend/src/shared/styles/tokens.css Frontend/src/shared/styles/tokens.test.js
+git diff -- Frontend/src/shared/styles/tokens.css
+git add -- Frontend/src/shared/styles/tokens.css
 git commit -m "fix(ui): replace KPI card edge accents"
 ```
 
-Expected: only the shared card CSS and its contract test are committed.
+Expected: only the approved shared card CSS is committed.
 
 ---
 
@@ -213,7 +191,7 @@ Run:
 git status --short --branch
 git diff --check
 git show --stat --oneline HEAD
-git show -- Frontend/src/shared/styles/tokens.css Frontend/src/shared/styles/tokens.test.js
+git show -- Frontend/src/shared/styles/tokens.css
 ```
 
-Expected: clean worktree; the implementation commit changes only the approved shared CSS and its contract test; no React, backend, API, dependency, or functional changes appear.
+Expected: clean worktree; the implementation commit changes only the approved shared CSS; no React, backend, API, dependency, or functional changes appear.
