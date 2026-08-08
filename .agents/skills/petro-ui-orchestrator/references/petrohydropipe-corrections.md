@@ -296,5 +296,5 @@ Audit verification completed on the `Final-Design` branch at commit `662e9cc`:
 
 ## Document Limitations
 
-- `PRD.md`, `TDD.md`, and this correction report are under the repository's ignored `docs/` directory and are currently local-only unless explicitly force-added or the ignore rule is changed.
+- This internal project-skill reference preserves known PRD/TDD drift for UI planning. It must be read with the public PRD and TDD; it is not a user-facing repository document.
 - The PRD and TDD refer to `changes-summary.md` and `CAPSTONE1_PARTIAL_REVISED.pdf`, but neither file is currently present in this workspace. Claims attributed only to those files could not be independently verified during this audit.

@@ -15,7 +15,7 @@ Do not add speed, pressure, temperature, RPM, bar, Celsius, line efficiency, vol
 
 ## Mandatory Conflict Checks
 
-`docs/PRD.md` and `docs/TDD.md` assign downtime to Sensor 3, while `docs/For Corrections.md` records a different current sensor identity and multi-sensor downtime behavior. Do not select a mapping or rewrite UI meaning until the human resolves it.
+`docs/PRD.md` and `docs/TDD.md` assign downtime to Sensor 3, while `references/petrohydropipe-corrections.md` records a different current sensor identity and multi-sensor downtime behavior. Do not select a mapping or rewrite UI meaning until the human resolves it.
 
 The alert lifecycle, manual downtime resolution, downtime-cause ownership, production-loss formula, general machine registration, production-target persistence, and sensor threshold model also contain open decisions. Preserve current behavior during design-only work and report the conflict when a requested design depends on it.
 
@@ -35,7 +35,7 @@ The alert lifecycle, manual downtime resolution, downtime-cause ownership, produ
 
 ## Project Evidence Order
 
-Apply the global source priority. Use `docs/For Corrections.md` to identify known drift rather than treating either documentation or current code as silently authoritative. Inspect relevant current code and tests before every recommendation.
+Apply the global source priority. Use `references/petrohydropipe-corrections.md` to identify known drift rather than treating either documentation or current code as silently authoritative. Inspect relevant current code and tests before every recommendation.
 
 Treat `main` as this repository's current primary branch unless repository instructions or Git remote HEAD provide contrary current evidence. Protect the evidence-backed primary branch under the global branch policy.
 

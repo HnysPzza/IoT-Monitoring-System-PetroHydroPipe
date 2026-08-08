@@ -24,7 +24,7 @@ Before every UI task, inspect:
 - `docs/PRD.md`
 - `docs/TDD.md`
 - `docs/ARCHITECTURE.md`
-- `docs/For Corrections.md`
+- `references/petrohydropipe-corrections.md`
 - Relevant UI audit or approved design documents
 - Current frontend implementation, tests, tokens, and API client behavior
 
