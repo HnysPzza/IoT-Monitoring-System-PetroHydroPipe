@@ -1,11 +1,31 @@
 import { waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { subscribeToServerEvents } from './eventStream.js'
+import { setUnauthorizedHandler } from './apiClient.js'
 
 describe('subscribeToServerEvents', () => {
   afterEach(() => {
+    setUnauthorizedHandler(null, null)
     vi.unstubAllGlobals()
     vi.useRealTimers()
+  })
+
+  it('notifies the shared session handler for an authenticated HTTP 401', async () => {
+    const onUnauthorized = vi.fn()
+    const onError = vi.fn()
+    setUnauthorizedHandler('expired-token', onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'expired-token', { onError })
+
+    await waitFor(() => {
+      expect(onUnauthorized).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 401, code: 'HTTP_401' }),
+        { path: '/api/alerts/stream' },
+      )
+    })
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }))
+    unsubscribe()
   })
 
   it('parses authenticated downtime events and stops cleanly', async () => {

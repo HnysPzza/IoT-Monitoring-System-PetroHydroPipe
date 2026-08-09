@@ -1,4 +1,4 @@
-import { API_BASE_URL, createApiError } from './apiClient.js'
+import { API_BASE_URL, createApiError, notifyUnauthorized } from './apiClient.js'
 
 function parseSseMessage(message) {
   const lines = message.replaceAll('\r\n', '\n').split('\n')
@@ -38,7 +38,9 @@ export function subscribeToServerEvents(path, token, { onEvent, onError, onFallb
       })
 
       if (!response.ok || !response.body) {
-        throw createApiError('Unable to connect to event stream.', response.status)
+        const error = createApiError('Unable to connect to event stream.', response.status)
+        notifyUnauthorized(error, { token, path })
+        throw error
       }
 
       const reader = response.body.getReader()

@@ -1,4 +1,5 @@
-import { createContext, useMemo, useState } from 'react'
+import { createContext, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { setUnauthorizedHandler } from '../../shared/services/apiClient.js'
 import { login as loginRequest } from './authService.js'
 
 const AUTH_STORAGE_KEY = 'iot_monitoring_auth'
@@ -16,16 +17,39 @@ function readStoredAuth() {
 
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(readStoredAuth)
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const expiredTokenRef = useRef(null)
+
+  useLayoutEffect(() => {
+    if (!auth?.token) {
+      return setUnauthorizedHandler(null, null)
+    }
+
+    const activeToken = auth.token
+
+    return setUnauthorizedHandler(activeToken, () => {
+      if (expiredTokenRef.current === activeToken) return
+
+      expiredTokenRef.current = activeToken
+      setAuth(null)
+      setSessionExpired(true)
+      window.localStorage.removeItem(AUTH_STORAGE_KEY)
+    })
+  }, [auth?.token])
 
   // Login is the bridge from the UI to authService, then stores the returned token locally.
   async function login(credentials) {
     const nextAuth = await loginRequest(credentials)
+    expiredTokenRef.current = null
+    setSessionExpired(false)
     setAuth(nextAuth)
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextAuth))
     return nextAuth
   }
 
   function logout() {
+    expiredTokenRef.current = null
+    setSessionExpired(false)
     setAuth(null)
     window.localStorage.removeItem(AUTH_STORAGE_KEY)
   }
@@ -36,10 +60,11 @@ export function AuthProvider({ children }) {
       token: auth?.token || null,
       user: auth?.user || null,
       isAuthenticated: Boolean(auth?.token),
+      sessionExpired,
       login,
       logout,
     }),
-    [auth],
+    [auth, sessionExpired],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

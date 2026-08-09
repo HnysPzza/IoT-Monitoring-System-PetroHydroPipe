@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router'
+import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
+import { getCurrentDashboardPath } from '../features/auth/authNavigation.js'
 
 const AdminDashboard = lazy(() => import('../features/dashboard/layout/AdminDashboard.jsx'))
 const AuditSection = lazy(() => import('../features/dashboard/audit/AuditSection.jsx'))
@@ -14,12 +15,22 @@ const ReportsSection = lazy(() => import('../features/dashboard/reports/ReportsS
 const SettingsSection = lazy(() => import('../features/dashboard/settings/SettingsSection.jsx'))
 const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
 
-function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useAuth()
+export function ProtectedRoute({ children }) {
+  const { isAuthenticated, sessionExpired } = useAuth()
+  const location = useLocation()
 
   // Guard dashboard pages; unauthenticated users always go back to login.
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{
+          from: getCurrentDashboardPath(location),
+          sessionExpired: Boolean(sessionExpired),
+        }}
+      />
+    )
   }
 
   return children
