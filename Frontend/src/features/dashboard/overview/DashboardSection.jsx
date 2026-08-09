@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CircleCheck, Clock3, Factory, PackageCheck, PauseCircle, Target } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, CircleCheck, Clock3, Factory, PackageCheck, PauseCircle, RotateCw, Target } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
@@ -22,54 +22,45 @@ function SkeletonBlock({ className = '' }) {
 
 function OverviewLoadingState() {
   return (
-    <div className="overview-layout">
-      <div className="kpi-grid">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="section-card stat-card">
-            <SkeletonBlock className="skeleton-label" />
-            <SkeletonBlock className="skeleton-value" />
-            <SkeletonBlock className="skeleton-meta" />
-          </div>
-        ))}
-      </div>
-      <div className="overview-charts-grid">
-        <div className="section-card">
-          <SkeletonBlock className="skeleton-heading" />
-          <SkeletonBlock className="skeleton-panel" />
+    <div className="kpi-grid" role="status" aria-live="polite">
+      <span className="sr-only">Loading dashboard overview...</span>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="section-card stat-card">
+          <SkeletonBlock className="skeleton-label" />
+          <SkeletonBlock className="skeleton-value" />
+          <SkeletonBlock className="skeleton-meta" />
         </div>
-        <div className="section-card">
-          <SkeletonBlock className="skeleton-heading" />
-          <SkeletonBlock className="skeleton-panel" />
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
 
-function OverviewNotice({ notice }) {
-  if (!notice) return null
-
+function OverviewEmptyState() {
   return (
-    <div className={`notice notice-${notice.type} dashboard-alert`} role="alert">
-      <AlertTriangle size={16} aria-hidden="true" />
-      <span>{notice.message}</span>
-    </div>
+    <section className="section-card section-placeholder" aria-labelledby="overview-empty-title">
+      <div className="section-copy">
+        <p className="section-eyebrow">No data</p>
+        <h2 id="overview-empty-title">No overview data available</h2>
+        <p>No overview data is available for the selected range.</p>
+      </div>
+    </section>
   )
 }
 
-function OverviewEmptyState({ notice }) {
-  return (
-    <div className="overview-layout">
-      <OverviewNotice notice={notice} />
-      <section className="section-card section-placeholder" aria-labelledby="overview-empty-title">
-        <div className="section-copy">
-          <p className="section-eyebrow">No data</p>
-          <h2 id="overview-empty-title">No overview data available</h2>
-          <p>No overview data is available for the selected range.</p>
-        </div>
-      </section>
-    </div>
-  )
+function formatSuccessfulUpdate(date) {
+  return date.toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+  })
+}
+
+function getRequestDisplayState({ state, hasCurrentData, errorKey, currentKey }) {
+  if (state === 'error') {
+    return errorKey === currentKey ? 'error' : 'loading'
+  }
+
+  return hasCurrentData ? state : 'loading'
 }
 
 function SensorStatusIcon({ status }) {
@@ -86,64 +77,130 @@ function SensorStatusIcon({ status }) {
 
 export default function DashboardSection() {
   const { token } = useAuth()
-  const [viewState, setViewState] = useState('loading')
+  const [overviewState, setOverviewState] = useState('loading')
   const [overviewData, setOverviewData] = useState(null)
+  const [overviewRequestKey, setOverviewRequestKey] = useState('')
+  const [overviewError, setOverviewError] = useState('')
+  const [overviewErrorKey, setOverviewErrorKey] = useState('')
+  const [overviewRefresh, setOverviewRefresh] = useState(0)
+  const overviewRequestIdRef = useRef(0)
+  const [liveState, setLiveState] = useState('loading')
   const [liveData, setLiveData] = useState({ machine: null, sensors: [] })
-  const [notice, setNotice] = useState(null)
+  const [liveRequestKey, setLiveRequestKey] = useState('')
+  const [liveError, setLiveError] = useState('')
+  const [liveErrorKey, setLiveErrorKey] = useState('')
+  const [liveLastUpdated, setLiveLastUpdated] = useState(null)
+  const [liveRefresh, setLiveRefresh] = useState(0)
+  const liveRequestIdRef = useRef(0)
+  const successfulLiveRef = useRef(null)
   const [downtimeChartState, setDowntimeChartState] = useState('loading')
   const [downtimeImpact, setDowntimeImpact] = useState(null)
-  const [downtimeChartNotice, setDowntimeChartNotice] = useState(null)
+  const [downtimeChartRequestKey, setDowntimeChartRequestKey] = useState('')
+  const [downtimeChartError, setDowntimeChartError] = useState('')
+  const [downtimeChartErrorKey, setDowntimeChartErrorKey] = useState('')
+  const [downtimeChartLastUpdated, setDowntimeChartLastUpdated] = useState(null)
+  const [downtimeChartRefresh, setDowntimeChartRefresh] = useState(0)
+  const downtimeChartRequestIdRef = useRef(0)
+  const successfulDowntimeChartRef = useRef(null)
   const [trendMode, setTrendMode] = useState('today')
   const [analyticsMode, setAnalyticsMode] = useState('day')
   const [trendAnchorDate, setTrendAnchorDate] = useState(() => startOfDay(new Date()))
   const today = startOfDay(new Date())
-  const trendData = downtimeImpact?.points || []
   const trendRangeLabel = getTrendRangeLabel(trendMode, trendAnchorDate)
   const calendarValue = trendMode === 'month' ? toMonthInputValue(trendAnchorDate) : toDateInputValue(trendAnchorDate)
+  const overviewKey = `${token || 'anonymous'}:overview`
+  const liveKey = `${token || 'anonymous'}:live`
+  const downtimeChartKey = `${token || 'anonymous'}:${trendMode}:${calendarValue}`
+  const hasCurrentOverview = overviewRequestKey === overviewKey && Boolean(overviewData)
+  const hasCurrentLive = liveRequestKey === liveKey
+  const hasCurrentDowntimeChart = downtimeChartRequestKey === downtimeChartKey
+  const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
 
   useEffect(() => {
-    let isMounted = true
+    const requestId = overviewRequestIdRef.current + 1
+    overviewRequestIdRef.current = requestId
+    let isCancelled = false
 
     async function loadOverview() {
-      setViewState('loading')
-      setNotice(null)
+      setOverviewState('loading')
+      setOverviewError('')
 
       try {
-        const [payload, livePayload] = await Promise.all([
-          getDashboardOverview(token),
-          getLiveFeed(token).catch(() => ({ machine: null, sensors: [] })),
-        ])
-
-        if (!isMounted) return
+        const payload = await getDashboardOverview(token)
+        if (isCancelled || requestId !== overviewRequestIdRef.current) return
 
         setOverviewData(payload)
-        setLiveData({
-          machine: livePayload.machine || null,
-          sensors: livePayload.sensors || [],
-        })
-        setViewState(payload.summary?.length ? 'success' : 'empty')
+        setOverviewRequestKey(overviewKey)
+        setOverviewState(payload.summary?.length ? 'success' : 'empty')
       } catch (error) {
-        if (!isMounted) return
-        setNotice({ type: 'error', message: error.message || 'Unable to load dashboard overview.' })
-        setOverviewData(null)
-        setLiveData({ machine: null, sensors: [] })
-        setViewState('empty')
+        if (isCancelled || requestId !== overviewRequestIdRef.current) return
+        setOverviewError(error.message || 'Unable to load dashboard overview.')
+        setOverviewErrorKey(overviewKey)
+        setOverviewState('error')
       }
     }
 
     loadOverview()
 
     return () => {
-      isMounted = false
+      isCancelled = true
     }
-  }, [token])
+  }, [overviewKey, overviewRefresh, token])
 
   useEffect(() => {
-    let isMounted = true
+    const requestId = liveRequestIdRef.current + 1
+    liveRequestIdRef.current = requestId
+    let isCancelled = false
+
+    async function loadLiveStatus() {
+      setLiveState('loading')
+      setLiveError('')
+
+      try {
+        const payload = await getLiveFeed(token)
+        if (isCancelled || requestId !== liveRequestIdRef.current) return
+
+        const nextLiveData = {
+          machine: payload.machine || null,
+          sensors: payload.sensors || [],
+        }
+        const updatedAt = new Date()
+        successfulLiveRef.current = { requestKey: liveKey, data: nextLiveData, updatedAt }
+        setLiveData(nextLiveData)
+        setLiveRequestKey(liveKey)
+        setLiveLastUpdated(updatedAt)
+        setLiveState('success')
+      } catch (error) {
+        if (isCancelled || requestId !== liveRequestIdRef.current) return
+
+        setLiveError(error.message || 'Unable to load live machine status.')
+        setLiveErrorKey(liveKey)
+        if (successfulLiveRef.current?.requestKey === liveKey) {
+          setLiveData(successfulLiveRef.current.data)
+          setLiveRequestKey(liveKey)
+          setLiveLastUpdated(successfulLiveRef.current.updatedAt)
+          setLiveState('stale')
+        } else {
+          setLiveState('error')
+        }
+      }
+    }
+
+    loadLiveStatus()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [liveKey, liveRefresh, token])
+
+  useEffect(() => {
+    const requestId = downtimeChartRequestIdRef.current + 1
+    downtimeChartRequestIdRef.current = requestId
+    let isCancelled = false
 
     async function loadDowntimeImpact() {
       setDowntimeChartState('loading')
-      setDowntimeChartNotice(null)
+      setDowntimeChartError('')
 
       try {
         const payload = await getDashboardDowntimeImpact(token, {
@@ -151,37 +208,84 @@ export default function DashboardSection() {
           date: calendarValue,
         })
 
-        if (!isMounted) return
+        if (isCancelled || requestId !== downtimeChartRequestIdRef.current) return
 
-        setDowntimeImpact(payload.downtimeImpact || null)
-        setDowntimeChartState(payload.downtimeImpact?.points?.length ? 'success' : 'empty')
+        const nextImpact = payload.downtimeImpact || null
+        const updatedAt = new Date()
+        successfulDowntimeChartRef.current = { requestKey: downtimeChartKey, data: nextImpact, updatedAt }
+        setDowntimeImpact(nextImpact)
+        setDowntimeChartRequestKey(downtimeChartKey)
+        setDowntimeChartLastUpdated(updatedAt)
+        setDowntimeChartState(nextImpact?.points?.length ? 'success' : 'empty')
       } catch (error) {
-        if (!isMounted) return
-        setDowntimeChartNotice({ type: 'error', message: error.message || 'Unable to load downtime chart.' })
-        setDowntimeChartState('error')
+        if (isCancelled || requestId !== downtimeChartRequestIdRef.current) return
+
+        setDowntimeChartError(error.message || 'Unable to load downtime chart.')
+        setDowntimeChartErrorKey(downtimeChartKey)
+        if (successfulDowntimeChartRef.current?.requestKey === downtimeChartKey) {
+          setDowntimeImpact(successfulDowntimeChartRef.current.data)
+          setDowntimeChartRequestKey(downtimeChartKey)
+          setDowntimeChartLastUpdated(successfulDowntimeChartRef.current.updatedAt)
+          setDowntimeChartState('stale')
+        } else {
+          setDowntimeChartState('error')
+        }
       }
     }
 
     loadDowntimeImpact()
 
     return () => {
-      isMounted = false
+      isCancelled = true
     }
-  }, [calendarValue, token, trendMode])
+  }, [calendarValue, downtimeChartKey, downtimeChartRefresh, token, trendMode])
 
-  if (viewState === 'loading') {
-    return <OverviewLoadingState />
-  }
+  const overviewDisplayState = getRequestDisplayState({
+    state: overviewState,
+    hasCurrentData: hasCurrentOverview,
+    errorKey: overviewErrorKey,
+    currentKey: overviewKey,
+  })
+  const chartDisplayState = getRequestDisplayState({
+    state: downtimeChartState,
+    hasCurrentData: hasCurrentDowntimeChart,
+    errorKey: downtimeChartErrorKey,
+    currentKey: downtimeChartKey,
+  })
+  const liveDisplayState = getRequestDisplayState({
+    state: liveState,
+    hasCurrentData: hasCurrentLive,
+    errorKey: liveErrorKey,
+    currentKey: liveKey,
+  })
+  const overviewIsReady = overviewDisplayState === 'success' && hasCurrentOverview
+  const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.[analyticsMode] : null
+  const summaryById = overviewIsReady
+    ? Object.fromEntries(overviewData.summary.map((item) => [item.id, item]))
+    : {}
+  const productionSummary = overviewIsReady ? summaryById.pipes || overviewData.summary[0] : null
+  const downtimeSummary = overviewIsReady
+    ? summaryById.minutes || overviewData.summary.find((item) => item.label.toLowerCase().includes('downtime'))
+    : null
+  const machineKpi = (() => {
+    if (liveDisplayState === 'success' && hasCurrentLive && liveData.machine) {
+      return { value: '1 / 1', helper: liveData.machine.name || 'Spiral Mill 01', tone: 'success' }
+    }
 
-  if (viewState === 'empty') {
-    return <OverviewEmptyState notice={notice} />
-  }
+    if (liveDisplayState === 'stale') {
+      return { value: 'Stale', helper: 'Live status needs refresh', tone: 'warning' }
+    }
 
-  const selectedAnalytics = overviewData.productionAnalytics?.[analyticsMode]
-  const summaryById = Object.fromEntries(overviewData.summary.map((item) => [item.id, item]))
-  const productionSummary = summaryById.pipes || overviewData.summary[0]
-  const downtimeSummary = summaryById.minutes || overviewData.summary.find((item) => item.label.toLowerCase().includes('downtime'))
-  const machineIsAvailable = Boolean(liveData.machine)
+    if (liveDisplayState === 'error') {
+      return { value: '—', helper: 'Live status unavailable', tone: 'neutral' }
+    }
+
+    if (liveDisplayState === 'loading') {
+      return { value: '—', helper: 'Refreshing live status', tone: 'neutral' }
+    }
+
+    return { value: '—', helper: 'No live machine returned', tone: 'neutral' }
+  })()
   const kpiItems = [
     {
       id: 'production',
@@ -194,10 +298,10 @@ export default function DashboardSection() {
     {
       id: 'machine',
       label: 'Machine Online',
-      value: machineIsAvailable ? '1 / 1' : '—',
-      helper: liveData.machine?.name || 'Spiral Mill 01',
+      value: machineKpi.value,
+      helper: machineKpi.helper,
       icon: Factory,
-      tone: machineIsAvailable ? 'success' : 'neutral',
+      tone: machineKpi.tone,
     },
     {
       id: 'downtime',
@@ -225,12 +329,26 @@ export default function DashboardSection() {
     }
   })
   const reportingSensorCount = sensorHealth.filter((sensor) => sensor.status !== 'Unavailable').length
-
   return (
     <div className="overview-layout">
-      <OverviewNotice notice={notice} />
+      {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
-      {overviewData.alerts.length > 0 ? (
+      {overviewDisplayState === 'error' ? (
+        <section className="section-card section-placeholder" aria-labelledby="overview-error-title">
+          <div className="section-copy">
+            <p className="section-eyebrow">Overview unavailable</p>
+            <h2 id="overview-error-title">Unable to load dashboard overview</h2>
+            <p role="alert">{overviewError}</p>
+            <button className="btn btn-secondary" type="button" onClick={() => setOverviewRefresh((current) => current + 1)}>
+              Retry overview
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {overviewDisplayState === 'empty' && hasCurrentOverview ? <OverviewEmptyState /> : null}
+
+      {overviewIsReady && overviewData.alerts.length > 0 ? (
         <div className="alerts-stack">
           {overviewData.alerts.map((alert) => (
             <div key={alert.id} className={`notice dashboard-alert ${alert.type === 'danger' ? 'notice-error' : ''}`} role="alert">
@@ -241,7 +359,7 @@ export default function DashboardSection() {
         </div>
       ) : null}
 
-      <div className="kpi-grid">
+      {overviewIsReady ? <div className="kpi-grid">
         {kpiItems.map((item) => {
           const Icon = item.icon
           return (
@@ -257,14 +375,16 @@ export default function DashboardSection() {
             </article>
           )
         })}
-      </div>
+      </div> : null}
 
       <div className="overview-charts-grid">
-        <ProductionAnalytics
-          analytics={overviewData.productionAnalytics}
-          mode={analyticsMode}
-          onModeChange={setAnalyticsMode}
-        />
+        {overviewIsReady ? (
+          <ProductionAnalytics
+            analytics={overviewData.productionAnalytics}
+            mode={analyticsMode}
+            onModeChange={setAnalyticsMode}
+          />
+        ) : null}
 
         <section className="section-card downtime-chart-card">
           <div className="section-heading">
@@ -298,56 +418,173 @@ export default function DashboardSection() {
                 rangeLabel={trendRangeLabel}
                 onDateChange={setTrendAnchorDate}
               />
+              <button
+                className="btn btn-secondary table-action-button"
+                type="button"
+                disabled={downtimeChartState === 'loading'}
+                onClick={() => setDowntimeChartRefresh((current) => current + 1)}
+              >
+                <RotateCw className={downtimeChartState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+                Refresh chart
+              </button>
             </div>
           </div>
-          {downtimeChartNotice ? (
-            <div className={`notice notice-${downtimeChartNotice.type} dashboard-alert`} role="alert">
+          {downtimeChartState === 'stale' && hasCurrentDowntimeChart ? (
+            <div className="notice notice-error dashboard-alert" role="alert">
               <AlertTriangle size={16} aria-hidden="true" />
-              <span>{downtimeChartNotice.message}</span>
+              <span>
+                Downtime chart data is stale. Showing the last successful result from{' '}
+                <time dateTime={downtimeChartLastUpdated?.toISOString()}>
+                  {downtimeChartLastUpdated ? formatSuccessfulUpdate(downtimeChartLastUpdated) : 'an earlier update'}
+                </time>
+                . {downtimeChartError}
+              </span>
+              <button className="btn btn-secondary table-action-button" type="button" onClick={() => setDowntimeChartRefresh((current) => current + 1)}>
+                Retry chart
+              </button>
             </div>
           ) : null}
-          {downtimeChartState === 'loading' ? (
-            <div className="skeleton skeleton-panel" />
+          {chartDisplayState === 'loading' && hasCurrentDowntimeChart ? (
+            <div className="notice dashboard-alert" role="status" aria-live="polite">
+              Refreshing downtime chart...
+            </div>
+          ) : null}
+          {chartDisplayState === 'error' ? (
+            <div className="notice notice-error dashboard-alert" role="alert">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>{downtimeChartError}</span>
+              <button className="btn btn-secondary table-action-button" type="button" onClick={() => setDowntimeChartRefresh((current) => current + 1)}>
+                Retry chart
+              </button>
+            </div>
+          ) : chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+            <div role="status" aria-live="polite">
+              <span className="sr-only">Loading downtime chart...</span>
+              <div className="skeleton skeleton-panel" aria-hidden="true" />
+            </div>
           ) : trendData.length > 0 ? (
             <DowntimeTrendChart data={trendData} thresholdMinutes={downtimeImpact?.thresholdMinutes || 30} />
-          ) : (
+          ) : hasCurrentDowntimeChart ? (
             <p className="table-muted">No downtime data is available for this range.</p>
-          )}
+          ) : null}
         </section>
       </div>
 
-      <section className="section-card machine-health-card" aria-labelledby="machine-health-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Machine health</p>
-            <h2 id="machine-health-title">{liveData.machine?.name || 'Spiral Mill 01'}</h2>
+      {liveDisplayState === 'error' ? (
+        <section className="section-card section-placeholder" aria-labelledby="live-source-error-title">
+          <div className="section-copy">
+            <p className="section-eyebrow">Live source unavailable</p>
+            <h2 id="live-source-error-title">Unable to load live machine status</h2>
+            <p role="alert">{liveError}</p>
+            <button className="btn btn-secondary" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
+              Retry live status
+            </button>
           </div>
-          <span className="section-chip">
-            <CircleCheck size={16} aria-hidden="true" />
-            {reportingSensorCount} / 5 sensors reporting
-          </span>
-        </div>
-
-        <div className="overview-sensor-grid" aria-label="Five inductive proximity sensor statuses">
-          {sensorHealth.map((sensor) => (
-            <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
-              <div className="overview-sensor-heading">
-                <span className="sensor-state-icon" aria-hidden="true">
-                  <SensorStatusIcon status={sensor.status} />
+        </section>
+      ) : liveDisplayState === 'loading' && !hasCurrentLive ? (
+        <section className="section-card machine-health-card" aria-label="Loading live machine status">
+          <SkeletonBlock className="skeleton-heading" />
+          <SkeletonBlock className="skeleton-panel" />
+        </section>
+      ) : hasCurrentLive && !liveData.machine ? (
+        <section className="section-card section-placeholder" aria-labelledby="live-source-empty-title">
+          <div className="section-copy">
+            <p className="section-eyebrow">No live source</p>
+            <h2 id="live-source-empty-title">No live machine is available</h2>
+            <p>No monitored machine was returned by the last successful live-status request.</p>
+            {liveState === 'loading' ? (
+              <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing live status...</div>
+            ) : null}
+            {liveState === 'stale' ? (
+              <div className="notice notice-error dashboard-alert" role="alert">
+                <AlertTriangle size={16} aria-hidden="true" />
+                <span>
+                  Live machine status is stale. The last successful empty result was received at{' '}
+                  <time dateTime={liveLastUpdated?.toISOString()}>
+                    {liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'an earlier update'}
+                  </time>
+                  . {liveError}
                 </span>
-                <div>
-                  <p>{sensor.code}</p>
-                  <h3>{sensor.label}</h3>
+                <button className="btn btn-secondary table-action-button" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
+                  Retry live status
+                </button>
+              </div>
+            ) : null}
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={liveState === 'loading'}
+              onClick={() => setLiveRefresh((current) => current + 1)}
+            >
+              Refresh live status
+            </button>
+          </div>
+        </section>
+      ) : hasCurrentLive ? (
+        <section className="section-card machine-health-card" aria-labelledby="machine-health-title">
+          <div className="section-heading">
+            <div>
+              <p className="section-eyebrow">Machine health</p>
+              <h2 id="machine-health-title">{liveData.machine?.name || 'Spiral Mill 01'}</h2>
+            </div>
+            <div className="live-refresh">
+              <span className="section-chip">
+                <CircleCheck size={16} aria-hidden="true" />
+                {reportingSensorCount} / 5 sensors reporting
+              </span>
+              <button
+                className="btn btn-secondary table-action-button"
+                type="button"
+                disabled={liveState === 'loading'}
+                onClick={() => setLiveRefresh((current) => current + 1)}
+              >
+                <RotateCw className={liveState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+                Refresh live status
+              </button>
+            </div>
+          </div>
+
+          {liveState === 'loading' ? (
+            <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing live status...</div>
+          ) : null}
+
+          {liveState === 'stale' ? (
+            <div className="notice notice-error dashboard-alert" role="alert">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>
+                Live machine status is stale. Showing the last successful result from{' '}
+                <time dateTime={liveLastUpdated?.toISOString()}>
+                  {liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'an earlier update'}
+                </time>
+                . {liveError}
+              </span>
+              <button className="btn btn-secondary table-action-button" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
+                Retry live status
+              </button>
+            </div>
+          ) : null}
+
+          <div className="overview-sensor-grid" aria-label="Five inductive proximity sensor statuses">
+            {sensorHealth.map((sensor) => (
+              <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
+                <div className="overview-sensor-heading">
+                  <span className="sensor-state-icon" aria-hidden="true">
+                    <SensorStatusIcon status={sensor.status} />
+                  </span>
+                  <div>
+                    <p>{sensor.code}</p>
+                    <h3>{sensor.label}</h3>
+                  </div>
                 </div>
-              </div>
-              <div className="overview-sensor-footer">
-                <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status}</span>
-                <span>{sensor.lastEventAt ? `Last event ${formatLiveDateTime(sensor.lastEventAt)}` : 'No recent event'}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+                <div className="overview-sensor-footer">
+                  <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status}</span>
+                  <span>{sensor.lastEventAt ? `Last event ${formatLiveDateTime(sensor.lastEventAt)}` : 'No recent event'}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }
