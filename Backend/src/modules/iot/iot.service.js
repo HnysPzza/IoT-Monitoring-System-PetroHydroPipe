@@ -245,8 +245,7 @@ async function recordStateTransitionAudits({ sensor, machine, eventRecord, paylo
   }
 }
 
-async function createSensorEvent({ deviceId, deviceKey, payload }) {
-  const sensor = await authenticateDevice({ deviceId, deviceKey })
+async function createSensorEvent({ sensor, payload }) {
   const machine = getMachineRecord(sensor)
 
   if (!machine) {
@@ -286,7 +285,7 @@ async function createSensorEvent({ deviceId, deviceKey, payload }) {
       entityType: 'sensor_event',
       entityId: eventRecord.id,
       metadata: {
-        deviceId,
+        deviceId: sensor.esp32_device_id,
         sensorCode: sensor.sensor_code,
         machineCode: machine.machine_code,
         deviceEventId: payload.eventId,

@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict')
+const http = require('node:http')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
 const {
@@ -35,6 +36,39 @@ function createHttpError(status, code, message) {
   error.status = status
   error.code = code
   return error
+}
+
+function requestJsonFromLocalAddress(baseUrl, pathName, { localAddress, headers = {}, body }) {
+  const url = new URL(pathName, baseUrl)
+  const payload = body === undefined ? null : JSON.stringify(body)
+
+  return new Promise((resolve, reject) => {
+    const request = http.request(url, {
+      method: 'POST',
+      localAddress,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(payload === null ? {} : { 'Content-Length': Buffer.byteLength(payload) }),
+        ...headers,
+      },
+    }, (response) => {
+      let responseBody = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => {
+        responseBody += chunk
+      })
+      response.on('end', () => {
+        resolve({
+          status: response.statusCode,
+          body: responseBody ? JSON.parse(responseBody) : null,
+        })
+      })
+    })
+
+    request.on('error', reject)
+    if (payload !== null) request.write(payload)
+    request.end()
+  })
 }
 
 test('GET /api/health returns backend health', async () => {
@@ -570,10 +604,15 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
 })
 
 test('POST /api/iot/events rejects invalid ESP32 device authentication', async () => {
+  let eventProcessingCalls = 0
   const app = loadAppWithMocks({
     'src/modules/iot/iot.service.js': {
-      createSensorEvent: async () => {
+      authenticateDevice: async () => {
         throw createHttpError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
+      },
+      createSensorEvent: async () => {
+        eventProcessingCalls += 1
+        return { id: 'event-1' }
       },
       getLiveFeed: async () => ({ machine: null, sensors: [] }),
     },
@@ -582,6 +621,10 @@ test('POST /api/iot/events rejects invalid ESP32 device authentication', async (
   await withTestServer(app, async (baseUrl) => {
     const result = await requestJson(baseUrl, '/api/iot/events', {
       method: 'POST',
+      headers: {
+        'x-device-id': 'esp32-m01-s01',
+        'x-device-key': 'wrong-device-key',
+      },
       body: {
         eventId: '11111111-1111-4111-8111-111111111111',
         eventType: 'pulse',
@@ -593,12 +636,47 @@ test('POST /api/iot/events rejects invalid ESP32 device authentication', async (
 
     assert.equal(result.response.status, 401)
     assertError(result.body, 'DEVICE_UNAUTHORIZED')
+    assert.equal(eventProcessingCalls, 0)
+  })
+})
+
+test('POST /api/iot/events fails closed when authenticated device has no stable id', async () => {
+  let eventProcessingCalls = 0
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => ({ esp32_device_id: 'esp32-m01-s01' }),
+      createSensorEvent: async () => {
+        eventProcessingCalls += 1
+        return { id: 'event-1' }
+      },
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: {
+        'x-device-id': 'esp32-m01-s01',
+        'x-device-key': 'test-device-key',
+      },
+      body: {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        eventType: 'pulse',
+        signal: 'active',
+      },
+    })
+
+    assert.equal(result.response.status, 500)
+    assertError(result.body, 'IOT_DEVICE_ID_MISSING')
+    assert.equal(eventProcessingCalls, 0)
   })
 })
 
 test('POST /api/iot/events requires an idempotency UUID and matching signal', async () => {
   const app = loadAppWithMocks({
     'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => ({ id: sensorId, esp32_device_id: 'esp32-m01-s01' }),
       createSensorEvent: async () => ({ id: 'event-1' }),
       getLiveFeed: async () => ({ machine: null, sensors: [] }),
     },
@@ -607,10 +685,18 @@ test('POST /api/iot/events requires an idempotency UUID and matching signal', as
   await withTestServer(app, async (baseUrl) => {
     const missingEventId = await requestJson(baseUrl, '/api/iot/events', {
       method: 'POST',
+      headers: {
+        'x-device-id': 'esp32-m01-s01',
+        'x-device-key': 'test-device-key',
+      },
       body: { eventType: 'pulse', signal: 'active' },
     })
     const mismatchedSignal = await requestJson(baseUrl, '/api/iot/events', {
       method: 'POST',
+      headers: {
+        'x-device-id': 'esp32-m01-s01',
+        'x-device-key': 'test-device-key',
+      },
       body: {
         eventId: '11111111-1111-4111-8111-111111111111',
         eventType: 'downtime',
@@ -623,16 +709,79 @@ test('POST /api/iot/events requires an idempotency UUID and matching signal', as
   })
 })
 
-test('POST /api/iot/events returns 429 after repeated device events', async () => {
+test('POST /api/iot/events validates device headers before authentication', async () => {
+  let authenticationCalls = 0
+  let eventProcessingCalls = 0
   const app = loadAppWithMocks({
     'src/modules/iot/iot.service.js': {
-      createSensorEvent: async () => ({
-        id: 'event-1',
-        sensorCode: 'S-01',
-        eventType: 'pulse',
-        signal: 'active',
-        recordedAt: '2026-06-11T00:00:00.000Z',
-      }),
+      authenticateDevice: async () => {
+        authenticationCalls += 1
+        return { id: sensorId, esp32_device_id: 'esp32-m01-s01' }
+      },
+      createSensorEvent: async () => {
+        eventProcessingCalls += 1
+        return { id: 'event-1' }
+      },
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+  const validBody = {
+    eventId: '11111111-1111-4111-8111-111111111111',
+    eventType: 'pulse',
+    signal: 'active',
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    const requests = [
+      { 'x-device-key': 'test-device-key' },
+      { 'x-device-id': 'ab', 'x-device-key': 'test-device-key' },
+      { 'x-device-id': 'a'.repeat(65), 'x-device-key': 'test-device-key' },
+      { 'x-device-id': 'bad/device', 'x-device-key': 'test-device-key' },
+      { 'x-device-id': 'esp32-m01-s01' },
+      { 'x-device-id': 'esp32-m01-s01', 'x-device-key': 'k'.repeat(129) },
+    ]
+
+    for (const headers of requests) {
+      const result = await requestJson(baseUrl, '/api/iot/events', {
+        method: 'POST',
+        headers,
+        body: validBody,
+      })
+
+      assert.equal(result.response.status, 400)
+      assertError(result.body, 'VALIDATION_ERROR')
+    }
+
+    assert.equal(authenticationCalls, 0)
+    assert.equal(eventProcessingCalls, 0)
+  })
+})
+
+test('POST /api/iot/events returns 429 after repeated device events', async () => {
+  let authenticationCalls = 0
+  let eventProcessingCalls = 0
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => {
+        authenticationCalls += 1
+        return {
+          id: sensorId,
+          esp32_device_id: 'esp32-m01-s01',
+          device_key_hash: 'must-not-reach-event-processing',
+        }
+      },
+      createSensorEvent: async ({ sensor }) => {
+        eventProcessingCalls += 1
+        assert.equal(sensor.id, sensorId)
+        assert.equal(sensor.device_key_hash, undefined)
+        return {
+          id: 'event-1',
+          sensorCode: 'S-01',
+          eventType: 'pulse',
+          signal: 'active',
+          recordedAt: '2026-06-11T00:00:00.000Z',
+        }
+      },
       getLiveFeed: async () => ({ machine: null, sensors: [] }),
     },
   })
@@ -659,6 +808,147 @@ test('POST /api/iot/events returns 429 after repeated device events', async () =
 
     assert.equal(latestResult.response.status, 429)
     assertError(latestResult.body, 'RATE_LIMITED')
+    assert.equal(latestResult.response.headers.get('ratelimit-limit'), '120')
+    assert.equal(authenticationCalls, 121)
+    assert.equal(eventProcessingCalls, 120)
+  })
+})
+
+test('POST /api/iot/events keeps verified device rate-limit buckets independent', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async ({ deviceId }) => ({ id: `verified-${deviceId}`, esp32_device_id: deviceId }),
+      createSensorEvent: async () => ({ id: 'event-1' }),
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+  const requestDeviceEvent = (baseUrl, deviceId) => requestJson(baseUrl, '/api/iot/events', {
+    method: 'POST',
+    headers: {
+      'x-device-id': deviceId,
+      'x-device-key': 'test-device-key',
+    },
+    body: {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      eventType: 'pulse',
+      signal: 'active',
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const result = await requestDeviceEvent(baseUrl, 'esp32-m01-s01')
+      assert.equal(result.response.status, 201)
+    }
+
+    const secondDevice = await requestDeviceEvent(baseUrl, 'esp32-m01-s02')
+    const firstDeviceOverflow = await requestDeviceEvent(baseUrl, 'esp32-m01-s01')
+
+    assert.equal(secondDevice.response.status, 201)
+    assert.equal(firstDeviceOverflow.response.status, 429)
+    assertError(firstDeviceOverflow.body, 'RATE_LIMITED')
+  })
+})
+
+test('POST /api/iot/events blocks rotating untrusted device ids by source IP', async () => {
+  let authenticationCalls = 0
+  let eventProcessingCalls = 0
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => {
+        authenticationCalls += 1
+        throw createHttpError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
+      },
+      createSensorEvent: async () => {
+        eventProcessingCalls += 1
+        return { id: 'event-1' }
+      },
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    let latestResult = null
+
+    for (let attempt = 0; attempt < 301; attempt += 1) {
+      latestResult = await requestJson(baseUrl, '/api/iot/events', {
+        method: 'POST',
+        headers: {
+          'x-device-id': `fake-device-${attempt}`,
+          'x-device-key': 'fake-device-key',
+        },
+        body: {
+          eventId: '11111111-1111-4111-8111-111111111111',
+          eventType: 'pulse',
+          signal: 'active',
+        },
+      })
+    }
+
+    assert.equal(latestResult.response.status, 429)
+    assertError(latestResult.body, 'RATE_LIMITED')
+    assert.equal(latestResult.response.headers.get('ratelimit-limit'), '300')
+    assert.equal(authenticationCalls, 300)
+    assert.equal(eventProcessingCalls, 0)
+  })
+})
+
+test('POST /api/iot/events keeps source-IP ingress buckets independent', async () => {
+  const previousIngressLimit = process.env.IOT_INGRESS_RATE_LIMIT
+  process.env.IOT_INGRESS_RATE_LIMIT = '2'
+
+  let app
+  try {
+    app = loadAppWithMocks({
+      'src/modules/iot/iot.service.js': {
+        authenticateDevice: async () => ({ id: sensorId, esp32_device_id: 'esp32-m01-s01' }),
+        createSensorEvent: async () => ({ id: 'event-1' }),
+        getLiveFeed: async () => ({ machine: null, sensors: [] }),
+      },
+    })
+  } finally {
+    if (previousIngressLimit === undefined) {
+      delete process.env.IOT_INGRESS_RATE_LIMIT
+    } else {
+      process.env.IOT_INGRESS_RATE_LIMIT = previousIngressLimit
+    }
+  }
+
+  const requestOptions = {
+    headers: {
+      'x-device-id': 'esp32-m01-s01',
+      'x-device-key': 'test-device-key',
+    },
+    body: {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      eventType: 'pulse',
+      signal: 'active',
+    },
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    const first = await requestJsonFromLocalAddress(baseUrl, '/api/iot/events', {
+      ...requestOptions,
+      localAddress: '127.0.0.2',
+    })
+    const second = await requestJsonFromLocalAddress(baseUrl, '/api/iot/events', {
+      ...requestOptions,
+      localAddress: '127.0.0.2',
+    })
+    const blocked = await requestJsonFromLocalAddress(baseUrl, '/api/iot/events', {
+      ...requestOptions,
+      localAddress: '127.0.0.2',
+    })
+    const independentSource = await requestJsonFromLocalAddress(baseUrl, '/api/iot/events', {
+      ...requestOptions,
+      localAddress: '127.0.0.3',
+    })
+
+    assert.equal(first.status, 201)
+    assert.equal(second.status, 201)
+    assert.equal(blocked.status, 429)
+    assertError(blocked.body, 'RATE_LIMITED')
+    assert.equal(independentSource.status, 201)
   })
 })
 

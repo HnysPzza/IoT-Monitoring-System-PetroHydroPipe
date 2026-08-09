@@ -2,8 +2,7 @@ const iotService = require('./iot.service')
 
 async function createSensorEvent(req, res) {
   const event = await iotService.createSensorEvent({
-    deviceId: req.get('x-device-id'),
-    deviceKey: req.get('x-device-key'),
+    sensor: req.iotDevice,
     payload: req.validated.body,
   })
 
