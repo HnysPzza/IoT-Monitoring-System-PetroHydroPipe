@@ -141,8 +141,7 @@ async function createTestEvent(eventType, signal, options = {}) {
   const rpcCalls = []
   const iotService = loadIotService({ eventType, signal, auditLogs, alertCalls, downtimeEvents, rpcCalls, ...options })
   const event = await iotService.createSensorEvent({
-    deviceId: 'esp32-m01-s01',
-    deviceKey: 'device-secret',
+    sensor: { ...createSensorRecord(), ...(options.sensorOverrides || {}) },
     payload: {
       eventId: EVENT_ID,
       eventType,
@@ -213,8 +212,7 @@ test('transaction failure is returned to the device instead of being swallowed',
 
   await assert.rejects(
     () => iotService.createSensorEvent({
-      deviceId: 'esp32-m01-s01',
-      deviceKey: 'device-secret',
+      sensor: createSensorRecord(),
       payload: {
         eventId: EVENT_ID,
         eventType: 'downtime',
@@ -236,8 +234,7 @@ test('invalid timestamps or reused event IDs are rejected as client errors', asy
 
   await assert.rejects(
     () => iotService.createSensorEvent({
-      deviceId: 'esp32-m01-s01',
-      deviceKey: 'device-secret',
+      sensor: createSensorRecord(),
       payload: {
         eventId: EVENT_ID,
         eventType: 'downtime',
@@ -253,19 +250,17 @@ test('invalid timestamps or reused event IDs are rejected as client errors', asy
 test('device authentication rejects missing keys, wrong keys, and missing machines', async () => {
   const missingKeyService = loadIotService({ eventType: 'pulse', signal: 'active' })
   await assert.rejects(
-    () => missingKeyService.createSensorEvent({
+    () => missingKeyService.authenticateDevice({
       deviceId: 'esp32-m01-s01',
-      payload: { eventId: EVENT_ID, eventType: 'pulse', signal: 'active' },
     }),
     { code: 'DEVICE_UNAUTHORIZED', status: 401 },
   )
 
   const wrongKeyService = loadIotService({ eventType: 'pulse', signal: 'active' })
   await assert.rejects(
-    () => wrongKeyService.createSensorEvent({
+    () => wrongKeyService.authenticateDevice({
       deviceId: 'esp32-m01-s01',
       deviceKey: 'wrong-key',
-      payload: { eventId: EVENT_ID, eventType: 'pulse', signal: 'active' },
     }),
     { code: 'DEVICE_UNAUTHORIZED', status: 401 },
   )
@@ -277,8 +272,7 @@ test('device authentication rejects missing keys, wrong keys, and missing machin
   })
   await assert.rejects(
     () => missingMachineService.createSensorEvent({
-      deviceId: 'esp32-m01-s01',
-      deviceKey: 'device-secret',
+      sensor: { ...createSensorRecord(), machines: null },
       payload: { eventId: EVENT_ID, eventType: 'pulse', signal: 'active' },
     }),
     { code: 'DEVICE_MACHINE_MISSING', status: 500 },

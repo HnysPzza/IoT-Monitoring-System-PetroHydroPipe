@@ -3,6 +3,7 @@ function validateRequest(schema) {
     // Zod validates all request inputs before controllers run.
     const parsed = schema.safeParse({
       body: req.body,
+      headers: req.headers,
       params: req.params,
       query: req.query,
     })
