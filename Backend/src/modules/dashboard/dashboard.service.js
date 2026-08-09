@@ -9,9 +9,8 @@ const {
   startOfBusinessMonth,
   startOfBusinessWeek,
 } = require('../../shared/businessTime')
-const { getSensorLabel } = require('../../shared/sensorIdentity')
+const { getSensorLabel, OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
-const OUTPUT_SENSOR_CODE = 'S-05'
 const OUTPUT_TARGETS = {
   day: 1400,
   week: 7600,
