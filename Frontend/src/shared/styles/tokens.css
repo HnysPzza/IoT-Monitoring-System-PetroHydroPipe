@@ -953,6 +953,23 @@ button:disabled {
   color: var(--c-danger);
 }
 
+.alert-connection-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.alert-connection-status.is-live {
+  color: var(--c-success);
+}
+
+.alert-connection-status.is-connecting,
+.alert-connection-status.is-reconnecting,
+.alert-connection-status.is-polling {
+  color: var(--chart-warning);
+}
+
 .alerts-popover {
   position: absolute;
   top: calc(100% + 12px);
@@ -989,6 +1006,25 @@ button:disabled {
   background: var(--status-downtime-bg);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.alert-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--status-downtime-border);
+  border-radius: 8px;
+  color: var(--status-downtime-text);
+  background: var(--status-downtime-bg);
+  font-size: 0.78rem;
+}
+
+.alert-load-error .btn {
+  min-height: 36px;
+  padding: 6px 10px;
 }
 
 .alerts-popover ul {
@@ -1039,6 +1075,12 @@ button:disabled {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.alert-acknowledgement-error {
+  color: var(--c-danger);
+  font-size: 0.74rem;
+  font-weight: 700;
 }
 
 .alert-acknowledge-button {
