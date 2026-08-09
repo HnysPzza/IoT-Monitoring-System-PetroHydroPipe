@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, Cpu, Factory, MapPin, RadioTower, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
@@ -9,16 +9,36 @@ import { getMachines, getMachineSensors, updateMachineStatus, updateSensorStatus
 const machineStatuses = ['Running', 'Idle', 'Downtime']
 const sensorStatuses = ['Active', 'Inactive', 'Fault']
 
-function EmptyMachinesState() {
+function EmptyMachinesState({ isRefreshing = false, onRefresh }) {
   return (
     <section className="section-card section-placeholder" aria-labelledby="machines-empty-title">
       <div className="section-copy">
         <p className="section-eyebrow">No records</p>
         <h2 id="machines-empty-title">No machines found</h2>
         <p>Add Spiral Mill 01 and its five sensors to manage machine setup here.</p>
+        <button className="btn btn-secondary" type="button" disabled={isRefreshing} onClick={onRefresh}>
+          <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+          Refresh machines
+        </button>
       </div>
     </section>
   )
+}
+
+function formatSuccessfulUpdate(date) {
+  return date.toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+  })
+}
+
+function getRequestDisplayState({ state, hasCurrentData, errorKey, currentKey }) {
+  if (state === 'error') {
+    return errorKey === currentKey ? 'error' : 'loading'
+  }
+
+  return hasCurrentData ? state : 'loading'
 }
 
 export default function MachinesSection() {
@@ -27,59 +47,146 @@ export default function MachinesSection() {
   const [selectedMachineId, setSelectedMachineId] = useState('')
   const [sensors, setSensors] = useState([])
   const [notice, setNotice] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isLoadingSensors, setIsLoadingSensors] = useState(false)
-  const [updatingKey, setUpdatingKey] = useState('')
+  const [machinesState, setMachinesState] = useState('loading')
+  const [machinesRequestKey, setMachinesRequestKey] = useState('')
+  const [machinesError, setMachinesError] = useState('')
+  const [machinesErrorKey, setMachinesErrorKey] = useState('')
+  const [machinesLastUpdated, setMachinesLastUpdated] = useState(null)
+  const [machinesRefresh, setMachinesRefresh] = useState(0)
+  const machinesRequestIdRef = useRef(0)
+  const successfulMachinesRef = useRef(null)
+  const [sensorsState, setSensorsState] = useState('loading')
+  const [sensorsRequestKey, setSensorsRequestKey] = useState('')
+  const [sensorsError, setSensorsError] = useState('')
+  const [sensorsErrorKey, setSensorsErrorKey] = useState('')
+  const [sensorsLastUpdated, setSensorsLastUpdated] = useState(null)
+  const [sensorsRefresh, setSensorsRefresh] = useState(0)
+  const sensorsRequestIdRef = useRef(0)
+  const successfulSensorsRef = useRef(null)
+  const [pendingOperations, setPendingOperations] = useState({})
+  const mutationIdRef = useRef(0)
+  const latestMutationByEntityRef = useRef(new Map())
 
-  const selectedMachine = useMemo(
-    () => machines.find((machine) => machine.id === selectedMachineId) || machines[0],
-    [machines, selectedMachineId],
-  )
-
-  async function loadMachines() {
-    setIsLoading(true)
-    setNotice(null)
-
-    try {
-      const payload = await getMachines(token)
-      const nextMachines = payload.machines || []
-      setMachines(nextMachines)
-      setSelectedMachineId((current) => current || nextMachines[0]?.id || '')
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message || 'Unable to load machines.' })
-    } finally {
-      setIsLoading(false)
-    }
+  const machinesKey = `${token || 'anonymous'}:machines`
+  const hasCurrentMachines = machinesRequestKey === machinesKey
+  const selectedMachine = useMemo(() => {
+    if (!hasCurrentMachines) return null
+    return machines.find((machine) => machine.id === selectedMachineId) || machines[0] || null
+  }, [hasCurrentMachines, machines, selectedMachineId])
+  const sensorsKey = selectedMachine?.id ? `${token || 'anonymous'}:machine:${selectedMachine.id}:sensors` : ''
+  const hasCurrentSensors = Boolean(sensorsKey) && sensorsRequestKey === sensorsKey
+  const machinesDisplayState = getRequestDisplayState({
+    state: machinesState,
+    hasCurrentData: hasCurrentMachines,
+    errorKey: machinesErrorKey,
+    currentKey: machinesKey,
+  })
+  const sensorsDisplayState = getRequestDisplayState({
+    state: sensorsState,
+    hasCurrentData: hasCurrentSensors,
+    errorKey: sensorsErrorKey,
+    currentKey: sensorsKey,
+  })
+  const currentContextRef = useRef(null)
+  currentContextRef.current = {
+    token,
+    machinesKey,
+    sensorsKey,
+    selectedMachineId: selectedMachine?.id || '',
+    machineIds: machines.map((machine) => machine.id),
+    sensorIds: sensors.map((sensor) => sensor.id),
   }
 
   useEffect(() => {
-    loadMachines()
+    setPendingOperations({})
+    setNotice(null)
   }, [token])
 
   useEffect(() => {
-    let isMounted = true
+    const requestId = machinesRequestIdRef.current + 1
+    machinesRequestIdRef.current = requestId
+    let isCancelled = false
+
+    async function loadMachines() {
+      setMachinesState('loading')
+      setMachinesError('')
+
+      try {
+        const payload = await getMachines(token)
+        if (isCancelled || requestId !== machinesRequestIdRef.current) return
+
+        const nextMachines = payload.machines || []
+        const updatedAt = new Date()
+        successfulMachinesRef.current = { requestKey: machinesKey, data: nextMachines, updatedAt }
+        setMachines(nextMachines)
+        setMachinesRequestKey(machinesKey)
+        setMachinesLastUpdated(updatedAt)
+        setSelectedMachineId((current) => (
+          nextMachines.some((machine) => machine.id === current) ? current : nextMachines[0]?.id || ''
+        ))
+        setMachinesState(nextMachines.length ? 'success' : 'empty')
+      } catch (error) {
+        if (isCancelled || requestId !== machinesRequestIdRef.current) return
+
+        setMachinesError(error.message || 'Unable to load machines.')
+        setMachinesErrorKey(machinesKey)
+        if (successfulMachinesRef.current?.requestKey === machinesKey) {
+          setMachines(successfulMachinesRef.current.data)
+          setMachinesRequestKey(machinesKey)
+          setMachinesLastUpdated(successfulMachinesRef.current.updatedAt)
+          setMachinesState('stale')
+        } else {
+          setMachinesState('error')
+        }
+      }
+    }
+
+    loadMachines()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [machinesKey, machinesRefresh, token])
+
+  useEffect(() => {
+    const requestId = sensorsRequestIdRef.current + 1
+    sensorsRequestIdRef.current = requestId
+    let isCancelled = false
 
     async function loadSensors() {
-      if (!selectedMachine?.id) {
+      if (!hasCurrentMachines || !selectedMachine?.id) {
         setSensors([])
+        setSensorsRequestKey('')
+        setSensorsState(hasCurrentMachines ? 'empty' : 'loading')
         return
       }
 
-      setIsLoadingSensors(true)
+      setSensorsState('loading')
+      setSensorsError('')
 
       try {
         const payload = await getMachineSensors(token, selectedMachine.id)
+        if (isCancelled || requestId !== sensorsRequestIdRef.current) return
 
-        if (isMounted) {
-          setSensors(payload.sensors || [])
-        }
+        const nextSensors = payload.sensors || []
+        const updatedAt = new Date()
+        successfulSensorsRef.current = { requestKey: sensorsKey, data: nextSensors, updatedAt }
+        setSensors(nextSensors)
+        setSensorsRequestKey(sensorsKey)
+        setSensorsLastUpdated(updatedAt)
+        setSensorsState(nextSensors.length ? 'success' : 'empty')
       } catch (error) {
-        if (isMounted) {
-          setNotice({ type: 'error', message: error.message || 'Unable to load machine sensors.' })
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoadingSensors(false)
+        if (isCancelled || requestId !== sensorsRequestIdRef.current) return
+
+        setSensorsError(error.message || 'Unable to load machine sensors.')
+        setSensorsErrorKey(sensorsKey)
+        if (successfulSensorsRef.current?.requestKey === sensorsKey) {
+          setSensors(successfulSensorsRef.current.data)
+          setSensorsRequestKey(sensorsKey)
+          setSensorsLastUpdated(successfulSensorsRef.current.updatedAt)
+          setSensorsState('stale')
+        } else {
+          setSensorsState('error')
         }
       }
     }
@@ -87,46 +194,120 @@ export default function MachinesSection() {
     loadSensors()
 
     return () => {
-      isMounted = false
+      isCancelled = true
     }
-  }, [selectedMachine?.id, token])
+  }, [hasCurrentMachines, selectedMachine?.id, sensorsKey, sensorsRefresh, token])
 
   async function handleMachineStatusChange(status) {
     if (!selectedMachine) return
 
-    setUpdatingKey(`machine-${selectedMachine.id}`)
+    const entityId = selectedMachine.id
+    const operationKey = `machine-${entityId}`
+    const operationId = mutationIdRef.current + 1
+    mutationIdRef.current = operationId
+    latestMutationByEntityRef.current.set(operationKey, operationId)
+    setPendingOperations((current) => ({
+      ...current,
+      [operationKey]: { operationId, contextKey: machinesKey },
+    }))
     setNotice(null)
 
+    const isCurrentOperation = () => {
+      const context = currentContextRef.current
+      return latestMutationByEntityRef.current.get(operationKey) === operationId
+        && context.token === token
+        && context.machinesKey === machinesKey
+        && context.selectedMachineId === entityId
+        && context.machineIds.includes(entityId)
+    }
+
     try {
-      const payload = await updateMachineStatus(token, selectedMachine.id, status)
-      setMachines((current) => current.map((machine) => (machine.id === payload.machine.id ? payload.machine : machine)))
-      setNotice({ type: 'success', message: `${payload.machine.name} is now ${payload.machine.status}.` })
+      const payload = await updateMachineStatus(token, entityId, status)
+      if (!isCurrentOperation()) return
+
+      setMachines((current) => {
+        const nextMachines = current.map((machine) => (machine.id === payload.machine.id ? payload.machine : machine))
+        if (successfulMachinesRef.current?.requestKey === machinesKey) {
+          successfulMachinesRef.current.data = nextMachines
+        }
+        return nextMachines
+      })
+      if (isCurrentOperation()) {
+        setNotice({ type: 'success', message: `${payload.machine.name} is now ${payload.machine.status}.` })
+      }
     } catch (error) {
-      setNotice({ type: 'error', message: error.message || 'Unable to update machine status.' })
+      if (isCurrentOperation()) {
+        setNotice({ type: 'error', message: error.message || 'Unable to update machine status.' })
+      }
     } finally {
-      setUpdatingKey('')
+      if (latestMutationByEntityRef.current.get(operationKey) === operationId) {
+        latestMutationByEntityRef.current.delete(operationKey)
+        setPendingOperations((current) => {
+          if (current[operationKey]?.operationId !== operationId) return current
+          const next = { ...current }
+          delete next[operationKey]
+          return next
+        })
+      }
     }
   }
 
   async function handleSensorStatusChange(sensor, status) {
-    setUpdatingKey(`sensor-${sensor.id}`)
+    const entityId = sensor.id
+    const operationKey = `sensor-${entityId}`
+    const operationId = mutationIdRef.current + 1
+    mutationIdRef.current = operationId
+    latestMutationByEntityRef.current.set(operationKey, operationId)
+    setPendingOperations((current) => ({
+      ...current,
+      [operationKey]: { operationId, contextKey: sensorsKey },
+    }))
     setNotice(null)
 
+    const isCurrentOperation = () => {
+      const context = currentContextRef.current
+      return latestMutationByEntityRef.current.get(operationKey) === operationId
+        && context.token === token
+        && context.sensorsKey === sensorsKey
+        && context.sensorIds.includes(entityId)
+    }
+
     try {
-      const payload = await updateSensorStatus(token, sensor.id, status)
-      setSensors((current) => current.map((item) => (item.id === payload.sensor.id ? payload.sensor : item)))
-      setNotice({ type: 'success', message: `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} is now ${payload.sensor.status}.` })
+      const payload = await updateSensorStatus(token, entityId, status)
+      if (!isCurrentOperation()) return
+
+      setSensors((current) => {
+        const nextSensors = current.map((item) => (item.id === payload.sensor.id ? payload.sensor : item))
+        if (successfulSensorsRef.current?.requestKey === sensorsKey) {
+          successfulSensorsRef.current.data = nextSensors
+        }
+        return nextSensors
+      })
+      if (isCurrentOperation()) {
+        setNotice({ type: 'success', message: `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} is now ${payload.sensor.status}.` })
+      }
     } catch (error) {
-      setNotice({ type: 'error', message: error.message || 'Unable to update sensor status.' })
+      if (isCurrentOperation()) {
+        setNotice({ type: 'error', message: error.message || 'Unable to update sensor status.' })
+      }
     } finally {
-      setUpdatingKey('')
+      if (latestMutationByEntityRef.current.get(operationKey) === operationId) {
+        latestMutationByEntityRef.current.delete(operationKey)
+        setPendingOperations((current) => {
+          if (current[operationKey]?.operationId !== operationId) return current
+          const next = { ...current }
+          delete next[operationKey]
+          return next
+        })
+      }
     }
   }
 
-  if (isLoading) {
+  if (machinesDisplayState === 'loading' && !hasCurrentMachines) {
     return (
       <div className="machines-layout">
-        <section className="section-card">
+        <section className="section-card" role="status" aria-live="polite">
+          <span className="sr-only">Loading machines...</span>
           <div className="skeleton skeleton-heading" />
           <div className="skeleton skeleton-panel" />
         </section>
@@ -134,8 +315,52 @@ export default function MachinesSection() {
     )
   }
 
-  if (!machines.length) {
-    return <EmptyMachinesState />
+  if (machinesDisplayState === 'error') {
+    return (
+      <div className="machines-layout">
+        <section className="section-card section-placeholder" aria-labelledby="machines-error-title">
+          <div className="section-copy">
+            <p className="section-eyebrow">Machine registry unavailable</p>
+            <h2 id="machines-error-title">Unable to load machines</h2>
+            <p role="alert">{machinesError}</p>
+            <button className="btn btn-secondary" type="button" onClick={() => setMachinesRefresh((current) => current + 1)}>
+              Retry machines
+            </button>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  if (hasCurrentMachines && machines.length === 0) {
+    return (
+      <div className="machines-layout">
+        {machinesState === 'loading' ? (
+          <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing machines...</div>
+        ) : null}
+
+        {machinesState === 'stale' ? (
+          <div className="notice notice-error dashboard-alert" role="alert">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>
+              Machine registry data is stale. Showing the last successful result from{' '}
+              <time dateTime={machinesLastUpdated?.toISOString()}>
+                {machinesLastUpdated ? formatSuccessfulUpdate(machinesLastUpdated) : 'an earlier update'}
+              </time>
+              . {machinesError}
+            </span>
+            <button className="btn btn-secondary table-action-button" type="button" onClick={() => setMachinesRefresh((current) => current + 1)}>
+              Retry machines
+            </button>
+          </div>
+        ) : null}
+
+        <EmptyMachinesState
+          isRefreshing={machinesState === 'loading'}
+          onRefresh={() => setMachinesRefresh((current) => current + 1)}
+        />
+      </div>
+    )
   }
 
   return (
@@ -147,15 +372,40 @@ export default function MachinesSection() {
         </div>
       ) : null}
 
+      {machinesState === 'loading' && hasCurrentMachines ? (
+        <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing machines...</div>
+      ) : null}
+
+      {machinesState === 'stale' && hasCurrentMachines ? (
+        <div className="notice notice-error dashboard-alert" role="alert">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            Machine registry data is stale. Showing the last successful result from{' '}
+            <time dateTime={machinesLastUpdated?.toISOString()}>
+              {machinesLastUpdated ? formatSuccessfulUpdate(machinesLastUpdated) : 'an earlier update'}
+            </time>
+            . {machinesError}
+          </span>
+          <button className="btn btn-secondary table-action-button" type="button" onClick={() => setMachinesRefresh((current) => current + 1)}>
+            Retry machines
+          </button>
+        </div>
+      ) : null}
+
       <section className="section-card machine-admin-hero" aria-labelledby="machine-admin-title">
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Machine registry</p>
             <h2 id="machine-admin-title">{selectedMachine.name}</h2>
           </div>
-          <button className="btn btn-secondary table-action-button" type="button" onClick={loadMachines}>
-            <RotateCw size={16} aria-hidden="true" />
-            Refresh
+          <button
+            className="btn btn-secondary table-action-button"
+            type="button"
+            disabled={machinesState === 'loading'}
+            onClick={() => setMachinesRefresh((current) => current + 1)}
+          >
+            <RotateCw className={machinesState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+            Refresh machines
           </button>
         </div>
 
@@ -190,7 +440,10 @@ export default function MachinesSection() {
               id={`machine-status-${selectedMachine.id}`}
               name="machineStatus"
               value={selectedMachine.status}
-              disabled={updatingKey === `machine-${selectedMachine.id}`}
+              disabled={
+                machinesState !== 'success'
+                || pendingOperations[`machine-${selectedMachine.id}`]?.contextKey === machinesKey
+              }
               onChange={(event) => handleMachineStatusChange(event.target.value)}
               autoComplete="off"
             >
@@ -208,17 +461,62 @@ export default function MachinesSection() {
             <p className="section-eyebrow">Sensor configuration</p>
             <h2 id="sensor-admin-title">Five inductive proximity sensors</h2>
           </div>
-          <span className="section-chip">
-            <Cpu size={16} aria-hidden="true" />
-            {sensors.length} shown
-          </span>
+          <div className="live-refresh">
+            <span className="section-chip">
+              <Cpu size={16} aria-hidden="true" />
+              {hasCurrentSensors ? sensors.length : 0} shown
+            </span>
+            <button
+              className="btn btn-secondary table-action-button"
+              type="button"
+              disabled={sensorsState === 'loading'}
+              onClick={() => setSensorsRefresh((current) => current + 1)}
+            >
+              <RotateCw className={sensorsState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+              Refresh sensors
+            </button>
+          </div>
         </div>
 
-        {isLoadingSensors ? (
-          <div className="skeleton skeleton-panel" />
-        ) : sensors.length === 0 ? (
+        {sensorsState === 'loading' && hasCurrentSensors ? (
+          <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing sensors...</div>
+        ) : null}
+
+        {sensorsState === 'stale' && hasCurrentSensors ? (
+          <div className="notice notice-error dashboard-alert" role="alert">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>
+              Sensor data is stale. Showing the last successful result from{' '}
+              <time dateTime={sensorsLastUpdated?.toISOString()}>
+                {sensorsLastUpdated ? formatSuccessfulUpdate(sensorsLastUpdated) : 'an earlier update'}
+              </time>
+              . {sensorsError}
+            </span>
+            <button className="btn btn-secondary table-action-button" type="button" onClick={() => setSensorsRefresh((current) => current + 1)}>
+              Retry sensors
+            </button>
+          </div>
+        ) : null}
+
+        {sensorsDisplayState === 'error' ? (
+          <div className="section-placeholder" aria-labelledby="sensors-error-title">
+            <div className="section-copy">
+              <p className="section-eyebrow">Sensors unavailable</p>
+              <h3 id="sensors-error-title">Unable to load machine sensors</h3>
+              <p role="alert">{sensorsError}</p>
+              <button className="btn btn-secondary" type="button" onClick={() => setSensorsRefresh((current) => current + 1)}>
+                Retry sensors
+              </button>
+            </div>
+          </div>
+        ) : sensorsDisplayState === 'loading' && !hasCurrentSensors ? (
+          <div role="status" aria-live="polite">
+            <span className="sr-only">Loading machine sensors...</span>
+            <div className="skeleton skeleton-panel" aria-hidden="true" />
+          </div>
+        ) : hasCurrentSensors && sensors.length === 0 ? (
           <p className="table-muted">No sensors are connected to this machine.</p>
-        ) : (
+        ) : hasCurrentSensors ? (
           <div className="admin-sensor-grid">
             {sensors.map((sensor) => (
               <article key={sensor.id} className={`machine-card admin-sensor-card ${getSensorStatusClass(sensor.status)}`}>
@@ -251,7 +549,10 @@ export default function MachinesSection() {
                     id={`sensor-status-${sensor.id}`}
                     name={`sensorStatus-${sensor.sensorCode}`}
                     value={sensor.status}
-                    disabled={updatingKey === `sensor-${sensor.id}`}
+                    disabled={
+                      sensorsState !== 'success'
+                      || pendingOperations[`sensor-${sensor.id}`]?.contextKey === sensorsKey
+                    }
                     onChange={(event) => handleSensorStatusChange(sensor, event.target.value)}
                     autoComplete="off"
                   >
@@ -263,7 +564,7 @@ export default function MachinesSection() {
               </article>
             ))}
           </div>
-        )}
+        ) : null}
       </section>
     </div>
   )
