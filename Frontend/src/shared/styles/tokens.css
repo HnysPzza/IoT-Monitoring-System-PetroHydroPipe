@@ -1102,6 +1102,33 @@ button:disabled {
   padding: 24px;
 }
 
+.dashboard-error-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  place-items: center;
+  background: var(--c-bg);
+}
+
+.dashboard-error-card {
+  width: min(100%, 620px);
+}
+
+.dashboard-error-card h1,
+.dashboard-error-card p {
+  margin-top: 0;
+}
+
+.dashboard-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dashboard-error-actions > .btn {
+  flex: 1 1 180px;
+}
+
 .overview-layout {
   display: grid;
   gap: 24px;
