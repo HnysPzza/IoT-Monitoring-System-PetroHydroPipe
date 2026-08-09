@@ -13,6 +13,6 @@ export function acknowledgeAlert(token, alertId) {
   })
 }
 
-export function subscribeToAlerts(token, { onEvent, onError, onFallback } = {}) {
-  return subscribeToServerEvents('/api/alerts/stream', token, { onEvent, onError, onFallback })
+export function subscribeToAlerts(token, handlers = {}) {
+  return subscribeToServerEvents('/api/alerts/stream', token, handlers)
 }

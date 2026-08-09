@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import {
   CheckCircle2,
   Eye,
@@ -10,6 +10,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useAuth } from '../../shared/hooks/useAuth.js'
+import { getSafeDashboardPath } from './authNavigation.js'
 
 const initialValues = {
   username: '',
@@ -44,6 +45,11 @@ export default function LoginPage() {
   const usernameRef = useRef(null)
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const intendedRoute = getSafeDashboardPath(location.state?.from)
+  const sessionExpiredMessage = location.state?.sessionExpired
+    ? 'Your session expired. Sign in again to continue.'
+    : ''
 
   // Focus username first so operators can start typing immediately.
   useEffect(() => {
@@ -53,9 +59,9 @@ export default function LoginPage() {
   useEffect(() => {
     // If the user is already logged in, skip the login page.
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true })
+      navigate(intendedRoute, { replace: true })
     }
-  }, [isAuthenticated, navigate])
+  }, [intendedRoute, isAuthenticated, navigate])
 
   useEffect(() => {
     if (!serverError) {
@@ -115,7 +121,7 @@ export default function LoginPage() {
       setSubmitState('success')
       setSuccessMessage('Access granted. Loading dashboard.')
       window.setTimeout(() => {
-        navigate('/dashboard', { replace: true })
+        navigate(intendedRoute, { replace: true })
       }, 450)
     } catch (error) {
       setSubmitState('idle')
@@ -169,6 +175,12 @@ export default function LoginPage() {
           {serverError ? (
             <div className="notice notice-error" role="alert">
               <span>{serverError}</span>
+            </div>
+          ) : null}
+
+          {sessionExpiredMessage ? (
+            <div className="notice notice-error" role="alert">
+              <span>{sessionExpiredMessage}</span>
             </div>
           ) : null}
 

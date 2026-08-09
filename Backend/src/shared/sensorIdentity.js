@@ -1,3 +1,5 @@
+const OUTPUT_SENSOR_CODE = 'S-05'
+
 const sensorIdentities = {
   'S-01': {
     label: 'Raw Material Detection',
@@ -34,6 +36,7 @@ function getSensorPurpose(sensorCode, fallback = 'Monitoring point for Spiral Mi
 }
 
 module.exports = {
+  OUTPUT_SENSOR_CODE,
   getSensorIdentity,
   getSensorLabel,
   getSensorPurpose,

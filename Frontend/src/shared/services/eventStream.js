@@ -1,4 +1,8 @@
-import { API_BASE_URL, createApiError } from './apiClient.js'
+import { createApiError } from '../errors/apiError.js'
+import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
+import { API_BASE_URL } from './apiClient.js'
+
+const LIVE_STABILITY_WINDOW_MS = 5000
 
 function parseSseMessage(message) {
   const lines = message.replaceAll('\r\n', '\n').split('\n')
@@ -15,20 +19,83 @@ function parseSseMessage(message) {
     }
   })
 
+  if (dataLines.length === 0) return null
+
   return {
     type,
-    payload: dataLines.length > 0 ? JSON.parse(dataLines.join('\n')) : null,
+    payload: JSON.parse(dataLines.join('\n')),
   }
 }
 
-export function subscribeToServerEvents(path, token, { onEvent, onError, onFallback } = {}) {
+export function subscribeToServerEvents(path, token, {
+  onEvent,
+  onError,
+  onFallback,
+  onRecovery,
+  onStatusChange,
+} = {}) {
   const controller = new AbortController()
   let isClosed = false
   let retryCount = 0
   let retryTimer = null
   let fallbackStarted = false
+  let activeReader = null
+  let stabilityTimer = null
+  let lastStatus = null
+
+  function updateStatus(status) {
+    if (lastStatus === status) return
+    lastStatus = status
+    onStatusChange?.(status)
+  }
+
+  function confirmLive() {
+    const isRecovering = retryCount > 0 || fallbackStarted
+    retryCount = 0
+    fallbackStarted = false
+    updateStatus('live')
+    if (isRecovering) onRecovery?.()
+  }
+
+  function clearStabilityTimer() {
+    if (!stabilityTimer) return
+    window.clearTimeout(stabilityTimer)
+    stabilityTimer = null
+  }
+
+  function scheduleLiveConfirmation(reader) {
+    if (stabilityTimer) return
+    stabilityTimer = window.setTimeout(() => {
+      stabilityTimer = null
+      if (!isClosed && activeReader === reader) confirmLive()
+    }, LIVE_STABILITY_WINDOW_MS)
+  }
+
+  async function releaseActiveReader({ cancel = false } = {}) {
+    const reader = activeReader
+    activeReader = null
+    clearStabilityTimer()
+    if (!reader) return
+
+    if (cancel) {
+      try {
+        await reader.cancel()
+      } catch {
+        // Retry handling continues even when the stream cannot be cancelled cleanly.
+      }
+    }
+
+    try {
+      reader.releaseLock()
+    } catch {
+      // Some stream implementations release the lock automatically.
+    }
+  }
 
   async function connect() {
+    retryTimer = null
+    if (retryCount === 0 && lastStatus !== 'live') updateStatus('connecting')
+
     try {
       const response = await fetch(`${API_BASE_URL}${path}`, {
         headers: {
@@ -38,10 +105,13 @@ export function subscribeToServerEvents(path, token, { onEvent, onError, onFallb
       })
 
       if (!response.ok || !response.body) {
-        throw createApiError('Unable to connect to event stream.', response.status)
+        const error = createApiError('Unable to connect to event stream.', response.status)
+        notifyUnauthorized(error, { token, path })
+        throw error
       }
 
       const reader = response.body.getReader()
+      activeReader = reader
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -58,7 +128,11 @@ export function subscribeToServerEvents(path, token, { onEvent, onError, onFallb
           buffer = buffer.slice(boundaryIndex + 2)
 
           if (rawMessage) {
-            onEvent?.(parseSseMessage(rawMessage))
+            const event = parseSseMessage(rawMessage)
+            if (event) {
+              onEvent?.(event)
+              scheduleLiveConfirmation(reader)
+            }
           }
 
           boundaryIndex = buffer.indexOf('\n\n')
@@ -69,14 +143,23 @@ export function subscribeToServerEvents(path, token, { onEvent, onError, onFallb
         throw createApiError('Event stream disconnected.', 0)
       }
     } catch (error) {
+      await releaseActiveReader({ cancel: true })
       if (isClosed || error.name === 'AbortError') return
 
       retryCount += 1
       onError?.(error)
 
+      if (error.status === 401) {
+        updateStatus('degraded')
+        return
+      }
+
       if (retryCount >= 3 && !fallbackStarted) {
         fallbackStarted = true
+        updateStatus('degraded')
         onFallback?.()
+      } else if (!fallbackStarted) {
+        updateStatus('reconnecting')
       }
 
       const retryDelay = Math.min(1000 * 2 ** retryCount, 10000)
@@ -89,6 +172,8 @@ export function subscribeToServerEvents(path, token, { onEvent, onError, onFallb
   return () => {
     isClosed = true
     controller.abort()
+    clearStabilityTimer()
+    releaseActiveReader({ cancel: true })
 
     if (retryTimer) {
       window.clearTimeout(retryTimer)

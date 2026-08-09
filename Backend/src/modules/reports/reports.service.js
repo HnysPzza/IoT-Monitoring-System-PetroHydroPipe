@@ -8,6 +8,7 @@ const {
   startOfBusinessMonth,
   startOfBusinessWeek,
 } = require('../../shared/businessTime')
+const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const LOSS_PER_DOWNTIME_MINUTE = 2.3
 
@@ -90,10 +91,26 @@ async function getProductionTotal(machineId, window) {
     return countTotal
   }
 
+  const { data: outputSensor, error: sensorError } = await supabase
+    .from('sensors')
+    .select('id')
+    .eq('machine_id', machineId)
+    .eq('sensor_code', OUTPUT_SENSOR_CODE)
+    .maybeSingle()
+
+  if (sensorError) {
+    throw createReportError(500, 'REPORT_OUTPUT_SENSOR_QUERY_FAILED', 'Unable to load the production output sensor.')
+  }
+
+  if (!outputSensor) {
+    throw createReportError(500, 'REPORT_OUTPUT_SENSOR_NOT_FOUND', 'Production output sensor S-05 is not configured.')
+  }
+
   const { count, error: eventError } = await supabase
     .from('sensor_events')
     .select('id', { count: 'exact', head: true })
     .eq('machine_id', machineId)
+    .eq('sensor_id', outputSensor.id)
     .eq('event_type', 'pulse')
     .gte('recorded_at', window.start.toISOString())
     .lt('recorded_at', window.end.toISOString())

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Download, FileText } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Download, FileText, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { getReportSummary, reportTypes } from './reportsService.js'
@@ -39,33 +39,68 @@ function getManilaDateInputValue() {
   }).format(new Date())
 }
 
+function getQueryKey(reportType, selectedDate) {
+  return `${reportType}:${selectedDate}`
+}
+
+function formatSuccessfulUpdate(date) {
+  return date.toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+  })
+}
+
 export default function ReportsSection() {
   const { token } = useAuth()
   const [reportType, setReportType] = useState('daily')
   const [selectedDate, setSelectedDate] = useState(getManilaDateInputValue)
-  const [report, setReport] = useState({ summary: [], rows: [] })
-  const [notice, setNotice] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [report, setReport] = useState(null)
+  const [loadedRequestKey, setLoadedRequestKey] = useState('')
+  const [loadState, setLoadState] = useState('loading')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState(null)
+  const [refreshRequest, setRefreshRequest] = useState(0)
+  const requestIdRef = useRef(0)
+  const successfulReportRef = useRef(null)
   const selectedReportLabel = reportTypes.find((type) => type.id === reportType)?.label || 'Report'
+  const queryKey = getQueryKey(reportType, selectedDate)
+  const requestKey = `${token || 'anonymous'}:${queryKey}`
+  const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
+  const isCurrentSuccess = loadState === 'success' && hasCurrentReport
 
   useEffect(() => {
-    let isMounted = true
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    let isCancelled = false
 
     async function loadReport() {
-      setIsLoading(true)
-      setNotice(null)
+      setLoadState('loading')
+      setErrorMessage('')
 
       try {
         const payload = await getReportSummary(token, { reportType, selectedDate })
-        if (!isMounted) return
-        setReport(payload.report || { summary: [], rows: [] })
+        if (isCancelled || requestId !== requestIdRef.current) return
+
+        const nextReport = payload.report || { summary: [], rows: [] }
+        const updatedAt = new Date()
+        successfulReportRef.current = { requestKey, report: nextReport, updatedAt }
+        setReport(nextReport)
+        setLoadedRequestKey(requestKey)
+        setLastSuccessfulUpdate(updatedAt)
+        setLoadState('success')
       } catch (error) {
-        if (!isMounted) return
-        setNotice({ type: 'error', message: error.message || 'Unable to load report summary.' })
-        setReport({ summary: [], rows: [] })
-      } finally {
-        if (isMounted) {
-          setIsLoading(false)
+        if (isCancelled || requestId !== requestIdRef.current) return
+
+        setErrorMessage(error.message || 'Unable to load report summary.')
+
+        if (successfulReportRef.current?.requestKey === requestKey) {
+          setReport(successfulReportRef.current.report)
+          setLoadedRequestKey(requestKey)
+          setLastSuccessfulUpdate(successfulReportRef.current.updatedAt)
+          setLoadState('stale')
+        } else {
+          setLoadState('error')
         }
       }
     }
@@ -73,16 +108,36 @@ export default function ReportsSection() {
     loadReport()
 
     return () => {
-      isMounted = false
+      isCancelled = true
     }
-  }, [reportType, selectedDate, token])
+  }, [queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
+
+  function retryCurrentReport() {
+    setRefreshRequest((current) => current + 1)
+  }
 
   return (
     <div className="reports-layout">
-      {notice ? (
-        <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>
-          {notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
-          <span>{notice.message}</span>
+      {loadState === 'loading' ? (
+        <div className="notice dashboard-alert" role="status" aria-live="polite">
+          <RotateCw className="spin-icon" size={16} aria-hidden="true" />
+          <span>{hasCurrentReport ? 'Refreshing report...' : 'Loading report...'}</span>
+        </div>
+      ) : null}
+
+      {loadState === 'stale' ? (
+        <div className="notice notice-error dashboard-alert" role="alert">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            Report data is stale. Showing the last successful result from{' '}
+            <time dateTime={lastSuccessfulUpdate?.toISOString()}>
+              {lastSuccessfulUpdate ? formatSuccessfulUpdate(lastSuccessfulUpdate) : 'an earlier update'}
+            </time>
+            . {errorMessage}
+          </span>
+          <button className="btn btn-secondary table-action-button" type="button" onClick={retryCurrentReport}>
+            Retry
+          </button>
         </div>
       ) : null}
 
@@ -125,9 +180,18 @@ export default function ReportsSection() {
             />
           </label>
           <button
+            className="btn btn-secondary reports-action"
+            type="button"
+            disabled={loadState === 'loading'}
+            onClick={retryCurrentReport}
+          >
+            <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={17} aria-hidden="true" />
+            Refresh report
+          </button>
+          <button
             className="btn btn-primary reports-action"
             type="button"
-            disabled={isLoading}
+            disabled={!isCurrentSuccess}
             onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report.rows)}
           >
             <Download size={17} aria-hidden="true" />
@@ -136,11 +200,22 @@ export default function ReportsSection() {
         </div>
       </section>
 
-      {isLoading ? (
+      {loadState === 'error' ? (
+        <section className="section-card section-placeholder" aria-labelledby="reports-error-title">
+          <div className="section-copy">
+            <p className="section-eyebrow">Report unavailable</p>
+            <h2 id="reports-error-title">Unable to load this report</h2>
+            <p role="alert">{errorMessage}</p>
+            <button className="btn btn-secondary" type="button" onClick={retryCurrentReport}>
+              Retry
+            </button>
+          </div>
+        </section>
+      ) : loadState === 'loading' && !hasCurrentReport ? (
         <section className="section-card">
           <div className="skeleton skeleton-panel" />
         </section>
-      ) : (
+      ) : hasCurrentReport ? (
         <div className="reports-summary-grid">
           {report.summary.map((item) => (
             <article key={item.id} className="section-card stat-card">
@@ -150,51 +225,53 @@ export default function ReportsSection() {
             </article>
           ))}
         </div>
-      )}
+      ) : null}
 
-      <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Grouped output</p>
-            <h2 id="reports-table-title">Downtime by cause and sensor</h2>
+      {loadState !== 'error' ? (
+        <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
+          <div className="section-heading">
+            <div>
+              <p className="section-eyebrow">Grouped output</p>
+              <h2 id="reports-table-title">Downtime by cause and sensor</h2>
+            </div>
           </div>
-        </div>
 
-        <div className="account-table-wrap">
-          <table className="account-table reports-table">
-            <thead>
-              <tr>
-                <th scope="col">Cause</th>
-                <th scope="col">Sensor</th>
-                <th scope="col">Events</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Estimated Loss</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
+          <div className="account-table-wrap">
+            <table className="account-table reports-table">
+              <thead>
                 <tr>
-                  <td colSpan="5">Loading report rows...</td>
+                  <th scope="col">Cause</th>
+                  <th scope="col">Sensor</th>
+                  <th scope="col">Events</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Estimated Loss</th>
                 </tr>
-              ) : report.rows.length === 0 ? (
-                <tr>
-                  <td colSpan="5">No downtime rows found for this report range.</td>
-                </tr>
-              ) : (
-                report.rows.map((row) => (
-                  <tr key={`${row.cause}-${row.sensor}`}>
-                    <td data-label="Cause">{row.cause}</td>
-                    <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
-                    <td data-label="Events">{row.events}</td>
-                    <td data-label="Duration">{row.durationMinutes} min</td>
-                    <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
+              </thead>
+              <tbody>
+                {loadState === 'loading' && !hasCurrentReport ? (
+                  <tr>
+                    <td colSpan="5">Loading report rows...</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                ) : hasCurrentReport && report.rows.length === 0 ? (
+                  <tr>
+                    <td colSpan="5">No downtime rows found for this report range.</td>
+                  </tr>
+                ) : hasCurrentReport ? (
+                  report.rows.map((row) => (
+                    <tr key={`${row.cause}-${row.sensor}`}>
+                      <td data-label="Cause">{row.cause}</td>
+                      <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
+                      <td data-label="Events">{row.events}</td>
+                      <td data-label="Duration">{row.durationMinutes} min</td>
+                      <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
+                    </tr>
+                  ))
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }

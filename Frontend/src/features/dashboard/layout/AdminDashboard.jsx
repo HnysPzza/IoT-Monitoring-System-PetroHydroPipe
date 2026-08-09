@@ -66,13 +66,23 @@ export default function AdminDashboard() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
   const [acknowledgingAlertIds, setAcknowledgingAlertIds] = useState([])
+  const [alertLoadError, setAlertLoadError] = useState('')
+  const [alertAcknowledgementErrors, setAlertAcknowledgementErrors] = useState({})
+  const [hasTrustedAlertList, setHasTrustedAlertList] = useState(false)
+  const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
+  const retryAlertsRef = useRef(() => {})
+  const sessionTokenRef = useRef(null)
+  const acknowledgementIdRef = useRef(0)
+  const acknowledgementOperationsRef = useRef(new Map())
+  const mergeAlertDeltaRef = useRef(() => {})
   const { token, user, logout } = useAuth()
+  sessionTokenRef.current = token
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -182,40 +192,89 @@ export default function AdminDashboard() {
 
     let isMounted = true
     let pollingId = null
+    let alertRequestId = 0
+    let activeListRequest = null
+
+    setAlerts([])
+    setAcknowledgingAlertIds([])
+    setAlertAcknowledgementErrors({})
+    setAlertLoadError('')
+    setHasTrustedAlertList(false)
+    setAlertConnectionStatus('connecting')
+    acknowledgementOperationsRef.current = new Map()
 
     async function loadAlertState() {
       if (!token) return
+      const requestId = alertRequestId + 1
+      alertRequestId = requestId
+      const listRequest = { requestId, deltas: [] }
+      activeListRequest = listRequest
 
       try {
         const payload = await getAlerts(token)
-        if (isMounted) {
-          setAlerts(payload.alerts || [])
+        if (isMounted && requestId === alertRequestId && activeListRequest === listRequest) {
+          const reconciledAlerts = listRequest.deltas.reduce(
+            (currentAlerts, alert) => mergeAlertUpdate(currentAlerts, alert),
+            payload.alerts || [],
+          )
+          activeListRequest = null
+          setAlerts(reconciledAlerts)
+          setHasTrustedAlertList(true)
+          setAlertLoadError('')
         }
-      } catch {
-        if (isMounted) {
-          setAlerts([])
+      } catch (error) {
+        if (isMounted && requestId === alertRequestId && activeListRequest === listRequest) {
+          activeListRequest = null
+          setAlertLoadError(error.message || 'Unable to load alerts. Please try again.')
         }
       }
     }
 
     function startFallbackPolling() {
-      if (pollingId) return
+      if (!isMounted || pollingId) return
 
+      setAlertConnectionStatus('polling')
       pollingId = window.setInterval(loadAlertState, 10000)
     }
 
+    function stopFallbackPolling() {
+      if (!isMounted) return
+      if (pollingId) {
+        window.clearInterval(pollingId)
+        pollingId = null
+      }
+      setAlertConnectionStatus('live')
+    }
+
+    retryAlertsRef.current = loadAlertState
+    mergeAlertDeltaRef.current = (alert) => {
+      if (!isMounted || !alert) return
+      activeListRequest?.deltas.push(alert)
+      setAlerts((currentAlerts) => mergeAlertUpdate(currentAlerts, alert))
+    }
     loadAlertState()
     const unsubscribe = subscribeToAlerts(token, {
       onEvent: (event) => {
-        if (!event?.payload?.alert) return
+        if (!isMounted || !event?.payload?.alert) return
 
-        setAlerts((currentAlerts) => mergeAlertUpdate(currentAlerts, event.payload.alert))
+        mergeAlertDeltaRef.current(event.payload.alert)
       },
       onFallback: startFallbackPolling,
+      onRecovery: stopFallbackPolling,
+      onStatusChange: (status) => {
+        if (!isMounted) return
+        if (status === 'live') setAlertConnectionStatus('live')
+        if (status === 'connecting') setAlertConnectionStatus('connecting')
+        if (status === 'reconnecting') setAlertConnectionStatus('reconnecting')
+      },
     })
 
     return () => {
       isMounted = false
+      alertRequestId += 1
+      activeListRequest = null
+      retryAlertsRef.current = () => {}
+      mergeAlertDeltaRef.current = () => {}
       unsubscribe()
 
       if (pollingId) {
@@ -225,15 +284,30 @@ export default function AdminDashboard() {
   }, [token])
 
   async function handleAcknowledgeAlert(alertId) {
-    if (!token) return
+    if (!token || acknowledgementOperationsRef.current.has(alertId)) return
 
+    const operationId = acknowledgementIdRef.current + 1
+    acknowledgementIdRef.current = operationId
+    acknowledgementOperationsRef.current.set(alertId, operationId)
     setAcknowledgingAlertIds((currentIds) => [...currentIds, alertId])
+    setAlertAcknowledgementErrors((current) => ({ ...current, [alertId]: '' }))
 
     try {
       const payload = await acknowledgeAlert(token, alertId)
-      setAlerts((currentAlerts) => mergeAlertUpdate(currentAlerts, payload.alert))
+      if (sessionTokenRef.current !== token || acknowledgementOperationsRef.current.get(alertId) !== operationId) return
+      mergeAlertDeltaRef.current(payload.alert)
+    } catch (error) {
+      if (sessionTokenRef.current === token && acknowledgementOperationsRef.current.get(alertId) === operationId) {
+        setAlertAcknowledgementErrors((current) => ({
+          ...current,
+          [alertId]: error.message || 'Unable to acknowledge alert.',
+        }))
+      }
     } finally {
-      setAcknowledgingAlertIds((currentIds) => currentIds.filter((id) => id !== alertId))
+      if (acknowledgementOperationsRef.current.get(alertId) === operationId) {
+        acknowledgementOperationsRef.current.delete(alertId)
+        setAcknowledgingAlertIds((currentIds) => currentIds.filter((id) => id !== alertId))
+      }
     }
   }
 
@@ -359,12 +433,27 @@ export default function AdminDashboard() {
           </div>
 
           <div className="topbar-trailing">
+            <span className={`alert-connection-status is-${alertConnectionStatus}`} role="status">
+              {alertConnectionStatus === 'live'
+                ? 'Live'
+                : alertConnectionStatus === 'polling'
+                  ? 'Polling'
+                  : alertConnectionStatus === 'connecting'
+                    ? 'Connecting'
+                    : 'Reconnecting'}
+            </span>
             <DashboardClock />
             <button
               ref={alertsButtonRef}
               className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
               type="button"
-              aria-label={activeAlertCount > 0 ? `Open alerts, ${activeAlertCount} active` : 'Open alerts, none active'}
+              aria-label={
+                !hasTrustedAlertList
+                  ? 'Open alerts, status unavailable'
+                  : activeAlertCount > 0
+                    ? `Open alerts, ${activeAlertCount} active`
+                    : 'Open alerts, none active'
+              }
               aria-expanded={isAlertsOpen}
               onClick={() => {
                 setIsDrawerOpen(false)
@@ -372,14 +461,30 @@ export default function AdminDashboard() {
               }}
             >
               <Bell size={18} aria-hidden="true" />
-              <span className="sr-only">{activeAlertCount > 0 ? `${activeAlertCount} active alerts` : 'No active alerts'}</span>
+              <span className="sr-only">
+                {!hasTrustedAlertList
+                  ? 'Alert status unavailable'
+                  : activeAlertCount > 0
+                    ? `${activeAlertCount} active alerts`
+                    : 'No active alerts'}
+              </span>
             </button>
             {isAlertsOpen ? (
               <div ref={alertsPopoverRef} className="alerts-popover" role="dialog" aria-label="Active alerts" tabIndex="-1">
                 <div className="alerts-popover-header">
                   <strong>Notifications</strong>
-                  <span>{activeAlertCount}</span>
+                  <span aria-label={!hasTrustedAlertList ? 'Alert count unavailable' : undefined}>
+                    {hasTrustedAlertList ? activeAlertCount : '—'}
+                  </span>
                 </div>
+                {alertLoadError ? (
+                  <div className="alert-load-error" role="alert">
+                    <span>{alertLoadError}</span>
+                    <button className="btn btn-secondary" type="button" onClick={() => retryAlertsRef.current()}>
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
                 {alerts.length > 0 ? (
                   <ul>
                     {[...activeAlerts, ...acknowledgedAlerts].map((alert) => (
@@ -389,6 +494,11 @@ export default function AdminDashboard() {
                           <span className="alert-popover-title">{alert.title}</span>
                           <span>{alert.message}</span>
                           <span className="alert-popover-meta">{getAlertStatusLabel(alert)}</span>
+                          {alertAcknowledgementErrors[alert.id] ? (
+                            <span className="alert-acknowledgement-error" role="alert">
+                              {alertAcknowledgementErrors[alert.id]}
+                            </span>
+                          ) : null}
                         </div>
                         {alert.status === 'Active' ? (
                           <button
@@ -404,9 +514,9 @@ export default function AdminDashboard() {
                       </li>
                     ))}
                   </ul>
-                ) : (
+                ) : hasTrustedAlertList ? (
                   <p>No active alerts.</p>
-                )}
+                ) : null}
               </div>
             ) : null}
           </div>
