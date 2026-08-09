@@ -1,4 +1,6 @@
-import { API_BASE_URL, createApiError, notifyUnauthorized } from './apiClient.js'
+import { createApiError } from '../errors/apiError.js'
+import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
+import { API_BASE_URL } from './apiClient.js'
 
 const LIVE_STABILITY_WINDOW_MS = 5000
 

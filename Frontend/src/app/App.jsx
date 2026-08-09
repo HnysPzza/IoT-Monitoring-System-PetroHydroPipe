@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
-import DashboardErrorBoundary from '../shared/components/DashboardErrorBoundary.jsx'
+import DashboardErrorBoundary from '../shared/errors/DashboardErrorBoundary.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
 import { getCurrentDashboardPath } from '../features/auth/authNavigation.js'
 

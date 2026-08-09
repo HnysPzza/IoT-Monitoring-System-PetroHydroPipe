@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApiError, notifyUnauthorized, setUnauthorizedHandler } from '../../shared/services/apiClient.js'
+import { createApiError } from '../../shared/errors/apiError.js'
+import { notifyUnauthorized, setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { useAuth } from '../../shared/hooks/useAuth.js'
 import { AuthProvider } from './authSession.jsx'
 

@@ -1,20 +1,8 @@
+import { createApiError } from '../errors/apiError.js'
+import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000
-
-let unauthorizedHandler = null
-let unauthorizedToken = null
-
-export function setUnauthorizedHandler(token, handler) {
-  unauthorizedToken = token || null
-  unauthorizedHandler = token && typeof handler === 'function' ? handler : null
-
-  return () => {
-    if (unauthorizedToken === token && unauthorizedHandler === handler) {
-      unauthorizedToken = null
-      unauthorizedHandler = null
-    }
-  }
-}
 
 // Handles empty responses safely before trying to parse JSON.
 async function readJson(response) {
@@ -29,29 +17,6 @@ async function readJson(response) {
 
 function getErrorMessage(payload, fallback) {
   return payload?.error?.message || fallback
-}
-
-function getErrorCode(payload, status) {
-  return payload?.error?.code || (status ? `HTTP_${status}` : 'REQUEST_ERROR')
-}
-
-export function createApiError(message, status = 0, payload = null, code = getErrorCode(payload, status)) {
-  const error = new Error(message)
-  error.name = 'ApiError'
-  error.status = status
-  error.code = code
-  error.payload = payload
-  return error
-}
-
-export function notifyUnauthorized(error, { token, path } = {}) {
-  if (!token || token !== unauthorizedToken || error?.status !== 401 || !unauthorizedHandler) return
-
-  try {
-    unauthorizedHandler(error, { path })
-  } catch {
-    // Session recovery must not replace the original API failure.
-  }
 }
 
 // One fetch wrapper for frontend services; token is added here for protected backend routes.

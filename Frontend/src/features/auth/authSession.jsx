@@ -1,5 +1,5 @@
 import { createContext, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { setUnauthorizedHandler } from '../../shared/services/apiClient.js'
+import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { login as loginRequest } from './authService.js'
 
 const AUTH_STORAGE_KEY = 'iot_monitoring_auth'

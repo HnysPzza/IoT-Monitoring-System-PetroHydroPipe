@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   apiRequest,
   DEFAULT_REQUEST_TIMEOUT_MS,
-  setUnauthorizedHandler,
 } from './apiClient.js'
+import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
 
 describe('apiRequest', () => {
   afterEach(() => {

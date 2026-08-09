@@ -1,7 +1,7 @@
 import { waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { subscribeToServerEvents } from './eventStream.js'
-import { setUnauthorizedHandler } from './apiClient.js'
+import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
 
 describe('subscribeToServerEvents', () => {
   afterEach(() => {
