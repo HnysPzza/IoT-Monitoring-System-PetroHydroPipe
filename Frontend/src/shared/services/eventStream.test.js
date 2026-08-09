@@ -26,7 +26,7 @@ describe('subscribeToServerEvents', () => {
       { path: '/api/alerts/stream' },
     )
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }))
-    expect(onStatusChange.mock.calls.map(([status]) => status)).toEqual(['connecting', 'degraded'])
+    expect(onStatusChange.mock.calls.map(([status]) => status)).toEqual(['connecting', 'unauthorized'])
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetch).toHaveBeenCalledTimes(1)
     unsubscribe()
@@ -238,5 +238,128 @@ describe('subscribeToServerEvents', () => {
     expect(signal.aborted).toBe(true)
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['stream.auth_expired', 'SSE_AUTH_EXPIRED'],
+    ['stream.auth_revoked', 'SSE_AUTH_REVOKED'],
+  ])('treats %s as terminal and never parses later events from the same chunk', async (eventType, errorCode) => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const onUnauthorized = vi.fn()
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+    const onFallback = vi.fn()
+    const onStatusChange = vi.fn()
+    setUnauthorizedHandler('active-token', onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          `event: ${eventType}\ndata: {"reason":"ended"}\n\n`
+          + 'event: alert.created\ndata: {"alert":{"id":"must-not-arrive"}}\n\n',
+        ))
+      },
+    }), { status: 200 })))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', {
+      onEvent,
+      onError,
+      onFallback,
+      onStatusChange,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onUnauthorized).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 401, code: errorCode }),
+      { path: '/api/alerts/stream' },
+    )
+    expect(onEvent).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onFallback).not.toHaveBeenCalled()
+    expect(onStatusChange).toHaveBeenLastCalledWith('unauthorized')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
+  it('treats stream HTTP 403 as terminal without changing generic API behavior', async () => {
+    vi.useFakeTimers()
+    const onUnauthorized = vi.fn()
+    const onFallback = vi.fn()
+    setUnauthorizedHandler('active-token', onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 403 })))
+
+    const unsubscribe = subscribeToServerEvents('/api/downtime/stream', 'active-token', { onFallback })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onUnauthorized).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 403 }),
+      { path: '/api/downtime/stream' },
+    )
+    expect(onFallback).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
+  it('honors bounded Retry-After for 429 responses without starting fallback polling', async () => {
+    vi.useFakeTimers()
+    const onFallback = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
+      status: 429,
+      headers: { 'Retry-After': '60' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', { onFallback })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(29999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onFallback).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onFallback).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+  it('reconnects normally after a server control event without reporting an error', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const reconnectResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          'event: stream.reconnect\ndata: {"reason":"max_lifetime"}\n\n'
+          + 'event: alert.created\ndata: {"alert":{"id":"must-not-arrive"}}\n\n',
+        ))
+        controller.close()
+      },
+    }), { status: 200 })
+    const stableResponse = () => new Response(new ReadableStream({
+      start() {},
+    }), { status: 200 })
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => Promise.resolve(reconnectResponse()))
+      .mockImplementationOnce(() => Promise.resolve(stableResponse()))
+    const onError = vi.fn()
+    const onFallback = vi.fn()
+    const onEvent = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', { onError, onEvent, onFallback })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onEvent).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(249)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onError).not.toHaveBeenCalled()
+    expect(onFallback).not.toHaveBeenCalled()
+    unsubscribe()
   })
 })

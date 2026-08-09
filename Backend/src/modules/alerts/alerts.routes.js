@@ -2,18 +2,18 @@ const express = require('express')
 const asyncHandler = require('../../utils/asyncHandler')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
+const admitSseConnection = require('../../middleware/admitSseConnection')
 const validateRequest = require('../../middleware/validateRequest')
 const alertsController = require('./alerts.controller')
 const { alertIdSchema } = require('./alerts.model')
+const { DASHBOARD_STREAM_ROLES } = require('../../shared/sse/streamPolicies')
 
 const router = express.Router()
-const dashboardRoles = ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']
-
 router.use(authenticate)
-router.use(authorizeRole(dashboardRoles))
+router.use(authorizeRole(DASHBOARD_STREAM_ROLES))
 
 router.get('/', asyncHandler(alertsController.listAlerts))
-router.get('/stream', asyncHandler(alertsController.streamAlerts))
+router.get('/stream', admitSseConnection, asyncHandler(alertsController.streamAlerts))
 router.patch('/:id/acknowledge', validateRequest(alertIdSchema), asyncHandler(alertsController.acknowledgeAlert))
 
 module.exports = router

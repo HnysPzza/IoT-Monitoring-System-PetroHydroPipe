@@ -13,12 +13,22 @@ export function setUnauthorizedHandler(token, handler) {
   }
 }
 
-export function notifyUnauthorized(error, { token, path } = {}) {
-  if (!token || token !== unauthorizedToken || error?.status !== 401 || !unauthorizedHandler) return
+function notifyMatchingSession(error, { token, path } = {}) {
+  if (!token || token !== unauthorizedToken || !unauthorizedHandler) return
 
   try {
     unauthorizedHandler(error, { path })
   } catch {
     // Session recovery must not replace the original API failure.
   }
+}
+
+export function notifyUnauthorized(error, context = {}) {
+  if (error?.status !== 401) return
+  notifyMatchingSession(error, context)
+}
+
+export function notifyStreamAuthorizationLost(error, context = {}) {
+  if (error?.status !== 401 && error?.status !== 403) return
+  notifyMatchingSession(error, context)
 }

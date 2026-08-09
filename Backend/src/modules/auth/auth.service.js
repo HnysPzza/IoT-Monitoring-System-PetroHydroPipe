@@ -68,14 +68,16 @@ async function findUserByUsername(username) {
   return data
 }
 
-async function findUserById(userId) {
+async function findUserById(userId, { signal } = {}) {
   const supabase = getSupabaseClient()
-
-  const { data, error } = await supabase
+  let query = supabase
     .from('users')
     .select(getAuthUserSelect())
     .eq('id', userId)
-    .maybeSingle()
+
+  if (signal) query = query.abortSignal(signal)
+
+  const { data, error } = await query.maybeSingle()
 
   if (error) {
     throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to load authenticated user.')
@@ -172,9 +174,9 @@ async function login({ username, password }) {
   }
 }
 
-async function getAuthenticatedUser(tokenPayload) {
+async function getAuthenticatedUser(tokenPayload, options = {}) {
   // /me refreshes the safe user shape from the database using the JWT subject.
-  const userRecord = await findUserById(tokenPayload.sub)
+  const userRecord = await findUserById(tokenPayload.sub, options)
 
   if (!userRecord) {
     throw createAuthError(401, 'UNAUTHENTICATED', 'Authenticated user no longer exists.')
