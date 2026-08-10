@@ -1,8 +1,27 @@
 import { createApiError } from '../errors/apiError.js'
-import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
+import { notifyStreamAuthorizationLost } from '../errors/unauthorizedSession.js'
 import { API_BASE_URL } from './apiClient.js'
 
 const LIVE_STABILITY_WINDOW_MS = 5000
+const MAX_RETRY_AFTER_MS = 30000
+const EXPECTED_RECONNECT_DELAY_MS = 250
+const TERMINAL_AUTH_EVENTS = new Map([
+  ['stream.auth_expired', { code: 'SSE_AUTH_EXPIRED', message: 'Your session has expired.' }],
+  ['stream.auth_revoked', { code: 'SSE_AUTH_REVOKED', message: 'Your session is no longer authorized.' }],
+])
+
+function parseRetryAfter(value) {
+  if (!value) return 0
+  const seconds = Number(value)
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
+  }
+
+  const retryAt = Date.parse(value)
+  if (Number.isNaN(retryAt)) return 0
+  return Math.min(Math.max(0, retryAt - Date.now()), MAX_RETRY_AFTER_MS)
+}
 
 function parseSseMessage(message) {
   const lines = message.replaceAll('\r\n', '\n').split('\n')
@@ -42,6 +61,7 @@ export function subscribeToServerEvents(path, token, {
   let activeReader = null
   let stabilityTimer = null
   let lastStatus = null
+  let retryAfterMs = 0
 
   function updateStatus(status) {
     if (lastStatus === status) return
@@ -106,7 +126,9 @@ export function subscribeToServerEvents(path, token, {
 
       if (!response.ok || !response.body) {
         const error = createApiError('Unable to connect to event stream.', response.status)
-        notifyUnauthorized(error, { token, path })
+        error.retryAfterMs = response.status === 429
+          ? parseRetryAfter(response.headers.get('retry-after'))
+          : 0
         throw error
       }
 
@@ -130,6 +152,19 @@ export function subscribeToServerEvents(path, token, {
           if (rawMessage) {
             const event = parseSseMessage(rawMessage)
             if (event) {
+              const terminalAuth = TERMINAL_AUTH_EVENTS.get(event.type)
+              if (terminalAuth) {
+                const error = createApiError(terminalAuth.message, 401, event.payload, terminalAuth.code)
+                error.isTerminalStreamAuthorization = true
+                throw error
+              }
+
+              if (event.type === 'stream.reconnect') {
+                const error = createApiError('The event stream requested a reconnect.', 0, event.payload, 'SSE_RECONNECT')
+                error.isExpectedReconnect = true
+                throw error
+              }
+
               onEvent?.(event)
               scheduleLiveConfirmation(reader)
             }
@@ -140,21 +175,32 @@ export function subscribeToServerEvents(path, token, {
       }
 
       if (!isClosed) {
-        throw createApiError('Event stream disconnected.', 0)
+        const error = createApiError('Event stream disconnected.', 0)
+        throw error
       }
     } catch (error) {
       await releaseActiveReader({ cancel: true })
       if (isClosed || error.name === 'AbortError') return
 
-      retryCount += 1
-      onError?.(error)
-
-      if (error.status === 401) {
-        updateStatus('degraded')
+      if (error.status === 401 || error.status === 403 || error.isTerminalStreamAuthorization) {
+        onError?.(error)
+        notifyStreamAuthorizationLost(error, { token, path })
+        updateStatus('unauthorized')
         return
       }
 
-      if (retryCount >= 3 && !fallbackStarted) {
+      if (!error.isExpectedReconnect) {
+        retryCount += 1
+        onError?.(error)
+      }
+
+      retryAfterMs = error.status === 429 ? error.retryAfterMs || 0 : 0
+
+      if (error.isExpectedReconnect) {
+        updateStatus('reconnecting')
+      } else if (error.status === 429) {
+        updateStatus('reconnecting')
+      } else if (retryCount >= 3 && !fallbackStarted) {
         fallbackStarted = true
         updateStatus('degraded')
         onFallback?.()
@@ -162,7 +208,9 @@ export function subscribeToServerEvents(path, token, {
         updateStatus('reconnecting')
       }
 
-      const retryDelay = Math.min(1000 * 2 ** retryCount, 10000)
+      const retryDelay = error.isExpectedReconnect
+        ? EXPECTED_RECONNECT_DELAY_MS
+        : Math.max(Math.min(1000 * 2 ** retryCount, 10000), retryAfterMs)
       retryTimer = window.setTimeout(connect, retryDelay)
     }
   }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApiError } from './apiError.js'
-import { notifyUnauthorized, setUnauthorizedHandler } from './unauthorizedSession.js'
+import { notifyStreamAuthorizationLost, notifyUnauthorized, setUnauthorizedHandler } from './unauthorizedSession.js'
 
 describe('unauthorized session handling', () => {
   afterEach(() => {
@@ -37,5 +37,17 @@ describe('unauthorized session handling', () => {
       })
     }).not.toThrow()
     expect(activeHandler).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows stream-only forbidden responses to invalidate only the matching session', () => {
+    const handler = vi.fn()
+    const forbidden = createApiError('No longer authorized.', 403)
+    setUnauthorizedHandler('active-token', handler)
+
+    notifyStreamAuthorizationLost(forbidden, { token: 'older-token', path: '/api/alerts/stream' })
+    notifyStreamAuthorizationLost(forbidden, { token: 'active-token', path: '/api/alerts/stream' })
+
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler).toHaveBeenCalledWith(forbidden, { path: '/api/alerts/stream' })
   })
 })

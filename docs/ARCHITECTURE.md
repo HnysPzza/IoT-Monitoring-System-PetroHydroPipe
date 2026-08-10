@@ -80,12 +80,16 @@ Current reliability layer:
 
 - SSE gives fast dashboard refreshes during a healthy connection.
 - Frontend fallback polling starts when the SSE stream repeatedly disconnects.
+- Streams close at JWT expiry and periodically revalidate the current database user and role.
+- Alerts and downtime share process-local connection caps: two streams per user, five per source IP, and 100 total by default.
+- Slow clients use a bounded per-stream queue; overflow closes the stream instead of growing memory without limit.
+- The frontend treats stream authorization loss as terminal, honors `Retry-After` for connection caps, and reconnects normally after the configured maximum stream lifetime.
 - Pagination is handled by the backend, not only by frontend state.
 - The current design is acceptable for a single persistent Express backend process.
 
 Important deployment constraint:
 
-The downtime SSE publisher is process-local. Events are stored only in the memory of the Node process that handled the IoT or downtime update. This is fine for local development, capstone demonstration, and a single backend server. It is not fully realtime-safe for serverless, autoscaled, or load-balanced deployments with multiple backend instances.
+The SSE publishers and connection registry are process-local. Events and connection counts exist only in the Node process that handled them. This is fine for local development, capstone demonstration, and a single backend server. It is not fully realtime-safe or globally rate-limited for serverless, autoscaled, or load-balanced deployments with multiple backend instances.
 
 Example limitation:
 
