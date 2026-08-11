@@ -1,10 +1,16 @@
 const { EventEmitter } = require('node:events')
 const { getSupabaseClient } = require('../../database/client')
-const { getSensorLabel } = require('../../shared/sensorIdentity')
-const { recordAuditLog } = require('../audit/audit.service')
+const logger = require('../../utils/logger')
 
 const alertEvents = new EventEmitter()
 alertEvents.setMaxListeners(100)
+
+const ALERT_EVENT_BY_ACTION = Object.freeze({
+  acknowledged: 'alert.acknowledged',
+  created: 'alert.created',
+  resolved: 'alert.resolved',
+  updated: 'alert.updated',
+})
 
 function createAlertError(status, code, message) {
   const error = new Error(message)
@@ -13,98 +19,62 @@ function createAlertError(status, code, message) {
   return error
 }
 
-function getRelatedRecord(record, key) {
-  if (Array.isArray(record?.[key])) {
-    return record[key][0] || null
+function validateRevision(value) {
+  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/.test(value)) {
+    throw createAlertError(500, 'ALERT_REVISION_INVALID', 'Alert state could not be verified.')
   }
 
-  return record?.[key] || null
+  return value
 }
 
-function getRoleName(userRecord) {
-  if (!userRecord) return null
-
-  if (Array.isArray(userRecord.roles)) {
-    return userRecord.roles[0]?.name || null
+function validateAlert(alert) {
+  if (!alert || typeof alert !== 'object') {
+    throw createAlertError(500, 'ALERT_RESPONSE_INVALID', 'Alert state could not be loaded.')
   }
 
-  return userRecord.role || userRecord.roles?.name || null
+  validateRevision(alert.revision)
+  return alert
 }
 
-function removeRecoveryMetadata(metadata = {}) {
-  const {
-    recoveryPending,
-    recoveredAt,
-    recoveryEventId,
-    recoveryEventType,
-    recoverySignal,
-    acknowledgedAfterRecovery,
-    ...rest
-  } = metadata || {}
+function publishAlertAction(action, alert) {
+  const eventType = Object.hasOwn(ALERT_EVENT_BY_ACTION, action)
+    ? ALERT_EVENT_BY_ACTION[action]
+    : null
 
-  return rest
-}
-
-function withRecoveryMetadata(metadata = {}, recovery = {}) {
-  return {
-    ...(metadata || {}),
-    recoveryPending: true,
-    recoveredAt: recovery.recordedAt || new Date().toISOString(),
-    recoveryEventId: recovery.eventId || null,
-    recoveryEventType: recovery.eventType || null,
-    recoverySignal: recovery.signal || null,
+  if (!eventType || !alert) {
+    logger.error('ALERT_SSE_TRANSITION_INVALID', {
+      alertId: alert?.id || null,
+      action: action || null,
+    })
+    return false
   }
-}
 
-function hasPendingRecovery(alertRecord) {
-  return Boolean(alertRecord?.metadata?.recoveryPending)
-}
-
-function toAlertResponse(alertRecord, acknowledgedByOverride = null) {
-  const machine = getRelatedRecord(alertRecord, 'machines')
-  const sensor = getRelatedRecord(alertRecord, 'sensors')
-  const acknowledgedBy = acknowledgedByOverride || getRelatedRecord(alertRecord, 'users')
-
-  return {
-    id: alertRecord.id,
-    severity: alertRecord.severity,
-    status: alertRecord.status,
-    title: alertRecord.title,
-    message: alertRecord.message,
-    sourceType: alertRecord.source_type,
-    machine: machine
-      ? {
-        id: machine.id,
-        name: machine.name,
-      }
-      : null,
-    sensor: sensor
-      ? {
-        id: sensor.id,
-        sensorCode: sensor.sensor_code,
-        label: getSensorLabel(sensor.sensor_code, sensor.label),
-      }
-      : null,
-    metadata: alertRecord.metadata || {},
-    createdAt: alertRecord.created_at,
-    acknowledgedAt: alertRecord.acknowledged_at,
-    acknowledgedBy: acknowledgedBy
-      ? {
-        id: acknowledgedBy.id,
-        name: acknowledgedBy.name,
-        username: acknowledgedBy.username,
-        role: getRoleName(acknowledgedBy),
-      }
-      : null,
-    resolvedAt: alertRecord.resolved_at,
+  try {
+    validateAlert(alert)
+  } catch {
+    logger.error('ALERT_SSE_REVISION_INVALID', {
+      alertId: alert?.id || null,
+      action,
+    })
+    return false
   }
-}
 
-function emitAlertEvent(type, alert) {
-  alertEvents.emit('alert', {
-    type,
-    alert,
+  const event = { type: eventType, alert }
+  let published = true
+
+  alertEvents.rawListeners('alert').forEach((listener) => {
+    try {
+      listener.call(alertEvents, event)
+    } catch {
+      published = false
+      logger.error('ALERT_SSE_PUBLISH_FAILED', {
+        alertId: alert.id || null,
+        action,
+      })
+    }
   })
+
+  return published
 }
 
 function subscribeToAlertEvents(listener) {
@@ -116,449 +86,74 @@ function subscribeToAlertEvents(listener) {
 }
 
 async function listAlerts() {
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from('alerts')
-    .select(`
-      id,
-      source_type,
-      source_id,
-      severity,
-      status,
-      title,
-      message,
-      metadata,
-      created_at,
-      acknowledged_at,
-      resolved_at,
-      machines (
-        id,
-        name
-      ),
-      sensors (
-        id,
-        sensor_code,
-        label
-      ),
-      users (
-        id,
-        name,
-        username,
-        roles (
-          name
-        )
-      )
-    `)
-    .in('status', ['Active', 'Acknowledged'])
-    .order('created_at', { ascending: false })
+  const { data, error } = await getSupabaseClient()
+    .rpc('get_alerts_snapshot')
+    .single()
 
-  if (error) {
+  if (error || !data) {
     throw createAlertError(500, 'ALERTS_QUERY_FAILED', 'Unable to load alerts.')
   }
 
-  return (data || []).map((alert) => toAlertResponse(alert))
-}
+  const alerts = Array.isArray(data.alerts) ? data.alerts.map(validateAlert) : null
 
-async function findUnresolvedAlert({ sourceType, sourceId }) {
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from('alerts')
-    .select(`
-      id,
-      source_type,
-      source_id,
-      severity,
-      status,
-      title,
-      message,
-      metadata,
-      created_at,
-      acknowledged_at,
-      resolved_at,
-      machines (
-        id,
-        name
-      ),
-      sensors (
-        id,
-        sensor_code,
-        label
-      )
-    `)
-    .eq('source_type', sourceType)
-    .eq('source_id', sourceId)
-    .in('status', ['Active', 'Acknowledged'])
-    .maybeSingle()
-
-  if (error) {
-    throw createAlertError(500, 'ALERT_LOOKUP_FAILED', 'Unable to check existing alert.')
+  if (!alerts) {
+    throw createAlertError(500, 'ALERT_RESPONSE_INVALID', 'Alert state could not be loaded.')
   }
 
-  return data
-}
-
-async function loadAlertById(alertId) {
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from('alerts')
-    .select(`
-      id,
-      source_type,
-      source_id,
-      severity,
-      status,
-      title,
-      message,
-      metadata,
-      created_at,
-      acknowledged_at,
-      resolved_at,
-      machines (
-        id,
-        name
-      ),
-      sensors (
-        id,
-        sensor_code,
-        label
-      )
-    `)
-    .eq('id', alertId)
-    .maybeSingle()
-
-  if (error) {
-    throw createAlertError(500, 'ALERT_QUERY_FAILED', 'Unable to load alert.')
+  return {
+    alerts,
+    snapshotRevision: validateRevision(data.snapshot_revision),
   }
-
-  if (!data) {
-    throw createAlertError(404, 'ALERT_NOT_FOUND', 'Alert not found.')
-  }
-
-  return data
-}
-
-async function createOrUpdateSensorAlert({ sensor, machine, eventRecord, eventType, signal, recordedAt }) {
-  const supabase = getSupabaseClient()
-  const label = getSensorLabel(sensor.sensor_code, sensor.label)
-  const title = `${label} downtime detected`
-  const message = `${sensor.sensor_code} ${label} has no pulse.`
-  const metadata = {
-    deviceId: sensor.esp32_device_id,
-    sensorCode: sensor.sensor_code,
-    sensorLabel: label,
-    machineCode: machine.machine_code,
-    machineName: machine.name,
-    eventId: eventRecord.id,
-    eventType,
-    signal,
-    recordedAt,
-  }
-  const existingAlert = await findUnresolvedAlert({
-    sourceType: 'sensor',
-    sourceId: sensor.id,
-  })
-
-  if (existingAlert) {
-    const { data, error } = await supabase
-      .from('alerts')
-      .update({
-        severity: 'Critical',
-        title,
-        message,
-        metadata: {
-          ...removeRecoveryMetadata(existingAlert.metadata),
-          ...metadata,
-        },
-      })
-      .eq('id', existingAlert.id)
-      .select(`
-        id,
-        source_type,
-        source_id,
-        severity,
-        status,
-        title,
-        message,
-        metadata,
-        created_at,
-        acknowledged_at,
-        resolved_at,
-        machines (
-          id,
-          name
-        ),
-        sensors (
-          id,
-          sensor_code,
-          label
-        )
-      `)
-      .single()
-
-    if (error) {
-      throw createAlertError(500, 'ALERT_UPDATE_FAILED', 'Unable to update alert.')
-    }
-
-    const alert = toAlertResponse(data)
-    emitAlertEvent('alert.updated', alert)
-    return alert
-  }
-
-  const { data, error } = await supabase
-    .from('alerts')
-    .insert({
-      source_type: 'sensor',
-      source_id: sensor.id,
-      machine_id: machine.id,
-      sensor_id: sensor.id,
-      severity: 'Critical',
-      status: 'Active',
-      title,
-      message,
-      metadata,
-    })
-    .select(`
-      id,
-      source_type,
-      source_id,
-      severity,
-      status,
-      title,
-      message,
-      metadata,
-      created_at,
-      acknowledged_at,
-      resolved_at,
-      machines (
-        id,
-        name
-      ),
-      sensors (
-        id,
-        sensor_code,
-        label
-      )
-    `)
-    .single()
-
-  if (error) {
-    throw createAlertError(500, 'ALERT_CREATE_FAILED', 'Unable to create alert.')
-  }
-
-  const alert = toAlertResponse(data)
-  await recordAuditLog({
-    action: 'ALERT_CREATED',
-    entityType: 'sensor',
-    entityId: sensor.id,
-    metadata: {
-      alertId: alert.id,
-      title: alert.title,
-      sensorCode: sensor.sensor_code,
-      machineCode: machine.machine_code,
-      eventType,
-      signal,
-    },
-  })
-  emitAlertEvent('alert.created', alert)
-  return alert
-}
-
-async function resolveAlertForSource({ sourceType, sourceId, metadata = {} }) {
-  const existingAlert = await findUnresolvedAlert({ sourceType, sourceId })
-
-  if (!existingAlert) {
-    return null
-  }
-
-  const supabase = getSupabaseClient()
-  const recoveryMetadata = withRecoveryMetadata(existingAlert.metadata, metadata)
-
-  if (existingAlert.status === 'Active') {
-    const { data, error } = await supabase
-      .from('alerts')
-      .update({
-        metadata: recoveryMetadata,
-      })
-      .eq('id', existingAlert.id)
-      .select(`
-        id,
-        source_type,
-        source_id,
-        severity,
-        status,
-        title,
-        message,
-        metadata,
-        created_at,
-        acknowledged_at,
-        resolved_at,
-        machines (
-          id,
-          name
-        ),
-        sensors (
-          id,
-          sensor_code,
-          label
-        )
-      `)
-      .single()
-
-    if (error) {
-      throw createAlertError(500, 'ALERT_RECOVERY_MARK_FAILED', 'Unable to mark alert recovery.')
-    }
-
-    const alert = toAlertResponse(data)
-    emitAlertEvent('alert.updated', alert)
-    return alert
-  }
-
-  const { data, error } = await supabase
-    .from('alerts')
-    .update({
-      status: 'Resolved',
-      resolved_at: new Date().toISOString(),
-      metadata: recoveryMetadata,
-    })
-    .eq('id', existingAlert.id)
-    .select(`
-      id,
-      source_type,
-      source_id,
-      severity,
-      status,
-      title,
-      message,
-      metadata,
-      created_at,
-      acknowledged_at,
-      resolved_at,
-      machines (
-        id,
-        name
-      ),
-      sensors (
-        id,
-        sensor_code,
-        label
-      )
-    `)
-    .single()
-
-  if (error) {
-    throw createAlertError(500, 'ALERT_RESOLVE_FAILED', 'Unable to resolve alert.')
-  }
-
-  const alert = toAlertResponse(data)
-  await recordAuditLog({
-    action: 'ALERT_RESOLVED',
-    entityType: sourceType,
-    entityId: sourceId,
-    metadata: {
-      alertId: alert.id,
-      title: alert.title,
-      ...metadata,
-    },
-  })
-  emitAlertEvent('alert.resolved', alert)
-  return alert
 }
 
 async function acknowledgeAlert({ alertId, actorUser }) {
-  const alertRecord = await loadAlertById(alertId)
-
-  if (alertRecord.status === 'Resolved') {
-    throw createAlertError(409, 'ALERT_ALREADY_RESOLVED', 'Resolved alerts cannot be acknowledged.')
-  }
-
-  if (alertRecord.status === 'Acknowledged' && !hasPendingRecovery(alertRecord)) {
-    const alert = toAlertResponse(alertRecord, actorUser)
-    return alert
-  }
-
-  const supabase = getSupabaseClient()
-  const acknowledgedAt = new Date().toISOString()
-  const shouldResolveAfterAcknowledgement = hasPendingRecovery(alertRecord)
-  const { data, error } = await supabase
-    .from('alerts')
-    .update({
-      status: shouldResolveAfterAcknowledgement ? 'Resolved' : 'Acknowledged',
-      acknowledged_at: acknowledgedAt,
-      acknowledged_by: actorUser.id,
-      resolved_at: shouldResolveAfterAcknowledgement ? acknowledgedAt : alertRecord.resolved_at,
-      metadata: shouldResolveAfterAcknowledgement
-        ? {
-          ...(alertRecord.metadata || {}),
-          acknowledgedAfterRecovery: true,
-        }
-        : alertRecord.metadata,
+  const { data, error } = await getSupabaseClient()
+    .rpc('acknowledge_alert', {
+      p_alert_id: alertId,
+      p_actor_user_id: actorUser.id,
     })
-    .eq('id', alertId)
-    .select(`
-      id,
-      source_type,
-      source_id,
-      severity,
-      status,
-      title,
-      message,
-      metadata,
-      created_at,
-      acknowledged_at,
-      resolved_at,
-      machines (
-        id,
-        name
-      ),
-      sensors (
-        id,
-        sensor_code,
-        label
-      )
-    `)
     .single()
 
-  if (error) {
+  if (error || !data) {
     throw createAlertError(500, 'ALERT_ACKNOWLEDGE_FAILED', 'Unable to acknowledge alert.')
   }
 
-  const alert = toAlertResponse(data, actorUser)
-  await recordAuditLog({
-    userId: actorUser.id,
-    action: 'ALERT_ACKNOWLEDGED',
-    entityType: data.source_type,
-    entityId: data.source_id,
-    metadata: {
-      alertId: alert.id,
-      title: alert.title,
-      status: alert.status,
-    },
-  })
-
-  if (shouldResolveAfterAcknowledgement) {
-    await recordAuditLog({
-      userId: actorUser.id,
-      action: 'ALERT_RESOLVED',
-      entityType: data.source_type,
-      entityId: data.source_id,
-      metadata: {
-        alertId: alert.id,
-        title: alert.title,
-        reason: 'acknowledged_after_recovery',
-      },
-    })
-    emitAlertEvent('alert.resolved', alert)
-    return alert
+  if (data.outcome === 'not_found') {
+    throw createAlertError(404, 'ALERT_NOT_FOUND', 'Alert not found.')
   }
 
-  emitAlertEvent('alert.acknowledged', alert)
+  if (data.outcome === 'already_resolved') {
+    throw createAlertError(409, 'ALERT_ALREADY_RESOLVED', 'Resolved alerts cannot be acknowledged.')
+  }
+
+  if (!['acknowledged', 'already_acknowledged', 'resolved_after_recovery'].includes(data.outcome)) {
+    throw createAlertError(500, 'ALERT_ACKNOWLEDGE_INVALID', 'Alert acknowledgement could not be verified.')
+  }
+
+  const alert = validateAlert(data.alert_record)
+
+  const expectedAction = data.outcome === 'acknowledged'
+    ? 'acknowledged'
+    : data.outcome === 'resolved_after_recovery'
+      ? 'resolved'
+      : null
+
+  if (data.alert_action !== expectedAction) {
+    logger.error('ALERT_ACK_TRANSITION_INVALID', {
+      alertId: alert.id,
+      outcome: data.outcome,
+      action: data.alert_action || null,
+    })
+  } else if (expectedAction) {
+    publishAlertAction(expectedAction, alert)
+  }
+
   return alert
 }
 
 module.exports = {
   acknowledgeAlert,
-  createOrUpdateSensorAlert,
   listAlerts,
-  resolveAlertForSource,
+  publishAlertAction,
   subscribeToAlertEvents,
 }

@@ -527,21 +527,24 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
   const alertId = '77777777-7777-4777-8777-777777777777'
   const app = loadAppWithMocks({
     'src/modules/alerts/alerts.service.js': {
-      listAlerts: async () => ([
-        {
+      listAlerts: async () => ({
+        alerts: [{
           id: alertId,
           severity: 'Critical',
           status: 'Active',
           title: 'Inside Filler downtime detected',
           message: 'S-04 Inside Filler has no pulse.',
-        },
-      ]),
+          revision: '1',
+        }],
+        snapshotRevision: '1',
+      }),
       acknowledgeAlert: async ({ alertId: targetAlertId, actorUser }) => ({
         id: targetAlertId,
         severity: 'Critical',
         status: 'Acknowledged',
         title: 'Inside Filler downtime detected',
         message: 'S-04 Inside Filler has no pulse.',
+        revision: '2',
         acknowledgedAt: '2026-06-11T00:00:00.000Z',
         acknowledgedBy: {
           id: actorUser.id,
@@ -559,6 +562,7 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
               status: 'Active',
               title: 'Inside Filler downtime detected',
               message: 'S-04 Inside Filler has no pulse.',
+              revision: '1',
             },
           })
         })
@@ -580,6 +584,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
 
     assert.equal(listed.response.status, 200)
     assert.equal(listed.body.alerts[0].message, 'S-04 Inside Filler has no pulse.')
+    assert.equal(listed.body.alerts[0].revision, '1')
+    assert.equal(listed.body.snapshotRevision, '1')
 
     const acknowledged = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
       method: 'PATCH',
@@ -588,6 +594,7 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
 
     assert.equal(acknowledged.response.status, 200)
     assert.equal(acknowledged.body.alert.status, 'Acknowledged')
+    assert.equal(acknowledged.body.alert.revision, '2')
 
     const controller = new AbortController()
     const stream = await fetch(`${baseUrl}/api/alerts/stream`, {
@@ -595,11 +602,19 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
       signal: controller.signal,
     })
     const reader = stream.body.getReader()
-    const { value } = await reader.read()
+    let streamText = ''
+
+    for (let attempt = 0; attempt < 3 && !streamText.includes('event: alert.created'); attempt += 1) {
+      const { value, done } = await reader.read()
+      if (done) break
+      streamText += Buffer.from(value).toString('utf8')
+    }
+
     controller.abort()
 
     assert.equal(stream.status, 200)
-    assert.match(Buffer.from(value).toString('utf8'), /event: heartbeat|event: alert\.created/)
+    assert.match(streamText, /event: alert\.created/)
+    assert.match(streamText, /"revision":"1"/)
   })
 })
 
@@ -637,6 +652,43 @@ test('POST /api/iot/events rejects invalid ESP32 device authentication', async (
     assert.equal(result.response.status, 401)
     assertError(result.body, 'DEVICE_UNAUTHORIZED')
     assert.equal(eventProcessingCalls, 0)
+  })
+})
+
+test('POST /api/iot/events never returns 201 when the atomic ingestion RPC fails', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => ({ id: sensorId, esp32_device_id: 'esp32-m01-s01' }),
+      createSensorEvent: async () => {
+        throw createHttpError(
+          500,
+          'SENSOR_EVENT_PROCESSING_FAILED',
+          'Unable to process sensor event.',
+        )
+      },
+      getLiveFeed: async () => ({ machine: null, sensors: [] }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: {
+        'x-device-id': 'esp32-m01-s01',
+        'x-device-key': 'test-device-key',
+      },
+      body: {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        eventType: 'fault',
+        signal: 'fault',
+        recordedAt: '2026-06-11T00:00:00.000Z',
+        metadata: {},
+      },
+    })
+
+    assert.equal(result.response.status, 500)
+    assert.notEqual(result.response.status, 201)
+    assertError(result.body, 'SENSOR_EVENT_PROCESSING_FAILED')
   })
 })
 

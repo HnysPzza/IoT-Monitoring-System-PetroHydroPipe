@@ -103,15 +103,46 @@ function createFakeSupabase(records, calls) {
   }
 }
 
-function loadDowntimeService({ records = [], auditLogs = [], calls = [] } = {}) {
+function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [] } = {}) {
   clearSourceCache()
   const fakeSupabase = createFakeSupabase(records, calls)
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
   mockModule('src/modules/audit/audit.service.js', {
     recordAuditLog: async (entry) => auditLogs.push(entry),
   })
+  mockModule('src/utils/logger.js', {
+    error: (code, metadata) => logs.push({ code, metadata }),
+    info: () => {},
+    warn: () => {},
+  })
   return require(path.join(backendRoot, 'src', 'modules', 'downtime', 'downtime.service.js'))
 }
+
+test('downtime publication isolates a throwing listener from healthy subscribers', () => {
+  const logs = []
+  const service = loadDowntimeService({ logs })
+  const stopThrowing = service.subscribeToDowntimeEvents(() => {
+    throw new Error('listener failed')
+  })
+  let delivered = null
+  const stopHealthy = service.subscribeToDowntimeEvents((event) => {
+    delivered = event
+  })
+
+  const published = service.publishDowntimeEvent('downtime.created', {
+    id: 'downtime-1',
+    status: 'Open',
+  })
+  stopThrowing()
+  stopHealthy()
+
+  assert.equal(published, false)
+  assert.equal(delivered.type, 'downtime.created')
+  assert.deepEqual(logs, [{
+    code: 'DOWNTIME_SSE_PUBLISH_FAILED',
+    metadata: { downtimeId: 'downtime-1', type: 'downtime.created' },
+  }])
+})
 
 test('downtime list uses Manila day boundaries and returns pagination', async () => {
   const calls = []

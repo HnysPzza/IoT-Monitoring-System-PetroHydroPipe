@@ -16,7 +16,7 @@ function createToken({ expiresIn = '1h', includeExpiry = true } = {}) {
 function createServiceMocks() {
   return {
     'src/modules/alerts/alerts.service.js': {
-      listAlerts: async () => [],
+      listAlerts: async () => ({ alerts: [], snapshotRevision: '0' }),
       acknowledgeAlert: async () => ({}),
       subscribeToAlertEvents: () => () => {},
     },
