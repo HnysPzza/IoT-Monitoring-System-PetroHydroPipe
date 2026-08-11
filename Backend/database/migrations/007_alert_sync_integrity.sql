@@ -1,188 +1,74 @@
--- PetroHydroPipe IoT Monitoring System
--- Phase 2 simple Supabase/PostgreSQL database foundation.
+-- Phase 34: keep IoT state, downtime, alerts, revisions, and audits atomic.
+-- Apply in staging first. This migration does not contact external notification providers.
 
-create extension if not exists "pgcrypto";
+begin;
 
--- Access roles used by backend authorization and frontend navigation.
-create table if not exists roles (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  description text,
-  created_at timestamptz not null default now()
-);
+alter table public.sensors
+add column if not exists last_applied_recorded_at timestamptz;
 
--- Application users managed by admins; password_hash is used only by the backend.
-create table if not exists users (
-  id uuid primary key default gen_random_uuid(),
-  role_id uuid not null references roles(id),
-  name text not null,
-  username text not null unique,
-  email text unique,
-  password_hash text not null,
-  status text not null default 'Active' check (status in ('Active', 'Inactive')),
-  must_change_password boolean not null default true,
-  last_login_at timestamptz,
-  deleted_at timestamptz,
-  deleted_by uuid references users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+update public.sensors sensor
+set last_applied_recorded_at = latest.recorded_at
+from (
+  select sensor_id, max(recorded_at) as recorded_at
+  from public.sensor_events
+  group by sensor_id
+) latest
+where latest.sensor_id = sensor.id
+  and sensor.last_applied_recorded_at is null;
 
--- Production machines being monitored by ESP32 sensor groups.
-create table if not exists machines (
-  id uuid primary key default gen_random_uuid(),
-  machine_code text not null unique,
-  name text not null,
-  status text not null default 'Idle' check (status in ('Running', 'Idle', 'Downtime')),
-  location text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
--- The 5 ESP32-backed sensor records connected to a machine.
-create table if not exists sensors (
-  id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references machines(id) on delete cascade,
-  sensor_code text not null unique,
-  esp32_device_id text not null unique,
-  device_key_hash text,
-  label text not null,
-  status text not null default 'Active' check (status in ('Active', 'Inactive', 'Fault')),
-  last_applied_recorded_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
--- Raw sensor readings/events; future IoT ingestion writes here.
-create table if not exists sensor_events (
-  id uuid primary key default gen_random_uuid(),
-  sensor_id uuid not null references sensors(id) on delete cascade,
-  machine_id uuid not null references machines(id) on delete cascade,
-  device_event_id uuid not null default gen_random_uuid(),
-  event_type text not null,
-  event_value jsonb not null default '{}'::jsonb,
-  recorded_at timestamptz not null,
-  created_at timestamptz not null default now()
-);
-
--- Downtime records derived from sensor events or manual review.
-create table if not exists downtime_events (
-  id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references machines(id) on delete cascade,
-  sensor_id uuid references sensors(id) on delete set null,
-  started_at timestamptz not null,
-  ended_at timestamptz,
-  duration_seconds integer,
-  cause text,
-  status text not null default 'Open' check (status in ('Open', 'Resolved')),
-  notes text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint downtime_duration_non_negative check (duration_seconds is null or duration_seconds >= 0),
-  constraint downtime_end_after_start check (ended_at is null or ended_at >= started_at),
-  constraint downtime_state_fields_consistent check (
-    (status = 'Open' and ended_at is null and duration_seconds is null)
-    or
-    (status = 'Resolved' and ended_at is not null and duration_seconds is not null)
-  )
-);
-
--- Production output windows for day/week/month analytics.
-create table if not exists production_counts (
-  id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references machines(id) on delete cascade,
-  count_value integer not null default 0 check (count_value >= 0),
-  window_start timestamptz not null,
-  window_end timestamptz not null,
-  created_at timestamptz not null default now(),
-  constraint production_window_valid check (window_end > window_start)
-);
-
--- Tracks important user and system actions for accountability.
-create table if not exists audit_logs (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references users(id) on delete set null,
-  action text not null,
-  entity_type text not null,
-  entity_id uuid,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
--- Persistent machine/sensor alerts that users can acknowledge.
-create table if not exists alerts (
-  id uuid primary key default gen_random_uuid(),
-  source_type text not null,
-  source_id uuid not null,
-  machine_id uuid references machines(id) on delete cascade,
-  sensor_id uuid references sensors(id) on delete set null,
-  severity text not null check (severity in ('Info', 'Warning', 'Critical')),
-  status text not null default 'Active' check (status in ('Active', 'Acknowledged', 'Resolved')),
-  title text not null,
-  message text not null,
-  acknowledged_at timestamptz,
-  acknowledged_by uuid references users(id) on delete set null,
-  resolved_at timestamptz,
-  metadata jsonb not null default '{}'::jsonb,
-  revision bigint not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
--- Transactional singleton serializes alert revisions in commit order.
-create table if not exists alert_revision_state (
+create table if not exists public.alert_revision_state (
   singleton boolean primary key default true check (singleton),
   current_revision bigint not null check (current_revision >= 0)
 );
 
-insert into alert_revision_state (singleton, current_revision)
+insert into public.alert_revision_state (singleton, current_revision)
 values (true, 0)
 on conflict (singleton) do nothing;
 
-alter table alert_revision_state enable row level security;
+alter table public.alert_revision_state enable row level security;
 
+drop policy if exists alert_revision_service_role on public.alert_revision_state;
 create policy alert_revision_service_role
-on alert_revision_state
+on public.alert_revision_state
 for all
 to service_role
 using (true)
 with check (true);
 
--- Indexes keep dashboard and history lookups fast as event data grows.
-create index if not exists idx_users_role_id on users(role_id);
-create index if not exists idx_machines_status on machines(status);
-create index if not exists idx_sensors_machine_id on sensors(machine_id);
-create index if not exists idx_sensor_events_sensor_recorded_at on sensor_events(sensor_id, recorded_at desc);
-create index if not exists idx_sensor_events_machine_recorded_at on sensor_events(machine_id, recorded_at desc);
-create unique index if not exists idx_sensor_events_device_event_id on sensor_events(sensor_id, device_event_id);
-create index if not exists idx_downtime_events_machine_started_at on downtime_events(machine_id, started_at desc);
-create index if not exists idx_downtime_events_sensor_id on downtime_events(sensor_id);
-create unique index if not exists idx_downtime_events_one_open_per_sensor on downtime_events(machine_id, sensor_id) where status = 'Open';
-create index if not exists idx_production_counts_machine_window on production_counts(machine_id, window_start desc);
-create index if not exists idx_audit_logs_user_created_at on audit_logs(user_id, created_at desc);
-create unique index if not exists idx_alerts_unresolved_source on alerts(source_type, source_id) where status in ('Active', 'Acknowledged');
-create index if not exists idx_alerts_status_created_at on alerts(status, created_at desc);
-create index if not exists idx_alerts_machine_id on alerts(machine_id);
-create index if not exists idx_alerts_sensor_id on alerts(sensor_id);
-create index if not exists idx_alerts_acknowledged_by on alerts(acknowledged_by);
-create unique index if not exists idx_alerts_revision on alerts(revision);
+alter table public.alerts
+add column if not exists revision bigint;
 
--- Shared trigger helper keeps updated_at current after edits.
-create or replace function set_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql
-set search_path = public;
+-- Preserve historical updated_at values while assigning initial revisions.
+drop trigger if exists set_alerts_updated_at on public.alerts;
 
-drop trigger if exists set_users_updated_at on users;
-create trigger set_users_updated_at
-before update on users
+with ordered_alerts as (
+  select id, row_number() over (order by updated_at, id)::bigint as revision
+  from public.alerts
+  where revision is null
+)
+update public.alerts alert
+set revision = ordered.revision
+from ordered_alerts ordered
+where ordered.id = alert.id;
+
+update public.alert_revision_state
+set current_revision = greatest(
+  current_revision,
+  coalesce((select max(revision) from public.alerts), 0)
+)
+where singleton = true;
+
+alter table public.alerts
+alter column revision set not null;
+
+create unique index if not exists idx_alerts_revision
+on public.alerts(revision);
+
+create trigger set_alerts_updated_at
+before update on public.alerts
 for each row
-execute function set_updated_at();
--- Atomic alert-sync integrity keeps state, alerts, revisions, and audits consistent.
+execute function public.set_updated_at();
+
 create or replace function public.assign_alert_revision()
 returns trigger
 language plpgsql
@@ -870,145 +756,20 @@ as $$
   group by revision_state.current_revision;
 $$;
 
-create or replace function public.get_downtime_summary(
-  p_status text,
-  p_cause text,
-  p_started_from timestamptz,
-  p_started_to timestamptz
-)
-returns table (
-  open_count bigint,
-  resolved_count bigint,
-  total_minutes bigint,
-  estimated_loss bigint
-)
-language sql
-stable
-set search_path = public
-as $$
-  with matching as (
-    select
-      downtime.status,
-      round(
-        coalesce(
-          downtime.duration_seconds,
-          greatest(0, extract(epoch from (now() - downtime.started_at)))
-        ) / 60.0
-      )::bigint as minutes
-    from public.downtime_events downtime
-    where (p_status is null or p_status = 'All' or downtime.status = p_status)
-      and (p_cause is null or p_cause = 'All' or downtime.cause = p_cause)
-      and (p_started_from is null or downtime.started_at >= p_started_from)
-      and (p_started_to is null or downtime.started_at < p_started_to)
-  )
-  select
-    count(*) filter (where status = 'Open'),
-    count(*) filter (where status = 'Resolved'),
-    coalesce(sum(minutes), 0)::bigint,
-    coalesce(sum(round(minutes * 2.3)), 0)::bigint
-  from matching;
-$$;
-
-create or replace function public.update_downtime_record(
-  p_downtime_id uuid,
-  p_cause text,
-  p_notes text,
-  p_has_notes boolean,
-  p_resolve boolean
-)
-returns table (downtime_id uuid)
-language plpgsql
-set search_path = public
-as $$
-declare
-  v_downtime public.downtime_events%rowtype;
-  v_sensor_code text;
-  v_ended_at timestamptz;
-begin
-  select downtime.* into v_downtime
-  from public.downtime_events downtime
-  where downtime.id = p_downtime_id
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0002', message = 'Downtime record not found.';
-  end if;
-
-  select sensor.sensor_code into v_sensor_code
-  from public.sensors sensor where sensor.id = v_downtime.sensor_id;
-
-  if p_cause is not null and v_sensor_code is distinct from 'S-03' then
-    raise exception using errcode = '22023', message = 'Downtime cause is locked for this sensor.';
-  end if;
-
-  v_ended_at := case
-    when p_resolve and v_downtime.status = 'Open' then now()
-    else v_downtime.ended_at
-  end;
-
-  update public.downtime_events
-  set
-    cause = coalesce(p_cause, cause),
-    notes = case when p_has_notes then p_notes else notes end,
-    status = case when p_resolve then 'Resolved' else status end,
-    ended_at = v_ended_at,
-    duration_seconds = case
-      when p_resolve and v_downtime.status = 'Open'
-        then greatest(0, round(extract(epoch from (v_ended_at - started_at)))::integer)
-      else duration_seconds
-    end
-  where id = p_downtime_id;
-
-  return query select p_downtime_id;
-end;
-$$;
-
 revoke all on table public.alert_revision_state from public, anon, authenticated;
 grant select, update on table public.alert_revision_state to service_role;
 
 revoke execute on function public.assign_alert_revision() from public, anon, authenticated;
 revoke execute on function public.alert_to_api_json(public.alerts) from public, anon, authenticated;
+revoke execute on function public.ingest_iot_sensor_event(uuid, uuid, uuid, text, jsonb, timestamptz)
+from public, anon, authenticated;
 revoke execute on function public.acknowledge_alert(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public.get_alerts_snapshot() from public, anon, authenticated;
+
 grant execute on function public.alert_to_api_json(public.alerts) to service_role;
+grant execute on function public.ingest_iot_sensor_event(uuid, uuid, uuid, text, jsonb, timestamptz)
+to service_role;
 grant execute on function public.acknowledge_alert(uuid, uuid) to service_role;
 grant execute on function public.get_alerts_snapshot() to service_role;
 
-revoke execute on function public.ingest_iot_sensor_event(uuid, uuid, uuid, text, jsonb, timestamptz)
-from public, anon, authenticated;
-grant execute on function public.ingest_iot_sensor_event(uuid, uuid, uuid, text, jsonb, timestamptz)
-to service_role;
-
-revoke execute on function public.get_downtime_summary(text, text, timestamptz, timestamptz)
-from public, anon, authenticated;
-grant execute on function public.get_downtime_summary(text, text, timestamptz, timestamptz)
-to service_role;
-
-revoke execute on function public.update_downtime_record(uuid, text, text, boolean, boolean)
-from public, anon, authenticated;
-grant execute on function public.update_downtime_record(uuid, text, text, boolean, boolean)
-to service_role;
-
-drop trigger if exists set_machines_updated_at on machines;
-create trigger set_machines_updated_at
-before update on machines
-for each row
-execute function set_updated_at();
-
-drop trigger if exists set_sensors_updated_at on sensors;
-create trigger set_sensors_updated_at
-before update on sensors
-for each row
-execute function set_updated_at();
-
-drop trigger if exists set_downtime_events_updated_at on downtime_events;
-create trigger set_downtime_events_updated_at
-before update on downtime_events
-for each row
-execute function set_updated_at();
-
-drop trigger if exists set_alerts_updated_at on alerts;
-create trigger set_alerts_updated_at
-before update on alerts
-for each row
-execute function set_updated_at();
+commit;
