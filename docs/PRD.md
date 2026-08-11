@@ -97,23 +97,39 @@ First login always forces a password change from a one-time temporary password (
 |---|---|---|
 | **Functional Suitability** | System must correctly attribute every logged event to the correct sensor node (1–5) and correct shift | UC009, UC013 |
 | **Reliability** | Database must survive the free-tier failure modes: no auto-pause, automated backups. **Requires Supabase Pro ($25/mo, 8 GB, automated backups) — funding not yet confirmed with Petro Hydro (open risk, §11)** | Team decision |
-| **Reliability** | ESP32 nodes must buffer up to 50 readings locally during WiFi/EMI dropouts and flush on reconnect; must resync NTP time on boot/reconnect | `changes-summary.md` firmware additions |
-| **Security** | Dashboard users authenticated via JWT; ESP32 nodes authenticated via a separate `X-Node-Token` header — the two auth paths must never be interchangeable | Team decision |
+| **Reliability** | ESP32 nodes must buffer up to 50 readings locally during WiFi/EMI dropouts and flush on reconnect; must resync NTP time on boot/reconnect | TDD section 2.5; PRD section 8 |
+| **Security** | Dashboard users authenticate with JWT; ESP32 devices authenticate with separate `x-device-id` and `x-device-key` headers. The two auth paths must never be interchangeable. | Team decision |
 | **Security** | JWT must travel via `Authorization` header only. Query-parameter tokens are rejected (they leak into server logs and browser history) | Team decision |
 | **Maintainability** | Production frontend calls the Express API only — never Supabase directly, and never the Supabase Realtime SDK (that opens a direct browser↔Supabase WebSocket and bypasses the one API surface the team controls) | Firm architecture rule |
-| **Performance Efficiency** | Real-time updates delivered via Server-Sent Events (SSE) over Express, not polling, not raw WebSocket | Team decision, see TDD §5 |
+| **Performance Efficiency** | Server-Sent Events (SSE) provide low-latency updates; revisioned REST snapshots repair missed events and provide bounded fallback polling during degraded connections. | Team decision, see TDD section 5 |
 | **Compatibility** | Sensor nodes are read-only observers — inductive proximity sensors cannot affect machine operation, so there is zero risk of the monitoring system disrupting production | Verified, hardware nature |
 | **Usability** | Evaluated post-deployment via UTAUT: performance expectancy, effort expectancy, social influence, facilitating conditions, across all 5 named roles | Paper Objectives |
 
-## 8. Alert Lifecycle (Design Decision — Locked)
+## 8. Alert Lifecycle and IoT Integrity (Design Decision - Locked)
 
-Two tables, strictly decoupled:
-- `downtime_events` — sensor-driven only. Never human-modified. This is the ground truth of what Sensor 3 actually observed.
-- `alerts` — metadata layer on top, for acknowledgment tracking (who, when).
+Two persistent records have separate responsibilities:
 
-State machine: **OPEN → ACKNOWLEDGED → RESOLVED**. Resolution is always sensor-triggered (the alert cannot be manually closed by a human — only Sensor 3 resuming activity resolves it). This is intentional: it prevents a supervisor from closing an alert to make a dashboard look clean while the machine is still actually down.
+- `downtime_events` is the persisted observed and operator-reviewed downtime record. Authorized operators can update supported cause/notes fields and manually resolve the downtime record through its API.
+- `alerts` is the operator workflow for acknowledgement and recovery visibility.
 
-**Open gap:** UC018 as currently written only defines the *trigger* threshold (how long Sensor 3 must be silent before the system logs a downtime event). It does not define a *clear* threshold — how long Sensor 3 must show renewed activity before the alert is considered resolved. Without a debounce on the clear condition, a machine that's intermittently active near the resume point will flap the alert open/closed repeatedly. **This needs a decided value (e.g., N consecutive seconds of activity) before implementation, and UC018's text needs to be corrected in the paper to describe both thresholds.**
+The alert states are `Active`, `Acknowledged`, and `Resolved`:
+
+- A new fault creates one `Active` alert. A repeated fault refreshes the unresolved alert, preserves `Active` or `Acknowledged`, and clears earlier recovery metadata.
+- Recovery while `Active` keeps the alert `Active` with `metadata.recoveryPending`. It remains visible until an operator acknowledges it.
+- Recovery while `Acknowledged` changes the alert to `Resolved`.
+- Acknowledgement during an ongoing fault changes `Active` to `Acknowledged`.
+- Acknowledgement after recovery changes `Active` plus `recoveryPending` to `Resolved`.
+
+An operator cannot mark the alert as `Resolved` while the sensor fault persists. This prevents the alert dashboard from showing a false recovery even though the separately managed downtime record supports authorized review and manual resolution.
+
+IoT application requirements:
+
+- Raw event insertion, sensor and machine state, downtime, alert state, and transition audit rows must commit atomically. A required alert or audit failure must return an error and leave no partial operational state.
+- Reusing the same UUID `eventId` with the same content is idempotent. Reusing it with conflicting content is rejected.
+- `recordedAt` is the interim ordering key. Each sensor uses an NTP-synchronized timestamp watermark; stale or equal timestamps are retained as raw history but cannot apply state, downtime, alert, revision, or transition-audit changes.
+- Firmware must eventually add a monotonically increasing per-sensor counter persisted across reboot in ESP32 NVS. That future ordering counter is separate from the random UUID `eventId` used for retry deduplication. Pair it with a persisted boot/session identity only if a reset-capable counter is unavoidable.
+
+UC018 still needs a decided clear/debounce threshold for sustained recovered activity. That firmware decision does not change the backend rule above: a human cannot falsely resolve an ongoing sensor fault.
 
 ## 9. Deployment Plan (4 Stages)
 

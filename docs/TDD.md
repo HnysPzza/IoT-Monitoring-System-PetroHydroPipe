@@ -59,7 +59,9 @@ Nodes currently transmit on **every raw sensor pulse**, not on confirmed state t
 - NTP time sync on boot and after every reconnect — without this, timestamps across 5 nodes will drift relative to each other and to the server, corrupting the "duration" fields everywhere.
 - WiFi reconnection handler (EMI from welding will drop connections; this must be automatic, not require a manual power-cycle).
 - Local buffer, up to 50 readings, flushed on reconnect — prevents data loss during dropouts.
-- `X-Node-Token` header on every request, validated server-side before any data is accepted. This is a separate auth path from dashboard JWTs — a leaked node token should not grant dashboard access, and vice versa.
+- `x-device-id` and `x-device-key` headers on every request, validated server-side before any data is accepted. This is a separate auth path from dashboard JWTs.
+- An NTP-synchronized `recordedAt` value for the current interim ordering guard.
+- A future per-sensor monotonic counter persisted across reboot in ESP32 NVS. This ordering counter is separate from the random UUID `eventId` used for retry deduplication. Pair it with a persisted boot/session ID only if a reset-capable counter is unavoidable.
 
 ## 3. Backend Design (Node.js + Express)
 
@@ -67,24 +69,35 @@ Nodes currently transmit on **every raw sensor pulse**, not on confirmed state t
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST /api/nodes/:nodeId/events` | `X-Node-Token` | Ingest a Type A discrete event |
-| `POST /api/nodes/:nodeId/state` | `X-Node-Token` | Ingest a Type B state transition |
-| `GET /api/dashboard/live` | JWT | Current machine state + latest reading per node |
-| `GET /api/downtime` | JWT | Downtime event history, filterable by date/shift |
-| `POST /api/alerts/:id/acknowledge` | JWT | UC017 — records who/when |
-| `GET /api/stream` | JWT (via `Authorization` header, not query string) | SSE endpoint for real-time dashboard updates |
-| `GET /api/reports?format=pdf\|csv` | JWT | UC022/UC023 |
+| `POST /api/iot/events` | `x-device-id` + `x-device-key` | Atomically ingest a sensor event or state transition |
+| `GET /api/iot/live` | JWT | Current machine state + latest event per sensor |
+| `GET /api/downtime` | JWT | Paginated downtime history with supported status, cause, and date filters |
+| `GET /api/alerts` | JWT | One alert snapshot with `{alerts, snapshotRevision}` |
+| `PATCH /api/alerts/:id/acknowledge` | JWT | Atomically record acknowledgement and resulting lifecycle state |
+| `GET /api/alerts/stream` | JWT `Authorization` header | Alert SSE stream |
+| `GET /api/downtime/stream` | JWT `Authorization` header | Downtime SSE stream |
+| `GET /api/reports/summary?type=daily\|weekly\|monthly` | Management-role JWT | Report summary; optional `date` selects the business period anchor |
 
 ### 3.2 Auth
-- Dashboard users: JWT, `Authorization: Bearer <token>` header. `jsonwebtoken` + `bcrypt`/`argon2id` for password hashing.
-- ESP32 nodes: `X-Node-Token` header, validated against a per-node secret stored server-side. Never share the JWT secret/signing key with the node auth path.
-- Rate limiting via `express-rate-limit` on all public-facing auth endpoints (login, password reset).
+- Dashboard users: JWT, `Authorization: Bearer <token>` header. The backend uses `jsonwebtoken` and `bcryptjs`.
+- ESP32 nodes: `x-device-id` and `x-device-key`, validated against a per-sensor bcrypt hash stored server-side. Never share the JWT secret/signing key with the device auth path.
+- Rate limiting via `express-rate-limit` on login and layered source-IP/verified-device buckets for IoT ingestion.
 
 ### 3.3 Why SSE, not WebSocket or polling
 - **Polling** wastes requests and adds latency proportional to the poll interval — bad fit for "alert the moment Sensor 3 goes down."
 - **Raw WebSocket** adds bidirectional complexity the dashboard doesn't need (it only ever *receives* updates; it never needs to push anything back over the same channel).
 - **SSE via Fetch + ReadableStream** gives one-directional server→client push over plain HTTP, works cleanly through the JWT `Authorization` header (no token-in-URL problem), and is simpler to reason about for a 3-person team maintaining this after graduation.
 - Ruled out explicitly: JWT via query parameter (logged in server access logs and browser history — a real, not theoretical, exposure), and per-endpoint cookies (inconsistent auth model across the app, adds CSRF surface for no real benefit here).
+
+### 3.4 Atomic IoT and alert operations
+
+The backend uses three service-role-only PostgreSQL RPCs:
+
+- `ingest_iot_sensor_event` performs raw event insertion, applied sensor/machine state, downtime, alert, and transition-audit writes in one transaction.
+- `acknowledge_alert` locks the alert, applies the acknowledgement/recovery lifecycle, writes audits, and returns an explicit outcome.
+- `get_alerts_snapshot` returns alert rows and the global snapshot watermark from one database statement.
+
+Stale or equal `recordedAt` values are retained as raw events but apply no operational transition. Alert revisions come from a locked singleton counter row held inside the transaction; they do not use a sequence. PostgreSQL `BIGINT` values are cast to canonical decimal strings before reaching JavaScript.
 
 ## 4. Database Design (Supabase / Postgres)
 
@@ -93,28 +106,42 @@ Supabase is not a separate "database engine choice" — it's managed Postgres wi
 
 Within Supabase, **Free tier is disqualifying**: it auto-pauses after inactivity (unacceptable for a system meant to be always-on), caps storage at 500 MB, and has no automated backups. **Pro tier ($25/month, 8 GB, automated backups) is required** for anything actually running on Petro Hydro's floor. This is not yet funded — flagged as an open risk in PRD §11.
 
-### 4.2 Core tables (proposed)
+### 4.2 Core tables (current)
 
-- `sensor_nodes` — id, machine_id, sensor_number (1–5), label, type (A/B), last_seen_at
-- `sensor_events` — id, node_id, event_type, occurred_at (Type A discrete events: coil joint, filler wire, pipe count)
-- `downtime_events` — id, node_id (Sensor 3), started_at, ended_at, duration, cause (nullable until categorized) — **sensor-driven only, never human-modified**
-- `alerts` — id, downtime_event_id, state (OPEN/ACKNOWLEDGED/RESOLVED), acknowledged_by, acknowledged_at — the metadata layer decoupled from `downtime_events`
-- `users` — id, name, role, email, password_hash, must_change_password
-- `shifts` — id, name, start_time, end_time
-- `production_counts` — derived/aggregated from `sensor_events` where node = Sensor 5, bucketed per shift/day
-- `activity_logs` — UC027, user_id, action, timestamp
+- `roles` and `users` - backend-managed authorization and accounts.
+- `machines` and `sensors` - monitored equipment, device identity, state, and the per-sensor `last_applied_recorded_at` watermark.
+- `sensor_events` - raw timestamped device events, including UUID `device_event_id` deduplication.
+- `downtime_events` - observed downtime intervals.
+- `alerts` - `Active`, `Acknowledged`, and `Resolved` operator workflow with a global `revision`.
+- `alert_revision_state` - singleton transactional revision counter; direct access is restricted to `service_role`.
+- `production_counts` - summarized output counts.
+- `audit_logs` - user and system activity history.
 
 ### 4.3 A note on TimescaleDB
 Don't plan around it — it's deprecated on Supabase's Postgres 17 bundle (continuous aggregates are blocked by licensing there). It's also unnecessary: actual data volume from 5 event-based nodes is trivially small. The real scalability lever is firmware logging discipline (§2), not database engine choice. Fixing the raw-pulse-spam bug matters far more for data volume than any database-level optimization would.
 
 ## 5. Real-Time Architecture (detail)
 
-Client opens `GET /api/stream` with `Authorization: Bearer <jwt>`, using `fetch()` + `ReadableStream` to consume a `text/event-stream` response. Express keeps the connection open and pushes:
-- Machine state changes (RUNNING/DOWN) the moment Sensor 3 transitions.
-- New alerts (OPEN state created).
-- Alert acknowledgment updates (so multiple logged-in supervisors see acknowledgment in real time).
+Clients open `GET /api/alerts/stream` and `GET /api/downtime/stream` with `Authorization: Bearer <jwt>`, using `fetch()` plus `ReadableStream`. Express publishes process-local SSE only after the database transaction commits. Listener failures are logged and isolated; they do not change the committed HTTP result.
 
-This stays entirely inside the Express-only rule in §1 — Supabase changes are picked up by Express (via its own query/trigger logic) and re-broadcast to clients, never exposed to the browser directly.
+Alert events are exactly `alert.created`, `alert.updated`, `alert.acknowledged`, and `alert.resolved`. The frontend validates the event/status pair and the canonical decimal-string revision. REST snapshot loading is the repair path: one coordinator covers mount, manual retry, fallback polling, and every successful stream open, with one request in flight, at least five seconds between starts, and at most one trailing request.
+
+`onOpen({isReconnect, isRetry})` uses exact semantics: `isReconnect` means a prior successful connection existed; `isRetry` means this successful open followed one or more failed attempts. The first successful open also schedules a bounded snapshot repair because there is no server-provided open watermark. Buffered deltas are discarded at or below `snapshotRevision`; newer deltas are sorted and applied only as a contiguous chain. Malformed data, gaps, overflow, or an older snapshot preserve newer trusted state and schedule repair.
+
+This stays inside the Express-only rule in section 1. The current publisher is an in-memory Node `EventEmitter`, so the supported realtime deployment is one persistent Express process. There is no outbox, queue, or worker; multi-instance delivery requires a future shared channel.
+
+### 5.1 Alert integrity acceptance matrix
+
+| Layer | Bad path | Required result |
+|---|---|---|
+| Database | Alert or audit write fails during IoT ingestion | Entire operational transaction rolls back; no partial sensor, machine, downtime, alert, audit, or revision state |
+| Database | Duplicate UUID or stale/equal `recordedAt` | Exact duplicate is idempotent; stale/equal timestamp is raw-history-only; conflicting UUID reuse is rejected |
+| Database | Concurrent fault, acknowledgement, and recovery | One unresolved alert, serialized lifecycle, and contiguous committed revisions; verify on disposable real PostgreSQL before deployment |
+| Backend | Post-commit downtime or alert listener throws | Log safe identifiers, isolate listeners/channels, and keep the committed success response |
+| Backend | Missing/unknown acknowledgement outcome or malformed revision | Controlled 4xx/5xx response; never publish an unverified alert frame |
+| Frontend | Duplicate, stale, malformed, or gapped SSE/ACK delta | Ignore stale/duplicate; do not apply malformed/gapped data; request one coalesced snapshot repair |
+| Frontend | Snapshot resolves while newer SSE deltas arrive | Replace from one snapshot, discard old deltas, replay only a sorted contiguous newer chain, and never roll back a higher applied revision |
+| Frontend | Token changes or component unmounts | Ignore stale completions and clear queued timers, polling, and stream ownership |
 
 ## 6. Alert Debounce (open design gap — needs a decision)
 
