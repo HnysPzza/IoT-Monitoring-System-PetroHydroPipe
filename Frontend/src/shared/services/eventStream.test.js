@@ -63,6 +63,48 @@ describe('subscribeToServerEvents', () => {
     unsubscribe()
   })
 
+  it('reports initial, retried, and reconnected successful stream opens without corrupting transport callbacks', async () => {
+    vi.useFakeTimers()
+    const createStableResponse = () => new Response(new ReadableStream({ start() {} }), { status: 200 })
+    const createClosedResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.close()
+      },
+    }), { status: 200 })
+
+    const initialOpen = vi.fn(() => {
+      throw new Error('consumer callback failed')
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createStableResponse()))
+    const stopInitial = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onOpen: initialOpen })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(initialOpen).toHaveBeenCalledWith({ isReconnect: false, isRetry: false })
+    stopInitial()
+
+    const retriedOpen = vi.fn()
+    const retryFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(createStableResponse())
+    vi.stubGlobal('fetch', retryFetch)
+    const stopRetried = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onOpen: retriedOpen })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(retriedOpen).toHaveBeenCalledWith({ isReconnect: false, isRetry: true })
+    stopRetried()
+
+    const reconnectOpen = vi.fn()
+    const reconnectFetch = vi.fn()
+      .mockResolvedValueOnce(createClosedResponse())
+      .mockResolvedValueOnce(createStableResponse())
+    vi.stubGlobal('fetch', reconnectFetch)
+    const stopReconnect = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onOpen: reconnectOpen })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconnectOpen).toHaveBeenNthCalledWith(1, { isReconnect: false, isRetry: false })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(reconnectOpen).toHaveBeenNthCalledWith(2, { isReconnect: true, isRetry: true })
+    stopReconnect()
+  })
+
   it('starts fallback polling after repeated short-lived successful streams', async () => {
     vi.useFakeTimers()
     const createClosedResponse = () => new Response(
@@ -238,6 +280,27 @@ describe('subscribeToServerEvents', () => {
     expect(signal.aborted).toBe(true)
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels a late response body and never reports an open after unsubscribe', async () => {
+    const responseRequest = Promise.withResolvers()
+    const onOpen = vi.fn()
+    let bodyCancelled = false
+    const body = new ReadableStream({
+      cancel() {
+        bodyCancelled = true
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(responseRequest.promise))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onOpen })
+    unsubscribe()
+    responseRequest.resolve(new Response(body, { status: 200 }))
+
+    await waitFor(() => {
+      expect(bodyCancelled).toBe(true)
+    })
+    expect(onOpen).not.toHaveBeenCalled()
   })
 
   it.each([

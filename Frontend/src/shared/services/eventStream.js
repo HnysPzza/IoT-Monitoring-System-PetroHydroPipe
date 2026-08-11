@@ -50,6 +50,7 @@ export function subscribeToServerEvents(path, token, {
   onEvent,
   onError,
   onFallback,
+  onOpen,
   onRecovery,
   onStatusChange,
 } = {}) {
@@ -62,6 +63,8 @@ export function subscribeToServerEvents(path, token, {
   let stabilityTimer = null
   let lastStatus = null
   let retryAfterMs = 0
+  let hasConnected = false
+  let failedConnectionAttempts = 0
 
   function updateStatus(status) {
     if (lastStatus === status) return
@@ -124,6 +127,15 @@ export function subscribeToServerEvents(path, token, {
         signal: controller.signal,
       })
 
+      if (isClosed) {
+        try {
+          await response.body?.cancel()
+        } catch {
+          // The subscription is already closed; transport cleanup is best effort.
+        }
+        return
+      }
+
       if (!response.ok || !response.body) {
         const error = createApiError('Unable to connect to event stream.', response.status)
         error.retryAfterMs = response.status === 429
@@ -134,6 +146,19 @@ export function subscribeToServerEvents(path, token, {
 
       const reader = response.body.getReader()
       activeReader = reader
+      const openState = {
+        isReconnect: hasConnected,
+        isRetry: failedConnectionAttempts > 0,
+      }
+      hasConnected = true
+      failedConnectionAttempts = 0
+
+      try {
+        onOpen?.(openState)
+      } catch {
+        // Consumer state repair must not interrupt the transport reader.
+      }
+
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -181,6 +206,10 @@ export function subscribeToServerEvents(path, token, {
     } catch (error) {
       await releaseActiveReader({ cancel: true })
       if (isClosed || error.name === 'AbortError') return
+
+      if (!error.isExpectedReconnect) {
+        failedConnectionAttempts += 1
+      }
 
       if (error.status === 401 || error.status === 403 || error.isTerminalStreamAuthorization) {
         onError?.(error)
