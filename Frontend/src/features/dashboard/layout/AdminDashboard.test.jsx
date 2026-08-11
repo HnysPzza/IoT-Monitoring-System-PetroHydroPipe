@@ -20,7 +20,18 @@ function activeAlert() {
     status: 'Active',
     title: 'Inside Filler downtime detected',
     message: 'S-04 Inside Filler has no pulse.',
+    revision: '1',
   }
+}
+
+function alertSnapshot(alerts, snapshotRevision = alerts.reduce((highest, alert) => (
+  BigInt(alert.revision) > BigInt(highest) ? alert.revision : highest
+), '0')) {
+  return { alerts, snapshotRevision }
+}
+
+function alertAtRevision(revision, overrides = {}) {
+  return { ...activeAlert(), revision, ...overrides }
 }
 
 function deferred() {
@@ -61,12 +72,13 @@ describe('AdminDashboard alerts', () => {
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
     const user = userEvent.setup()
 
-    getAlerts.mockResolvedValue({ alerts: [activeAlert()] })
+    getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
     acknowledgeAlert.mockResolvedValue({
       alert: {
         ...activeAlert(),
         status: 'Acknowledged',
         acknowledgedAt: '2026-06-11T00:00:00.000Z',
+        revision: '2',
       },
     })
 
@@ -95,7 +107,7 @@ describe('AdminDashboard alerts', () => {
     let streamHandlers
     getAlerts
       .mockRejectedValueOnce(new Error('Alert list failed.'))
-      .mockResolvedValueOnce({ alerts: [] })
+      .mockResolvedValueOnce(alertSnapshot([], '1'))
     subscribeToAlerts.mockImplementationOnce((token, handlers) => {
       streamHandlers = handlers
       return vi.fn()
@@ -109,12 +121,15 @@ describe('AdminDashboard alerts', () => {
     expect(screen.queryByText('No active alerts.')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Alert count unavailable')).toHaveTextContent('—')
 
-    act(() => streamHandlers.onEvent({ payload: { alert: activeAlert() } }))
+    act(() => streamHandlers.onEvent({ type: 'alert.created', payload: { alert: activeAlert() } }))
     expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Alert list failed.')
 
+    const retryAt = Date.now() + 5000
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(retryAt)
     await user.click(screen.getByRole('button', { name: 'Retry' }))
+    dateNow.mockRestore()
 
     expect(await screen.findByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
     expect(screen.getByText('No active alerts.')).toBeInTheDocument()
@@ -134,9 +149,9 @@ describe('AdminDashboard alerts', () => {
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
     expect(await screen.findByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
 
-    act(() => streamHandlers.onEvent({ payload: { alert: activeAlert() } }))
+    act(() => streamHandlers.onEvent({ type: 'alert.created', payload: { alert: activeAlert() } }))
     await act(async () => {
-      alertListRequest.resolve({ alerts: [] })
+      alertListRequest.resolve(alertSnapshot([]))
       await alertListRequest.promise
     })
 
@@ -149,8 +164,8 @@ describe('AdminDashboard alerts', () => {
     vi.useFakeTimers()
     let streamHandlers
     getAlerts
-      .mockResolvedValueOnce({ alerts: [] })
-      .mockResolvedValueOnce({ alerts: [] })
+      .mockResolvedValueOnce(alertSnapshot([]))
+      .mockResolvedValueOnce(alertSnapshot([], '1'))
     subscribeToAlerts.mockImplementationOnce((token, handlers) => {
       streamHandlers = handlers
       return vi.fn()
@@ -162,7 +177,7 @@ describe('AdminDashboard alerts', () => {
     })
     expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
 
-    act(() => streamHandlers.onEvent({ payload: { alert: activeAlert() } }))
+    act(() => streamHandlers.onEvent({ type: 'alert.created', payload: { alert: activeAlert() } }))
     expect(screen.getByRole('button', { name: /open alerts, 1 active/i })).toBeInTheDocument()
 
     act(() => streamHandlers.onFallback())
@@ -178,10 +193,10 @@ describe('AdminDashboard alerts', () => {
     const pollingRequest = deferred()
     let streamHandlers
     getAlerts
-      .mockResolvedValueOnce({ alerts: [activeAlert()] })
+      .mockResolvedValueOnce(alertSnapshot([activeAlert()]))
       .mockReturnValueOnce(pollingRequest.promise)
     acknowledgeAlert.mockResolvedValue({
-      alert: { ...activeAlert(), status: 'Acknowledged' },
+      alert: { ...activeAlert(), status: 'Acknowledged', revision: '2' },
     })
     subscribeToAlerts.mockImplementationOnce((token, handlers) => {
       streamHandlers = handlers
@@ -206,7 +221,7 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByText('Acknowledged')).toBeInTheDocument()
 
     await act(async () => {
-      pollingRequest.resolve({ alerts: [activeAlert()] })
+      pollingRequest.resolve(alertSnapshot([activeAlert()]))
       await pollingRequest.promise
     })
 
@@ -217,7 +232,7 @@ describe('AdminDashboard alerts', () => {
   it('keeps a failed acknowledgement visible, blocks duplicates, and re-enables only its button', async () => {
     const user = userEvent.setup()
     const acknowledgement = deferred()
-    getAlerts.mockResolvedValue({ alerts: [activeAlert()] })
+    getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
     acknowledgeAlert.mockReturnValue(acknowledgement.promise)
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
@@ -247,7 +262,7 @@ describe('AdminDashboard alerts', () => {
     vi.useFakeTimers()
     const streamHandlers = {}
     getAlerts
-      .mockResolvedValueOnce({ alerts: [activeAlert()] })
+      .mockResolvedValueOnce(alertSnapshot([activeAlert()]))
       .mockRejectedValueOnce(new Error('Polling failed.'))
     subscribeToAlerts.mockImplementation((token, handlers) => {
       Object.assign(streamHandlers, handlers)
@@ -277,11 +292,446 @@ describe('AdminDashboard alerts', () => {
     expect(getAlerts).toHaveBeenCalledTimes(2)
   })
 
+  it('coalesces reconnect flapping into one non-parallel trailing snapshot request', async () => {
+    vi.useFakeTimers()
+    const initialRequest = deferred()
+    const trailingRequest = deferred()
+    let streamHandlers
+    getAlerts
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(trailingRequest.promise)
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      streamHandlers.onOpen({ isReconnect: false, isRetry: false })
+      streamHandlers.onOpen({ isReconnect: false, isRetry: true })
+      streamHandlers.onOpen({ isReconnect: true, isRetry: false })
+      streamHandlers.onOpen({ isReconnect: true, isRetry: true })
+    })
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      initialRequest.resolve(alertSnapshot([]))
+      await initialRequest.promise
+    })
+    act(() => {
+      streamHandlers.onOpen({ isReconnect: true, isRetry: false })
+      streamHandlers.onOpen({ isReconnect: true, isRetry: false })
+    })
+
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      trailingRequest.resolve(alertSnapshot([]))
+      await trailingRequest.promise
+    })
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+  })
+
+  it('repairs the snapshot-to-first-stream-open missed window without another SSE delta', async () => {
+    vi.useFakeTimers()
+    let streamHandlers
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('10')], '10'))
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('11', { title: 'Missed revision 11' })], '11'))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => streamHandlers.onOpen({ isReconnect: false, isRetry: false }))
+
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+    expect(screen.getByText('Missed revision 11')).toBeInTheDocument()
+  })
+
+  it('ignores heartbeats but repairs an alert transition with a missing payload', async () => {
+    vi.useFakeTimers()
+    let streamHandlers
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => streamHandlers.onEvent({ type: 'heartbeat', payload: { ok: true } }))
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+
+    act(() => streamHandlers.onEvent({ type: 'alert.updated', payload: {} }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces unknown alert event names and malformed alert records into one repair', async () => {
+    vi.useFakeTimers()
+    let streamHandlers
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => {
+      streamHandlers.onEvent({
+        type: 'alert.future',
+        payload: { alert: alertAtRevision('1') },
+      })
+      streamHandlers.onEvent({
+        type: 'alert.updated',
+        payload: { alert: { revision: '1', status: 'Active' } },
+      })
+      streamHandlers.onEvent({
+        type: 'alert.updated',
+        payload: { alert: alertAtRevision('01') },
+      })
+      streamHandlers.onEvent({
+        type: 'alert.resolved',
+        payload: { alert: alertAtRevision('1', { status: 'Active' }) },
+      })
+    })
+
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the post-snapshot watermark before deciding whether an in-flight delta needs another reload', async () => {
+    vi.useFakeTimers()
+    const reconnectRequest = deferred()
+    let streamHandlers
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('10')], '10'))
+      .mockReturnValueOnce(reconnectRequest.promise)
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5000)
+    act(() => streamHandlers.onOpen({ isReconnect: true, isRetry: false }))
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+
+    act(() => streamHandlers.onEvent({
+      type: 'alert.updated',
+      payload: { alert: alertAtRevision('12', { title: 'Revision 12' }) },
+    }))
+    await act(async () => {
+      reconnectRequest.resolve(alertSnapshot([alertAtRevision('11')], '11'))
+      await reconnectRequest.promise
+    })
+
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+    expect(screen.getByText('Revision 12')).toBeInTheDocument()
+  })
+
+  it('keeps a snapshot on a buffered revision gap and schedules exactly one trailing repair', async () => {
+    vi.useFakeTimers()
+    const reconnectRequest = deferred()
+    let streamHandlers
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('10', { title: 'Revision 10' })], '10'))
+      .mockReturnValueOnce(reconnectRequest.promise)
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('12', { title: 'Revision 12' })], '12'))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5000)
+    act(() => streamHandlers.onOpen({ isReconnect: true, isRetry: false }))
+    act(() => streamHandlers.onEvent({
+      type: 'alert.updated',
+      payload: { alert: alertAtRevision('12', { title: 'Revision 12' }) },
+    }))
+
+    await act(async () => {
+      reconnectRequest.resolve(alertSnapshot([alertAtRevision('10', { title: 'Revision 10' })], '10'))
+      await reconnectRequest.promise
+    })
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+    expect(screen.getByText('Revision 10')).toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getAlerts).toHaveBeenCalledTimes(3)
+    expect(screen.getByText('Revision 12')).toBeInTheDocument()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getAlerts).toHaveBeenCalledTimes(3)
+  })
+
+  it('never lets a stale snapshot roll back newer live state and schedules one repair', async () => {
+    vi.useFakeTimers()
+    const staleRequest = deferred()
+    let streamHandlers
+    const revision10 = alertAtRevision('10', { title: 'Revision 10' })
+    const revision12 = alertAtRevision('12', { title: 'Revision 12' })
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([revision10], '10'))
+      .mockReturnValueOnce(staleRequest.promise)
+      .mockResolvedValueOnce(alertSnapshot([revision12], '12'))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => {
+      streamHandlers.onEvent({ type: 'alert.updated', payload: { alert: alertAtRevision('11', { title: 'Revision 11' }) } })
+      streamHandlers.onEvent({ type: 'alert.updated', payload: { alert: revision12 } })
+    })
+    await vi.advanceTimersByTimeAsync(5000)
+    act(() => streamHandlers.onOpen({ isReconnect: true, isRetry: false }))
+
+    await act(async () => {
+      staleRequest.resolve(alertSnapshot([revision10], '10'))
+      await staleRequest.promise
+    })
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+    expect(screen.getByText('Revision 12')).toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getAlerts).toHaveBeenCalledTimes(3)
+    expect(screen.getByText('Revision 12')).toBeInTheDocument()
+  })
+
+  it('preserves live state when a slow snapshot exceeds the bounded delta buffer', async () => {
+    vi.useFakeTimers()
+    const slowRequest = deferred()
+    let streamHandlers
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([]))
+      .mockReturnValueOnce(slowRequest.promise)
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('257', { title: 'Revision 257' })], '257'))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5000)
+    act(() => streamHandlers.onOpen({ isReconnect: true, isRetry: false }))
+
+    act(() => {
+      for (let revision = 1; revision <= 257; revision += 1) {
+        streamHandlers.onEvent({
+          type: 'alert.updated',
+          payload: { alert: alertAtRevision(String(revision), { title: `Revision ${revision}` }) },
+        })
+      }
+    })
+    await act(async () => {
+      slowRequest.resolve(alertSnapshot([]))
+      await slowRequest.promise
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+    expect(screen.getByText('Revision 257')).toBeInTheDocument()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(getAlerts).toHaveBeenCalledTimes(3)
+    expect(screen.getByText('Revision 257')).toBeInTheDocument()
+  })
+
+  it('allows an authoritative same-revision snapshot to replace live-derived rows', async () => {
+    vi.useFakeTimers()
+    let streamHandlers
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([alertAtRevision('10')], '10'))
+      .mockResolvedValueOnce(alertSnapshot([], '12'))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => {
+      streamHandlers.onEvent({ type: 'alert.updated', payload: { alert: alertAtRevision('11') } })
+      streamHandlers.onEvent({ type: 'alert.updated', payload: { alert: alertAtRevision('12') } })
+    })
+    expect(screen.getByRole('button', { name: /open alerts, 1 active/i })).toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(5000)
+    act(() => streamHandlers.onOpen({ isReconnect: true, isRetry: false }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a malformed initial snapshot untrusted and repairs it through one coalesced reload', async () => {
+    vi.useFakeTimers()
+    getAlerts
+      .mockResolvedValueOnce({ alerts: [], snapshotRevision: '01' })
+      .mockResolvedValueOnce(alertSnapshot([]))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(screen.getByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
+  })
+
+  it('ignores a duplicate acknowledgement revision and repairs an acknowledgement gap', async () => {
+    vi.useFakeTimers()
+    const active = alertAtRevision('10')
+    const acknowledged = alertAtRevision('12', { status: 'Acknowledged' })
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([active], '10'))
+      .mockResolvedValueOnce(alertSnapshot([acknowledged], '12'))
+    acknowledgeAlert
+      .mockResolvedValueOnce({ alert: { ...active, status: 'Acknowledged' } })
+      .mockResolvedValueOnce({ alert: acknowledged })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /acknowledge/i }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(screen.getByText('Active')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /acknowledge/i }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(screen.getByText('Active')).toBeInTheDocument()
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Acknowledged')).toBeInTheDocument()
+  })
+
+  it('rejects an acknowledgement response with an invalid lifecycle status and reloads', async () => {
+    vi.useFakeTimers()
+    const active = alertAtRevision('10')
+    const acknowledged = alertAtRevision('11', { status: 'Acknowledged' })
+    getAlerts
+      .mockResolvedValueOnce(alertSnapshot([active], '10'))
+      .mockResolvedValueOnce(alertSnapshot([acknowledged], '11'))
+    acknowledgeAlert.mockResolvedValue({
+      alert: alertAtRevision('11', { status: 'Active', title: 'Invalid acknowledgement response' }),
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
+    fireEvent.click(screen.getByRole('button', { name: /acknowledge/i }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(screen.queryByText('Invalid acknowledgement response')).not.toBeInTheDocument()
+    expect(screen.getByText('Active')).toBeInTheDocument()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(screen.getByText('Acknowledged')).toBeInTheDocument()
+  })
+
+  it('clears queued reloads on unmount and ignores an old token snapshot completion', async () => {
+    vi.useFakeTimers()
+    const oldRequest = deferred()
+    const handlersByToken = new Map()
+    getAlerts
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce(alertSnapshot([]))
+    subscribeToAlerts.mockImplementation((streamToken, handlers) => {
+      handlersByToken.set(streamToken, handlers)
+      return vi.fn()
+    })
+
+    const user = { id: 'user-1', name: 'admin', role: 'Admin' }
+    function renderTree(sessionToken) {
+      return (
+        <AuthContext.Provider value={{ token: sessionToken, user, logout: vi.fn() }}>
+          <MemoryRouter initialEntries={['/dashboard']}>
+            <AdminDashboard />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      )
+    }
+
+    const view = render(renderTree('first-token'))
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => handlersByToken.get('first-token').onOpen({ isReconnect: true, isRetry: false }))
+
+    await act(async () => {
+      view.rerender(renderTree('second-token'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
+
+    await act(async () => {
+      oldRequest.resolve(alertSnapshot([alertAtRevision('1', { title: 'Old session alert' })]))
+      await oldRequest.promise
+    })
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(screen.queryByText('Old session alert')).not.toBeInTheDocument()
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    view.unmount()
+  })
+
+  it('cancels a scheduled reconnect reload when the dashboard unmounts', async () => {
+    vi.useFakeTimers()
+    let streamHandlers
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+    subscribeToAlerts.mockImplementationOnce((token, handlers) => {
+      streamHandlers = handlers
+      return vi.fn()
+    })
+
+    const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await vi.advanceTimersByTimeAsync(0)
+    act(() => streamHandlers.onOpen({ isReconnect: true, isRetry: false }))
+    view.unmount()
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(getAlerts).toHaveBeenCalledTimes(1)
+  })
+
   it('ignores stream callbacks from the previous token session', async () => {
     const handlersByToken = new Map()
     getAlerts
-      .mockResolvedValueOnce({ alerts: [activeAlert()] })
-      .mockResolvedValueOnce({ alerts: [] })
+      .mockResolvedValueOnce(alertSnapshot([activeAlert()]))
+      .mockResolvedValueOnce(alertSnapshot([], '1'))
     subscribeToAlerts.mockImplementation((streamToken, handlers) => {
       handlersByToken.set(streamToken, handlers)
       return vi.fn()
@@ -306,6 +756,7 @@ describe('AdminDashboard alerts', () => {
 
     act(() => {
       handlersByToken.get('first-token').onEvent({
+        type: 'alert.created',
         payload: { alert: { ...activeAlert(), id: 'late-alert', title: 'Late prior-session alert' } },
       })
       handlersByToken.get('first-token').onFallback()
@@ -325,13 +776,14 @@ describe('AdminDashboard alerts', () => {
       },
     }
 
-    getAlerts.mockResolvedValue({ alerts: [recoveredAlert] })
+    getAlerts.mockResolvedValue(alertSnapshot([recoveredAlert]))
     acknowledgeAlert.mockResolvedValue({
       alert: {
         ...recoveredAlert,
         status: 'Resolved',
         acknowledgedAt: '2026-06-11T00:03:00.000Z',
         resolvedAt: '2026-06-11T00:03:00.000Z',
+        revision: '2',
       },
     })
 
@@ -353,7 +805,7 @@ describe('AdminDashboard alerts', () => {
   it('closes the alerts dialog with Escape and returns focus to the bell', async () => {
     const user = userEvent.setup()
 
-    getAlerts.mockResolvedValue({ alerts: [activeAlert()] })
+    getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
@@ -371,7 +823,7 @@ describe('AdminDashboard alerts', () => {
   it('closes alerts before opening the mobile navigation drawer', async () => {
     const user = userEvent.setup()
 
-    getAlerts.mockResolvedValue({ alerts: [activeAlert()] })
+    getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 

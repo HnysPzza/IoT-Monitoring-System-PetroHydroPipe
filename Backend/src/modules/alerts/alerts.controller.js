@@ -3,8 +3,8 @@ const { openSseStream } = require('../../shared/sse/openSseStream')
 const { DASHBOARD_STREAM_ROLES } = require('../../shared/sse/streamPolicies')
 
 async function listAlerts(req, res) {
-  const alerts = await alertsService.listAlerts()
-  res.json({ alerts })
+  const snapshot = await alertsService.listAlerts()
+  res.json(snapshot)
 }
 
 async function acknowledgeAlert(req, res) {

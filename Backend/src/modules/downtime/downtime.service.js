@@ -1,6 +1,7 @@
 const { EventEmitter } = require('node:events')
 const { getSupabaseClient } = require('../../database/client')
 const { formatBusinessTime, getBusinessDayRange } = require('../../shared/businessTime')
+const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
 
 const LOSS_PER_DOWNTIME_MINUTE = 2.3
@@ -9,7 +10,22 @@ const downtimeEvents = new EventEmitter()
 downtimeEvents.setMaxListeners(100)
 
 function publishDowntimeEvent(type, downtime) {
-  downtimeEvents.emit('downtime', { type, downtime })
+  const event = { type, downtime }
+  let published = true
+
+  downtimeEvents.rawListeners('downtime').forEach((listener) => {
+    try {
+      listener.call(downtimeEvents, event)
+    } catch {
+      published = false
+      logger.error('DOWNTIME_SSE_PUBLISH_FAILED', {
+        downtimeId: downtime?.id || null,
+        type,
+      })
+    }
+  })
+
+  return published
 }
 
 function subscribeToDowntimeEvents(listener) {

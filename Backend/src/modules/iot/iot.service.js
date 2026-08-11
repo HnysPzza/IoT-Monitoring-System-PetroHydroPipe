@@ -6,17 +6,11 @@ const { recordAuditLog } = require('../audit/audit.service')
 const alertsService = require('../alerts/alerts.service')
 const downtimeService = require('../downtime/downtime.service')
 
-const AUDITABLE_SENSOR_EVENT_TYPES = new Set(['downtime', 'fault', 'recovered'])
-
 function createIotError(status, code, message) {
   const error = new Error(message)
   error.status = status
   error.code = code
   return error
-}
-
-function shouldRecordSensorEventAudit(eventType) {
-  return AUDITABLE_SENSOR_EVENT_TYPES.has(eventType)
 }
 
 function getMachineRecord(sensorRecord) {
@@ -165,82 +159,56 @@ async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
     throw createIotError(500, 'SENSOR_EVENT_PROCESSING_FAILED', 'Unable to process sensor event.')
   }
 
+  if (!data) {
+    throw createIotError(500, 'SENSOR_EVENT_PROCESSING_FAILED', 'Unable to process sensor event.')
+  }
+
   return data
 }
 
-async function syncAlertState({ sensor, machine, eventRecord, payload, recordedAt }) {
-  try {
-    if (payload.eventType === 'downtime' || payload.eventType === 'fault') {
-      await alertsService.createOrUpdateSensorAlert({
-        sensor,
-        machine,
-        eventRecord,
-        eventType: payload.eventType,
-        signal: payload.signal,
-        recordedAt,
-      })
-      return
-    }
-
-    if (payload.eventType === 'pulse' || payload.eventType === 'recovered') {
-      await alertsService.resolveAlertForSource({
-        sourceType: 'sensor',
-        sourceId: sensor.id,
-        metadata: {
-          sensorCode: sensor.sensor_code,
-          machineCode: machine.machine_code,
-          eventId: eventRecord.id,
-          eventType: payload.eventType,
-          signal: payload.signal,
-          recordedAt,
-        },
-      })
-    }
-  } catch (error) {
-    logger.warn('Unable to sync alert state for sensor event.', {
-      sensorCode: sensor.sensor_code,
-      eventType: payload.eventType,
-      eventId: payload.eventId,
-      error: error.message,
-    })
-  }
-}
-
-async function recordStateTransitionAudits({ sensor, machine, eventRecord, payload, processing }) {
-  if (processing.previous_machine_status !== processing.new_machine_status) {
-    await recordAuditLog({
-      action: 'IOT_MACHINE_STATUS_UPDATED',
-      entityType: 'machine',
-      entityId: machine.id,
-      metadata: {
-        machineCode: machine.machine_code,
-        machineName: machine.name,
-        previousStatus: processing.previous_machine_status,
-        newStatus: processing.new_machine_status,
-        source: 'esp32_event',
-      },
-    })
-  }
-
+function publishCommittedTransitions({ sensor, machine, processing }) {
   if (processing.downtime_action) {
-    await recordAuditLog({
-      action: processing.downtime_action === 'created' ? 'DOWNTIME_CREATED' : 'DOWNTIME_AUTO_RESOLVED',
-      entityType: 'downtime',
-      entityId: processing.downtime_id,
-      metadata: {
-        sensorCode: sensor.sensor_code,
-        machineName: machine.name,
-        eventId: eventRecord.id,
-        deviceEventId: payload.eventId,
-        eventType: payload.eventType,
-        startedAt: processing.downtime_started_at,
-        endedAt: processing.downtime_ended_at,
-        durationMinutes: processing.downtime_duration_seconds == null
-          ? null
-          : Math.round(processing.downtime_duration_seconds / 60),
-        cause: processing.downtime_cause,
-        status: processing.downtime_action === 'created' ? 'Open' : 'Resolved',
-      },
+    if (!['created', 'resolved'].includes(processing.downtime_action) || !processing.downtime_id) {
+      logger.error('DOWNTIME_SSE_TRANSITION_INVALID', {
+        downtimeId: processing.downtime_id || null,
+        action: processing.downtime_action,
+      })
+    } else {
+      try {
+        downtimeService.publishDowntimeEvent(
+          processing.downtime_action === 'created' ? 'downtime.created' : 'downtime.resolved',
+          {
+            id: processing.downtime_id,
+            status: processing.downtime_action === 'created' ? 'Open' : 'Resolved',
+            sensorCode: sensor.sensor_code,
+            machineCode: machine.machine_code,
+          },
+        )
+      } catch {
+        logger.error('DOWNTIME_SSE_PUBLISH_FAILED', {
+          downtimeId: processing.downtime_id,
+          action: processing.downtime_action,
+        })
+      }
+    }
+  }
+
+  if (Boolean(processing.alert_action) !== Boolean(processing.alert_record)) {
+    logger.error('ALERT_SSE_TRANSITION_INVALID', {
+      alertId: processing.alert_record?.id || null,
+      action: processing.alert_action || null,
+    })
+    return
+  }
+
+  if (!processing.alert_action) return
+
+  try {
+    alertsService.publishAlertAction(processing.alert_action, processing.alert_record)
+  } catch {
+    logger.error('ALERT_SSE_PUBLISH_FAILED', {
+      alertId: processing.alert_record.id || null,
+      action: processing.alert_action,
     })
   }
 }
@@ -263,39 +231,7 @@ async function createSensorEvent({ sensor, payload }) {
   }
 
   if (processing.state_applied) {
-    if (processing.downtime_action) {
-      downtimeService.publishDowntimeEvent(
-        processing.downtime_action === 'created' ? 'downtime.created' : 'downtime.resolved',
-        {
-          id: processing.downtime_id,
-          status: processing.downtime_action === 'created' ? 'Open' : 'Resolved',
-          sensorCode: sensor.sensor_code,
-          machineCode: machine.machine_code,
-        },
-      )
-    }
-
-    await syncAlertState({ sensor, machine, eventRecord, payload, recordedAt })
-    await recordStateTransitionAudits({ sensor, machine, eventRecord, payload, processing })
-  }
-
-  if (!processing.duplicate && shouldRecordSensorEventAudit(payload.eventType)) {
-    await recordAuditLog({
-      action: 'IOT_EVENT_RECEIVED',
-      entityType: 'sensor_event',
-      entityId: eventRecord.id,
-      metadata: {
-        deviceId: sensor.esp32_device_id,
-        sensorCode: sensor.sensor_code,
-        machineCode: machine.machine_code,
-        deviceEventId: payload.eventId,
-        eventType: payload.eventType,
-        signal: payload.signal,
-        recordedAt,
-        stale: processing.stale,
-        stateApplied: processing.state_applied,
-      },
-    })
+    publishCommittedTransitions({ sensor, machine, processing })
   }
 
   return toEventResponse(eventRecord, sensor, processing)
@@ -375,5 +311,4 @@ module.exports = {
   authenticateDevice,
   createSensorEvent,
   getLiveFeed,
-  shouldRecordSensorEventAudit,
 }

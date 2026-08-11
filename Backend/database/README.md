@@ -13,6 +13,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `migrations/004_supabase_security_cleanup.sql` fixes Supabase advisor warnings for function permissions/search path and adds a downtime sensor index.
 - `migrations/005_create_alerts.sql` adds persistent alert acknowledgement records for realtime dashboard notifications.
 - `migrations/006_downtime_open_record_unique_index.sql` adds idempotent event IDs, atomic IoT/downtime RPCs, and downtime state constraints.
+- `migrations/007_alert_sync_integrity.sql` makes IoT state, downtime, alert, and transition audits atomic; adds recorded-time ordering, transactional alert revisions, acknowledgement, and one-statement alert snapshots.
 
 ## Tables
 
@@ -25,6 +26,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `production_counts`: summarized production counts for dashboard/reporting windows.
 - `audit_logs`: user/system activity history for accountability.
 - `alerts`: active, acknowledged, and resolved operational alerts.
+- `alert_revision_state`: service-role-only singleton counter for transactional global alert revisions.
 
 ## How To Run In Supabase
 
@@ -47,6 +49,41 @@ npm run db:verify:downtime
 ```
 
 Deploy the backend only after verification passes. To roll back the application, deploy the previous backend version first. The added column, constraints, indexes, and functions can remain in place because they are backward-compatible with earlier read paths; do not drop `device_event_id` after new events have been ingested.
+
+### Migration 007 deployment and verification
+
+Apply migrations in numeric order. Migration `007` must be deployed together with the backend and frontend versions that use `ingest_iot_sensor_event`, `acknowledge_alert`, `get_alerts_snapshot`, and revisioned alert responses. It moves alert and transition-audit writes into the ingestion RPC, so the previous backend is unsafe against the migrated contract because it can run obsolete secondary alert/audit logic.
+
+Use this rollout order in a tested maintenance window:
+
+1. Quiesce IoT ingestion and alert acknowledgement writers so no transition enters during the contract change.
+2. Take a database backup and verify the migration and restore plan on a disposable staging copy.
+3. Apply migration `007`.
+4. Deploy the revision-aware backend.
+5. Verify backend health, ingestion, snapshot, acknowledgement, and post-commit publication contracts.
+6. Deploy and verify the revision-aware frontend.
+7. Resume IoT ingestion and alert acknowledgement writers.
+
+Migration `007` has no supplied down migration. The pre-`007` backend is incompatible with the new ownership because it can repeat alert and audit work. After real writes occur, rollback requires a staging-tested database restore plus data-reconciliation plan; otherwise roll forward. Do not deploy the previous backend alone after `007`.
+
+Migration `007` adds:
+
+- `sensors.last_applied_recorded_at`, backfilled from the latest stored sensor event.
+- `alerts.revision` and the locked `alert_revision_state` singleton. Revisions are transactional and globally ordered; they are not sequence values.
+- Atomic, service-role-only `ingest_iot_sensor_event` and `acknowledge_alert` RPCs.
+- Service-role-only `get_alerts_snapshot`, which returns alert rows and SQL field `snapshot_revision` from one statement with revisions cast to decimal strings. Express maps it to API property `snapshotRevision`.
+- RLS and least-privilege grants for the revision counter and RPC boundary.
+
+Run the local database and backend gates from `Backend` before staging:
+
+```bash
+node --test tests/alert-sync.migration.pglite.test.js tests/downtime.migration.pglite.test.js
+npm test
+```
+
+PGlite verifies SQL execution, rollback, lifecycle, stale/duplicate handling, revision continuity, and privileges. Its `Promise.all` calls on one in-process database are serialized; they are not proof of real multi-connection PostgreSQL locking or deadlock behavior.
+
+Before deployment, use a disposable real PostgreSQL staging database to run true multi-connection repeated-fault and acknowledgement-versus-recovery races. Verify one unresolved alert, lifecycle correctness, contiguous committed revisions, and no deadlock. This is a mandatory pre-deployment gate. Do not run concurrency attacks against the configured production Supabase project.
 
 ## ESP32 Device Keys
 
@@ -116,7 +153,7 @@ The simulator uses the real ingestion endpoint:
 POST /api/iot/events
 ```
 
-Every event body includes a client-generated UUID `eventId`. Retrying the same `eventId` returns the stored event without replaying sensor, machine, alert, or downtime transitions. Older out-of-order events are retained in history with `stateApplied: false` and cannot overwrite current state.
+Every event body includes a client-generated UUID `eventId`. Retrying the same `eventId` returns the stored event without replaying sensor, machine, alert, or downtime transitions. Reusing it with conflicting content is rejected. Events whose NTP-synchronized `recordedAt` is stale or equal to the sensor watermark are retained in history with `stateApplied: false` and cannot overwrite current state. This timestamp watermark is interim; future firmware should add a per-sensor monotonic counter persisted across reboot, separate from the UUID event ID.
 
 It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one sensor per batch to send a downtime/fault event. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
 

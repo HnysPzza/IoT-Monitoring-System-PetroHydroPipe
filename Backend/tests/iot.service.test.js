@@ -49,6 +49,11 @@ function createProcessingResult(eventType, signal, overrides = {}) {
     : eventType === 'recovered'
       ? 'resolved'
       : null
+  const alertAction = eventType === 'downtime' || eventType === 'fault'
+    ? 'created'
+    : eventType === 'recovered'
+      ? 'resolved'
+      : null
 
   return {
     sensor_event_id: `event-${eventType}`,
@@ -67,11 +72,19 @@ function createProcessingResult(eventType, signal, overrides = {}) {
     downtime_ended_at: downtimeAction === 'resolved' ? '2026-06-11T00:10:00.000Z' : null,
     downtime_duration_seconds: downtimeAction === 'resolved' ? 600 : null,
     downtime_cause: downtimeAction ? 'Corrective Maintenance' : null,
+    alert_action: alertAction,
+    alert_record: alertAction
+      ? {
+        id: 'alert-1',
+        status: alertAction === 'resolved' ? 'Resolved' : 'Active',
+        revision: alertAction === 'resolved' ? '2' : '1',
+      }
+      : null,
     ...overrides,
   }
 }
 
-function createFakeSupabase({ sensorRecord, processingResult, rpcError, rpcCalls }) {
+function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls }) {
   return {
     from(tableName) {
       assert.equal(tableName, 'sensors')
@@ -87,7 +100,7 @@ function createFakeSupabase({ sensorRecord, processingResult, rpcError, rpcCalls
       rpcCalls.push({ functionName, args })
       return {
         async single() {
-          return { data: rpcError ? null : processingResult, error: rpcError || null }
+          return { data: rpcError || rpcDataMissing ? null : processingResult, error: rpcError || null }
         },
       }
     },
@@ -99,17 +112,26 @@ function loadIotService({
   signal,
   auditLogs = [],
   processingOverrides = {},
+  rpcDataMissing = false,
   rpcError = null,
-  alertCalls = [],
+  alertEvents = [],
   downtimeEvents = [],
   rpcCalls = [],
   sensorOverrides = {},
-  alertError = null,
+  alertPublishError = null,
+  downtimePublishError = null,
+  logs = [],
 } = {}) {
   clearSourceCache()
   const sensorRecord = { ...createSensorRecord(), ...sensorOverrides }
   const processingResult = createProcessingResult(eventType, signal, processingOverrides)
-  const fakeSupabase = createFakeSupabase({ sensorRecord, processingResult, rpcError, rpcCalls })
+  const fakeSupabase = createFakeSupabase({
+    sensorRecord,
+    processingResult,
+    rpcDataMissing,
+    rpcError,
+    rpcCalls,
+  })
 
   mockModule('src/database/client.js', {
     getSupabaseClient: () => fakeSupabase,
@@ -118,17 +140,23 @@ function loadIotService({
     recordAuditLog: async (entry) => auditLogs.push(entry),
   })
   mockModule('src/modules/alerts/alerts.service.js', {
-    createOrUpdateSensorAlert: async (entry) => {
-      if (alertError) throw alertError
-      alertCalls.push({ action: 'open', entry })
-    },
-    resolveAlertForSource: async (entry) => {
-      if (alertError) throw alertError
-      alertCalls.push({ action: 'resolve', entry })
+    publishAlertAction: (action, alert) => {
+      if (alertPublishError) throw alertPublishError
+      alertEvents.push({ action, alert })
+      return true
     },
   })
   mockModule('src/modules/downtime/downtime.service.js', {
-    publishDowntimeEvent: (type, downtime) => downtimeEvents.push({ type, downtime }),
+    publishDowntimeEvent: (type, downtime) => {
+      if (downtimePublishError) throw downtimePublishError
+      downtimeEvents.push({ type, downtime })
+      return true
+    },
+  })
+  mockModule('src/utils/logger.js', {
+    error: (code, metadata) => logs.push({ code, metadata }),
+    info: () => {},
+    warn: () => {},
   })
 
   return require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
@@ -136,10 +164,20 @@ function loadIotService({
 
 async function createTestEvent(eventType, signal, options = {}) {
   const auditLogs = []
-  const alertCalls = []
+  const alertEvents = []
   const downtimeEvents = []
   const rpcCalls = []
-  const iotService = loadIotService({ eventType, signal, auditLogs, alertCalls, downtimeEvents, rpcCalls, ...options })
+  const logs = []
+  const iotService = loadIotService({
+    eventType,
+    signal,
+    auditLogs,
+    alertEvents,
+    downtimeEvents,
+    rpcCalls,
+    logs,
+    ...options,
+  })
   const event = await iotService.createSensorEvent({
     sensor: { ...createSensorRecord(), ...(options.sensorOverrides || {}) },
     payload: {
@@ -151,28 +189,34 @@ async function createTestEvent(eventType, signal, options = {}) {
     },
   })
 
-  return { alertCalls, auditLogs, downtimeEvents, event, rpcCalls }
+  return { alertEvents, auditLogs, downtimeEvents, event, logs, rpcCalls }
 }
 
-test('pulse and idle events are processed atomically without noisy event audits', async () => {
+test('pulse and idle events rely on the atomic RPC without secondary writes', async () => {
   const pulse = await createTestEvent('pulse', 'active')
   const idle = await createTestEvent('idle', 'idle')
 
   assert.equal(pulse.event.stateApplied, true)
   assert.equal(pulse.auditLogs.some((entry) => entry.action === 'IOT_EVENT_RECEIVED'), false)
   assert.equal(idle.auditLogs.some((entry) => entry.action === 'IOT_EVENT_RECEIVED'), false)
+  assert.equal(pulse.alertEvents.length, 0)
+  assert.equal(idle.downtimeEvents.length, 0)
   assert.equal(pulse.rpcCalls[0].functionName, 'ingest_iot_sensor_event')
   assert.equal(pulse.rpcCalls[0].args.p_device_event_id, EVENT_ID)
 })
 
-test('important events record machine, downtime, and receipt audits from the transaction result', async () => {
+test('important events publish committed downtime and alert transitions from one RPC result', async () => {
   const result = await createTestEvent('downtime', 'no_pulse')
 
-  assert.deepEqual(
-    result.auditLogs.map((entry) => entry.action),
-    ['IOT_MACHINE_STATUS_UPDATED', 'DOWNTIME_CREATED', 'IOT_EVENT_RECEIVED'],
-  )
-  assert.equal(result.alertCalls[0].action, 'open')
+  assert.equal(result.auditLogs.length, 0)
+  assert.deepEqual(result.alertEvents, [{
+    action: 'created',
+    alert: {
+      id: 'alert-1',
+      status: 'Active',
+      revision: '1',
+    },
+  }])
   assert.deepEqual(result.downtimeEvents, [{
     type: 'downtime.created',
     downtime: {
@@ -195,11 +239,11 @@ test('duplicate and stale events never replay state transitions', async () => {
 
   assert.equal(duplicate.event.duplicate, true)
   assert.equal(duplicate.auditLogs.length, 0)
-  assert.equal(duplicate.alertCalls.length, 0)
+  assert.equal(duplicate.alertEvents.length, 0)
   assert.equal(duplicate.downtimeEvents.length, 0)
   assert.equal(stale.event.stale, true)
-  assert.equal(stale.auditLogs[0].metadata.stateApplied, false)
-  assert.equal(stale.alertCalls.length, 0)
+  assert.equal(stale.auditLogs.length, 0)
+  assert.equal(stale.alertEvents.length, 0)
   assert.equal(stale.downtimeEvents.length, 0)
 })
 
@@ -208,6 +252,28 @@ test('transaction failure is returned to the device instead of being swallowed',
     eventType: 'downtime',
     signal: 'no_pulse',
     rpcError: { code: 'XX000', message: 'database unavailable' },
+  })
+
+  await assert.rejects(
+    () => iotService.createSensorEvent({
+      sensor: createSensorRecord(),
+      payload: {
+        eventId: EVENT_ID,
+        eventType: 'downtime',
+        signal: 'no_pulse',
+        recordedAt: '2026-06-11T00:00:00.000Z',
+        metadata: {},
+      },
+    }),
+    { code: 'SENSOR_EVENT_PROCESSING_FAILED', status: 500 },
+  )
+})
+
+test('an empty RPC result fails with a controlled processing error', async () => {
+  const iotService = loadIotService({
+    eventType: 'downtime',
+    signal: 'no_pulse',
+    rpcDataMissing: true,
   })
 
   await assert.rejects(
@@ -279,13 +345,20 @@ test('device authentication rejects missing keys, wrong keys, and missing machin
   )
 })
 
-test('alert synchronization failure does not roll back a committed downtime transition', async () => {
-  const result = await createTestEvent('downtime', 'no_pulse', {
-    alertError: new Error('alert store unavailable'),
+test('post-commit downtime and alert publication failures are isolated in both directions', async () => {
+  const downtimeFailure = await createTestEvent('downtime', 'no_pulse', {
+    downtimePublishError: new Error('downtime listener unavailable'),
   })
+  assert.equal(downtimeFailure.event.stateApplied, true)
+  assert.equal(downtimeFailure.alertEvents.length, 1)
+  assert.equal(downtimeFailure.logs[0].code, 'DOWNTIME_SSE_PUBLISH_FAILED')
 
-  assert.equal(result.event.stateApplied, true)
-  assert.equal(result.auditLogs.some((entry) => entry.action === 'DOWNTIME_CREATED'), true)
+  const alertFailure = await createTestEvent('downtime', 'no_pulse', {
+    alertPublishError: new Error('alert listener unavailable'),
+  })
+  assert.equal(alertFailure.event.stateApplied, true)
+  assert.equal(alertFailure.downtimeEvents.length, 1)
+  assert.equal(alertFailure.logs[0].code, 'ALERT_SSE_PUBLISH_FAILED')
 })
 
 test('live feed returns machine state and the latest event for each sensor', async () => {
@@ -328,8 +401,7 @@ test('live feed returns machine state and the latest event for each sensor', asy
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
   mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
   mockModule('src/modules/alerts/alerts.service.js', {
-    createOrUpdateSensorAlert: async () => null,
-    resolveAlertForSource: async () => null,
+    publishAlertAction: () => true,
   })
   const service = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
 

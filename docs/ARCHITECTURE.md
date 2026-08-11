@@ -52,13 +52,13 @@ Main responsibilities:
 
 ## Downtime and Realtime Model
 
-Current downtime flow:
+Current IoT transition flow:
 
 ```text
-ESP32 event -> Express IoT API -> PostgreSQL downtime transaction -> Express downtime SSE -> React dashboard
+ESP32 event -> Express IoT API -> PostgreSQL atomic transition -> post-commit SSE -> React dashboard
 ```
 
-The backend receives ESP32 sensor events through the IoT API. The event is processed by the database function `ingest_iot_sensor_event`, which records the sensor event, updates the sensor and machine state, creates downtime when a downtime/fault event starts, and resolves downtime when a pulse/recovered event arrives.
+The backend receives ESP32 sensor events through the IoT API. The database function `ingest_iot_sensor_event` performs one ACID transaction for the raw sensor event, the applied sensor and machine state, downtime, alert state, and transition audit rows. If any required write fails, none of those operational changes commit. Exact duplicate event IDs are idempotent. Events with a `recordedAt` timestamp that is stale or equal to the locked sensor watermark remain in `sensor_events`, but do not change state, downtime, alerts, revisions, or transition audits.
 
 The downtime list is loaded through the backend API:
 
@@ -87,6 +87,23 @@ Current reliability layer:
 - Pagination is handled by the backend, not only by frontend state.
 - The current design is acceptable for a single persistent Express backend process.
 
+### Alert integrity and reconnect repair
+
+Alert lifecycle is intentionally limited to `Active`, `Acknowledged`, and `Resolved`:
+
+- A new fault creates an `Active` alert. A repeated fault refreshes the one unresolved alert, preserves `Active` or `Acknowledged`, and clears recovery metadata.
+- Recovery while `Active` keeps the alert `Active` and records `metadata.recoveryPending` so an operator must still acknowledge it.
+- Recovery while `Acknowledged` resolves the alert.
+- Acknowledgement during an ongoing fault produces `Acknowledged`; acknowledgement after recovery produces `Resolved`.
+
+Every meaningful alert insert or update receives a global revision from a locked singleton counter row inside the same transaction. This is a transactional commit-order mechanism, not a PostgreSQL sequence or a per-alert counter. No-op acknowledgements do not consume revisions. `get_alerts_snapshot` returns alert rows plus SQL field `snapshot_revision` from one database statement; Express maps that field to API property `snapshotRevision`. All `BIGINT` revisions cross the JavaScript boundary as canonical decimal strings.
+
+Downtime and alert SSE frames are published only after the database transaction commits. Publication is process-local, observable, and best-effort: one failed listener is logged and isolated, and can never roll back the committed IoT response. There is no outbox, queue, or worker in the current design.
+
+The alerts dashboard treats REST as the repair source and SSE as the low-latency signal. Mount, manual retry, fallback polling, and every successful stream open use one snapshot coordinator with at most one request in flight, a five-second minimum between starts, and at most one queued trailing request. The stream `onOpen` payload reports `isReconnect: true` only after a prior successful connection and `isRetry: true` when a successful open follows failed attempts. Even the first successful open requests one bounded repair because the client has no server-provided open watermark.
+
+Snapshot and event revisions are parsed with `BigInt` only after strict decimal-string validation. Events at or below the applied watermark are ignored. Buffered events newer than a snapshot are sorted and applied only when the complete chain is contiguous; malformed data, a revision gap, buffer overflow, or a snapshot older than current live state preserves the newest trusted state and schedules a coalesced REST repair.
+
 Important deployment constraint:
 
 The SSE publishers and connection registry are process-local. Events and connection counts exist only in the Node process that handled them. This is fine for local development, capstone demonstration, and a single backend server. It is not fully realtime-safe or globally rate-limited for serverless, autoscaled, or load-balanced deployments with multiple backend instances.
@@ -97,10 +114,10 @@ Example limitation:
 IoT event hits Backend Process A
 Browser SSE connection is attached to Backend Process B
 Process B does not receive Process A's in-memory EventEmitter event
-Frontend eventually catches up through polling
+Frontend catches up only after a successful stream open, a manual reload, or degraded-mode polling
 ```
 
-This means the current architecture provides practical realtime behavior for the current setup, with polling as the safety net, but it does not provide strict cross-instance realtime delivery.
+This means the current architecture provides practical realtime behavior only for the supported single-process setup. There is no background alert poll while a stream remains healthy. In an unsupported multi-instance deployment, a stable stream on Process B can remain stale indefinitely after a write on Process A until a successful stream open, manual reload, or degraded fallback poll triggers REST repair.
 
 ## Database
 
@@ -116,6 +133,8 @@ Main tables:
 - `downtime_events`
 - `production_counts`
 - `audit_logs`
+- `alerts`
+- `alert_revision_state`
 
 ## Auth Model
 
@@ -162,13 +181,13 @@ Production targets currently come from fixed backend values for day, week, and m
 
 ## Future Work
 
-For the current capstone/local/single-server setup, keep the existing SSE plus polling fallback design. It is cheap, simple, and avoids extra infrastructure.
+For the current capstone/local/single-server setup, keep the existing SSE plus revisioned REST repair design. It is simple and avoids extra infrastructure.
 
 Recommended near-term improvement:
 
 - Keep SSE for instant updates.
 - Keep fallback polling after repeated SSE disconnects.
-- Optionally add low-frequency background polling, such as every 30 to 60 seconds, even while SSE is healthy.
+- Keep the bounded snapshot repair on every successful stream open.
 - Use faster polling, such as every 10 seconds, only when SSE fallback mode starts.
 
 If the backend is later deployed as multiple Node processes, containers, replicas, serverless functions, or behind a load balancer, replace the process-local realtime publisher with a shared event channel.
@@ -190,7 +209,7 @@ All backend instances receive the event
 Browser SSE connection receives the update from whichever instance it is connected to
 ```
 
-Until that shared channel exists, the deployment assumption is: one persistent Express backend instance is the supported realtime architecture, and polling is the recovery path for missed SSE events.
+Until that shared channel exists, one persistent Express backend instance is the supported realtime architecture. Successful-open snapshot repair and degraded-mode polling can recover some missed events, but they are not a cross-instance delivery guarantee.
 
 ### Deferred Dashboard Context Strip
 

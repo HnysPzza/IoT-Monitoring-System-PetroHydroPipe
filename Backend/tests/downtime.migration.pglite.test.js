@@ -285,6 +285,8 @@ test('the complete current schema executes in a clean PostgreSQL database', asyn
       from information_schema.routines
       where routine_schema = 'public'
         and routine_name in (
+          'acknowledge_alert',
+          'get_alerts_snapshot',
           'ingest_iot_sensor_event',
           'get_downtime_summary',
           'update_downtime_record'
@@ -294,7 +296,13 @@ test('the complete current schema executes in a clean PostgreSQL database', asyn
 
     assert.deepEqual(
       functions.rows.map((row) => row.routine_name),
-      ['get_downtime_summary', 'ingest_iot_sensor_event', 'update_downtime_record'],
+      [
+        'acknowledge_alert',
+        'get_alerts_snapshot',
+        'get_downtime_summary',
+        'ingest_iot_sensor_event',
+        'update_downtime_record',
+      ],
     )
   } finally {
     await db.close()
