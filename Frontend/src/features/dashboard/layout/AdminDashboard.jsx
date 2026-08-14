@@ -14,6 +14,7 @@ import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alerts
 
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000
 const MAX_BUFFERED_ALERT_DELTAS = 256
+const SIDEBAR_SCROLL_ACTIVE_MS = 500
 const ALERT_STREAM_EVENT_TYPES = new Set([
   'alert.acknowledged',
   'alert.created',
@@ -89,10 +90,12 @@ export default function AdminDashboard() {
   const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
+  const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
+  const sidebarScrollTimerRef = useRef(null)
   const retryAlertsRef = useRef(() => {})
   const sessionTokenRef = useRef(null)
   const acknowledgementIdRef = useRef(0)
@@ -187,6 +190,13 @@ export default function AdminDashboard() {
       document.removeEventListener('keydown', handleEscape)
     }
   }, [isAlertsOpen, isDrawerOpen])
+
+  useEffect(() => () => {
+    if (sidebarScrollTimerRef.current !== null) {
+      window.clearTimeout(sidebarScrollTimerRef.current)
+      sidebarScrollTimerRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!token) return undefined
@@ -451,6 +461,19 @@ export default function AdminDashboard() {
     navigate('/login', { replace: true })
   }
 
+  function handleSidebarScroll() {
+    setIsSidebarScrolling(true)
+
+    if (sidebarScrollTimerRef.current !== null) {
+      window.clearTimeout(sidebarScrollTimerRef.current)
+    }
+
+    sidebarScrollTimerRef.current = window.setTimeout(() => {
+      sidebarScrollTimerRef.current = null
+      setIsSidebarScrolling(false)
+    }, SIDEBAR_SCROLL_ACTIVE_MS)
+  }
+
   return (
     <main className="dashboard-shell">
       <aside
@@ -487,7 +510,11 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Dashboard sections">
+        <nav
+          className={`sidebar-nav ${isSidebarScrolling ? 'is-scrolling' : ''}`}
+          aria-label="Dashboard sections"
+          onScroll={handleSidebarScroll}
+        >
           {visibleNavGroups.map((group) => (
             <div className="sidebar-nav-group" key={group.id}>
               <p className="sidebar-nav-heading">{group.label}</p>

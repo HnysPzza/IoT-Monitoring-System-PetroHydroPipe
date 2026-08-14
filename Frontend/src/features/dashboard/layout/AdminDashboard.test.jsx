@@ -69,6 +69,31 @@ describe('AdminDashboard alerts', () => {
     expect(screen.queryByText('Analyze', { selector: '.sidebar-nav-heading' })).not.toBeInTheDocument()
   })
 
+  it('keeps the sidebar scrollbar visible while navigation is being scrolled', () => {
+    vi.useFakeTimers()
+    getAlerts.mockReturnValue(new Promise(() => {}))
+
+    const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
+
+    fireEvent.scroll(sidebarNav)
+    fireEvent.scroll(sidebarNav)
+    expect(sidebarNav).toHaveClass('is-scrolling')
+
+    act(() => {
+      vi.advanceTimersByTime(499)
+    })
+    expect(sidebarNav).toHaveClass('is-scrolling')
+
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(sidebarNav).not.toHaveClass('is-scrolling')
+
+    view.unmount()
+    expect(() => fireEvent.scroll(sidebarNav)).not.toThrow()
+  })
+
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
     const user = userEvent.setup()
 

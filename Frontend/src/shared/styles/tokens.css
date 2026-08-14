@@ -693,8 +693,6 @@ button:disabled {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--card-border) transparent;
 }
 
 .sidebar-nav-group,
@@ -721,13 +719,33 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.sidebar-nav::-webkit-scrollbar {
-  width: 6px;
-}
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-nav {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
 
-.sidebar-nav::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--card-border);
+  .sidebar-nav::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar-nav::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .sidebar-nav:hover,
+  .sidebar-nav:focus-within,
+  .sidebar-nav.is-scrolling {
+    scrollbar-color: var(--card-border) transparent;
+  }
+
+  .sidebar-nav:hover::-webkit-scrollbar-thumb,
+  .sidebar-nav:focus-within::-webkit-scrollbar-thumb,
+  .sidebar-nav.is-scrolling::-webkit-scrollbar-thumb {
+    background: var(--card-border);
+  }
 }
 
 .sidebar-link {
