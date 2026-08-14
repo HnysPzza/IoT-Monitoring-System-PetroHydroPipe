@@ -1177,6 +1177,7 @@ button:disabled {
 .live-layout,
 .downtime-layout,
 .reports-layout,
+.analytics-layout,
 .machines-layout,
 .audit-layout {
   display: grid;
@@ -1186,10 +1187,194 @@ button:disabled {
 .live-layout > *,
 .downtime-layout > *,
 .reports-layout > *,
+.analytics-layout > *,
 .machines-layout > *,
 .audit-layout > *,
 .users-layout > * {
   min-width: 0;
+}
+
+/* Frontend-only Analytics workspace. Charts use the existing dashboard tokens. */
+.analytics-controls-card,
+.analytics-trend-card {
+  display: grid;
+  gap: 18px;
+}
+
+.analytics-controls-card .section-heading,
+.analytics-trend-card .section-heading {
+  margin-bottom: 0;
+}
+
+.analytics-intro-copy,
+.analytics-range-copy,
+.analytics-trend-context p,
+.analytics-trend-summary {
+  margin: 0;
+  color: var(--c-text-2);
+  line-height: 1.55;
+}
+
+.analytics-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+}
+
+.analytics-range-fieldset {
+  display: grid;
+  gap: 6px;
+  min-width: 260px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.analytics-range-fieldset legend {
+  padding: 0;
+  color: var(--c-text-2);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.analytics-range-toggle {
+  grid-template-columns: repeat(3, minmax(86px, 1fr));
+  min-width: 260px;
+}
+
+.analytics-custom-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.analytics-custom-dates .filter-field {
+  min-width: 154px;
+}
+
+.analytics-bucket-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+  min-width: 185px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  color: var(--c-text-2);
+  background: var(--panel-bg);
+  font-size: 0.74rem;
+}
+
+.analytics-bucket-summary svg {
+  grid-row: span 2;
+  color: var(--c-accent);
+}
+
+.analytics-bucket-summary strong {
+  color: var(--c-text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.analytics-refresh-button {
+  min-height: 44px;
+}
+
+.analytics-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-kpi-card {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+}
+
+.analytics-kpi-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--c-accent);
+}
+
+.analytics-kpi-heading .stat-label {
+  color: var(--c-text-2);
+}
+
+.analytics-kpi-card .stat-value {
+  color: var(--c-text);
+}
+
+.analytics-kpi-card .stat-helper {
+  color: var(--c-text-3);
+  line-height: 1.45;
+}
+
+.analytics-trend-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.analytics-trend-context .section-chip {
+  flex: 0 0 auto;
+}
+
+.analytics-metric-field {
+  min-width: 196px;
+}
+
+.analytics-trend-chart {
+  min-width: 0;
+  min-height: 300px;
+  padding: 6px 0 0;
+}
+
+.analytics-trend-summary {
+  padding: 11px 12px;
+  border-left: 3px solid var(--chart-current);
+  border-radius: 0 8px 8px 0;
+  background: var(--panel-bg-soft);
+  font-size: 0.86rem;
+}
+
+.analytics-chart-details {
+  overflow: hidden;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.analytics-chart-details summary {
+  min-height: 44px;
+  padding: 12px 14px;
+  color: var(--c-text);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.analytics-chart-details summary:focus-visible {
+  outline: 3px solid var(--c-accent);
+  outline-offset: -3px;
+}
+
+.analytics-chart-details .account-table-wrap {
+  border-top: 1px solid var(--subtle-border);
+  border-radius: 0;
+}
+
+.analytics-chart-table {
+  min-width: 420px;
 }
 
 .live-hero-card,
@@ -2839,7 +3024,8 @@ button:disabled {
 
   .live-controls-card,
   .downtime-controls-card,
-  .reports-controls {
+  .reports-controls,
+  .analytics-filter-row {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2847,9 +3033,16 @@ button:disabled {
   .live-filter-group,
   .trend-mode-toggle,
   .analytics-mode-toggle,
+  .analytics-range-fieldset,
+  .analytics-range-toggle,
   .filter-field,
   .reports-action,
+  .analytics-refresh-button,
   .audit-refresh-button {
+    width: 100%;
+  }
+
+  .analytics-custom-dates {
     width: 100%;
   }
 
@@ -2867,6 +3060,34 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .analytics-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-controls-card,
+  .analytics-trend-card {
+    gap: 16px;
+  }
+
+  .analytics-range-fieldset,
+  .analytics-range-toggle,
+  .analytics-custom-dates .filter-field,
+  .analytics-bucket-summary,
+  .analytics-metric-field {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .analytics-custom-dates {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-trend-card .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .machine-status-admin .filter-field {
     width: 100%;
     min-width: 0;

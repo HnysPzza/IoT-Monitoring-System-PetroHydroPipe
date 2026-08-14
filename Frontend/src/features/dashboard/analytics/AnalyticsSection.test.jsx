@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -8,7 +8,7 @@ const successfulSnapshot = {
   source: 'local-fixture',
   timeZone: 'Asia/Manila',
   machine: { code: 'M-01', name: 'Spiral Mill 01' },
-  range: { startDate: '2026-08-10', endDate: '2026-08-16', bucket: 'daily' },
+  range: { startDate: '2026-08-10', endDate: '2026-08-16', daysInclusive: 7, bucket: 'daily' },
   downtimeEvents: [{ id: 'downtime-1' }],
   processEvents: [{ id: 'process-1' }],
   productionRecords: [{ date: '2026-08-10', actualPieces: 118 }],
@@ -83,5 +83,54 @@ describe('AnalyticsSection local request states', () => {
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
 
     expect(await screen.findByText('No local Analytics records fall inside this preview range.')).toBeInTheDocument()
+  })
+
+  it('updates the local fixture query when the user changes its date preset', async () => {
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
+
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByText('118 pcs')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'This month' }))
+
+    expect(await screen.findByText('Showing 2026-08-01 to 2026-08-31 in Asia/Manila time.')).toBeInTheDocument()
+    expect(loadAnalytics).toHaveBeenLastCalledWith({ period: 'this-month' })
+  })
+
+  it('switches the explorer to a separate actual-pieces trend without mixing units', async () => {
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
+
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Trend metric'), 'production')
+
+    expect(screen.getByText('Actual pieces - daily buckets')).toBeInTheDocument()
+    expect(screen.getByText('118 pcs across 7 buckets.')).toBeInTheDocument()
+    expect(screen.getByText('View actual pieces trend data')).toBeInTheDocument()
+  })
+
+  it('does not let a delayed local result replace an invalid custom date state', async () => {
+    const user = userEvent.setup()
+    const deferred = createDeferred()
+    const loadAnalytics = vi.fn()
+      .mockResolvedValueOnce(successfulSnapshot)
+      .mockImplementationOnce(() => deferred.promise)
+
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(loadAnalytics).toHaveBeenCalledTimes(2)
+
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-08-15' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('The end date must be on or after the start date.')
+
+    deferred.resolve(successfulSnapshot)
+    await Promise.resolve()
+
+    expect(screen.queryByRole('heading', { name: 'Operational trend' })).not.toBeInTheDocument()
   })
 })
