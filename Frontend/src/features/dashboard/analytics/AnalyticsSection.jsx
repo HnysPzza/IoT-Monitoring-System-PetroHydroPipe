@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Boxes, CalendarDays, Clock3, Database, Gauge, RotateCw } from 'lucide-react'
 import { getAnalyticsKpis } from './analyticsPresentation.js'
 import { getAnalyticsSnapshot, resolveAnalyticsRange } from './analyticsService.js'
+import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 
 const rangePresets = [
@@ -276,6 +277,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
               metricId={trendMetric}
               onMetricChange={setTrendMetric}
             />
+            <AnalyticsOperationsDetails snapshot={snapshot} />
           </>
         )
       ) : null}

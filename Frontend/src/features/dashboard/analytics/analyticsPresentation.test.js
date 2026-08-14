@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { buildAnalyticsSnapshot } from './analyticsService.js'
 import {
   buildAnalyticsTrend,
+  getDowntimeCauseBreakdown,
   getAnalyticsKpis,
+  getProcessSensorBreakdown,
   getAnalyticsTrendSummary,
 } from './analyticsPresentation.js'
 
@@ -80,5 +82,24 @@ describe('Analytics presentation helpers', () => {
     const trend = buildAnalyticsTrend(buildAnalyticsSnapshot(), 'process-events')
 
     expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 7 buckets.')
+  })
+
+  it('groups downtime by supported cause and process records by neutral sensor code', () => {
+    const snapshot = buildAnalyticsSnapshot()
+
+    expect(getDowntimeCauseBreakdown(snapshot)).toEqual([
+      expect.objectContaining({ cause: 'Corrective Maintenance', eventCount: 1, durationMinutes: 43 }),
+      expect.objectContaining({ cause: 'Manual Cutting', eventCount: 1, durationMinutes: 31 }),
+      expect.objectContaining({ cause: 'Weld Wire Refill', eventCount: 1, durationMinutes: 26 }),
+      expect.objectContaining({ cause: 'Coil Joint', eventCount: 1, durationMinutes: 18 }),
+      expect.objectContaining({ cause: 'Flux Refill', eventCount: 1, durationMinutes: 12 }),
+    ])
+    expect(getProcessSensorBreakdown(snapshot)).toEqual([
+      { sensorCode: 'S-01', eventCount: 1 },
+      { sensorCode: 'S-02', eventCount: 1 },
+      { sensorCode: 'S-03', eventCount: 1 },
+      { sensorCode: 'S-04', eventCount: 1 },
+      { sensorCode: 'S-05', eventCount: 1 },
+    ])
   })
 })

@@ -298,3 +298,46 @@ export function getAnalyticsTrendSummary(trend) {
   const total = points.reduce((sum, point) => sum + point.value, 0)
   return `${formatAnalyticsTrendValue(total, metric)} across ${points.length} ${points.length === 1 ? 'bucket' : 'buckets'}.`
 }
+
+export function getDowntimeCauseBreakdown(snapshot) {
+  const causes = new Map()
+
+  snapshot.downtimeEvents.forEach((event) => {
+    const current = causes.get(event.cause) || {
+      cause: event.cause,
+      eventCount: 0,
+      durationMinutes: 0,
+    }
+    current.eventCount += 1
+    current.durationMinutes += Number(event.durationMinutes || 0)
+    causes.set(event.cause, current)
+  })
+
+  return [...causes.values()]
+    .sort((left, right) => right.durationMinutes - left.durationMinutes || left.cause.localeCompare(right.cause))
+}
+
+export function getProcessSensorBreakdown(snapshot) {
+  const sensors = new Map()
+
+  snapshot.processEvents.forEach((event) => {
+    const current = sensors.get(event.sensorCode) || { sensorCode: event.sensorCode, eventCount: 0 }
+    current.eventCount += 1
+    sensors.set(event.sensorCode, current)
+  })
+
+  return [...sensors.values()].sort((left, right) => left.sensorCode.localeCompare(right.sensorCode))
+}
+
+export function formatAnalyticsDateTime(value, timeZone = 'Asia/Manila') {
+  if (!value) return 'Not recorded'
+
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone,
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
