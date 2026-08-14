@@ -65,8 +65,8 @@ describe('AdminDashboard alerts', () => {
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
-    expect(screen.getByText('Analytics')).toBeInTheDocument()
-    expect(screen.queryByText('Analyze')).not.toBeInTheDocument()
+    expect(screen.getByText('Analytics', { selector: '.sidebar-nav-heading' })).toBeInTheDocument()
+    expect(screen.queryByText('Analyze', { selector: '.sidebar-nav-heading' })).not.toBeInTheDocument()
   })
 
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
