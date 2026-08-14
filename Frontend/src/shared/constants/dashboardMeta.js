@@ -33,6 +33,14 @@ export const navItems = [
     subtitle: 'Generate and export production summaries.',
   },
   {
+    label: 'Analytics',
+    to: '/dashboard/analytics',
+    icon: 'bar-chart-3',
+    group: 'analyze',
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor'],
+    subtitle: 'Explore local production, downtime, and process trends.',
+  },
+  {
     label: 'Audit Log',
     to: '/dashboard/audit',
     icon: 'history',
@@ -89,6 +97,10 @@ export const dashboardPageMeta = {
   '/dashboard/reports': {
     title: 'Reports',
     subtitle: 'Daily, weekly, and monthly production summaries.',
+  },
+  '/dashboard/analytics': {
+    title: 'Analytics',
+    subtitle: 'Local-only production, downtime, and process trends.',
   },
   '/dashboard/users': {
     title: 'User Accounts',

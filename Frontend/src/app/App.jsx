@@ -7,6 +7,7 @@ import LoginPage from '../features/auth/LoginPage.jsx'
 import { getCurrentDashboardPath } from '../features/auth/authNavigation.js'
 
 const AdminDashboard = lazy(() => import('../features/dashboard/layout/AdminDashboard.jsx'))
+const AnalyticsSection = lazy(() => import('../features/dashboard/analytics/AnalyticsSection.jsx'))
 const AuditSection = lazy(() => import('../features/dashboard/audit/AuditSection.jsx'))
 const DashboardSection = lazy(() => import('../features/dashboard/overview/DashboardSection.jsx'))
 const DowntimeSection = lazy(() => import('../features/dashboard/downtime/DowntimeSection.jsx'))
@@ -107,6 +108,16 @@ export default function App() {
             <LazyDashboardRoute>
               <ReportsSection />
             </LazyDashboardRoute>
+          }
+        />
+        <Route
+          path="analytics"
+          element={
+            <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']}>
+              <LazyDashboardRoute>
+                <AnalyticsSection />
+              </LazyDashboardRoute>
+            </RequireRole>
           }
         />
         <Route
