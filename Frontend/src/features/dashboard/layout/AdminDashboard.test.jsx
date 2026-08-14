@@ -77,11 +77,19 @@ describe('AdminDashboard alerts', () => {
     const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
 
     fireEvent.scroll(sidebarNav)
+    act(() => {
+      vi.advanceTimersByTime(250)
+    })
     fireEvent.scroll(sidebarNav)
     expect(sidebarNav).toHaveClass('is-scrolling')
 
     act(() => {
-      vi.advanceTimersByTime(499)
+      vi.advanceTimersByTime(251)
+    })
+    expect(sidebarNav).toHaveClass('is-scrolling')
+
+    act(() => {
+      vi.advanceTimersByTime(248)
     })
     expect(sidebarNav).toHaveClass('is-scrolling')
 
@@ -91,7 +99,26 @@ describe('AdminDashboard alerts', () => {
     expect(sidebarNav).not.toHaveClass('is-scrolling')
 
     view.unmount()
-    expect(() => fireEvent.scroll(sidebarNav)).not.toThrow()
+  })
+
+  it('clears the sidebar scrollbar timer on unmount', () => {
+    vi.useFakeTimers()
+    getAlerts.mockReturnValue(new Promise(() => {}))
+
+    const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
+
+    fireEvent.scroll(sidebarNav)
+    expect(sidebarNav).toHaveClass('is-scrolling')
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(() => {
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+    }).not.toThrow()
   })
 
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
