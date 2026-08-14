@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, Clock3, Filter } from 'lucide-react'
+import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 import {
   formatAnalyticsDateTime,
   getDowntimeCauseBreakdown,
   getProcessSensorBreakdown,
 } from './analyticsPresentation.js'
+
+const CAUSE_COLORS = [
+  'var(--chart-current)',
+  'var(--chart-previous)',
+  'var(--chart-target)',
+  'var(--chart-warning)',
+  'var(--chart-danger)',
+]
 
 function formatDuration(minutes) {
   if (minutes < 60) return `${minutes} min`
@@ -19,23 +28,22 @@ function getNewestFirst(rows, key) {
 }
 
 export default function AnalyticsOperationsDetails({ snapshot }) {
-  const [selectedCause, setSelectedCause] = useState('all')
   const [selectedSensor, setSelectedSensor] = useState('all')
   const causes = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
   const sensors = useMemo(() => getProcessSensorBreakdown(snapshot), [snapshot])
 
   useEffect(() => {
-    setSelectedCause('all')
     setSelectedSensor('all')
   }, [snapshot])
 
   const totalDowntimeMinutes = causes.reduce((total, cause) => total + cause.durationMinutes, 0)
-  const downtimeRows = getNewestFirst(
-    selectedCause === 'all'
-      ? snapshot.downtimeEvents
-      : snapshot.downtimeEvents.filter((event) => event.cause === selectedCause),
-    'startedAt',
-  )
+  const causeDistribution = causes.map((cause, index) => ({
+    ...cause,
+    color: CAUSE_COLORS[index % CAUSE_COLORS.length],
+    percentage: totalDowntimeMinutes
+      ? Math.round((cause.durationMinutes / totalDowntimeMinutes) * 100)
+      : 0,
+  }))
   const processRows = getNewestFirst(
     selectedSensor === 'all'
       ? snapshot.processEvents
@@ -49,7 +57,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Maintenance and downtime</p>
-            <h2 id="analytics-downtime-title">Cause contribution</h2>
+            <h2 id="analytics-downtime-title">Cause distribution</h2>
           </div>
           <span className="section-chip">
             <Clock3 size={16} aria-hidden="true" />
@@ -58,75 +66,60 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         </div>
 
         <p className="analytics-detail-intro">
-          Select a cause to filter the event record below. These are the currently supported local cause labels only.
+          Share of recorded downtime across the currently supported local cause labels.
         </p>
 
-        <div className="analytics-breakdown-list" role="group" aria-label="Filter downtime records by cause">
-          <button
-            className={`analytics-breakdown-button ${selectedCause === 'all' ? 'is-selected' : ''}`}
-            type="button"
-            aria-pressed={selectedCause === 'all'}
-            onClick={() => setSelectedCause('all')}
-          >
-            <span>All causes</span>
-            <strong>{formatDuration(totalDowntimeMinutes)}</strong>
-          </button>
-          {causes.map((cause) => {
-            const percentage = totalDowntimeMinutes
-              ? Math.round((cause.durationMinutes / totalDowntimeMinutes) * 100)
-              : 0
-
-            return (
-              <button
-                key={cause.cause}
-                className={`analytics-breakdown-button ${selectedCause === cause.cause ? 'is-selected' : ''}`}
-                type="button"
-                aria-pressed={selectedCause === cause.cause}
-                onClick={() => setSelectedCause(cause.cause)}
-              >
-                <span className="analytics-breakdown-copy">
-                  <span>{cause.cause}</span>
-                  <small>{cause.eventCount} event{cause.eventCount === 1 ? '' : 's'} - {percentage}% of recorded downtime</small>
-                </span>
-                <strong>{formatDuration(cause.durationMinutes)}</strong>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="analytics-table-heading">
-          <div>
-            <p className="section-eyebrow">Event record</p>
-            <h3>Downtime events</h3>
+        {causeDistribution.length === 0 ? (
+          <div className="analytics-cause-empty" role="status" aria-label="No downtime causes recorded">
+            <strong>No downtime causes recorded</strong>
+            <span>0 min recorded</span>
+            <p>No local downtime records fall within the selected date range.</p>
           </div>
-          <span>{downtimeRows.length} shown</span>
-        </div>
-        <div className="account-table-wrap">
-          <table className="account-table analytics-event-table" aria-label="Downtime event records">
-            <thead>
-              <tr>
-                <th scope="col">Started</th>
-                <th scope="col">Cause</th>
-                <th scope="col">Sensor</th>
-                <th scope="col">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              {downtimeRows.length === 0 ? (
-                <tr>
-                  <td colSpan="4">No local downtime events match this cause.</td>
-                </tr>
-              ) : downtimeRows.map((event) => (
-                <tr key={event.id}>
-                  <td data-label="Started">{formatAnalyticsDateTime(event.startedAt, snapshot.timeZone)}</td>
-                  <td data-label="Cause">{event.cause}</td>
-                  <td data-label="Sensor">{event.sensorCode}</td>
-                  <td data-label="Duration">{formatDuration(event.durationMinutes)}</td>
-                </tr>
+        ) : (
+          <div className="analytics-cause-content">
+            <div className="analytics-cause-chart" aria-hidden="true">
+              <ResponsiveContainer width="100%" height={220} minWidth={0}>
+                <PieChart>
+                  <Pie
+                    data={causeDistribution}
+                    dataKey="durationMinutes"
+                    nameKey="cause"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="56%"
+                    outerRadius="78%"
+                    paddingAngle={2}
+                    stroke="var(--panel-bg)"
+                    strokeWidth={2}
+                    isAnimationActive={false}
+                  >
+                    {causeDistribution.map((cause) => (
+                      <Cell key={cause.cause} fill={cause.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
+              {causeDistribution.map((cause) => (
+                <li key={cause.cause} className="analytics-cause-legend-item">
+                  <span
+                    className="analytics-cause-swatch"
+                    style={{ backgroundColor: cause.color }}
+                    aria-hidden="true"
+                  />
+                  <span className="analytics-cause-copy">
+                    <span className="analytics-cause-name">{cause.cause}</span>
+                    <span className="analytics-cause-meta">
+                      {formatDuration(cause.durationMinutes)} - {cause.percentage}% of recorded downtime
+                    </span>
+                  </span>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          </div>
+        )}
       </section>
 
       <section className="section-card analytics-detail-card" aria-labelledby="analytics-process-title">
@@ -170,37 +163,26 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           ))}
         </div>
 
-        <div className="analytics-table-heading">
+        <div className="analytics-process-events-heading">
           <div>
             <p className="section-eyebrow">Event record</p>
             <h3>Process events</h3>
           </div>
           <span>{processRows.length} shown</span>
         </div>
-        <div className="account-table-wrap">
-          <table className="account-table analytics-event-table" aria-label="Process event records">
-            <thead>
-              <tr>
-                <th scope="col">Recorded</th>
-                <th scope="col">Sensor</th>
-                <th scope="col">Event</th>
-              </tr>
-            </thead>
-            <tbody>
-              {processRows.length === 0 ? (
-                <tr>
-                  <td colSpan="3">No local process events match this sensor.</td>
-                </tr>
-              ) : processRows.map((event) => (
-                <tr key={event.id}>
-                  <td data-label="Recorded">{formatAnalyticsDateTime(event.occurredAt, snapshot.timeZone)}</td>
-                  <td data-label="Sensor">{event.sensorCode}</td>
-                  <td data-label="Event">{event.eventType}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="analytics-process-event-list" aria-label="Process event records" aria-live="polite">
+          {processRows.length === 0 ? (
+            <li className="analytics-process-event-empty">No local process events match this sensor.</li>
+          ) : processRows.map((event) => (
+            <li key={event.id} className="analytics-process-event-record">
+              <time className="analytics-process-event-time" dateTime={event.occurredAt}>
+                {formatAnalyticsDateTime(event.occurredAt, snapshot.timeZone)}
+              </time>
+              <span className="analytics-process-event-sensor-code">{event.sensorCode}</span>
+              <span className="analytics-process-event-type">{event.eventType}</span>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   )
