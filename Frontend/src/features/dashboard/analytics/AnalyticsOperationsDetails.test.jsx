@@ -1,6 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import { buildAnalyticsSnapshot } from './analyticsService.js'
@@ -16,6 +16,44 @@ describe('AnalyticsOperationsDetails', () => {
     expect(within(causeLegend).getByText('43 min - 33% of recorded downtime')).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Downtime event records' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Downtime events' })).not.toBeInTheDocument()
+  })
+
+  it('shows the local cause details tooltip when a donut sector is hovered', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) {
+        this.callback = callback
+      }
+
+      observe() {
+        this.callback([{ contentRect: { width: 320, height: 220 } }])
+      }
+
+      disconnect() {}
+    })
+
+    let view
+    try {
+      view = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
+      const sector = await waitFor(() => {
+        const renderedSector = view.container.querySelector('.recharts-pie-sector')
+
+        expect(renderedSector).toBeInTheDocument()
+        return renderedSector
+      })
+      fireEvent.mouseEnter(sector)
+
+      await waitFor(() => {
+        const tooltip = view.container.querySelector('.analytics-cause-tooltip')
+
+        expect(tooltip).toBeVisible()
+        expect(tooltip).toHaveTextContent('Corrective Maintenance')
+        expect(tooltip).toHaveTextContent('43 min')
+        expect(tooltip).toHaveTextContent('33% of recorded downtime')
+      })
+    } finally {
+      view?.unmount()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('shows an explicit no-cause state without drawing a chart or inventing cause rows', () => {

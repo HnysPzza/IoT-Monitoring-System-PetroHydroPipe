@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, Clock3, Filter } from 'lucide-react'
-import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   formatAnalyticsDateTime,
   getDowntimeCauseBreakdown,
@@ -25,6 +25,20 @@ function formatDuration(minutes) {
 
 function getNewestFirst(rows, key) {
   return [...rows].sort((left, right) => String(right[key]).localeCompare(String(left[key])))
+}
+
+function CauseTooltip({ active, payload }) {
+  const cause = payload?.[0]?.payload
+
+  if (!active || !cause) return null
+
+  return (
+    <div className="recharts-tooltip-card industrial-tooltip analytics-cause-tooltip" role="status">
+      <strong>{cause.cause}</strong>
+      <span>{formatDuration(cause.durationMinutes)}</span>
+      <span>{cause.percentage}% of recorded downtime</span>
+    </div>
+  )
 }
 
 export default function AnalyticsOperationsDetails({ snapshot }) {
@@ -97,6 +111,13 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                       <Cell key={cause.cause} fill={cause.color} />
                     ))}
                   </Pie>
+                  <Tooltip
+                    content={<CauseTooltip />}
+                    isAnimationActive={false}
+                    cursor={false}
+                    wrapperStyle={{ outline: 'none' }}
+                    allowEscapeViewBox={{ x: true, y: true }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
