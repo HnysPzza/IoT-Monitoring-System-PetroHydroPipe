@@ -34,13 +34,13 @@ describe('AnalyticsOperationsDetails', () => {
     let view
     try {
       view = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
-      const sector = await waitFor(() => {
-        const renderedSector = view.container.querySelector('.recharts-pie-sector')
+      const sectors = await waitFor(() => {
+        const renderedSectors = view.container.querySelectorAll('.recharts-pie-sector')
 
-        expect(renderedSector).toBeInTheDocument()
-        return renderedSector
+        expect(renderedSectors).toHaveLength(5)
+        return renderedSectors
       })
-      fireEvent.mouseEnter(sector)
+      fireEvent.mouseEnter(sectors[0])
 
       await waitFor(() => {
         const tooltip = view.container.querySelector('.analytics-cause-tooltip')
@@ -49,6 +49,17 @@ describe('AnalyticsOperationsDetails', () => {
         expect(tooltip).toHaveTextContent('Corrective Maintenance')
         expect(tooltip).toHaveTextContent('43 min')
         expect(tooltip).toHaveTextContent('33% of recorded downtime')
+      })
+
+      fireEvent.mouseEnter(sectors[sectors.length - 1])
+
+      await waitFor(() => {
+        const tooltip = view.container.querySelector('.analytics-cause-tooltip')
+
+        expect(tooltip).toBeVisible()
+        expect(tooltip).toHaveTextContent('Flux Refill')
+        expect(tooltip).toHaveTextContent('12 min')
+        expect(tooltip).toHaveTextContent('9% of recorded downtime')
       })
     } finally {
       view?.unmount()

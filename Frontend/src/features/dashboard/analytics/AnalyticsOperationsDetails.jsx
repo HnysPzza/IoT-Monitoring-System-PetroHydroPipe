@@ -116,7 +116,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     isAnimationActive={false}
                     cursor={false}
                     wrapperStyle={{ outline: 'none' }}
-                    allowEscapeViewBox={{ x: true, y: true }}
                   />
                 </PieChart>
               </ResponsiveContainer>
