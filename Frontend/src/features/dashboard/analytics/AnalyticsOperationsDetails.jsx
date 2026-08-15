@@ -93,7 +93,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           <div className="analytics-cause-content">
             <div className="analytics-cause-chart" aria-hidden="true">
               <ResponsiveContainer width="100%" height={220} minWidth={0}>
-                <PieChart>
+                <PieChart accessibilityLayer={false}>
                   <Pie
                     data={causeDistribution}
                     dataKey="durationMinutes"
@@ -106,6 +106,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     stroke="var(--panel-bg)"
                     strokeWidth={2}
                     isAnimationActive={false}
+                    rootTabIndex={-1}
                   >
                     {causeDistribution.map((cause) => (
                       <Cell key={cause.cause} fill={cause.color} />

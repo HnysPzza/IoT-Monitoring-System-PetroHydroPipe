@@ -40,6 +40,14 @@ describe('AnalyticsOperationsDetails', () => {
         expect(renderedSectors).toHaveLength(5)
         return renderedSectors
       })
+      const causeChart = view.container.querySelector('.analytics-cause-chart')
+      const focusableChartDescendants = Array.from(causeChart.querySelectorAll('*')).filter(
+        (element) => element.tabIndex >= 0,
+      )
+
+      expect(causeChart).toHaveAttribute('aria-hidden', 'true')
+      expect(focusableChartDescendants).toHaveLength(0)
+
       fireEvent.mouseEnter(sectors[0])
 
       await waitFor(() => {
