@@ -176,13 +176,14 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </div>
 
           <button
-            className="btn btn-secondary analytics-refresh-button"
+            className="btn analytics-refresh-button"
             type="button"
+            aria-label="Refresh data"
             disabled={!range || loadState === 'loading' || loadState === 'refreshing'}
             onClick={loadSnapshot}
           >
-            <RotateCw className={loadState === 'refreshing' ? 'spin-icon' : ''} size={17} aria-hidden="true" />
-            Refresh local data
+            <RotateCw className={loadState === 'refreshing' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+            Refresh
           </button>
         </div>
       </section>
