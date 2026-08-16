@@ -1564,20 +1564,23 @@ button:disabled {
 .analytics-cause-content {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(170px, 0.95fr) minmax(210px, 1.25fr);
   align-items: center;
   gap: 16px;
 }
 
 .analytics-cause-chart {
   min-width: 0;
-  min-height: 190px;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .analytics-cause-legend {
   display: grid;
   min-width: 0;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1586,29 +1589,33 @@ button:disabled {
 .analytics-cause-legend-item {
   display: grid;
   min-width: 0;
-  grid-template-columns: 12px minmax(0, 1fr);
+  grid-template-columns: 10px minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
-  padding: 9px 12px;
+  gap: 8px;
+  padding: 7px 10px;
   border: 1px solid var(--subtle-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--panel-bg);
+  cursor: pointer;
   transition:
     border-color 0.15s var(--ease-std),
     background-color 0.15s var(--ease-std),
-    transform 0.12s var(--ease-std);
+    transform 0.12s var(--ease-std),
+    box-shadow 0.15s var(--ease-std);
 }
 
-.analytics-cause-legend-item:hover {
-  border-color: color-mix(in srgb, var(--c-accent) 45%, var(--card-border));
-  background: var(--panel-bg-soft);
-  transform: translateX(2px);
+.analytics-cause-legend-item:hover,
+.analytics-cause-legend-item.is-hovered {
+  border-color: color-mix(in srgb, var(--c-accent) 55%, var(--card-border));
+  background: color-mix(in srgb, var(--c-accent) 10%, var(--panel-bg));
+  transform: translateX(3px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .analytics-cause-swatch {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   margin-top: 4px;
   border-radius: 999px;
 }
