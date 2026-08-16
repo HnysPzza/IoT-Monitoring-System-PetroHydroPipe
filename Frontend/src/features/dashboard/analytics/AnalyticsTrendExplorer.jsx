@@ -1,5 +1,6 @@
-import { BarChart3 } from 'lucide-react'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useState } from 'react'
+import { BarChart3, ChevronDown } from 'lucide-react'
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   analyticsTrendMetrics,
   buildAnalyticsTrend,
@@ -11,7 +12,7 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
   if (!active || !payload?.length) return null
 
   return (
-    <div className="recharts-tooltip-card">
+    <div className="recharts-tooltip-card industrial-tooltip">
       <strong>{label}</strong>
       <span>{metric.label}: {formatAnalyticsTrendValue(payload[0].value, metric)}</span>
     </div>
@@ -19,6 +20,7 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
 }
 
 export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricChange }) {
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const trend = buildAnalyticsTrend(snapshot, metricId)
   const { metric, points, bucket, usesDailyProductionFallback } = trend
   const summary = getAnalyticsTrendSummary(trend)
@@ -30,18 +32,35 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           <p className="section-eyebrow">Trend explorer</p>
           <h2 id="analytics-trend-title">Operational trend</h2>
         </div>
-        <label className="filter-field analytics-metric-field" htmlFor="analytics-trend-metric">
-          <span>Trend metric</span>
-          <select
-            id="analytics-trend-metric"
-            value={metric.id}
-            onChange={(event) => onMetricChange(event.target.value)}
-          >
+
+        <div className="analytics-metric-controls">
+          <div className="trend-mode-toggle analytics-metric-toggle" role="group" aria-label="Trend metric selection">
             {analyticsTrendMetrics.map((item) => (
-              <option key={item.id} value={item.id}>{item.label}</option>
+              <button
+                key={item.id}
+                className={`trend-mode-button ${metric.id === item.id ? 'is-selected' : ''}`}
+                type="button"
+                aria-pressed={metric.id === item.id}
+                onClick={() => onMetricChange(item.id)}
+              >
+                {item.label}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+
+          <label className="filter-field analytics-metric-field sr-only" htmlFor="analytics-trend-metric">
+            <span>Trend metric</span>
+            <select
+              id="analytics-trend-metric"
+              value={metric.id}
+              onChange={(event) => onMetricChange(event.target.value)}
+            >
+              {analyticsTrendMetrics.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="analytics-trend-context">
@@ -61,8 +80,14 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
         role="img"
         aria-label={`${metric.label} trend chart from ${snapshot.range.startDate} to ${snapshot.range.endDate}`}
       >
-        <ResponsiveContainer width="100%" height={300} minWidth={0}>
-          <LineChart data={points} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
+        <ResponsiveContainer width="100%" height={320} minWidth={0}>
+          <AreaChart data={points} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
+            <defs>
+              <linearGradient id="analyticsTrendAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--chart-current)" stopOpacity={0.28} />
+                <stop offset="100%" stopColor="var(--chart-current)" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 7" vertical={false} />
             <XAxis
               dataKey="label"
@@ -82,24 +107,38 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
               content={<AnalyticsTrendTooltip metric={metric} />}
               cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.28 }}
             />
-            <Line
+            <Area
               type="monotone"
               dataKey="value"
               name={metric.label}
               stroke="var(--chart-current)"
               strokeWidth={3}
-              dot={{ r: 3.5, strokeWidth: 2, fill: 'var(--c-surface)' }}
-              activeDot={{ r: 6, strokeWidth: 2 }}
-              isAnimationActive={false}
+              fill="url(#analyticsTrendAreaGradient)"
+              dot={{ r: 3.5, strokeWidth: 2, fill: 'var(--c-surface)', stroke: 'var(--chart-current)' }}
+              activeDot={{ r: 6, strokeWidth: 2, fill: 'var(--c-accent)', stroke: 'var(--c-surface)' }}
+              isAnimationActive={true}
+              animationDuration={600}
+              animationEasing="ease-out"
             />
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       </div>
 
       <p className="analytics-trend-summary" aria-live="polite">{summary}</p>
 
-      <details className="analytics-chart-details">
-        <summary>View {metric.label.toLowerCase()} trend data</summary>
+      <details
+        className="analytics-chart-details"
+        open={isDetailsOpen}
+        onToggle={(event) => setIsDetailsOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <ChevronDown
+            size={16}
+            className={`analytics-details-chevron ${isDetailsOpen ? 'is-expanded' : ''}`}
+            aria-hidden="true"
+          />
+          <span>View {metric.label.toLowerCase()} trend data</span>
+        </summary>
         <div className="account-table-wrap">
           <table className="account-table analytics-chart-table">
             <thead>

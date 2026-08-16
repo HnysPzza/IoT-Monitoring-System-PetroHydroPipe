@@ -1393,13 +1393,21 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.analytics-metric-field {
-  min-width: 196px;
+.analytics-metric-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.analytics-metric-toggle {
+  display: inline-grid;
+  grid-template-columns: repeat(4, auto);
+  min-width: 0;
 }
 
 .analytics-trend-chart {
   min-width: 0;
-  min-height: 300px;
+  min-height: 320px;
   padding: 6px 0 0;
 }
 
@@ -1429,7 +1437,7 @@ button:disabled {
 .analytics-chart-details summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 44px;
   padding: 12px 16px;
   color: var(--c-text);
@@ -1437,6 +1445,15 @@ button:disabled {
   font-size: 0.84rem;
   font-weight: 600;
   user-select: none;
+}
+
+.analytics-details-chevron {
+  color: var(--c-accent);
+  transition: transform 0.2s var(--ease-std);
+}
+
+.analytics-details-chevron.is-expanded {
+  transform: rotate(180deg);
 }
 
 .analytics-chart-details summary:focus-visible {
