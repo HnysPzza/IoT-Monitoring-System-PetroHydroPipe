@@ -16,9 +16,9 @@ function EmptyMachinesState({ isRefreshing = false, onRefresh }) {
         <p className="section-eyebrow">No records</p>
         <h2 id="machines-empty-title">No machines found</h2>
         <p>Add Spiral Mill 01 and its five sensors to manage machine setup here.</p>
-        <button className="btn btn-secondary" type="button" disabled={isRefreshing} onClick={onRefresh}>
+        <button className="btn btn-success" type="button" aria-label="Refresh machines" disabled={isRefreshing} onClick={onRefresh}>
           <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-          Refresh machines
+          Refresh
         </button>
       </div>
     </section>
@@ -399,13 +399,14 @@ export default function MachinesSection() {
             <h2 id="machine-admin-title">{selectedMachine.name}</h2>
           </div>
           <button
-            className="btn btn-secondary table-action-button"
+            className="btn btn-success table-action-button machines-refresh-button"
             type="button"
+            aria-label="Refresh machines"
             disabled={machinesState === 'loading'}
             onClick={() => setMachinesRefresh((current) => current + 1)}
           >
             <RotateCw className={machinesState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            Refresh machines
+            Refresh
           </button>
         </div>
 
@@ -467,13 +468,14 @@ export default function MachinesSection() {
               {hasCurrentSensors ? sensors.length : 0} shown
             </span>
             <button
-              className="btn btn-secondary table-action-button"
+              className="btn btn-success table-action-button sensors-refresh-button"
               type="button"
+              aria-label="Refresh sensors"
               disabled={sensorsState === 'loading'}
               onClick={() => setSensorsRefresh((current) => current + 1)}
             >
               <RotateCw className={sensorsState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-              Refresh sensors
+              Refresh
             </button>
           </div>
         </div>
