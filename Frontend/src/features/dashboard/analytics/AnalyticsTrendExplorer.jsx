@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { BarChart3, ChevronDown } from 'lucide-react'
+import { BarChart3, ChevronDown, Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   analyticsTrendMetrics,
   buildAnalyticsTrend,
   formatAnalyticsTrendValue,
   getAnalyticsTrendSummary,
+  getTrendEvaluation,
 } from './analyticsPresentation.js'
 
 function AnalyticsTrendTooltip({ active, payload, label, metric }) {
@@ -24,6 +25,8 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
   const trend = buildAnalyticsTrend(snapshot, metricId)
   const { metric, points, bucket, usesDailyProductionFallback } = trend
   const summary = getAnalyticsTrendSummary(trend)
+  const evaluation = getTrendEvaluation(trend)
+  const strokeColor = evaluation.strokeColor
 
   return (
     <section className="section-card analytics-trend-card industrial-chart-card" aria-labelledby="analytics-trend-title">
@@ -70,7 +73,7 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
         </span>
         <p>
           {usesDailyProductionFallback
-            ? 'Production records are date-only, so actual pieces stay in daily buckets until timestamps are available.'
+            ? 'Production records are date-only; daily buckets active.'
             : metric.description}
         </p>
       </div>
@@ -84,8 +87,8 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           <AreaChart data={points} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
             <defs>
               <linearGradient id="analyticsTrendAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--chart-current)" stopOpacity={0.28} />
-                <stop offset="100%" stopColor="var(--chart-current)" stopOpacity={0.02} />
+                <stop offset="0%" stopColor={strokeColor} stopOpacity={0.30} />
+                <stop offset="100%" stopColor={strokeColor} stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 7" vertical={false} />
@@ -105,17 +108,17 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
             />
             <Tooltip
               content={<AnalyticsTrendTooltip metric={metric} />}
-              cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.28 }}
+              cursor={{ stroke: strokeColor, strokeOpacity: 0.28 }}
             />
             <Area
               type="monotone"
               dataKey="value"
               name={metric.label}
-              stroke="var(--chart-current)"
+              stroke={strokeColor}
               strokeWidth={3}
               fill="url(#analyticsTrendAreaGradient)"
-              dot={{ r: 3.5, strokeWidth: 2, fill: 'var(--c-surface)', stroke: 'var(--chart-current)' }}
-              activeDot={{ r: 6, strokeWidth: 2, fill: 'var(--c-accent)', stroke: 'var(--c-surface)' }}
+              dot={{ r: 3.5, strokeWidth: 2, fill: 'var(--c-surface)', stroke: strokeColor }}
+              activeDot={{ r: 6, strokeWidth: 2, fill: strokeColor, stroke: 'var(--c-surface)' }}
               isAnimationActive={true}
               animationDuration={600}
               animationEasing="ease-out"
@@ -124,7 +127,19 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
         </ResponsiveContainer>
       </div>
 
-      <p className="analytics-trend-summary" aria-live="polite">{summary}</p>
+      <div className="analytics-trend-summary-row">
+        <p className="analytics-trend-summary" aria-live="polite">{summary}</p>
+        <div className={`analytics-trend-badge is-${evaluation.sentiment}`}>
+          {evaluation.direction === 'up' ? (
+            <TrendingUp size={15} aria-hidden="true" />
+          ) : evaluation.direction === 'down' ? (
+            <TrendingDown size={15} aria-hidden="true" />
+          ) : (
+            <Minus size={15} aria-hidden="true" />
+          )}
+          <span>{evaluation.label}</span>
+        </div>
+      </div>
 
       <details
         className="analytics-chart-details"
