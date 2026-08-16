@@ -128,13 +128,9 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </span>
         </div>
 
-        <p className="analytics-intro-copy">
-          This frontend preview uses deterministic local data for Spiral Mill 01. It has no Analytics backend connection.
-        </p>
-
         <div className="analytics-filter-row">
           <fieldset className="analytics-range-fieldset">
-            <legend>Date range</legend>
+            <legend className="sr-only">Date range</legend>
             <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
               {rangePresets.map((preset) => (
                 <button
@@ -189,12 +185,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
             Refresh local data
           </button>
         </div>
-
-        {range ? (
-          <p className="analytics-range-copy">
-            Showing {range.startDate} to {range.endDate} in {snapshot?.timeZone || 'Asia/Manila'} time.
-          </p>
-        ) : null}
       </section>
 
       {loadState === 'refreshing' ? (
@@ -266,7 +256,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
                     className={`section-card analytics-kpi-card ${isSelected ? 'is-selected' : ''}`}
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`${kpi.label}, ${kpi.value}. ${kpi.helper}. Click to plot in trend explorer.`}
+                    aria-label={`${kpi.label}: ${kpi.value}. Click to plot in trend explorer.`}
                     onClick={() => setTrendMetric(kpi.id)}
                   >
                     <div className="analytics-kpi-heading">
@@ -274,7 +264,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
                       <Icon size={18} aria-hidden="true" />
                     </div>
                     <p className="stat-value">{kpi.value}</p>
-                    <p className="stat-helper">{kpi.helper}</p>
                   </button>
                 )
               })}
