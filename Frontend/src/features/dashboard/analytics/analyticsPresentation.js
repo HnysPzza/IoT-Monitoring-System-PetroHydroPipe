@@ -350,39 +350,14 @@ export function getTrendEvaluation(trend) {
     }
   }
 
-  // Find non-zero or active operational points within the series
-  const nonZeroPoints = points.filter((p) => Number(p.value) > 0)
-
+  // Trim leading zeros so ranges that start before records began don't skew the initial baseline,
+  // but preserve trailing and intermediate drops so slowdowns and stoppages reflect accurately.
   let activePoints = points
   if (metric.id === 'downtime' || metric.id === 'production' || metric.id === 'process-events') {
-    if (nonZeroPoints.length >= 2) {
-      activePoints = nonZeroPoints
-    } else if (nonZeroPoints.length === 1) {
-      const nonZeroIdx = points.findIndex((p) => Number(p.value) > 0)
-      const isEarly = nonZeroIdx < points.length / 2
-      const delta = isEarly ? -nonZeroPoints[0].value : nonZeroPoints[0].value
-      const deltaPercent = isEarly ? -100 : 100
-      const isIncreasing = delta > 0.001
-      const isDecreasing = delta < -0.001
-
-      let sentiment = 'neutral'
-      let strokeColor = 'var(--chart-current)'
-      if (metric.id === 'downtime') {
-        if (isIncreasing) { sentiment = 'negative'; strokeColor = 'var(--chart-danger)' }
-        else if (isDecreasing) { sentiment = 'positive'; strokeColor = 'var(--chart-target)' }
-      } else if (metric.id === 'production') {
-        if (isIncreasing) { sentiment = 'positive'; strokeColor = 'var(--chart-target)' }
-        else if (isDecreasing) { sentiment = 'negative'; strokeColor = 'var(--chart-danger)' }
-      }
-      return {
-        direction: isIncreasing ? 'up' : isDecreasing ? 'down' : 'flat',
-        delta,
-        deltaPercent,
-        strokeColor,
-        sentiment,
-        label: isIncreasing ? 'Trending up (+100.0%)' : isDecreasing ? 'Trending down (-100.0%)' : 'Steady pace',
-      }
-    } else {
+    const firstActiveIndex = points.findIndex((p) => Number(p.value) > 0)
+    if (firstActiveIndex > 0) {
+      activePoints = points.slice(firstActiveIndex)
+    } else if (firstActiveIndex === -1) {
       return {
         direction: 'flat',
         delta: 0,
@@ -393,9 +368,20 @@ export function getTrendEvaluation(trend) {
       }
     }
   } else if (metric.id === 'availability') {
-    const activeAvailability = points.filter((p) => Number(p.value) < 100 || (p.downtimeMinutes && p.downtimeMinutes > 0))
-    if (activeAvailability.length >= 2) {
-      activePoints = activeAvailability
+    const firstActiveIndex = points.findIndex((p) => Number(p.value) < 100 || (p.downtimeMinutes && p.downtimeMinutes > 0))
+    if (firstActiveIndex > 0) {
+      activePoints = points.slice(firstActiveIndex)
+    }
+  }
+
+  if (activePoints.length < 2) {
+    return {
+      direction: 'flat',
+      delta: 0,
+      deltaPercent: 0,
+      strokeColor: 'var(--chart-current)',
+      sentiment: 'neutral',
+      label: 'Steady pace',
     }
   }
 

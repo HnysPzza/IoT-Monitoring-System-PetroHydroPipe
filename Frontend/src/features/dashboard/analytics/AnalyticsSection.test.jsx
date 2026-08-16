@@ -109,7 +109,6 @@ describe('AnalyticsSection local request states', () => {
 
     expect(screen.getByText('Output - daily buckets')).toBeInTheDocument()
     expect(screen.getByText('118 pcs across 7 buckets.')).toBeInTheDocument()
-    expect(screen.getByText('View output trend data')).toBeInTheDocument()
   })
 
   it('does not let a delayed local result replace an invalid custom date state', async () => {

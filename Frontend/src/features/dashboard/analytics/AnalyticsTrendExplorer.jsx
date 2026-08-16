@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { BarChart3, ChevronDown, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { BarChart3, Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   analyticsTrendMetrics,
@@ -21,7 +20,6 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
 }
 
 export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricChange }) {
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const trend = buildAnalyticsTrend(snapshot, metricId)
   const { metric, points, bucket, usesDailyProductionFallback } = trend
   const summary = getAnalyticsTrendSummary(trend)
@@ -121,38 +119,6 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
         </div>
       </div>
 
-      <details
-        className="analytics-chart-details"
-        open={isDetailsOpen}
-        onToggle={(event) => setIsDetailsOpen(event.currentTarget.open)}
-      >
-        <summary>
-          <ChevronDown
-            size={16}
-            className={`analytics-details-chevron ${isDetailsOpen ? 'is-expanded' : ''}`}
-            aria-hidden="true"
-          />
-          <span>View {metric.label.toLowerCase()} trend data</span>
-        </summary>
-        <div className="account-table-wrap">
-          <table className="account-table analytics-chart-table">
-            <thead>
-              <tr>
-                <th scope="col">Bucket</th>
-                <th scope="col">{metric.label}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {points.map((point) => (
-                <tr key={point.key}>
-                  <td>{point.label}</td>
-                  <td>{formatAnalyticsTrendValue(point.value, metric)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
     </section>
   )
 }
