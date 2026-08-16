@@ -346,14 +346,86 @@ export function getTrendEvaluation(trend) {
       deltaPercent: 0,
       strokeColor: 'var(--chart-current)',
       sentiment: 'neutral',
-      label: 'Steady',
+      label: 'Steady pace',
     }
   }
 
-  const first = Number(points[0].value) || 0
-  const last = Number(points[points.length - 1].value) || 0
-  const delta = last - first
-  const deltaPercent = first !== 0 ? (delta / Math.abs(first)) * 100 : 0
+  // Find non-zero or active operational points within the series
+  const nonZeroPoints = points.filter((p) => Number(p.value) > 0)
+
+  let activePoints = points
+  if (metric.id === 'downtime' || metric.id === 'production' || metric.id === 'process-events') {
+    if (nonZeroPoints.length >= 2) {
+      activePoints = nonZeroPoints
+    } else if (nonZeroPoints.length === 1) {
+      const nonZeroIdx = points.findIndex((p) => Number(p.value) > 0)
+      const isEarly = nonZeroIdx < points.length / 2
+      const delta = isEarly ? -nonZeroPoints[0].value : nonZeroPoints[0].value
+      const deltaPercent = isEarly ? -100 : 100
+      const isIncreasing = delta > 0.001
+      const isDecreasing = delta < -0.001
+
+      let sentiment = 'neutral'
+      let strokeColor = 'var(--chart-current)'
+      if (metric.id === 'downtime') {
+        if (isIncreasing) { sentiment = 'negative'; strokeColor = 'var(--chart-danger)' }
+        else if (isDecreasing) { sentiment = 'positive'; strokeColor = 'var(--chart-target)' }
+      } else if (metric.id === 'production') {
+        if (isIncreasing) { sentiment = 'positive'; strokeColor = 'var(--chart-target)' }
+        else if (isDecreasing) { sentiment = 'negative'; strokeColor = 'var(--chart-danger)' }
+      }
+      return {
+        direction: isIncreasing ? 'up' : isDecreasing ? 'down' : 'flat',
+        delta,
+        deltaPercent,
+        strokeColor,
+        sentiment,
+        label: isIncreasing ? 'Trending up (+100.0%)' : isDecreasing ? 'Trending down (-100.0%)' : 'Steady pace',
+      }
+    } else {
+      return {
+        direction: 'flat',
+        delta: 0,
+        deltaPercent: 0,
+        strokeColor: 'var(--chart-current)',
+        sentiment: 'neutral',
+        label: 'Steady pace',
+      }
+    }
+  } else if (metric.id === 'availability') {
+    const activeAvailability = points.filter((p) => Number(p.value) < 100 || (p.downtimeMinutes && p.downtimeMinutes > 0))
+    if (activeAvailability.length >= 2) {
+      activePoints = activeAvailability
+    }
+  }
+
+  // Linear regression slope over activePoints
+  const n = activePoints.length
+  let sumX = 0
+  let sumY = 0
+  let sumXY = 0
+  let sumX2 = 0
+
+  for (let i = 0; i < n; i++) {
+    const x = i
+    const y = Number(activePoints[i].value) || 0
+    sumX += x
+    sumY += y
+    sumXY += x * y
+    sumX2 += x * x
+  }
+
+  const meanX = sumX / n
+  const meanY = sumY / n
+  const denominator = sumX2 - sumX * meanX
+
+  let slope = 0
+  if (Math.abs(denominator) > 0.0001) {
+    slope = (sumXY - sumX * meanY) / denominator
+  }
+
+  const delta = slope * (n - 1)
+  const deltaPercent = meanY !== 0 ? (delta / Math.abs(meanY)) * 100 : 0
   const isIncreasing = delta > 0.001
   const isDecreasing = delta < -0.001
 
