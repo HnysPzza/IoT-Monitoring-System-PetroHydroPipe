@@ -1325,14 +1325,25 @@ button:disabled {
 
 .analytics-kpi-heading .stat-label {
   color: var(--c-text-2);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .analytics-kpi-card .stat-value {
   color: var(--c-text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .analytics-kpi-card .stat-helper {
   color: var(--c-text-3);
+  font-size: 0.76rem;
   line-height: 1.45;
 }
 
@@ -1358,11 +1369,14 @@ button:disabled {
 }
 
 .analytics-trend-summary {
-  padding: 11px 12px;
+  padding: 11px 14px;
   border-left: 3px solid var(--chart-current);
   border-radius: 0 8px 8px 0;
   background: var(--panel-bg-soft);
+  color: var(--c-text);
   font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
 }
 
 .analytics-chart-details {
@@ -1370,15 +1384,24 @@ button:disabled {
   border: 1px solid var(--subtle-border);
   border-radius: 8px;
   background: var(--panel-bg);
+  transition: border-color 0.15s var(--ease-std);
+}
+
+.analytics-chart-details:hover {
+  border-color: var(--card-border);
 }
 
 .analytics-chart-details summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 44px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   color: var(--c-text);
   cursor: pointer;
   font-size: 0.84rem;
   font-weight: 600;
+  user-select: none;
 }
 
 .analytics-chart-details summary:focus-visible {
@@ -1393,6 +1416,12 @@ button:disabled {
 
 .account-table.analytics-chart-table {
   min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-table.analytics-chart-table td:nth-child(2) {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
 }
 
 .analytics-operations-layout {
