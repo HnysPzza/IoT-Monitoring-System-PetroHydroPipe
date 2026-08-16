@@ -16,8 +16,69 @@ import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 
-function SkeletonBlock({ className = '' }) {
-  return <div className={`skeleton ${className}`.trim()} aria-hidden="true" />
+function SkeletonBlock({ className = '', style }) {
+  return <div className={`skeleton ${className}`.trim()} style={style} aria-hidden="true" />
+}
+
+function DowntimeChartSkeleton() {
+  const bars = [
+    { height: '42%' },
+    { height: '78%' },
+    { height: '35%' },
+    { height: '64%' },
+    { height: '88%' },
+    { height: '22%' },
+    { height: '54%' },
+  ]
+
+  return (
+    <div className="downtime-chart-skeleton" role="status" aria-live="polite">
+      <span className="sr-only">Loading downtime chart...</span>
+      <div className="chart-skeleton-grid" aria-hidden="true">
+        <div className="chart-skeleton-y-axis">
+          <span>60m</span>
+          <span>40m</span>
+          <span>20m</span>
+          <span>0m</span>
+        </div>
+        <div className="chart-skeleton-body">
+          <div className="chart-skeleton-gridlines">
+            <div className="chart-skeleton-line" />
+            <div className="chart-skeleton-line" />
+            <div className="chart-skeleton-line" />
+            <div className="chart-skeleton-line" />
+          </div>
+          <div className="chart-skeleton-bars">
+            {bars.map((bar, index) => (
+              <div key={index} className="chart-skeleton-col">
+                <div className="chart-skeleton-bar-wrapper">
+                  <div
+                    className="skeleton skeleton-chart-bar"
+                    style={{ height: bar.height, animationDelay: `${index * 120}ms` }}
+                  />
+                </div>
+                <span className="skeleton skeleton-tick-label" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProductionAnalyticsSkeleton() {
+  return (
+    <section className="section-card production-analytics-card" aria-label="Loading production analytics">
+      <div className="section-heading">
+        <div>
+          <p className="section-eyebrow">Data analytics</p>
+          <SkeletonBlock className="skeleton-heading" />
+        </div>
+      </div>
+      <div className="skeleton skeleton-panel" style={{ height: '240px' }} aria-hidden="true" />
+    </section>
+  )
 }
 
 function OverviewLoadingState() {
@@ -422,6 +483,8 @@ export default function DashboardSection() {
             mode={analyticsMode}
             onModeChange={setAnalyticsMode}
           />
+        ) : overviewDisplayState === 'loading' && !hasCurrentOverview ? (
+          <ProductionAnalyticsSkeleton />
         ) : null}
 
         <section className="section-card downtime-chart-card">
@@ -487,10 +550,7 @@ export default function DashboardSection() {
               </button>
             </div>
           ) : chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
-            <div role="status" aria-live="polite">
-              <span className="sr-only">Loading downtime chart...</span>
-              <div className="skeleton skeleton-panel" aria-hidden="true" />
-            </div>
+            <DowntimeChartSkeleton />
           ) : trendData.length > 0 ? (
             <DowntimeTrendChart data={trendData} thresholdMinutes={downtimeImpact?.thresholdMinutes || 30} />
           ) : hasCurrentDowntimeChart ? (
