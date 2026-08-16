@@ -1532,10 +1532,20 @@ button:disabled {
   grid-template-columns: 12px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  padding: 9px 10px;
+  padding: 9px 12px;
   border: 1px solid var(--subtle-border);
   border-radius: 8px;
   background: var(--panel-bg);
+  transition:
+    border-color 0.15s var(--ease-std),
+    background-color 0.15s var(--ease-std),
+    transform 0.12s var(--ease-std);
+}
+
+.analytics-cause-legend-item:hover {
+  border-color: color-mix(in srgb, var(--c-accent) 45%, var(--card-border));
+  background: var(--panel-bg-soft);
+  transform: translateX(2px);
 }
 
 .analytics-cause-swatch {

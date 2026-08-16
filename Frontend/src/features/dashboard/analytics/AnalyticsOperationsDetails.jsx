@@ -100,12 +100,14 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     nameKey="cause"
                     cx="50%"
                     cy="50%"
-                    innerRadius="56%"
-                    outerRadius="78%"
-                    paddingAngle={2}
-                    stroke="var(--panel-bg)"
+                    innerRadius="58%"
+                    outerRadius="80%"
+                    paddingAngle={3}
+                    stroke="var(--card-bg)"
                     strokeWidth={2}
-                    isAnimationActive={false}
+                    isAnimationActive={true}
+                    animationDuration={600}
+                    animationEasing="ease-out"
                     rootTabIndex={-1}
                   >
                     {causeDistribution.map((cause) => (
@@ -114,10 +116,29 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                   </Pie>
                   <Tooltip
                     content={<CauseTooltip />}
-                    isAnimationActive={false}
                     cursor={false}
                     wrapperStyle={{ outline: 'none' }}
                   />
+                  <text
+                    x="50%"
+                    y="46%"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="var(--c-text)"
+                    style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '1.2rem', fontWeight: 700 }}
+                  >
+                    {formatDuration(totalDowntimeMinutes)}
+                  </text>
+                  <text
+                    x="50%"
+                    y="60%"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="var(--c-text-3)"
+                    style={{ fontSize: '0.70rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}
+                  >
+                    Total down
+                  </text>
                 </PieChart>
               </ResponsiveContainer>
             </div>
