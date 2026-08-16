@@ -258,16 +258,24 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
             <section className="analytics-kpi-grid" aria-label="Analytics summary">
               {kpis.map((kpi) => {
                 const Icon = kpiIcons[kpi.id]
+                const isSelected = trendMetric === kpi.id
 
                 return (
-                  <article key={kpi.id} className="section-card analytics-kpi-card">
+                  <button
+                    key={kpi.id}
+                    className={`section-card analytics-kpi-card ${isSelected ? 'is-selected' : ''}`}
+                    type="button"
+                    aria-pressed={isSelected}
+                    aria-label={`${kpi.label}, ${kpi.value}. ${kpi.helper}. Click to plot in trend explorer.`}
+                    onClick={() => setTrendMetric(kpi.id)}
+                  >
                     <div className="analytics-kpi-heading">
-                      <p className="stat-label">{kpi.label}</p>
+                      <span className="stat-label">{kpi.label}</span>
                       <Icon size={18} aria-hidden="true" />
                     </div>
                     <p className="stat-value">{kpi.value}</p>
                     <p className="stat-helper">{kpi.helper}</p>
-                  </article>
+                  </button>
                 )
               })}
             </section>

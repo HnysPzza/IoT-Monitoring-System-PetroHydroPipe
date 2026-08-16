@@ -1311,8 +1311,43 @@ button:disabled {
 
 .analytics-kpi-card {
   display: grid;
+  align-content: start;
   gap: 10px;
   min-height: 150px;
+  padding: 16px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.18s var(--ease-std),
+    background-color 0.18s var(--ease-std),
+    box-shadow 0.18s var(--ease-std),
+    transform 0.15s var(--ease-std);
+}
+
+.analytics-kpi-card:hover {
+  border-color: color-mix(in srgb, var(--c-accent) 48%, var(--card-border));
+  background: color-mix(in srgb, var(--hover-bg) 35%, var(--card-bg));
+  transform: translateY(-1px);
+}
+
+.analytics-kpi-card.is-selected {
+  border-color: var(--c-primary);
+  background: color-mix(in srgb, var(--c-primary) 7%, var(--card-bg));
+  box-shadow:
+    0 0 0 1px var(--c-primary),
+    0 6px 20px rgba(22, 119, 255, 0.14);
+}
+
+.analytics-kpi-card:focus-visible {
+  outline: 3px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.analytics-kpi-card p {
+  margin: 0;
 }
 
 .analytics-kpi-heading {
