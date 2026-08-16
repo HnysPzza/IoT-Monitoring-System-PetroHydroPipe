@@ -16,53 +16,15 @@ import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 
-function SkeletonBlock({ className = '', style }) {
-  return <div className={`skeleton ${className}`.trim()} style={style} aria-hidden="true" />
+function SkeletonBlock({ className = '' }) {
+  return <div className={`skeleton ${className}`.trim()} aria-hidden="true" />
 }
 
 function DowntimeChartSkeleton() {
-  const bars = [
-    { height: '42%' },
-    { height: '78%' },
-    { height: '35%' },
-    { height: '64%' },
-    { height: '88%' },
-    { height: '22%' },
-    { height: '54%' },
-  ]
-
   return (
-    <div className="downtime-chart-skeleton" role="status" aria-live="polite">
+    <div role="status" aria-live="polite">
       <span className="sr-only">Loading downtime chart...</span>
-      <div className="chart-skeleton-grid" aria-hidden="true">
-        <div className="chart-skeleton-y-axis">
-          <span>60m</span>
-          <span>40m</span>
-          <span>20m</span>
-          <span>0m</span>
-        </div>
-        <div className="chart-skeleton-body">
-          <div className="chart-skeleton-gridlines">
-            <div className="chart-skeleton-line" />
-            <div className="chart-skeleton-line" />
-            <div className="chart-skeleton-line" />
-            <div className="chart-skeleton-line" />
-          </div>
-          <div className="chart-skeleton-bars">
-            {bars.map((bar, index) => (
-              <div key={index} className="chart-skeleton-col">
-                <div className="chart-skeleton-bar-wrapper">
-                  <div
-                    className="skeleton skeleton-chart-bar"
-                    style={{ height: bar.height, animationDelay: `${index * 120}ms` }}
-                  />
-                </div>
-                <span className="skeleton skeleton-tick-label" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
     </div>
   )
 }
@@ -76,7 +38,7 @@ function ProductionAnalyticsSkeleton() {
           <SkeletonBlock className="skeleton-heading" />
         </div>
       </div>
-      <div className="skeleton skeleton-panel" style={{ height: '240px' }} aria-hidden="true" />
+      <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
     </section>
   )
 }
