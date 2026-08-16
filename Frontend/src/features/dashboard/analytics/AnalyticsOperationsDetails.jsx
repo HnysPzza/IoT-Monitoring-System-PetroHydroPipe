@@ -3,6 +3,7 @@ import { Activity, Clock3, Filter } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   formatAnalyticsDateTime,
+  formatCompactDuration,
   getDowntimeCauseBreakdown,
   getProcessSensorBreakdown,
 } from './analyticsPresentation.js'
@@ -79,10 +80,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           </span>
         </div>
 
-        <p className="analytics-detail-intro">
-          Share of recorded downtime across the currently supported local cause labels.
-        </p>
-
         {causeDistribution.length === 0 ? (
           <div className="analytics-cause-empty" role="status" aria-label="No downtime causes recorded">
             <strong>No downtime causes recorded</strong>
@@ -92,7 +89,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         ) : (
           <div className="analytics-cause-content">
             <div className="analytics-cause-chart" aria-hidden="true">
-              <ResponsiveContainer width="100%" height={220} minWidth={0}>
+              <ResponsiveContainer width="100%" height={240} minWidth={0}>
                 <PieChart accessibilityLayer={false}>
                   <Pie
                     data={causeDistribution}
@@ -100,8 +97,8 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     nameKey="cause"
                     cx="50%"
                     cy="50%"
-                    innerRadius="58%"
-                    outerRadius="80%"
+                    innerRadius="60%"
+                    outerRadius="84%"
                     paddingAngle={3}
                     stroke="var(--card-bg)"
                     strokeWidth={2}
@@ -121,21 +118,31 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                   />
                   <text
                     x="50%"
-                    y="46%"
+                    y="45%"
                     textAnchor="middle"
-                    dominantBaseline="middle"
+                    dominantBaseline="central"
                     fill="var(--c-text)"
-                    style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '1.2rem', fontWeight: 700 }}
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: '1.15rem',
+                      fontWeight: 700,
+                      letterSpacing: '-0.02em',
+                    }}
                   >
-                    {formatDuration(totalDowntimeMinutes)}
+                    {formatCompactDuration(totalDowntimeMinutes)}
                   </text>
                   <text
                     x="50%"
-                    y="60%"
+                    y="59%"
                     textAnchor="middle"
-                    dominantBaseline="middle"
+                    dominantBaseline="central"
                     fill="var(--c-text-3)"
-                    style={{ fontSize: '0.70rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}
+                    style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                    }}
                   >
                     Total down
                   </text>
@@ -175,10 +182,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
             {snapshot.processEvents.length} recorded
           </span>
         </div>
-
-        <p className="analytics-detail-intro">
-          Sensor labels stay neutral until the final sensor-reading semantics are confirmed.
-        </p>
 
         <div className="analytics-sensor-filter" role="group" aria-label="Filter process events by sensor code">
           <button
