@@ -419,13 +419,14 @@ export default function DashboardSection() {
                 onDateChange={setTrendAnchorDate}
               />
               <button
-                className="btn btn-secondary table-action-button"
+                className="btn btn-success table-action-button downtime-chart-refresh"
                 type="button"
+                aria-label="Refresh chart"
                 disabled={downtimeChartState === 'loading'}
                 onClick={() => setDowntimeChartRefresh((current) => current + 1)}
               >
                 <RotateCw className={downtimeChartState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-                Refresh chart
+                Refresh
               </button>
             </div>
           </div>
@@ -511,12 +512,13 @@ export default function DashboardSection() {
               </div>
             ) : null}
             <button
-              className="btn btn-secondary"
+              className="btn btn-success"
               type="button"
+              aria-label="Refresh live status"
               disabled={liveState === 'loading'}
               onClick={() => setLiveRefresh((current) => current + 1)}
             >
-              Refresh live status
+              Refresh
             </button>
           </div>
         </section>
@@ -533,13 +535,14 @@ export default function DashboardSection() {
                 {reportingSensorCount} / 5 sensors reporting
               </span>
               <button
-                className="btn btn-secondary table-action-button"
+                className="btn btn-success table-action-button live-refresh-button"
                 type="button"
+                aria-label="Refresh live status"
                 disabled={liveState === 'loading'}
                 onClick={() => setLiveRefresh((current) => current + 1)}
               >
                 <RotateCw className={liveState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-                Refresh live status
+                Refresh
               </button>
             </div>
           </div>
