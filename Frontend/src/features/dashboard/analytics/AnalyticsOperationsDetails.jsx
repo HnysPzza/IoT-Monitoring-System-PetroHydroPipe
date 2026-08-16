@@ -84,8 +84,12 @@ const renderActiveSector = (props) => {
         startAngle={startAngle}
         endAngle={endAngle}
         fill={fill}
+        cornerRadius={6}
+        stroke="var(--card-bg)"
+        strokeWidth={3}
+        strokeLinejoin="round"
         style={{
-          filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.28))',
+          filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.32))',
           transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
           cursor: 'pointer',
         }}
@@ -166,9 +170,11 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     cy="50%"
                     innerRadius="60%"
                     outerRadius="82%"
-                    paddingAngle={3}
+                    paddingAngle={4}
+                    cornerRadius={6}
                     stroke="var(--card-bg)"
                     strokeWidth={2}
+                    strokeLinejoin="round"
                     isAnimationActive={true}
                     animationDuration={500}
                     animationEasing="ease-out"
