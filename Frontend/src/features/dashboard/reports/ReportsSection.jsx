@@ -180,13 +180,14 @@ export default function ReportsSection() {
             />
           </label>
           <button
-            className="btn btn-secondary reports-action"
+            className="btn btn-success reports-action reports-refresh-button"
             type="button"
+            aria-label="Refresh report"
             disabled={loadState === 'loading'}
             onClick={retryCurrentReport}
           >
             <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={17} aria-hidden="true" />
-            Refresh report
+            Refresh
           </button>
           <button
             className="btn btn-primary reports-action"
