@@ -136,9 +136,9 @@ export default function LiveSection() {
         </div>
         <div className="live-refresh">
           <span>Last update {machine?.lastUpdated ? formatLiveDateTime(machine.lastUpdated) : 'not available'}</span>
-          <button className="btn btn-secondary table-action-button" type="button" disabled={isRefreshing} onClick={() => loadLiveFeed({ silent: true })}>
+          <button className="btn btn-success table-action-button live-refresh-button" type="button" aria-label="Refresh live feed" disabled={isRefreshing} onClick={() => loadLiveFeed({ silent: true })}>
             <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            {isRefreshing ? 'Refreshing' : 'Refresh'}
+            Refresh
           </button>
         </div>
       </section>
