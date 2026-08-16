@@ -12,10 +12,10 @@ export const analyticsTrendMetrics = [
   },
   {
     id: 'production',
-    label: 'Actual pieces',
+    label: 'Output',
     unit: 'pieces',
     shortUnit: 'pcs',
-    description: 'Actual pieces recorded in each automatic time bucket.',
+    description: 'Output recorded in each automatic time bucket.',
   },
   {
     id: 'availability',
@@ -230,7 +230,7 @@ export function getAnalyticsKpis(snapshot) {
     },
     {
       id: 'production',
-      label: 'Actual pieces',
+      label: 'Output',
       value: `${formatNumber(totalPieces)} pcs`,
       helper: 'Recorded local production output',
     },

@@ -98,7 +98,7 @@ describe('AnalyticsSection local request states', () => {
     expect(loadAnalytics).toHaveBeenLastCalledWith({ period: 'this-month' })
   })
 
-  it('switches the explorer to a separate actual-pieces trend without mixing units', async () => {
+  it('switches the explorer to a separate output trend without mixing units', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
 
@@ -107,9 +107,9 @@ describe('AnalyticsSection local request states', () => {
 
     await user.selectOptions(screen.getByLabelText('Trend metric'), 'production')
 
-    expect(screen.getByText('Actual pieces - daily buckets')).toBeInTheDocument()
+    expect(screen.getByText('Output - daily buckets')).toBeInTheDocument()
     expect(screen.getByText('118 pcs across 7 buckets.')).toBeInTheDocument()
-    expect(screen.getByText('View actual pieces trend data')).toBeInTheDocument()
+    expect(screen.getByText('View output trend data')).toBeInTheDocument()
   })
 
   it('does not let a delayed local result replace an invalid custom date state', async () => {
