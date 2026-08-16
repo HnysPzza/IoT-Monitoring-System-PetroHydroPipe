@@ -524,6 +524,18 @@ button:disabled {
   background: var(--c-surface2);
 }
 
+.btn-success {
+  background: var(--c-success, #10B981);
+  color: #FFFFFF;
+  border-color: color-mix(in srgb, var(--c-success, #10B981) 85%, #000000);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--c-success, #10B981) 22%, transparent);
+}
+
+.btn-success:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-success, #10B981) 86%, #000000);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--c-success, #10B981) 35%, transparent);
+}
+
 .spinner {
   width: 18px;
   height: 18px;
