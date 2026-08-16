@@ -189,7 +189,9 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                   <Tooltip
                     content={<CauseTooltip />}
                     cursor={false}
-                    wrapperStyle={{ outline: 'none' }}
+                    position={{ y: 4 }}
+                    allowEscapeViewBox={{ x: true, y: true }}
+                    wrapperStyle={{ outline: 'none', zIndex: 10, pointerEvents: 'none' }}
                   />
                   <text
                     x="50%"
