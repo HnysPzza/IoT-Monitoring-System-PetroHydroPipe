@@ -1400,9 +1400,22 @@ button:disabled {
 }
 
 .analytics-metric-toggle {
-  display: inline-grid;
-  grid-template-columns: repeat(4, auto);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--subtle-border);
   min-width: 0;
+}
+
+.analytics-metric-toggle .trend-mode-button {
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  white-space: nowrap;
 }
 
 .analytics-trend-chart {
@@ -1411,15 +1424,59 @@ button:disabled {
   padding: 6px 0 0;
 }
 
+.analytics-trend-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .analytics-trend-summary {
-  padding: 11px 14px;
-  border-left: 3px solid var(--chart-current);
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--c-primary);
   border-radius: 0 8px 8px 0;
   background: var(--panel-bg-soft);
   color: var(--c-text);
   font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
+}
+
+.analytics-trend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid var(--subtle-border);
+  background: var(--panel-bg);
+  color: var(--c-text-2);
+  white-space: nowrap;
+}
+
+.analytics-trend-badge.is-positive {
+  color: var(--c-success, #10B981);
+  background: color-mix(in srgb, var(--c-success, #10B981) 12%, var(--panel-bg));
+  border-color: color-mix(in srgb, var(--c-success, #10B981) 32%, var(--card-border));
+}
+
+.analytics-trend-badge.is-negative {
+  color: var(--c-danger, #EF4444);
+  background: color-mix(in srgb, var(--c-danger, #EF4444) 12%, var(--panel-bg));
+  border-color: color-mix(in srgb, var(--c-danger, #EF4444) 32%, var(--card-border));
+}
+
+.analytics-trend-badge.is-neutral-up,
+.analytics-trend-badge.is-neutral-down,
+.analytics-trend-badge.is-neutral {
+  color: var(--c-accent);
+  background: color-mix(in srgb, var(--c-accent) 12%, var(--panel-bg));
+  border-color: color-mix(in srgb, var(--c-accent) 30%, var(--card-border));
 }
 
 .analytics-chart-details {
