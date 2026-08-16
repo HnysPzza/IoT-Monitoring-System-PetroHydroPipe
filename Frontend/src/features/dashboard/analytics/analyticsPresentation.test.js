@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { buildAnalyticsSnapshot } from './analyticsService.js'
 import {
   buildAnalyticsTrend,
-  getDowntimeCauseBreakdown,
+  formatCompactDuration,
   getAnalyticsKpis,
-  getProcessSensorBreakdown,
   getAnalyticsTrendSummary,
+  getDowntimeCauseBreakdown,
+  getProcessSensorBreakdown,
+  getTrendEvaluation,
 } from './analyticsPresentation.js'
 
 describe('Analytics presentation helpers', () => {
@@ -101,5 +103,51 @@ describe('Analytics presentation helpers', () => {
       { sensorCode: 'S-04', eventCount: 1 },
       { sensorCode: 'S-05', eventCount: 1 },
     ])
+  })
+
+  it('formats compact duration for donut chart centers without exceeding inner radius', () => {
+    expect(formatCompactDuration(0)).toBe('0m')
+    expect(formatCompactDuration(43)).toBe('43m')
+    expect(formatCompactDuration(60)).toBe('1h')
+    expect(formatCompactDuration(130)).toBe('2h 10m')
+  })
+
+  it('evaluates trend directions and assigns red for downtime increases and green for production increases', () => {
+    const increasingDowntimeTrend = {
+      metric: { id: 'downtime' },
+      points: [{ value: 10 }, { value: 30 }, { value: 50 }],
+    }
+    const decreasingDowntimeTrend = {
+      metric: { id: 'downtime' },
+      points: [{ value: 50 }, { value: 30 }, { value: 10 }],
+    }
+    const increasingProductionTrend = {
+      metric: { id: 'production' },
+      points: [{ value: 100 }, { value: 120 }, { value: 150 }],
+    }
+    const decreasingProductionTrend = {
+      metric: { id: 'production' },
+      points: [{ value: 150 }, { value: 120 }, { value: 100 }],
+    }
+
+    const downtimeInc = getTrendEvaluation(increasingDowntimeTrend)
+    expect(downtimeInc.direction).toBe('up')
+    expect(downtimeInc.strokeColor).toBe('var(--chart-danger)')
+    expect(downtimeInc.sentiment).toBe('negative')
+
+    const downtimeDec = getTrendEvaluation(decreasingDowntimeTrend)
+    expect(downtimeDec.direction).toBe('down')
+    expect(downtimeDec.strokeColor).toBe('var(--chart-target)')
+    expect(downtimeDec.sentiment).toBe('positive')
+
+    const prodInc = getTrendEvaluation(increasingProductionTrend)
+    expect(prodInc.direction).toBe('up')
+    expect(prodInc.strokeColor).toBe('var(--chart-target)')
+    expect(prodInc.sentiment).toBe('positive')
+
+    const prodDec = getTrendEvaluation(decreasingProductionTrend)
+    expect(prodDec.direction).toBe('down')
+    expect(prodDec.strokeColor).toBe('var(--chart-danger)')
+    expect(prodDec.sentiment).toBe('negative')
   })
 })

@@ -329,6 +329,77 @@ export function getProcessSensorBreakdown(snapshot) {
   return [...sensors.values()].sort((left, right) => left.sensorCode.localeCompare(right.sensorCode))
 }
 
+export function formatCompactDuration(minutes) {
+  const numMinutes = Number(minutes) || 0
+  if (numMinutes < 60) return `${numMinutes}m`
+  const hours = Math.floor(numMinutes / 60)
+  const remaining = numMinutes % 60
+  return remaining ? `${hours}h ${remaining}m` : `${hours}h`
+}
+
+export function getTrendEvaluation(trend) {
+  const { metric, points } = trend
+  if (!points || points.length < 2) {
+    return {
+      direction: 'flat',
+      delta: 0,
+      deltaPercent: 0,
+      strokeColor: 'var(--chart-current)',
+      sentiment: 'neutral',
+      label: 'Steady',
+    }
+  }
+
+  const first = Number(points[0].value) || 0
+  const last = Number(points[points.length - 1].value) || 0
+  const delta = last - first
+  const deltaPercent = first !== 0 ? (delta / Math.abs(first)) * 100 : 0
+  const isIncreasing = delta > 0.001
+  const isDecreasing = delta < -0.001
+
+  let sentiment = 'neutral'
+  let strokeColor = 'var(--chart-current)'
+
+  if (metric.id === 'downtime') {
+    // For downtime: increase is red/danger, decrease is green/target
+    if (isIncreasing) {
+      sentiment = 'negative'
+      strokeColor = 'var(--chart-danger)'
+    } else if (isDecreasing) {
+      sentiment = 'positive'
+      strokeColor = 'var(--chart-target)'
+    }
+  } else if (metric.id === 'production' || metric.id === 'availability') {
+    // For actual pieces & availability: increase is green/target, decrease is red/danger
+    if (isIncreasing) {
+      sentiment = 'positive'
+      strokeColor = 'var(--chart-target)'
+    } else if (isDecreasing) {
+      sentiment = 'negative'
+      strokeColor = 'var(--chart-danger)'
+    }
+  } else {
+    sentiment = isIncreasing ? 'neutral-up' : isDecreasing ? 'neutral-down' : 'neutral'
+    strokeColor = 'var(--chart-current)'
+  }
+
+  const sign = delta > 0 ? '+' : ''
+  const percentText = Math.abs(deltaPercent).toFixed(1)
+
+  return {
+    direction: isIncreasing ? 'up' : isDecreasing ? 'down' : 'flat',
+    delta,
+    deltaPercent,
+    strokeColor,
+    sentiment,
+    label: isIncreasing
+      ? `Trending up (${sign}${percentText}%)`
+      : isDecreasing
+        ? `Trending down (${sign}${percentText}%)`
+        : 'Steady pace',
+  }
+}
+
 export function formatAnalyticsDateTime(value, timeZone = 'Asia/Manila') {
   if (!value) return 'Not recorded'
 
