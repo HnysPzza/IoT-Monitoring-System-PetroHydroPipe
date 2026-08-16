@@ -3332,6 +3332,25 @@ button:disabled {
   margin-top: 14px;
 }
 
+.trend-controls-skeleton {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.skeleton-toggle {
+  width: 250px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.skeleton-control {
+  width: 175px;
+  height: 40px;
+  border-radius: 8px;
+}
+
 .desktop-only {
   display: inline-grid;
 }

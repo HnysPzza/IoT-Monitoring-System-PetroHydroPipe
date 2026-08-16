@@ -16,8 +16,8 @@ import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 
-function SkeletonBlock({ className = '' }) {
-  return <div className={`skeleton ${className}`.trim()} aria-hidden="true" />
+function SkeletonBlock({ className = '', style }) {
+  return <div className={`skeleton ${className}`.trim()} style={style} aria-hidden="true" />
 }
 
 function DowntimeChartSkeleton() {
@@ -36,6 +36,9 @@ function ProductionAnalyticsSkeleton() {
         <div>
           <p className="section-eyebrow">Data analytics</p>
           <SkeletonBlock className="skeleton-heading" />
+        </div>
+        <div className="trend-controls-skeleton" aria-hidden="true">
+          <SkeletonBlock className="skeleton-toggle" style={{ width: '180px' }} />
         </div>
       </div>
       <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
@@ -453,35 +456,46 @@ export default function DashboardSection() {
           <div className="section-heading">
             <div>
               <p className="section-eyebrow">Downtime chart</p>
-              <h2>Downtime by Period</h2>
+              {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+                <SkeletonBlock className="skeleton-heading" />
+              ) : (
+                <h2>Downtime by Period</h2>
+              )}
             </div>
-            <div className="trend-controls" aria-label="Downtime chart controls">
-              <div className="trend-mode-toggle" role="group" aria-label="Chart range">
-                {trendModes.map((mode) => (
-                  <button
-                    key={mode.id}
-                    className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
-                    type="button"
-                    disabled={mode.disabled}
-                    title={mode.disabled ? 'Last Hour is not available yet' : undefined}
-                    aria-pressed={trendMode === mode.id}
-                    onClick={() => {
-                      setTrendMode(mode.id)
-                      setTrendAnchorDate(startOfDay(new Date()))
-                    }}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
+            {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+              <div className="trend-controls-skeleton" aria-hidden="true">
+                <SkeletonBlock className="skeleton-toggle" />
+                <SkeletonBlock className="skeleton-control" />
               </div>
-              <TrendCalendarControl
-                mode={trendMode}
-                selectedDate={trendAnchorDate}
-                maxDate={today}
-                rangeLabel={trendRangeLabel}
-                onDateChange={setTrendAnchorDate}
-              />
-            </div>
+            ) : (
+              <div className="trend-controls" aria-label="Downtime chart controls">
+                <div className="trend-mode-toggle" role="group" aria-label="Chart range">
+                  {trendModes.map((mode) => (
+                    <button
+                      key={mode.id}
+                      className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
+                      type="button"
+                      disabled={mode.disabled}
+                      title={mode.disabled ? 'Last Hour is not available yet' : undefined}
+                      aria-pressed={trendMode === mode.id}
+                      onClick={() => {
+                        setTrendMode(mode.id)
+                        setTrendAnchorDate(startOfDay(new Date()))
+                      }}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+                <TrendCalendarControl
+                  mode={trendMode}
+                  selectedDate={trendAnchorDate}
+                  maxDate={today}
+                  rangeLabel={trendRangeLabel}
+                  onDateChange={setTrendAnchorDate}
+                />
+              </div>
+            )}
           </div>
           {downtimeChartState === 'stale' && hasCurrentDowntimeChart ? (
             <div className="notice notice-error dashboard-alert" role="alert">
