@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, Clock3, Filter } from 'lucide-react'
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { Cell, Pie, PieChart, ResponsiveContainer, Sector, Tooltip } from 'recharts'
 import {
   formatAnalyticsDateTime,
   formatCompactDuration,
@@ -42,13 +42,38 @@ function CauseTooltip({ active, payload }) {
   )
 }
 
+const renderActiveSector = (props) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props
+
+  return (
+    <g className="analytics-donut-active-sector">
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={Math.max(0, innerRadius - 2)}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        style={{
+          filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.28))',
+          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          cursor: 'pointer',
+        }}
+      />
+    </g>
+  )
+}
+
 export default function AnalyticsOperationsDetails({ snapshot }) {
   const [selectedSensor, setSelectedSensor] = useState('all')
+  const [activeIndex, setActiveIndex] = useState(null)
   const causes = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
   const sensors = useMemo(() => getProcessSensorBreakdown(snapshot), [snapshot])
 
   useEffect(() => {
     setSelectedSensor('all')
+    setActiveIndex(null)
   }, [snapshot])
 
   const totalDowntimeMinutes = causes.reduce((total, cause) => total + cause.durationMinutes, 0)
@@ -65,6 +90,14 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       : snapshot.processEvents.filter((event) => event.sensorCode === selectedSensor),
     'occurredAt',
   )
+
+  const activeCause = activeIndex !== null ? causeDistribution[activeIndex] : null
+  const displayDuration = activeCause
+    ? formatCompactDuration(activeCause.durationMinutes)
+    : formatCompactDuration(totalDowntimeMinutes)
+  const displayLabel = activeCause
+    ? `${activeCause.percentage}% DOWN`
+    : 'TOTAL DOWN'
 
   return (
     <div className="analytics-operations-layout">
@@ -89,22 +122,26 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         ) : (
           <div className="analytics-cause-content">
             <div className="analytics-cause-chart" aria-hidden="true">
-              <ResponsiveContainer width="100%" height={240} minWidth={0}>
+              <ResponsiveContainer width="100%" height={220} minWidth={0}>
                 <PieChart accessibilityLayer={false}>
                   <Pie
+                    activeIndex={activeIndex}
+                    activeShape={renderActiveSector}
                     data={causeDistribution}
                     dataKey="durationMinutes"
                     nameKey="cause"
                     cx="50%"
                     cy="50%"
                     innerRadius="60%"
-                    outerRadius="84%"
+                    outerRadius="82%"
                     paddingAngle={3}
                     stroke="var(--card-bg)"
                     strokeWidth={2}
                     isAnimationActive={true}
-                    animationDuration={600}
+                    animationDuration={500}
                     animationEasing="ease-out"
+                    onMouseEnter={(_, index) => setActiveIndex(index)}
+                    onMouseLeave={() => setActiveIndex(null)}
                     rootTabIndex={-1}
                   >
                     {causeDistribution.map((cause) => (
@@ -127,32 +164,39 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                       fontSize: '1.15rem',
                       fontWeight: 700,
                       letterSpacing: '-0.02em',
+                      transition: 'all 0.2s ease',
                     }}
                   >
-                    {formatCompactDuration(totalDowntimeMinutes)}
+                    {displayDuration}
                   </text>
                   <text
                     x="50%"
                     y="59%"
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fill="var(--c-text-3)"
+                    fill={activeCause ? 'var(--c-accent)' : 'var(--c-text-3)'}
                     style={{
                       fontSize: '0.68rem',
                       fontWeight: 600,
                       letterSpacing: '0.06em',
                       textTransform: 'uppercase',
+                      transition: 'all 0.2s ease',
                     }}
                   >
-                    Total down
+                    {displayLabel}
                   </text>
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
             <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
-              {causeDistribution.map((cause) => (
-                <li key={cause.cause} className="analytics-cause-legend-item">
+              {causeDistribution.map((cause, index) => (
+                <li
+                  key={cause.cause}
+                  className={`analytics-cause-legend-item ${activeIndex === index ? 'is-hovered' : ''}`}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseLeave={() => setActiveIndex(null)}
+                >
                   <span
                     className="analytics-cause-swatch"
                     style={{ backgroundColor: cause.color }}
