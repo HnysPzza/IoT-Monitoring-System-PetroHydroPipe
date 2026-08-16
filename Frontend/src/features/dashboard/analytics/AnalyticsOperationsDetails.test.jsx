@@ -110,53 +110,66 @@ describe('AnalyticsOperationsDetails', () => {
     })
   })
 
-  it('filters the process event record by neutral sensor code', async () => {
-    const user = userEvent.setup()
-    renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
-    const processList = screen.getByRole('list', { name: 'Process event records' })
+  it('renders the process event distribution count chart with a semantic sensor list', () => {
+    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
+    const sensorLegend = screen.getByRole('list', { name: 'Process event distribution' })
 
-    expect(within(processList).getAllByRole('listitem')).toHaveLength(5)
-    expect(screen.queryByRole('table', { name: 'Process event records' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'S-04, 1 process event' }))
-
-    expect(within(processList).getAllByRole('listitem')).toHaveLength(1)
-    const selectedEvent = within(processList).getByRole('listitem')
-    expect(within(selectedEvent).getByText('S-04')).toBeInTheDocument()
-    expect(within(selectedEvent).getByText('Downtime detected')).toBeInTheDocument()
-    expect(within(selectedEvent).getByText(/Aug 13, 2026/i).tagName).toBe('TIME')
-    expect(selectedEvent.querySelector('time')).toHaveAttribute('dateTime', '2026-08-13T09:40:00+08:00')
+    expect(container.querySelector('.analytics-sensor-chart')).toHaveAttribute('aria-hidden', 'true')
+    expect(within(sensorLegend).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(sensorLegend).getByText('S-01')).toBeInTheDocument()
+    expect(within(sensorLegend).getByText('1 event - 20% of process events')).toBeInTheDocument()
+    expect(within(sensorLegend).getByText('S-05')).toBeInTheDocument()
   })
 
-  it('resets to all sensors when a new snapshot still includes the previously selected sensor', async () => {
-    const user = userEvent.setup()
-    const { rerender } = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
+  it('shows the sensor details tooltip when a bar in the distribution chart is hovered', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) {
+        this.callback = callback
+      }
 
-    await user.click(screen.getByRole('button', { name: 'S-04, 1 process event' }))
-    expect(screen.getByRole('button', { name: 'S-04, 1 process event' })).toHaveAttribute('aria-pressed', 'true')
+      observe() {
+        this.callback([{ contentRect: { width: 320, height: 220 } }])
+      }
 
-    const nextSnapshot = {
-      ...buildAnalyticsSnapshot(),
-      processEvents: [
-        {
-          id: 'next-process-001',
-          occurredAt: '2026-08-15T08:00:00+08:00',
-          sensorCode: 'S-04',
-          eventType: 'Downtime detected',
-        },
-        {
-          id: 'next-process-002',
-          occurredAt: '2026-08-15T09:00:00+08:00',
-          sensorCode: 'S-01',
-          eventType: 'Process event recorded',
-        },
-      ],
-    }
-    rerender(<AnalyticsOperationsDetails snapshot={nextSnapshot} />)
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'All sensors' })).toHaveAttribute('aria-pressed', 'true')
+      disconnect() {}
     })
-    expect(within(screen.getByRole('list', { name: 'Process event records' })).getAllByRole('listitem')).toHaveLength(2)
+
+    let view
+    try {
+      view = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
+      const rectangles = await waitFor(() => {
+        const renderedBars = view.container.querySelectorAll('.recharts-bar-rectangle')
+        expect(renderedBars).toHaveLength(5)
+        return renderedBars
+      })
+
+      fireEvent.mouseEnter(rectangles[0])
+
+      await waitFor(() => {
+        const tooltip = view.container.querySelector('.analytics-sensor-tooltip')
+        expect(tooltip).toBeVisible()
+        expect(tooltip).toHaveTextContent('Sensor S-01')
+        expect(tooltip).toHaveTextContent('1 event')
+        expect(tooltip).toHaveTextContent('20% of process events')
+      })
+    } finally {
+      view?.unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('shows an explicit no-process-events state when snapshot contains no process events', () => {
+    const snapshot = {
+      ...buildAnalyticsSnapshot(),
+      processEvents: [],
+    }
+    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={snapshot} />)
+    const noProcessState = screen.getByRole('status', { name: 'No process events recorded' })
+
+    expect(screen.getByText('No process events recorded')).toBeInTheDocument()
+    expect(within(noProcessState).getByText('0 events recorded')).toBeInTheDocument()
+    expect(within(noProcessState).getByText('No local process events fall within the selected date range.')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Process event distribution' })).not.toBeInTheDocument()
+    expect(container.querySelector('.analytics-sensor-chart')).not.toBeInTheDocument()
   })
 })
