@@ -1297,8 +1297,37 @@ button:disabled {
 }
 
 .analytics-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 44px;
   width: 100%;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #FFFFFF;
+  background: var(--c-success, #10B981);
+  border: 1px solid color-mix(in srgb, var(--c-success, #10B981) 85%, #000000);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--c-success, #10B981) 22%, transparent);
+  transition:
+    background-color 0.18s var(--ease-std),
+    transform 0.15s var(--ease-std),
+    box-shadow 0.18s var(--ease-std);
+}
+
+.analytics-refresh-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-success, #10B981) 86%, #000000);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--c-success, #10B981) 35%, transparent);
+}
+
+.analytics-refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* KPI Summary Cards - Mobile First */
