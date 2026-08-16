@@ -133,4 +133,20 @@ describe('AnalyticsSection local request states', () => {
 
     expect(screen.queryByRole('heading', { name: 'Operational trend' })).not.toBeInTheDocument()
   })
+
+  it('switches the trend explorer metric when clicking an interactive KPI card', async () => {
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
+
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
+
+    const availabilityCard = screen.getByRole('button', { name: /Availability.*Click to plot/i })
+    expect(availabilityCard).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(availabilityCard)
+
+    expect(availabilityCard).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/Availability - daily buckets/i)).toBeInTheDocument()
+  })
 })
