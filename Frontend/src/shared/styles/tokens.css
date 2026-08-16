@@ -1228,6 +1228,9 @@ button:disabled {
 
 /* Overview controls toolbar & unified refresh */
 .overview-controls-card {
+  position: sticky;
+  top: 76px;
+  z-index: 15;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1237,7 +1240,9 @@ button:disabled {
   border: 1px solid var(--card-border);
   border-radius: 12px;
   background: var(--card-bg);
-  box-shadow: var(--shadow-soft);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .overview-meta-strip {
@@ -1270,6 +1275,7 @@ button:disabled {
 
 @media (max-width: 680px) {
   .overview-controls-card {
+    top: 68px;
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
