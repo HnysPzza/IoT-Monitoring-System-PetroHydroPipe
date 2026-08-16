@@ -149,5 +149,29 @@ describe('Analytics presentation helpers', () => {
     expect(prodDec.direction).toBe('down')
     expect(prodDec.strokeColor).toBe('var(--chart-danger)')
     expect(prodDec.sentiment).toBe('negative')
+
+    // Monthly or Custom range with leading and trailing zero buckets
+    const monthDowntimeTrend = {
+      metric: { id: 'downtime' },
+      points: [
+        { value: 0 }, { value: 0 }, { value: 0 },
+        { value: 43 }, { value: 35 }, { value: 24 }, { value: 16 }, { value: 12 },
+        { value: 0 }, { value: 0 }, { value: 0 },
+      ],
+    }
+    const monthDowntimeEval = getTrendEvaluation(monthDowntimeTrend)
+    expect(monthDowntimeEval.direction).toBe('down')
+    expect(monthDowntimeEval.strokeColor).toBe('var(--chart-target)')
+    expect(monthDowntimeEval.sentiment).toBe('positive')
+
+    // Empty date range with all zeroes
+    const emptyTrend = {
+      metric: { id: 'downtime' },
+      points: [{ value: 0 }, { value: 0 }, { value: 0 }],
+    }
+    const emptyEval = getTrendEvaluation(emptyTrend)
+    expect(emptyEval.direction).toBe('flat')
+    expect(emptyEval.strokeColor).toBe('var(--chart-current)')
+    expect(emptyEval.sentiment).toBe('neutral')
   })
 })
