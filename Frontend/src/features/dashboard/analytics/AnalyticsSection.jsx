@@ -176,7 +176,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </div>
 
           <button
-            className="btn analytics-refresh-button"
+            className="btn btn-success analytics-refresh-button"
             type="button"
             aria-label="Refresh data"
             disabled={!range || loadState === 'loading' || loadState === 'refreshing'}
