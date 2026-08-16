@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Clock3, Filter } from 'lucide-react'
-import { Cell, Pie, PieChart, ResponsiveContainer, Sector, Tooltip } from 'recharts'
+import { Activity, Clock3 } from 'lucide-react'
 import {
-  formatAnalyticsDateTime,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Sector,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import {
   formatCompactDuration,
   getDowntimeCauseBreakdown,
   getProcessSensorBreakdown,
@@ -16,16 +27,20 @@ const CAUSE_COLORS = [
   'var(--chart-danger)',
 ]
 
+const SENSOR_COLORS = [
+  'var(--chart-current)',
+  'var(--chart-target)',
+  'var(--chart-warning)',
+  'var(--chart-previous)',
+  'var(--chart-danger)',
+]
+
 function formatDuration(minutes) {
   if (minutes < 60) return `${minutes} min`
 
   const hours = Math.floor(minutes / 60)
   const remainingMinutes = minutes % 60
   return remainingMinutes ? `${hours} hr ${remainingMinutes} min` : `${hours} hr`
-}
-
-function getNewestFirst(rows, key) {
-  return [...rows].sort((left, right) => String(right[key]).localeCompare(String(left[key])))
 }
 
 function CauseTooltip({ active, payload }) {
@@ -38,6 +53,20 @@ function CauseTooltip({ active, payload }) {
       <strong>{cause.cause}</strong>
       <span>{formatDuration(cause.durationMinutes)}</span>
       <span>{cause.percentage}% of recorded downtime</span>
+    </div>
+  )
+}
+
+function SensorTooltip({ active, payload }) {
+  const sensor = payload?.[0]?.payload
+
+  if (!active || !sensor) return null
+
+  return (
+    <div className="recharts-tooltip-card industrial-tooltip analytics-sensor-tooltip" role="status">
+      <strong>Sensor {sensor.sensorCode}</strong>
+      <span>{sensor.eventCount} {sensor.eventCount === 1 ? 'event' : 'events'}</span>
+      <span>{sensor.percentage}% of process events</span>
     </div>
   )
 }
@@ -66,14 +95,14 @@ const renderActiveSector = (props) => {
 }
 
 export default function AnalyticsOperationsDetails({ snapshot }) {
-  const [selectedSensor, setSelectedSensor] = useState('all')
   const [activeIndex, setActiveIndex] = useState(null)
+  const [activeSensorIndex, setActiveSensorIndex] = useState(null)
   const causes = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
   const sensors = useMemo(() => getProcessSensorBreakdown(snapshot), [snapshot])
 
   useEffect(() => {
-    setSelectedSensor('all')
     setActiveIndex(null)
+    setActiveSensorIndex(null)
   }, [snapshot])
 
   const totalDowntimeMinutes = causes.reduce((total, cause) => total + cause.durationMinutes, 0)
@@ -84,12 +113,15 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       ? Math.round((cause.durationMinutes / totalDowntimeMinutes) * 100)
       : 0,
   }))
-  const processRows = getNewestFirst(
-    selectedSensor === 'all'
-      ? snapshot.processEvents
-      : snapshot.processEvents.filter((event) => event.sensorCode === selectedSensor),
-    'occurredAt',
-  )
+
+  const totalProcessEvents = snapshot.processEvents.length
+  const sensorDistribution = sensors.map((sensor, index) => ({
+    ...sensor,
+    color: SENSOR_COLORS[index % SENSOR_COLORS.length],
+    percentage: totalProcessEvents
+      ? Math.round((sensor.eventCount / totalProcessEvents) * 100)
+      : 0,
+  }))
 
   const activeCause = activeIndex !== null ? causeDistribution[activeIndex] : null
   const displayDuration = activeCause
@@ -219,59 +251,97 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Process</p>
-            <h2 id="analytics-process-title">Events by sensor code</h2>
+            <h2 id="analytics-process-title">Event distribution</h2>
           </div>
           <span className="section-chip">
             <Activity size={16} aria-hidden="true" />
-            {snapshot.processEvents.length} recorded
+            {totalProcessEvents} recorded
           </span>
         </div>
 
-        <div className="analytics-sensor-filter" role="group" aria-label="Filter process events by sensor code">
-          <button
-            className={`analytics-sensor-filter-button ${selectedSensor === 'all' ? 'is-selected' : ''}`}
-            type="button"
-            aria-pressed={selectedSensor === 'all'}
-            onClick={() => setSelectedSensor('all')}
-          >
-            <Filter size={15} aria-hidden="true" />
-            All sensors
-          </button>
-          {sensors.map((sensor) => (
-            <button
-              key={sensor.sensorCode}
-              className={`analytics-sensor-filter-button ${selectedSensor === sensor.sensorCode ? 'is-selected' : ''}`}
-              type="button"
-              aria-label={`${sensor.sensorCode}, ${sensor.eventCount} process event${sensor.eventCount === 1 ? '' : 's'}`}
-              aria-pressed={selectedSensor === sensor.sensorCode}
-              onClick={() => setSelectedSensor(sensor.sensorCode)}
-            >
-              {sensor.sensorCode}
-              <span>{sensor.eventCount}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="analytics-process-events-heading">
-          <div>
-            <p className="section-eyebrow">Event record</p>
-            <h3>Process events</h3>
+        {sensorDistribution.length === 0 ? (
+          <div className="analytics-cause-empty" role="status" aria-label="No process events recorded">
+            <strong>No process events recorded</strong>
+            <span>0 events recorded</span>
+            <p>No local process events fall within the selected date range.</p>
           </div>
-          <span>{processRows.length} shown</span>
-        </div>
-        <ul className="analytics-process-event-list" aria-label="Process event records" aria-live="polite">
-          {processRows.length === 0 ? (
-            <li className="analytics-process-event-empty">No local process events match this sensor.</li>
-          ) : processRows.map((event) => (
-            <li key={event.id} className="analytics-process-event-record">
-              <time className="analytics-process-event-time" dateTime={event.occurredAt}>
-                {formatAnalyticsDateTime(event.occurredAt, snapshot.timeZone)}
-              </time>
-              <span className="analytics-process-event-sensor-code">{event.sensorCode}</span>
-              <span className="analytics-process-event-type">{event.eventType}</span>
-            </li>
-          ))}
-        </ul>
+        ) : (
+          <div className="analytics-cause-content">
+            <div className="analytics-sensor-chart" aria-hidden="true">
+              <ResponsiveContainer width="100%" height={220} minWidth={0}>
+                <BarChart
+                  data={sensorDistribution}
+                  margin={{ top: 14, right: 12, left: -24, bottom: 4 }}
+                  accessibilityLayer={false}
+                >
+                  <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 7" vertical={false} />
+                  <XAxis
+                    dataKey="sensorCode"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: 'var(--c-text-2)', fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: 'var(--c-text-3)', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" }}
+                  />
+                  <Tooltip
+                    content={<SensorTooltip />}
+                    cursor={{ fill: 'color-mix(in srgb, var(--c-accent) 6%, transparent)', radius: 4 }}
+                    wrapperStyle={{ outline: 'none' }}
+                  />
+                  <Bar
+                    dataKey="eventCount"
+                    radius={[6, 6, 0, 0]}
+                    animationDuration={500}
+                    isAnimationActive={true}
+                    onMouseEnter={(_, index) => setActiveSensorIndex(index)}
+                    onMouseLeave={() => setActiveSensorIndex(null)}
+                    rootTabIndex={-1}
+                  >
+                    {sensorDistribution.map((sensor, index) => (
+                      <Cell
+                        key={sensor.sensorCode}
+                        fill={sensor.color}
+                        opacity={activeSensorIndex === null || activeSensorIndex === index ? 1 : 0.45}
+                        style={{
+                          transition: 'opacity 0.2s ease, filter 0.2s ease',
+                          cursor: 'pointer',
+                          filter: activeSensorIndex === index ? 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25))' : 'none',
+                        }}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <ul className="analytics-cause-legend" aria-label="Process event distribution">
+              {sensorDistribution.map((sensor, index) => (
+                <li
+                  key={sensor.sensorCode}
+                  className={`analytics-cause-legend-item ${activeSensorIndex === index ? 'is-hovered' : ''}`}
+                  onMouseEnter={() => setActiveSensorIndex(index)}
+                  onMouseLeave={() => setActiveSensorIndex(null)}
+                >
+                  <span
+                    className="analytics-cause-swatch"
+                    style={{ backgroundColor: sensor.color }}
+                    aria-hidden="true"
+                  />
+                  <span className="analytics-cause-copy">
+                    <span className="analytics-cause-name">{sensor.sensorCode}</span>
+                    <span className="analytics-cause-meta">
+                      {sensor.eventCount} {sensor.eventCount === 1 ? 'event' : 'events'} - {sensor.percentage}% of process events
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
     </div>
   )
