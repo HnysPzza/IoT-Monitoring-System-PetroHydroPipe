@@ -388,13 +388,256 @@ describe('subscribeToServerEvents', () => {
     unsubscribe()
   })
 
-  it('reconnects normally after a server control event without reporting an error', async () => {
+  it('backs off authorization-check failures, degrades after three, and cancels the pending retry on unsubscribe', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const authorizationCheckFailureResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          'event: stream.reconnect\ndata: {"reason":"authorization_check_failed"}\n\n',
+        ))
+        controller.close()
+      },
+    }), { status: 200 })
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(authorizationCheckFailureResponse()))
+    const onError = vi.fn()
+    const onFallback = vi.fn()
+    const onStatusChange = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', {
+      onError,
+      onFallback,
+      onStatusChange,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'SSE_AUTHORIZATION_CHECK_FAILED',
+      payload: { reason: 'authorization_check_failed' },
+    }))
+    await vi.advanceTimersByTimeAsync(250)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1749)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    expect(onError).toHaveBeenCalledTimes(3)
+    expect(onFallback).not.toHaveBeenCalled()
+    expect(onStatusChange.mock.calls.map(([status]) => status)).toEqual([
+      'connecting',
+      'reconnecting',
+      'degraded',
+    ])
+
+    unsubscribe()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('clears authorization-check recovery only after a periodic validation event', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const authorizationCheckFailureResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          'event: stream.reconnect\ndata: {"reason":"authorization_check_failed"}\n\n',
+        ))
+        controller.close()
+      },
+    }), { status: 200 })
+    let stableStreamController
+    const stableResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        stableStreamController = controller
+        controller.enqueue(encoder.encode('event: heartbeat\ndata: {"ok":true}\n\n'))
+      },
+    }), { status: 200 })
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => Promise.resolve(authorizationCheckFailureResponse()))
+      .mockImplementationOnce(() => Promise.resolve(stableResponse()))
+      .mockImplementationOnce(() => Promise.resolve(authorizationCheckFailureResponse()))
+      .mockImplementationOnce(() => Promise.resolve(authorizationCheckFailureResponse()))
+    const onFallback = vi.fn()
+    const onRecovery = vi.fn(() => {
+      throw new Error('consumer callback failed')
+    })
+    const onStatusChange = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', {
+      onFallback,
+      onRecovery,
+      onStatusChange,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(onRecovery).not.toHaveBeenCalled()
+    expect(onStatusChange).toHaveBeenLastCalledWith('reconnecting')
+
+    stableStreamController.enqueue(encoder.encode(
+      'event: stream.auth_validated\ndata: {"timestamp":"2026-08-16T00:00:00.000Z"}\n\n',
+    ))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onRecovery).toHaveBeenCalledTimes(1)
+    expect(onStatusChange).toHaveBeenLastCalledWith('live')
+
+    stableStreamController.enqueue(encoder.encode(
+      'event: stream.reconnect\ndata: {"reason":"authorization_check_failed"}\n\n',
+    ))
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(onFallback).not.toHaveBeenCalled()
+    expect(onStatusChange).not.toHaveBeenCalledWith('degraded')
+    unsubscribe()
+  })
+
+  it('keeps authorization recovery active across HTTP failures without starting fallback polling', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const authorizationCheckFailureResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          'event: stream.reconnect\ndata: {"reason":"authorization_check_failed"}\n\n',
+        ))
+        controller.close()
+      },
+    }), { status: 200 })
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => Promise.resolve(authorizationCheckFailureResponse()))
+      .mockImplementationOnce(() => Promise.resolve(new Response(null, { status: 500 })))
+      .mockImplementationOnce(() => Promise.resolve(new Response(null, {
+        status: 429,
+        headers: { 'Retry-After': '60' },
+      })))
+      .mockImplementationOnce(() => Promise.resolve(authorizationCheckFailureResponse()))
+    const onError = vi.fn()
+    const onFallback = vi.fn()
+    const onStatusChange = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', {
+      onError,
+      onFallback,
+      onStatusChange,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(4000)
+    await vi.advanceTimersByTimeAsync(29999)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(onError).toHaveBeenCalledTimes(4)
+    expect(onError.mock.calls.map(([error]) => error.code)).toEqual([
+      'SSE_AUTHORIZATION_CHECK_FAILED',
+      'HTTP_500',
+      'HTTP_429',
+      'SSE_AUTHORIZATION_CHECK_FAILED',
+    ])
+    expect(onFallback).not.toHaveBeenCalled()
+    expect(onStatusChange).toHaveBeenLastCalledWith('degraded')
+    unsubscribe()
+  })
+
+  it('clears a zero-valued retry timer during unsubscribe', async () => {
+    vi.useFakeTimers()
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout')
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockReturnValue(0)
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token')
+    await vi.advanceTimersByTimeAsync(0)
+    unsubscribe()
+
+    expect(setTimeoutSpy).toHaveBeenCalled()
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(0)
+    setTimeoutSpy.mockRestore()
+    clearTimeoutSpy.mockRestore()
+  })
+
+  it('isolates throwing callbacks from retry and recovery transport state', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const eventThenClose = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: alert.created\ndata: {"alert":{"id":"event-1"}}\n\n'))
+        controller.close()
+      },
+    }), { status: 200 })
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => Promise.resolve(eventThenClose()))
+      .mockRejectedValue(new Error('offline'))
+    const onEvent = vi.fn(() => {
+      throw new Error('event callback failed')
+    })
+    const onError = vi.fn(() => {
+      throw new Error('error callback failed')
+    })
+    const onFallback = vi.fn(() => {
+      throw new Error('fallback callback failed')
+    })
+    const onStatusChange = vi.fn(() => {
+      throw new Error('status callback failed')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', {
+      onError,
+      onEvent,
+      onFallback,
+      onStatusChange,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(4000)
+    await vi.advanceTimersByTimeAsync(8000)
+
+    expect(onEvent).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledTimes(4)
+    expect(onFallback).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    unsubscribe()
+  })
+
+  it('contains a rejected asynchronous consumer callback', async () => {
+    const encoder = new TextEncoder()
+    const rejectedCallback = Promise.reject(new Error('asynchronous callback failed'))
+    const catchSpy = vi.spyOn(rejectedCallback, 'catch')
+    rejectedCallback.catch(() => {})
+    const onEvent = vi.fn(() => rejectedCallback)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: alert.created\ndata: {"alert":{"id":"event-1"}}\n\n'))
+      },
+    }), { status: 200 })))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', { onEvent })
+
+    await waitFor(() => {
+      expect(onEvent).toHaveBeenCalledTimes(1)
+    })
+    expect(catchSpy).toHaveBeenCalledTimes(2)
+    unsubscribe()
+  })
+
+  it.each(['max_lifetime', 'server_shutdown'])('reconnects normally after a planned %s server control event without reporting an error', async (reason) => {
     vi.useFakeTimers()
     const encoder = new TextEncoder()
     const reconnectResponse = () => new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(
-          'event: stream.reconnect\ndata: {"reason":"max_lifetime"}\n\n'
+          `event: stream.reconnect\ndata: {"reason":"${reason}"}\n\n`
           + 'event: alert.created\ndata: {"alert":{"id":"must-not-arrive"}}\n\n',
         ))
         controller.close()

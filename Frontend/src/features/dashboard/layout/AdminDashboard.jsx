@@ -363,7 +363,7 @@ export default function AdminDashboard() {
     }
 
     function startFallbackPolling() {
-      if (!isMounted || pollingId) return
+      if (!isMounted || pollingId !== null) return
 
       setAlertConnectionStatus('polling')
       pollingId = window.setInterval(scheduleAlertReload, 10000)
@@ -371,7 +371,7 @@ export default function AdminDashboard() {
 
     function stopFallbackPolling() {
       if (!isMounted) return
-      if (pollingId) {
+      if (pollingId !== null) {
         window.clearInterval(pollingId)
         pollingId = null
       }
@@ -406,6 +406,7 @@ export default function AdminDashboard() {
         if (status === 'live') setAlertConnectionStatus('live')
         if (status === 'connecting') setAlertConnectionStatus('connecting')
         if (status === 'reconnecting') setAlertConnectionStatus('reconnecting')
+        if (status === 'degraded') setAlertConnectionStatus('degraded')
       },
     })
 
@@ -417,11 +418,11 @@ export default function AdminDashboard() {
       applyAlertDeltaRef.current = () => {}
       unsubscribe()
 
-      if (pollingId) {
+      if (pollingId !== null) {
         window.clearInterval(pollingId)
       }
 
-      if (resyncTimerId) {
+      if (resyncTimerId !== null) {
         window.clearTimeout(resyncTimerId)
       }
     }
@@ -599,8 +600,10 @@ export default function AdminDashboard() {
                 ? 'Live'
                 : alertConnectionStatus === 'polling'
                   ? 'Polling'
-                  : alertConnectionStatus === 'connecting'
-                    ? 'Connecting'
+                : alertConnectionStatus === 'connecting'
+                  ? 'Connecting'
+                  : alertConnectionStatus === 'degraded'
+                    ? 'Real-time temporarily unavailable — retrying'
                     : 'Reconnecting'}
             </span>
             <DashboardClock />

@@ -5,6 +5,12 @@ import { API_BASE_URL } from './apiClient.js'
 const LIVE_STABILITY_WINDOW_MS = 5000
 const MAX_RETRY_AFTER_MS = 30000
 const EXPECTED_RECONNECT_DELAY_MS = 250
+const PLANNED_RECONNECT_REASONS = new Set([
+  'max_lifetime',
+  'server_shutdown',
+])
+const AUTHORIZATION_CHECK_FAILED_REASON = 'authorization_check_failed'
+const AUTHORIZATION_VALIDATED_EVENT = 'stream.auth_validated'
 const TERMINAL_AUTH_EVENTS = new Map([
   ['stream.auth_expired', { code: 'SSE_AUTH_EXPIRED', message: 'Your session has expired.' }],
   ['stream.auth_revoked', { code: 'SSE_AUTH_REVOKED', message: 'Your session is no longer authorized.' }],
@@ -65,29 +71,52 @@ export function subscribeToServerEvents(path, token, {
   let retryAfterMs = 0
   let hasConnected = false
   let failedConnectionAttempts = 0
+  let authorizationCheckFailureCount = 0
+  let authorizationRecoveryActive = false
+
+  function invokeHandler(handler, ...args) {
+    try {
+      const result = handler?.(...args)
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => {})
+      }
+    } catch {}
+  }
 
   function updateStatus(status) {
     if (lastStatus === status) return
     lastStatus = status
-    onStatusChange?.(status)
+    invokeHandler(onStatusChange, status)
   }
 
   function confirmLive() {
+    if (authorizationRecoveryActive) return
     const isRecovering = retryCount > 0 || fallbackStarted
     retryCount = 0
     fallbackStarted = false
     updateStatus('live')
-    if (isRecovering) onRecovery?.()
+    if (isRecovering) invokeHandler(onRecovery)
+  }
+
+  function confirmAuthorizationRecovery() {
+    if (!authorizationRecoveryActive) return
+    const isRecovering = retryCount > 0 || fallbackStarted
+    authorizationRecoveryActive = false
+    authorizationCheckFailureCount = 0
+    retryCount = 0
+    fallbackStarted = false
+    updateStatus('live')
+    if (isRecovering) invokeHandler(onRecovery)
   }
 
   function clearStabilityTimer() {
-    if (!stabilityTimer) return
+    if (stabilityTimer === null) return
     window.clearTimeout(stabilityTimer)
     stabilityTimer = null
   }
 
   function scheduleLiveConfirmation(reader) {
-    if (stabilityTimer) return
+    if (stabilityTimer !== null) return
     stabilityTimer = window.setTimeout(() => {
       stabilityTimer = null
       if (!isClosed && activeReader === reader) confirmLive()
@@ -153,11 +182,7 @@ export function subscribeToServerEvents(path, token, {
       hasConnected = true
       failedConnectionAttempts = 0
 
-      try {
-        onOpen?.(openState)
-      } catch {
-        // Consumer state repair must not interrupt the transport reader.
-      }
+      invokeHandler(onOpen, openState)
 
       const decoder = new TextDecoder()
       let buffer = ''
@@ -185,12 +210,26 @@ export function subscribeToServerEvents(path, token, {
               }
 
               if (event.type === 'stream.reconnect') {
-                const error = createApiError('The event stream requested a reconnect.', 0, event.payload, 'SSE_RECONNECT')
-                error.isExpectedReconnect = true
+                const reconnectReason = event.payload?.reason
+                const isAuthorizationCheckFailure = reconnectReason === AUTHORIZATION_CHECK_FAILED_REASON
+                const error = createApiError(
+                  isAuthorizationCheckFailure
+                    ? 'The event stream authorization check failed.'
+                    : 'The event stream requested a reconnect.',
+                  0,
+                  event.payload,
+                  isAuthorizationCheckFailure ? 'SSE_AUTHORIZATION_CHECK_FAILED' : 'SSE_RECONNECT',
+                )
+                error.isExpectedReconnect = PLANNED_RECONNECT_REASONS.has(reconnectReason)
+                error.isAuthorizationCheckFailure = isAuthorizationCheckFailure
                 throw error
               }
 
-              onEvent?.(event)
+              if (event.type === AUTHORIZATION_VALIDATED_EVENT) {
+                confirmAuthorizationRecovery()
+              } else {
+                invokeHandler(onEvent, event)
+              }
               scheduleLiveConfirmation(reader)
             }
           }
@@ -212,7 +251,7 @@ export function subscribeToServerEvents(path, token, {
       }
 
       if (error.status === 401 || error.status === 403 || error.isTerminalStreamAuthorization) {
-        onError?.(error)
+        invokeHandler(onError, error)
         notifyStreamAuthorizationLost(error, { token, path })
         updateStatus('unauthorized')
         return
@@ -220,19 +259,25 @@ export function subscribeToServerEvents(path, token, {
 
       if (!error.isExpectedReconnect) {
         retryCount += 1
-        onError?.(error)
+        if (error.isAuthorizationCheckFailure) {
+          authorizationRecoveryActive = true
+          authorizationCheckFailureCount += 1
+        }
+        invokeHandler(onError, error)
       }
 
       retryAfterMs = error.status === 429 ? error.retryAfterMs || 0 : 0
 
       if (error.isExpectedReconnect) {
         updateStatus('reconnecting')
+      } else if (authorizationRecoveryActive) {
+        updateStatus(authorizationCheckFailureCount >= 3 || retryCount >= 3 ? 'degraded' : 'reconnecting')
       } else if (error.status === 429) {
         updateStatus('reconnecting')
       } else if (retryCount >= 3 && !fallbackStarted) {
         fallbackStarted = true
         updateStatus('degraded')
-        onFallback?.()
+        invokeHandler(onFallback)
       } else if (!fallbackStarted) {
         updateStatus('reconnecting')
       }
@@ -252,7 +297,7 @@ export function subscribeToServerEvents(path, token, {
     clearStabilityTimer()
     releaseActiveReader({ cancel: true })
 
-    if (retryTimer) {
+    if (retryTimer !== null) {
       window.clearTimeout(retryTimer)
     }
   }

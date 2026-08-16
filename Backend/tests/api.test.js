@@ -280,6 +280,7 @@ test('app middleware applies JSON body limit and CORS allowlist behavior', async
     })
 
     assert.equal(allowedOrigin.response.headers.get('access-control-allow-origin'), 'http://localhost:5173')
+    assert.equal(allowedOrigin.response.headers.get('access-control-expose-headers'), 'Retry-After')
 
     const blockedOrigin = await requestJson(baseUrl, '/api/health', {
       headers: { Origin: 'https://not-allowed.example.com' },

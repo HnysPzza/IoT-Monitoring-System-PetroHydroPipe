@@ -996,7 +996,8 @@ button:disabled {
 
 .alert-connection-status.is-connecting,
 .alert-connection-status.is-reconnecting,
-.alert-connection-status.is-polling {
+.alert-connection-status.is-polling,
+.alert-connection-status.is-degraded {
   color: var(--chart-warning);
 }
 

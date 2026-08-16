@@ -2,11 +2,13 @@ const authService = require('../../modules/auth/auth.service')
 const env = require('../../config/env')
 const logger = require('../../utils/logger')
 const { incrementSseMetric } = require('./metrics')
+const { randomUUID } = require('node:crypto')
 
 const CONTROL_EVENTS = new Set([
   'heartbeat',
   'stream.auth_expired',
   'stream.auth_revoked',
+  'stream.auth_validated',
   'stream.reconnect',
 ])
 const activeStreamClosers = new Set()
@@ -44,6 +46,7 @@ function openSseStream({
   let cancelAuthCheck = null
   let authCheckAbortController = null
   const expiresAtMs = req.tokenPayload.exp * 1000
+  const connectionId = req.sseConnectionId || randomUUID()
 
   function authorizationExpired() {
     return Date.now() >= expiresAtMs
@@ -83,7 +86,7 @@ function openSseStream({
     req.sseConnectionRelease?.()
     req.sseConnectionRelease = null
     incrementSseMetric('closed')
-    logger.info('SSE stream closed.', { stream: streamName, reason })
+    logger.info('SSE stream closed.', { connectionId, reason, stream: streamName })
   }
 
   function closeStream({ eventName, payload, reason = 'server_closed', destroy = false } = {}) {
@@ -114,6 +117,13 @@ function openSseStream({
   function handleResponseError() {
     cleanup('response_error')
     if (!res.destroyed) res.destroy()
+  }
+
+  function releaseBeforeStreamSetup() {
+    req.sseConnectionHandoff?.()
+    req.sseConnectionHandoff = null
+    req.sseConnectionRelease?.()
+    req.sseConnectionRelease = null
   }
 
   function closeForBackpressure() {
@@ -242,6 +252,8 @@ function openSseStream({
           payload: { reason: 'account_or_role_changed' },
           reason: 'authorization_revoked',
         })
+      } else {
+        writeEvent('stream.auth_validated', { timestamp: new Date().toISOString() })
       }
     } catch (error) {
       if (closed) return
@@ -254,6 +266,23 @@ function openSseStream({
           reason: 'authorization_revoked',
         })
       } else {
+        const errorCode = typeof error?.code === 'string' ? error.code : 'UNKNOWN'
+        const status = Number.isInteger(error?.status) ? error.status : null
+        incrementSseMetric('authRevalidationFailed')
+        if (errorCode === 'SSE_AUTH_REVALIDATION_TIMEOUT') {
+          incrementSseMetric('authRevalidationTimedOut')
+        }
+        logger.warn('SSE authorization revalidation failed.', {
+          connectionId,
+          errorCode,
+          failureType: errorCode === 'SSE_AUTH_REVALIDATION_TIMEOUT'
+            ? 'timeout'
+            : errorCode === 'AUTH_QUERY_FAILED'
+              ? 'auth_query_failed'
+              : 'unknown',
+          status,
+          stream: streamName,
+        })
         closeStream({
           eventName: 'stream.reconnect',
           payload: { reason: 'authorization_check_failed' },
@@ -271,6 +300,14 @@ function openSseStream({
   }
 
   try {
+    if (req.aborted || res.destroyed || res.writableEnded) {
+      releaseBeforeStreamSetup()
+      return () => {}
+    }
+
+    req.sseConnectionHandoff?.()
+    req.sseConnectionHandoff = null
+
     res.set({
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',

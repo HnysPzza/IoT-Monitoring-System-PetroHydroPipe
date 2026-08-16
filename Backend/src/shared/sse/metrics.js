@@ -3,6 +3,8 @@ const counters = {
   connectionLimited: 0,
   authExpired: 0,
   authRevoked: 0,
+  authRevalidationFailed: 0,
+  authRevalidationTimedOut: 0,
   backpressureClosed: 0,
   closed: 0,
 }

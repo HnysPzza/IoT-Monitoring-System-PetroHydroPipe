@@ -20,7 +20,10 @@ function corsOrigin(origin, callback) {
 
 // Global middleware runs before every API route.
 app.use(helmet())
-app.use(cors({ origin: corsOrigin }))
+app.use(cors({
+  origin: corsOrigin,
+  exposedHeaders: ['Retry-After'],
+}))
 app.use(express.json({ limit: '100kb' }))
 
 if (isDevelopment) {

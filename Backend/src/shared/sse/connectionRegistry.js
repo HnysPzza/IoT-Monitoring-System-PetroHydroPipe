@@ -12,9 +12,31 @@ function createConnectionRegistry({
   function acquire({ userId, ip }) {
     const userCount = userCounts.get(userId) || 0
     const ipCount = ipCounts.get(ip) || 0
+    const limits = {
+      total: maxTotal,
+      user: maxPerUser,
+      ip: maxPerIp,
+    }
+    const counts = {
+      total,
+      user: userCount,
+      ip: ipCount,
+    }
+    const limit = total >= maxTotal
+      ? 'total'
+      : userCount >= maxPerUser
+        ? 'user'
+        : ipCount >= maxPerIp
+          ? 'ip'
+          : null
 
-    if (total >= maxTotal || userCount >= maxPerUser || ipCount >= maxPerIp) {
-      return null
+    if (limit) {
+      return {
+        counts,
+        limit,
+        limits,
+        release: null,
+      }
     }
 
     total += 1
@@ -22,7 +44,7 @@ function createConnectionRegistry({
     ipCounts.set(ip, ipCount + 1)
     let released = false
 
-    return () => {
+    const release = () => {
       if (released) return
       released = true
       total -= 1
@@ -35,6 +57,13 @@ function createConnectionRegistry({
 
       if (nextIpCount > 0) ipCounts.set(ip, nextIpCount)
       else ipCounts.delete(ip)
+    }
+
+    return {
+      counts,
+      limit: null,
+      limits,
+      release,
     }
   }
 

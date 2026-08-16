@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
@@ -84,6 +84,8 @@ export default function DowntimeSection() {
       if (!silent) setIsLoading(false)
     }
   }, [causeFilter, dateFilter, page, statusFilter, token])
+  const loadDowntimeRecordsRef = useRef(loadDowntimeRecords)
+  loadDowntimeRecordsRef.current = loadDowntimeRecords
 
   useEffect(() => {
     loadDowntimeRecords()
@@ -95,23 +97,32 @@ export default function DowntimeSection() {
     let pollingId = null
 
     function startFallbackPolling() {
-      if (pollingId) return
-      pollingId = window.setInterval(() => loadDowntimeRecords({ silent: true }), 10000)
+      if (pollingId !== null) return
+      pollingId = window.setInterval(() => {
+        void loadDowntimeRecordsRef.current({ silent: true })
+      }, 10000)
+    }
+
+    function stopFallbackPolling() {
+      if (pollingId === null) return
+      window.clearInterval(pollingId)
+      pollingId = null
     }
 
     const unsubscribe = subscribeToDowntime(token, {
       onEvent: (event) => {
         if (!event?.payload?.downtime) return
-        loadDowntimeRecords({ silent: true })
+        void loadDowntimeRecordsRef.current({ silent: true })
       },
       onFallback: startFallbackPolling,
+      onRecovery: stopFallbackPolling,
     })
 
     return () => {
       unsubscribe()
-      if (pollingId) window.clearInterval(pollingId)
+      stopFallbackPolling()
     }
-  }, [loadDowntimeRecords, token])
+  }, [token])
 
   async function updateCause(recordId, cause) {
     setUpdatingRecordId(recordId)

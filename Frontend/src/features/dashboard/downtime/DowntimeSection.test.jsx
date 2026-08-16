@@ -130,6 +130,8 @@ describe('DowntimeSection', () => {
 
   it('loads additional downtime pages through backend pagination', async () => {
     const user = userEvent.setup()
+    const unsubscribe = vi.fn()
+    subscribeToDowntime.mockReturnValue(unsubscribe)
     getDowntimeRecords
       .mockResolvedValueOnce({
         records: [downtimeRecord({ id: 'page-1' })],
@@ -147,6 +149,83 @@ describe('DowntimeSection', () => {
 
     expect(await screen.findByText('S-03 09:42 AM')).toBeInTheDocument()
     expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }))
+    expect(subscribeToDowntime).toHaveBeenCalledTimes(1)
+    expect(unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it('keeps one stream subscription and reloads the latest filter state after an event', async () => {
+    const user = userEvent.setup()
+    let streamHandlers
+    const unsubscribe = vi.fn()
+    subscribeToDowntime.mockImplementation((token, handlers) => {
+      streamHandlers = handlers
+      return unsubscribe
+    })
+    getDowntimeRecords
+      .mockResolvedValueOnce({
+        records: [downtimeRecord({ id: 'page-1' })],
+        summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+        pagination: { page: 1, totalPages: 2, hasNextPage: true, hasPreviousPage: false },
+      })
+      .mockResolvedValueOnce({
+        records: [downtimeRecord({ id: 'page-2', displayLabel: 'S-03 09:42 AM' })],
+        summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+        pagination: { page: 2, totalPages: 2, hasNextPage: false, hasPreviousPage: true },
+      })
+      .mockResolvedValueOnce({
+        records: [downtimeRecord({ id: 'page-2', displayLabel: 'S-03 09:42 AM' })],
+        summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+        pagination: { page: 2, totalPages: 2, hasNextPage: false, hasPreviousPage: true },
+      })
+
+    renderWithAuth(<DowntimeSection />)
+    await user.click(await screen.findByRole('button', { name: 'Next downtime page' }))
+    await screen.findByText('S-03 09:42 AM')
+
+    await act(async () => {
+      streamHandlers.onEvent({
+        type: 'downtime.updated',
+        payload: { downtime: { id: 'page-2', status: 'Open' } },
+      })
+    })
+
+    await waitFor(() => {
+      expect(getDowntimeRecords).toHaveBeenCalledTimes(3)
+      expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }))
+    })
+    expect(subscribeToDowntime).toHaveBeenCalledTimes(1)
+    expect(unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it('stops downtime fallback polling when the event stream recovers', async () => {
+    let streamHandlers
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+    subscribeToDowntime.mockImplementation((token, handlers) => {
+      streamHandlers = handlers
+      return () => {}
+    })
+    getDowntimeRecords.mockResolvedValue({
+      records: [],
+      summary: { open: 0, resolved: 0, minutes: 0, loss: 0 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+    await screen.findByText('No downtime records match the selected filters.')
+
+    await act(async () => {
+      streamHandlers.onFallback()
+    })
+    const pollingId = setIntervalSpy.mock.results[0].value
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 10000)
+
+    await act(async () => {
+      streamHandlers.onRecovery()
+    })
+    expect(clearIntervalSpy).toHaveBeenCalledWith(pollingId)
+
+    setIntervalSpy.mockRestore()
+    clearIntervalSpy.mockRestore()
   })
 
   it('saves inline notes and updates the downtime row', async () => {
