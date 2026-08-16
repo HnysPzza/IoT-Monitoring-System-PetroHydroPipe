@@ -36,34 +36,19 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           <h2 id="analytics-trend-title">Operational trend</h2>
         </div>
 
-        <div className="analytics-metric-controls">
-          <div className="trend-mode-toggle analytics-metric-toggle" role="group" aria-label="Trend metric selection">
+        {/* Accessible fallback select for screen readers and automation */}
+        <label className="filter-field analytics-metric-field sr-only" htmlFor="analytics-trend-metric">
+          <span>Trend metric</span>
+          <select
+            id="analytics-trend-metric"
+            value={metric.id}
+            onChange={(event) => onMetricChange?.(event.target.value)}
+          >
             {analyticsTrendMetrics.map((item) => (
-              <button
-                key={item.id}
-                className={`trend-mode-button ${metric.id === item.id ? 'is-selected' : ''}`}
-                type="button"
-                aria-pressed={metric.id === item.id}
-                onClick={() => onMetricChange(item.id)}
-              >
-                {item.label}
-              </button>
+              <option key={item.id} value={item.id}>{item.label}</option>
             ))}
-          </div>
-
-          <label className="filter-field analytics-metric-field sr-only" htmlFor="analytics-trend-metric">
-            <span>Trend metric</span>
-            <select
-              id="analytics-trend-metric"
-              value={metric.id}
-              onChange={(event) => onMetricChange(event.target.value)}
-            >
-              {analyticsTrendMetrics.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+          </select>
+        </label>
       </div>
 
       <div className="analytics-trend-context">
