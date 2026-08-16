@@ -220,7 +220,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByRole('heading', { name: 'No live machine is available' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live status' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(await screen.findByText(/last successful empty result/i)).toHaveTextContent('Empty live refresh failed.')
     expect(screen.getByRole('heading', { name: 'No live machine is available' })).toBeInTheDocument()
@@ -239,13 +239,13 @@ describe('DashboardSection', () => {
 
     renderWithAuth(<DashboardSection />)
 
-    expect(await screen.findByText('5 / 5 sensors reporting')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live status' }))
+    expect(await screen.findByText('5 / 5 reporting')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     const staleNotice = await screen.findByText(/Live machine status is stale/i)
     expect(staleNotice).toHaveTextContent('Live refresh failed.')
     expect(staleNotice.querySelector('time')).toHaveAttribute('dateTime')
-    expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
+    expect(screen.getByText('5 / 5 reporting')).toBeInTheDocument()
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
   })
 
@@ -290,7 +290,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText('No downtime data is available for this range.')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh chart' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(await screen.findByText(/Downtime chart data is stale/i)).toHaveTextContent('Empty chart refresh failed.')
     expect(screen.getByText('No downtime data is available for this range.')).toBeInTheDocument()
@@ -336,7 +336,7 @@ describe('DashboardSection', () => {
 
     const view = render(renderTree('first-token'))
     expect(await screen.findByRole('heading', { name: 'Prior token machine' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live status' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
     expect(await screen.findByText(/Live machine status is stale/i)).toHaveTextContent('Prior token refresh failed.')
 
     const staleMachineKpi = screen.getByText('Machine Online').closest('article')
@@ -363,6 +363,7 @@ describe('DashboardSection', () => {
     getDashboardDowntimeImpact
       .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Old daily point', minutes: 10 }] } })
       .mockReturnValueOnce(weeklyRequest.promise)
+      .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Cached daily point', minutes: 10 }] } })
 
     renderWithAuth(<DashboardSection />)
 
@@ -370,9 +371,9 @@ describe('DashboardSection', () => {
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
     expect(screen.queryByText(/Old daily point/)).not.toBeInTheDocument()
 
-    weeklyRequest.reject(new Error('Weekly chart failed.'))
+    weeklyRequest.reject(new Error('Weekly range failed.'))
 
-    expect(await screen.findByText('Weekly chart failed.')).toBeInTheDocument()
+    expect(await screen.findByText('Weekly range failed.')).toBeInTheDocument()
     expect(screen.queryByText(/Old daily point/)).not.toBeInTheDocument()
     expect(screen.queryByText('No downtime data is available for this range.')).not.toBeInTheDocument()
   })
@@ -412,7 +413,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Cached chart point/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh chart' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(screen.getByText(/Cached chart point/)).toBeInTheDocument()
     const refreshStatus = screen.getByText('Refreshing downtime chart...')

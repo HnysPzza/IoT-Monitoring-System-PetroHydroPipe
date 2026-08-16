@@ -329,8 +329,46 @@ export default function DashboardSection() {
     }
   })
   const reportingSensorCount = sensorHealth.filter((sensor) => sensor.status !== 'Unavailable').length
+  const isUnifiedRefreshing = overviewState === 'loading' || liveState === 'loading' || downtimeChartState === 'loading'
+
+  const handleUnifiedRefresh = () => {
+    setOverviewRefresh((current) => current + 1)
+    setLiveRefresh((current) => current + 1)
+    setDowntimeChartRefresh((current) => current + 1)
+  }
+
   return (
     <div className="overview-layout">
+      <div className="overview-controls-card">
+        <div className="overview-meta-strip">
+          <span className="overview-meta-item">
+            <Factory size={16} aria-hidden="true" />
+            <span>Machine:</span>
+            <strong>{liveData.machine?.name || 'Spiral Mill 01'}</strong>
+          </span>
+          <span className="overview-meta-item">
+            <CircleCheck size={16} aria-hidden="true" />
+            <span>Sensors:</span>
+            <strong>{reportingSensorCount} / 5 reporting</strong>
+          </span>
+          <span className="overview-meta-item">
+            <Clock3 size={16} aria-hidden="true" />
+            <span>Last sync:</span>
+            <strong>{liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Active session'}</strong>
+          </span>
+        </div>
+        <button
+          className="btn btn-success overview-refresh-button"
+          type="button"
+          aria-label="Refresh overview data"
+          disabled={isUnifiedRefreshing}
+          onClick={handleUnifiedRefresh}
+        >
+          <RotateCw className={isUnifiedRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
       {overviewDisplayState === 'error' ? (
@@ -418,16 +456,6 @@ export default function DashboardSection() {
                 rangeLabel={trendRangeLabel}
                 onDateChange={setTrendAnchorDate}
               />
-              <button
-                className="btn btn-success table-action-button downtime-chart-refresh"
-                type="button"
-                aria-label="Refresh chart"
-                disabled={downtimeChartState === 'loading'}
-                onClick={() => setDowntimeChartRefresh((current) => current + 1)}
-              >
-                <RotateCw className={downtimeChartState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-                Refresh
-              </button>
             </div>
           </div>
           {downtimeChartState === 'stale' && hasCurrentDowntimeChart ? (
@@ -511,15 +539,6 @@ export default function DashboardSection() {
                 </button>
               </div>
             ) : null}
-            <button
-              className="btn btn-success"
-              type="button"
-              aria-label="Refresh live status"
-              disabled={liveState === 'loading'}
-              onClick={() => setLiveRefresh((current) => current + 1)}
-            >
-              Refresh
-            </button>
           </div>
         </section>
       ) : hasCurrentLive ? (
@@ -534,16 +553,6 @@ export default function DashboardSection() {
                 <CircleCheck size={16} aria-hidden="true" />
                 {reportingSensorCount} / 5 sensors reporting
               </span>
-              <button
-                className="btn btn-success table-action-button live-refresh-button"
-                type="button"
-                aria-label="Refresh live status"
-                disabled={liveState === 'loading'}
-                onClick={() => setLiveRefresh((current) => current + 1)}
-              >
-                <RotateCw className={liveState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-                Refresh
-              </button>
             </div>
           </div>
 

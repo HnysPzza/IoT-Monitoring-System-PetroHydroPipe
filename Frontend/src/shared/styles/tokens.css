@@ -1203,7 +1203,8 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* Live, downtime, and reports pages share dense operational workspace spacing. */
+/* Overview, live, downtime, and reports pages share dense operational workspace spacing. */
+.overview-layout,
 .live-layout,
 .downtime-layout,
 .reports-layout,
@@ -1214,6 +1215,7 @@ button:disabled {
   gap: 20px;
 }
 
+.overview-layout>*,
 .live-layout>*,
 .downtime-layout>*,
 .reports-layout>*,
@@ -1222,6 +1224,60 @@ button:disabled {
 .audit-layout>*,
 .users-layout>* {
   min-width: 0;
+}
+
+/* Overview controls toolbar & unified refresh */
+.overview-controls-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow-soft);
+}
+
+.overview-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  color: var(--c-text-2);
+  font-size: 0.84rem;
+}
+
+.overview-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overview-meta-item strong {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.overview-refresh-button {
+  min-height: 40px;
+  padding: 0 20px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+@media (max-width: 680px) {
+  .overview-controls-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .overview-refresh-button {
+    width: 100%;
+  }
 }
 
 /* Frontend-only Analytics workspace - Mobile First */
