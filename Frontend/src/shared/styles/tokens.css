@@ -3453,9 +3453,15 @@ button:disabled {
   .analytics-range-toggle,
   .analytics-custom-dates .filter-field,
   .analytics-bucket-summary,
-  .analytics-metric-field {
+  .analytics-metric-field,
+  .analytics-metric-controls,
+  .analytics-metric-toggle {
     width: 100%;
     min-width: 0;
+  }
+
+  .analytics-metric-toggle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .analytics-custom-dates {
