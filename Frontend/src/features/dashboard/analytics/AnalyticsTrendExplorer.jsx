@@ -56,11 +56,6 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           <BarChart3 size={16} aria-hidden="true" />
           {metric.label} - {bucket} buckets
         </span>
-        <p>
-          {usesDailyProductionFallback
-            ? 'Production records are date-only; daily buckets active.'
-            : metric.description}
-        </p>
       </div>
 
       <div
