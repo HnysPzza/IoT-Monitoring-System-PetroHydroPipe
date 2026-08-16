@@ -1725,8 +1725,36 @@ button:disabled {
   justify-content: center;
 }
 
+.analytics-cause-tooltip,
+.analytics-sensor-tooltip {
+  display: grid;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg) 95%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  color: var(--c-text);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
+.analytics-cause-tooltip strong,
+.analytics-sensor-tooltip strong {
+  font-weight: 700;
+  color: var(--c-text);
+}
+
 .analytics-sensor-tooltip strong {
   font-family: 'IBM Plex Mono', monospace;
+}
+
+.analytics-cause-tooltip span,
+.analytics-sensor-tooltip span {
+  color: var(--c-text-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
 }
 
 .live-hero-card,
