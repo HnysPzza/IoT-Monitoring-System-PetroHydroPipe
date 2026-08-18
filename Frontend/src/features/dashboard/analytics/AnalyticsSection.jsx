@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Boxes, CalendarDays, Clock3, Database, Gauge, RotateCw } from 'lucide-react'
 import { getAnalyticsKpis } from './analyticsPresentation.js'
 import { getAnalyticsSnapshot, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
+import './analytics-date-range-picker.css'
+
+const AnalyticsDateRangePicker = lazy(() => import('./AnalyticsDateRangePicker.jsx'))
 
 const rangePresets = [
   { id: 'this-week', label: 'This week' },
@@ -96,6 +99,11 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     }
   }, [loadAnalytics, range, requestKey, requestOptions])
 
+  const handleCustomDateRangeChange = useCallback(({ startDate, endDate }) => {
+    setCustomStartDate(startDate)
+    setCustomEndDate(endDate)
+  }, [])
+
   useEffect(() => {
     if (!range) {
       // A delayed local adapter must not overwrite the validation state after
@@ -128,7 +136,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </span>
         </div>
 
-        <div className="analytics-filter-row">
+        <div className={`analytics-filter-row ${period === 'custom' ? 'analytics-filter-row--custom' : ''}`}>
           <fieldset className="analytics-range-fieldset">
             <legend className="sr-only">Date range</legend>
             <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
@@ -148,24 +156,19 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
           {period === 'custom' ? (
             <div className="analytics-custom-dates">
-              <label className="filter-field" htmlFor="analytics-start-date">
-                <span>Start date</span>
-                <input
-                  id="analytics-start-date"
-                  type="date"
-                  value={customStartDate}
-                  onChange={(event) => setCustomStartDate(event.target.value)}
+              <Suspense
+                fallback={(
+                  <div className="analytics-custom-date-picker-loading" role="status" aria-live="polite">
+                    Loading custom date range picker...
+                  </div>
+                )}
+              >
+                <AnalyticsDateRangePicker
+                  startDate={customStartDate}
+                  endDate={customEndDate}
+                  onChange={handleCustomDateRangeChange}
                 />
-              </label>
-              <label className="filter-field" htmlFor="analytics-end-date">
-                <span>End date</span>
-                <input
-                  id="analytics-end-date"
-                  type="date"
-                  value={customEndDate}
-                  onChange={(event) => setCustomEndDate(event.target.value)}
-                />
-              </label>
+              </Suspense>
             </div>
           ) : null}
 

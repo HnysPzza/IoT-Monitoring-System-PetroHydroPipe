@@ -168,7 +168,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     nameKey="cause"
                     cx="50%"
                     cy="50%"
-                    innerRadius="60%"
+                    innerRadius="52%"
                     outerRadius="82%"
                     paddingAngle={4}
                     cornerRadius={6}

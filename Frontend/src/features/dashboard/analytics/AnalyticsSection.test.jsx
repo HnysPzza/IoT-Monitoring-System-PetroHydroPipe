@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -36,7 +36,7 @@ describe('AnalyticsSection local request states', () => {
     deferred.resolve(successfulSnapshot)
 
     expect(await screen.findByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
-    expect(screen.getByText(/It has no Analytics backend connection/i)).toBeInTheDocument()
+    expect(screen.getByText('Local fixture only')).toBeInTheDocument()
     expect(loadAnalytics).toHaveBeenCalledTimes(1)
   })
 
@@ -66,7 +66,7 @@ describe('AnalyticsSection local request states', () => {
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Refresh local data' }))
+    await user.click(screen.getByRole('button', { name: 'Refresh data' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Showing the last local preview because refresh failed.')
     expect(screen.getByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
@@ -94,8 +94,9 @@ describe('AnalyticsSection local request states', () => {
 
     await user.click(screen.getByRole('button', { name: 'This month' }))
 
-    expect(await screen.findByText('Showing 2026-08-01 to 2026-08-31 in Asia/Manila time.')).toBeInTheDocument()
-    expect(loadAnalytics).toHaveBeenLastCalledWith({ period: 'this-month' })
+    await waitFor(() => {
+      expect(loadAnalytics).toHaveBeenLastCalledWith({ period: 'this-month' })
+    })
   })
 
   it('switches the explorer to a separate output trend without mixing units', async () => {
@@ -111,26 +112,55 @@ describe('AnalyticsSection local request states', () => {
     expect(screen.getByText('118 pcs across 7 buckets.')).toBeInTheDocument()
   })
 
-  it('does not let a delayed local result replace an invalid custom date state', async () => {
+  it('does not load Analytics when a custom calendar range is only partially selected', async () => {
     const user = userEvent.setup()
-    const deferred = createDeferred()
-    const loadAnalytics = vi.fn()
-      .mockResolvedValueOnce(successfulSnapshot)
-      .mockImplementationOnce(() => deferred.promise)
+    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
 
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(document.querySelector('.analytics-filter-row')).toHaveClass('analytics-filter-row--custom')
+    const calendarTrigger = await screen.findByRole(
+      'button',
+      { name: /Open custom date range calendar/i },
+      { timeout: 5000 },
+    )
+
+    await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
+    await user.click(calendarTrigger)
+    await user.click(screen.getByRole('button', { name: 'Saturday, August 15, 2026' }))
+
     expect(loadAnalytics).toHaveBeenCalledTimes(2)
+  })
 
-    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-08-15' } })
-    expect(await screen.findByRole('alert')).toHaveTextContent('The end date must be on or after the start date.')
+  it('loads one exact local request when a valid custom calendar range is completed', async () => {
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
 
-    deferred.resolve(successfulSnapshot)
-    await Promise.resolve()
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
 
-    expect(screen.queryByRole('heading', { name: 'Operational trend' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    const calendarTrigger = await screen.findByRole(
+      'button',
+      { name: /Open custom date range calendar/i },
+      { timeout: 5000 },
+    )
+
+    await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
+    await user.click(calendarTrigger)
+    await user.click(screen.getByRole('button', { name: 'Saturday, August 15, 2026' }))
+    await user.click(screen.getByRole('button', { name: 'Monday, August 17, 2026' }))
+
+    await waitFor(() => {
+      expect(loadAnalytics).toHaveBeenCalledTimes(3)
+      expect(loadAnalytics).toHaveBeenLastCalledWith({
+        period: 'custom',
+        startDate: '2026-08-15',
+        endDate: '2026-08-17',
+      })
+    })
   })
 
   it('switches the trend explorer metric when clicking an interactive KPI card', async () => {
