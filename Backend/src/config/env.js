@@ -13,15 +13,17 @@ const envSchema = z.object({
   IOT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   IOT_INGRESS_RATE_LIMIT: z.coerce.number().int().positive().default(300),
   IOT_DEVICE_RATE_LIMIT: z.coerce.number().int().positive().default(120),
-  SSE_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().max(2_147_483_647).default(30_000),
+  SSE_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
   SSE_AUTH_REVALIDATION_INTERVAL_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60_000),
   SSE_AUTH_REVALIDATION_TIMEOUT_MS: z.coerce.number().int().positive().max(2_147_483_647).default(5_000),
+  SSE_BACKPRESSURE_TIMEOUT_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60_000),
   SSE_MAX_CONNECTION_LIFETIME_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 60 * 1000),
-  SSE_MAX_CONNECTIONS_PER_USER: z.coerce.number().int().positive().max(100).default(2),
-  SSE_MAX_CONNECTIONS_PER_IP: z.coerce.number().int().positive().max(1_000).default(5),
+  SSE_MAX_CONNECTIONS_PER_USER: z.coerce.number().int().positive().max(100).default(4),
+  SSE_MAX_CONNECTIONS_PER_IP: z.coerce.number().int().positive().max(1_000).default(20),
   SSE_MAX_CONNECTIONS_TOTAL: z.coerce.number().int().positive().max(10_000).default(100),
   SSE_MAX_PENDING_EVENTS: z.coerce.number().int().positive().max(10_000).default(100),
   SSE_MAX_PENDING_BYTES: z.coerce.number().int().positive().max(10 * 1024 * 1024).default(256 * 1024),
+  SSE_TCP_KEEPALIVE_INITIAL_DELAY_MS: z.coerce.number().int().positive().max(2_147_483_647).default(30_000),
 })
 
 function validateEnv() {
@@ -40,6 +42,10 @@ function validateEnv() {
 
   if (env.SSE_AUTH_REVALIDATION_TIMEOUT_MS >= env.SSE_AUTH_REVALIDATION_INTERVAL_MS) {
     throw new Error('Invalid environment configuration. SSE_AUTH_REVALIDATION_TIMEOUT_MS must be shorter than SSE_AUTH_REVALIDATION_INTERVAL_MS.')
+  }
+
+  if (env.SSE_BACKPRESSURE_TIMEOUT_MS >= env.SSE_MAX_CONNECTION_LIFETIME_MS) {
+    throw new Error('Invalid environment configuration. SSE_BACKPRESSURE_TIMEOUT_MS must be shorter than SSE_MAX_CONNECTION_LIFETIME_MS.')
   }
 
   const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)

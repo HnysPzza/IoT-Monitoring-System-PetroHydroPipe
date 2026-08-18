@@ -43,3 +43,24 @@ test('SSE revalidation interval must be shorter than maximum stream lifetime', (
     assert.throws(loadEnv, /SSE_AUTH_REVALIDATION_INTERVAL_MS must be shorter/)
   })
 })
+
+test('SSE backpressure timeout must be shorter than maximum stream lifetime', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    SSE_AUTH_REVALIDATION_INTERVAL_MS: '1000',
+    SSE_AUTH_REVALIDATION_TIMEOUT_MS: '500',
+    SSE_BACKPRESSURE_TIMEOUT_MS: '2000',
+    SSE_MAX_CONNECTION_LIFETIME_MS: '2000',
+  }, (loadEnv) => {
+    assert.throws(loadEnv, /SSE_BACKPRESSURE_TIMEOUT_MS must be shorter/)
+  })
+})
+
+test('SSE heartbeat interval stays within the client watchdog contract', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    SSE_HEARTBEAT_INTERVAL_MS: '120001',
+  }, (loadEnv) => {
+    assert.throws(loadEnv, /SSE_HEARTBEAT_INTERVAL_MS/)
+  })
+})

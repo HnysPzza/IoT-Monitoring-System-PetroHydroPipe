@@ -79,11 +79,14 @@ The backend publishes downtime updates with an in-memory Node `EventEmitter`. Th
 Current reliability layer:
 
 - SSE gives fast dashboard refreshes during a healthy connection.
-- Frontend fallback polling starts when the SSE stream repeatedly disconnects.
+- Frontend fallback polling starts when the SSE stream repeatedly disconnects or receives repeated connection-cap responses.
 - Streams close at JWT expiry and periodically revalidate the current database user and role.
-- Alerts and downtime share process-local connection caps: two streams per user, five per source IP, and 100 total by default.
-- Slow clients use a bounded per-stream queue; overflow closes the stream instead of growing memory without limit.
+- Alerts and downtime share process-local connection caps: four streams per user, 20 per source IP, and 100 total by default. This supports two dashboard tabs per user while retaining bounded admission.
+- Heartbeats advertise their configured interval so the browser can detect and reconnect a half-open stream with a bounded inactivity watchdog.
+- Slow clients use a bounded per-stream queue and backpressure deadline; overflow or a stalled socket closes the stream instead of growing memory or holding a lease indefinitely.
 - The frontend treats stream authorization loss as terminal, honors `Retry-After` for connection caps, and reconnects normally after the configured maximum stream lifetime.
+- Unplanned and planned reconnects include bounded jitter to reduce synchronized retry bursts.
+- Admins can inspect aggregate, non-identifying SSE counters through `GET /api/operations/sse`.
 - Pagination is handled by the backend, not only by frontend state.
 - The current design is acceptable for a single persistent Express backend process.
 

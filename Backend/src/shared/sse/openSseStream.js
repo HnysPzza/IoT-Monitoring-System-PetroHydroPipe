@@ -41,6 +41,7 @@ function openSseStream({
   let expiryId = null
   let lifetimeId = null
   let revalidationId = null
+  let backpressureTimeoutId = null
   let revalidationInFlight = false
   let authCheckTimeoutId = null
   let cancelAuthCheck = null
@@ -64,6 +65,8 @@ function openSseStream({
     closed = true
     clearInterval(heartbeatId)
     clearTimeout(revalidationId)
+    clearTimeout(backpressureTimeoutId)
+    backpressureTimeoutId = null
     authCheckAbortController?.abort()
     authCheckAbortController = null
     cancelAuthCheck?.()
@@ -91,6 +94,7 @@ function openSseStream({
 
   function closeStream({ eventName, payload, reason = 'server_closed', destroy = false } = {}) {
     if (closed) return
+    let shouldDestroy = destroy || backpressured
 
     pendingFrames.length = 0
     pendingBytes = 0
@@ -99,14 +103,14 @@ function openSseStream({
 
     if (eventName && mayWriteControlEvent && !backpressured && !res.writableEnded && !res.destroyed) {
       try {
-        res.write(serializeEvent(eventName, payload, allowedEvents))
+        shouldDestroy = !res.write(serializeEvent(eventName, payload, allowedEvents)) || shouldDestroy
       } catch {
-        // Closing the response remains the security boundary if the control frame cannot be sent.
+        shouldDestroy = true
       }
     }
 
     cleanup(reason)
-    if (destroy && !res.destroyed) res.destroy()
+    if (shouldDestroy && !res.destroyed) res.destroy()
     else if (!res.writableEnded && !res.destroyed) res.end()
   }
 
@@ -126,9 +130,22 @@ function openSseStream({
     req.sseConnectionRelease = null
   }
 
-  function closeForBackpressure() {
+  function closeForBackpressure(reason = 'backpressure_limit') {
     incrementSseMetric('backpressureClosed')
-    closeStream({ reason: 'backpressure_limit', destroy: true })
+    closeStream({ reason, destroy: true })
+  }
+
+  function clearBackpressureTimeout() {
+    clearTimeout(backpressureTimeoutId)
+    backpressureTimeoutId = null
+  }
+
+  function startBackpressureTimeout() {
+    if (backpressureTimeoutId !== null || closed) return
+    backpressureTimeoutId = setTimeout(() => {
+      backpressureTimeoutId = null
+      closeForBackpressure('backpressure_timeout')
+    }, env.SSE_BACKPRESSURE_TIMEOUT_MS)
   }
 
   function enqueueFrame(frame, { heartbeat = false } = {}) {
@@ -166,6 +183,7 @@ function openSseStream({
 
     try {
       backpressured = !res.write(frame)
+      if (backpressured) startBackpressureTimeout()
       return true
     } catch {
       handleResponseError()
@@ -185,6 +203,7 @@ function openSseStream({
       })
       return
     }
+    clearBackpressureTimeout()
     backpressured = false
 
     while (pendingFrames.length > 0 && !backpressured && !closed) {
@@ -204,6 +223,7 @@ function openSseStream({
 
       try {
         backpressured = !res.write(next.frame)
+        if (backpressured) startBackpressureTimeout()
       } catch {
         handleResponseError()
       }
@@ -316,6 +336,7 @@ function openSseStream({
     })
     res.flushHeaders?.()
     req.socket.setTimeout(0)
+    req.socket.setKeepAlive?.(true, env.SSE_TCP_KEEPALIVE_INITIAL_DELAY_MS)
 
     req.once('aborted', handleClientClose)
     res.once('close', handleClientClose)
@@ -324,7 +345,11 @@ function openSseStream({
     activeStreamClosers.add(closeStream)
     incrementSseMetric('opened')
 
-    writeEvent('heartbeat', { ok: true, timestamp: new Date().toISOString() }, { heartbeat: true })
+    writeEvent('heartbeat', {
+      intervalMs: env.SSE_HEARTBEAT_INTERVAL_MS,
+      ok: true,
+      timestamp: new Date().toISOString(),
+    }, { heartbeat: true })
     if (closed) return closeStream
 
     const removeSubscription = subscribe((event) => {
@@ -346,7 +371,11 @@ function openSseStream({
     }
 
     heartbeatId = setInterval(() => {
-      writeEvent('heartbeat', { ok: true, timestamp: new Date().toISOString() }, { heartbeat: true })
+      writeEvent('heartbeat', {
+        intervalMs: env.SSE_HEARTBEAT_INTERVAL_MS,
+        ok: true,
+        timestamp: new Date().toISOString(),
+      }, { heartbeat: true })
     }, env.SSE_HEARTBEAT_INTERVAL_MS)
 
     const expiresInMs = Math.max(0, expiresAtMs - Date.now())

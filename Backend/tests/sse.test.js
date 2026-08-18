@@ -7,6 +7,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-
 process.env.SSE_HEARTBEAT_INTERVAL_MS = '100'
 process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS = '20'
 process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS = '5'
+process.env.SSE_BACKPRESSURE_TIMEOUT_MS = '30'
 process.env.SSE_MAX_CONNECTION_LIFETIME_MS = '3000'
 process.env.SSE_MAX_PENDING_EVENTS = '2'
 process.env.SSE_MAX_PENDING_BYTES = '1024'
@@ -54,7 +55,7 @@ function createRequest({ expiresAtMs = Date.now() + 60_000 } = {}) {
   const request = new EventEmitter()
   request.tokenPayload = { sub: 'user-1', exp: Math.ceil(expiresAtMs / 1000) }
   request.user = { id: 'user-1', role: 'Admin' }
-  request.socket = { setTimeout() {} }
+  request.socket = { setKeepAlive() {}, setTimeout() {} }
   request.sseConnectionRelease = () => {}
   return request
 }
@@ -248,6 +249,106 @@ test('backpressure closes when pending UTF-8 bytes exceed the configured limit',
 
   assert.equal(res.destroyed, true)
   assert.equal(stream.getUnsubscribeCalls(), 1)
+})
+
+test('backpressure timeout destroys a stalled stream and releases its lease', async () => {
+  const req = createRequest()
+  let releaseCalls = 0
+  req.sseConnectionRelease = () => { releaseCalls += 1 }
+  const stream = openTestStream({ req, res: new MockResponse([false]) })
+
+  await waitFor(() => stream.res.destroyed)
+
+  assert.equal(stream.getUnsubscribeCalls(), 1)
+  assert.equal(releaseCalls, 1)
+})
+
+test('stream setup enables TCP keepalive with the configured initial delay', () => {
+  const req = createRequest()
+  const keepAliveCalls = []
+  req.socket.setKeepAlive = (...args) => keepAliveCalls.push(args)
+  const stream = openTestStream({ req })
+
+  assert.deepEqual(keepAliveCalls, [[true, 30_000]])
+  stream.close({ reason: 'test_complete' })
+})
+
+test('heartbeat advertises the configured interval for client watchdog alignment', () => {
+  const stream = openTestStream()
+
+  assert.match(stream.res.frames[0], /"intervalMs":100/)
+  stream.close({ reason: 'test_complete' })
+})
+
+test('planned closure destroys a backpressured socket before releasing its lease', () => {
+  const req = createRequest()
+  let releaseCalls = 0
+  req.sseConnectionRelease = () => { releaseCalls += 1 }
+  const stream = openTestStream({ req, res: new MockResponse([false]) })
+
+  stream.close({
+    eventName: 'stream.reconnect',
+    payload: { reason: 'max_lifetime' },
+    reason: 'max_lifetime',
+  })
+
+  assert.equal(stream.res.destroyed, true)
+  assert.equal(stream.res.writableEnded, false)
+  assert.equal(releaseCalls, 1)
+})
+
+test('terminal control write backpressure destroys the socket before releasing its lease', () => {
+  const req = createRequest()
+  let releaseCalls = 0
+  req.sseConnectionRelease = () => { releaseCalls += 1 }
+  const stream = openTestStream({ req, res: new MockResponse([true, false]) })
+
+  stream.close({
+    eventName: 'stream.reconnect',
+    payload: { reason: 'max_lifetime' },
+    reason: 'max_lifetime',
+  })
+
+  assert.equal(stream.res.destroyed, true)
+  assert.equal(stream.res.writableEnded, false)
+  assert.equal(releaseCalls, 1)
+})
+
+test('authorization revocation destroys a backpressured socket and releases its lease', async () => {
+  const req = createRequest()
+  let releaseCalls = 0
+  req.sseConnectionRelease = () => { releaseCalls += 1 }
+  const stream = openTestStream({
+    req,
+    res: new MockResponse([false]),
+    revalidateUser: async () => ({ id: 'user-1', role: 'Viewer' }),
+  })
+
+  await waitFor(() => stream.res.destroyed)
+
+  assert.equal(stream.res.writableEnded, false)
+  assert.equal(releaseCalls, 1)
+})
+
+test('authorization query failure destroys a backpressured socket and releases its lease', async () => {
+  const req = createRequest()
+  let releaseCalls = 0
+  req.sseConnectionRelease = () => { releaseCalls += 1 }
+  const stream = openTestStream({
+    req,
+    res: new MockResponse([false]),
+    revalidateUser: async () => {
+      const error = new Error('Database query failed.')
+      error.code = 'AUTH_QUERY_FAILED'
+      error.status = 500
+      throw error
+    },
+  })
+
+  await waitFor(() => stream.res.destroyed)
+
+  assert.equal(stream.res.writableEnded, false)
+  assert.equal(releaseCalls, 1)
 })
 
 test('closing during a stalled authorization check aborts the database request and settles immediately', async () => {

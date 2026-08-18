@@ -86,11 +86,17 @@ test('alerts and downtime share the per-user stream cap and release slots on clo
   await withTestServer(app, async (baseUrl) => {
     const alertsAbort = new AbortController()
     const downtimeAbort = new AbortController()
+    const secondAlertsAbort = new AbortController()
+    const secondDowntimeAbort = new AbortController()
     const alerts = await streamRequest(baseUrl, '/api/alerts/stream', token, alertsAbort.signal)
     const downtime = await streamRequest(baseUrl, '/api/downtime/stream', token, downtimeAbort.signal)
+    const secondAlerts = await streamRequest(baseUrl, '/api/alerts/stream', token, secondAlertsAbort.signal)
+    const secondDowntime = await streamRequest(baseUrl, '/api/downtime/stream', token, secondDowntimeAbort.signal)
 
     assert.equal(alerts.status, 200)
     assert.equal(downtime.status, 200)
+    assert.equal(secondAlerts.status, 200)
+    assert.equal(secondDowntime.status, 200)
     assert.equal(alerts.headers.get('x-accel-buffering'), 'no')
 
     const limited = await requestJson(baseUrl, '/api/alerts/stream', {
@@ -107,7 +113,7 @@ test('alerts and downtime share the per-user stream cap and release slots on clo
 
     await alerts.body.cancel()
     alertsAbort.abort()
-    await waitForCondition(() => connectionRegistry.getCounts().total === 1)
+    await waitForCondition(() => connectionRegistry.getCounts().total === 3)
 
     const replacementAbort = new AbortController()
     const replacement = await streamRequest(baseUrl, '/api/alerts/stream', token, replacementAbort.signal)
@@ -115,6 +121,8 @@ test('alerts and downtime share the per-user stream cap and release slots on clo
 
     replacementAbort.abort()
     downtimeAbort.abort()
+    secondAlertsAbort.abort()
+    secondDowntimeAbort.abort()
   })
 })
 
@@ -126,8 +134,12 @@ test('a rapid stream abort and reopen recovers from any temporary admission pres
   await withTestServer(app, async (baseUrl) => {
     const alertsAbort = new AbortController()
     const downtimeAbort = new AbortController()
+    const secondAlertsAbort = new AbortController()
+    const secondDowntimeAbort = new AbortController()
     await streamRequest(baseUrl, '/api/alerts/stream', token, alertsAbort.signal)
     await streamRequest(baseUrl, '/api/downtime/stream', token, downtimeAbort.signal)
+    await streamRequest(baseUrl, '/api/alerts/stream', token, secondAlertsAbort.signal)
+    await streamRequest(baseUrl, '/api/downtime/stream', token, secondDowntimeAbort.signal)
 
     alertsAbort.abort()
     const immediateAbort = new AbortController()
@@ -137,16 +149,18 @@ test('a rapid stream abort and reopen recovers from any temporary admission pres
     if (immediate.status === 429) {
       const body = await immediate.json()
       assert.equal(body.error.code, 'SSE_CONNECTION_LIMITED')
-      await waitForCondition(() => connectionRegistry.getCounts().total === 1)
+      await waitForCondition(() => connectionRegistry.getCounts().total === 3)
       replacementAbort = new AbortController()
       const replacement = await streamRequest(baseUrl, '/api/alerts/stream', token, replacementAbort.signal)
       assert.equal(replacement.status, 200)
     } else {
       assert.equal(immediate.status, 200)
-      await waitForCondition(() => connectionRegistry.getCounts().total === 2)
+      await waitForCondition(() => connectionRegistry.getCounts().total === 4)
     }
 
     downtimeAbort.abort()
+    secondAlertsAbort.abort()
+    secondDowntimeAbort.abort()
     immediateAbort.abort()
     replacementAbort?.abort()
   })
@@ -167,8 +181,12 @@ test('SSE admission logs the limiting scope without exposing authentication data
   await withTestServer(app, async (baseUrl) => {
     const alertsAbort = new AbortController()
     const downtimeAbort = new AbortController()
+    const secondAlertsAbort = new AbortController()
+    const secondDowntimeAbort = new AbortController()
     await streamRequest(baseUrl, '/api/alerts/stream', token, alertsAbort.signal)
     await streamRequest(baseUrl, '/api/downtime/stream', token, downtimeAbort.signal)
+    await streamRequest(baseUrl, '/api/alerts/stream', token, secondAlertsAbort.signal)
+    await streamRequest(baseUrl, '/api/downtime/stream', token, secondDowntimeAbort.signal)
 
     const limited = await requestJson(baseUrl, '/api/alerts/stream?should-not-log=token', {
       headers: { Authorization: `Bearer ${token}` },
@@ -178,26 +196,30 @@ test('SSE admission logs the limiting scope without exposing authentication data
     assert.deepEqual(warnings, [{
       message: 'SSE connection limited.',
       metadata: {
-        activeConnections: { total: 2, user: 2, ip: 2 },
+        activeConnections: { total: 4, user: 4, ip: 4 },
         limit: 'user',
-        maximumConnections: { total: 100, user: 2, ip: 5 },
+        maximumConnections: { total: 100, user: 4, ip: 20 },
         stream: '/api/alerts/stream',
       },
     }])
 
     alertsAbort.abort()
     downtimeAbort.abort()
+    secondAlertsAbort.abort()
+    secondDowntimeAbort.abort()
   })
 })
 
 test('an authorization revalidation failure releases its admission slot before reconnect', async () => {
   const previous = {
+    backpressure: process.env.SSE_BACKPRESSURE_TIMEOUT_MS,
     interval: process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS,
     timeout: process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS,
     lifetime: process.env.SSE_MAX_CONNECTION_LIFETIME_MS,
   }
   process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS = '20'
   process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS = '5'
+  process.env.SSE_BACKPRESSURE_TIMEOUT_MS = '100'
   process.env.SSE_MAX_CONNECTION_LIFETIME_MS = '1000'
   let authCalls = 0
   let app
@@ -227,6 +249,8 @@ test('an authorization revalidation failure releases its admission slot before r
       },
     })
   } finally {
+    if (previous.backpressure === undefined) delete process.env.SSE_BACKPRESSURE_TIMEOUT_MS
+    else process.env.SSE_BACKPRESSURE_TIMEOUT_MS = previous.backpressure
     if (previous.interval === undefined) delete process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS
     else process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS = previous.interval
     if (previous.timeout === undefined) delete process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS
@@ -255,12 +279,14 @@ test('an authorization revalidation failure releases its admission slot before r
 
 test('periodic database role revalidation sends a terminal control event', async () => {
   const previous = {
+    backpressure: process.env.SSE_BACKPRESSURE_TIMEOUT_MS,
     interval: process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS,
     timeout: process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS,
     lifetime: process.env.SSE_MAX_CONNECTION_LIFETIME_MS,
   }
   process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS = '20'
   process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS = '5'
+  process.env.SSE_BACKPRESSURE_TIMEOUT_MS = '100'
   process.env.SSE_MAX_CONNECTION_LIFETIME_MS = '1000'
   let authCalls = 0
 
@@ -283,6 +309,8 @@ test('periodic database role revalidation sends a terminal control event', async
       },
     })
   } finally {
+    if (previous.backpressure === undefined) delete process.env.SSE_BACKPRESSURE_TIMEOUT_MS
+    else process.env.SSE_BACKPRESSURE_TIMEOUT_MS = previous.backpressure
     if (previous.interval === undefined) delete process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS
     else process.env.SSE_AUTH_REVALIDATION_INTERVAL_MS = previous.interval
     if (previous.timeout === undefined) delete process.env.SSE_AUTH_REVALIDATION_TIMEOUT_MS

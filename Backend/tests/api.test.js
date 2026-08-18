@@ -85,6 +85,31 @@ test('GET /api/health returns backend health', async () => {
   })
 })
 
+test('GET /api/operations/sse exposes aggregate diagnostics only to admins', async () => {
+  const app = loadAppWithMocks()
+
+  await withTestServer(app, async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, '/api/operations/sse')
+    assert.equal(unauthenticated.response.status, 401)
+
+    const forbidden = await requestJson(baseUrl, '/api/operations/sse', {
+      headers: authHeader('Production Supervisor'),
+    })
+    assert.equal(forbidden.response.status, 403)
+
+    const allowed = await requestJson(baseUrl, '/api/operations/sse', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(allowed.response.status, 200)
+    assert.equal(typeof allowed.body.sse.activeConnections, 'number')
+    assert.equal(typeof allowed.body.sse.activeUsers, 'number')
+    assert.equal(typeof allowed.body.sse.activeIps, 'number')
+    assert.equal(typeof allowed.body.sse.counters.connectionLimited, 'number')
+    assert.equal(Object.hasOwn(allowed.body.sse, 'users'), false)
+    assert.equal(Object.hasOwn(allowed.body.sse, 'ips'), false)
+  })
+})
+
 test('POST /api/auth/login succeeds with valid credentials', async () => {
   const app = loadAppWithMocks({
     'src/modules/auth/auth.service.js': {

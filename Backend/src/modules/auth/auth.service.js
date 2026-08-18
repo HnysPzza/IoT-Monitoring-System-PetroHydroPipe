@@ -34,13 +34,12 @@ function toAuthUser(userRecord) {
   }
 }
 
-function getAuthUserSelect() {
+function getSessionUserSelect() {
   return `
     id,
     name,
     username,
     email,
-    password_hash,
     status,
     must_change_password,
     deleted_at,
@@ -50,6 +49,10 @@ function getAuthUserSelect() {
   `
 }
 
+function getLoginUserSelect() {
+  return `${getSessionUserSelect()}, password_hash`
+}
+
 async function findUserByUsername(username) {
   // Usernames are stored lowercase so login works consistently.
   const normalizedUsername = username.trim().toLowerCase()
@@ -57,7 +60,7 @@ async function findUserByUsername(username) {
 
   const { data, error } = await supabase
     .from('users')
-    .select(getAuthUserSelect())
+    .select(getLoginUserSelect())
     .eq('username', normalizedUsername)
     .maybeSingle()
 
@@ -72,7 +75,7 @@ async function findUserById(userId, { signal } = {}) {
   const supabase = getSupabaseClient()
   let query = supabase
     .from('users')
-    .select(getAuthUserSelect())
+    .select(getSessionUserSelect())
     .eq('id', userId)
 
   if (signal) query = query.abortSignal(signal)
