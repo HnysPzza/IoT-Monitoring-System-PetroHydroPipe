@@ -49,11 +49,11 @@ describe('AdminDashboard alerts', () => {
     acknowledgeAlert.mockReset()
     getAlerts.mockReset()
     subscribeToAlerts.mockReset()
-    subscribeToAlerts.mockReturnValue(() => {})
+    subscribeToAlerts.mockReturnValue(() => { })
   })
 
   it('uses the route title as the dashboard level-one heading', async () => {
-    getAlerts.mockReturnValue(new Promise(() => {}))
+    getAlerts.mockReturnValue(new Promise(() => { }))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
@@ -61,7 +61,7 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('labels the reporting navigation group as Analytics', () => {
-    getAlerts.mockReturnValue(new Promise(() => {}))
+    getAlerts.mockReturnValue(new Promise(() => { }))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
@@ -71,7 +71,7 @@ describe('AdminDashboard alerts', () => {
 
   it('keeps the sidebar scrollbar visible while navigation is being scrolled', () => {
     vi.useFakeTimers()
-    getAlerts.mockReturnValue(new Promise(() => {}))
+    getAlerts.mockReturnValue(new Promise(() => { }))
 
     const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
     const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
@@ -103,7 +103,7 @@ describe('AdminDashboard alerts', () => {
 
   it('clears the sidebar scrollbar timer on unmount', () => {
     vi.useFakeTimers()
-    getAlerts.mockReturnValue(new Promise(() => {}))
+    getAlerts.mockReturnValue(new Promise(() => { }))
 
     const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
     const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
@@ -884,5 +884,29 @@ describe('AdminDashboard alerts', () => {
 
     expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveFocus()
+  })
+
+  it('toggles sidebar collapsed state when clicking the sidebar panel toggle', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockReturnValue(new Promise(() => {}))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const collapseBtn = screen.getByRole('button', { name: 'Collapse sidebar' })
+    expect(collapseBtn).toBeInTheDocument()
+    expect(collapseBtn).toHaveAttribute('aria-expanded', 'true')
+    expect(collapseBtn).toHaveClass('is-pointing-left')
+
+    await user.click(collapseBtn)
+
+    const expandBtn = screen.getByRole('button', { name: 'Expand sidebar' })
+    expect(expandBtn).toBeInTheDocument()
+    expect(expandBtn).toHaveAttribute('aria-expanded', 'false')
+    expect(expandBtn).toHaveClass('is-pointing-right')
+    expect(screen.getByRole('complementary')).toHaveClass('is-collapsed')
+
+    await user.click(expandBtn)
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary')).not.toHaveClass('is-collapsed')
   })
 })

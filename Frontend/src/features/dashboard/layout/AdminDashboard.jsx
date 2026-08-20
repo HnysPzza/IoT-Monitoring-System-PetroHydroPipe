@@ -1,8 +1,9 @@
-import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
+import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Monitor, Settings, TriangleAlert, UserRound, Users } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import {
   applyLiveAlertDelta,
   areAlertDeltasEquivalent,
@@ -96,11 +97,11 @@ export default function AdminDashboard() {
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
   const sidebarScrollTimerRef = useRef(null)
-  const retryAlertsRef = useRef(() => {})
+  const retryAlertsRef = useRef(() => { })
   const sessionTokenRef = useRef(null)
   const acknowledgementIdRef = useRef(0)
   const acknowledgementOperationsRef = useRef(new Map())
-  const applyAlertDeltaRef = useRef(() => {})
+  const applyAlertDeltaRef = useRef(() => { })
   const { token, user, logout } = useAuth()
   sessionTokenRef.current = token
   const navigate = useNavigate()
@@ -414,8 +415,8 @@ export default function AdminDashboard() {
       isMounted = false
       activeListRequest = null
       reloadQueued = false
-      retryAlertsRef.current = () => {}
-      applyAlertDeltaRef.current = () => {}
+      retryAlertsRef.current = () => { }
+      applyAlertDeltaRef.current = () => { }
       unsubscribe()
 
       if (pollingId !== null) {
@@ -489,26 +490,22 @@ export default function AdminDashboard() {
               <span className="sidebar-brand-name">PetroHydroPipe</span>
             </div>
           </div>
-          <button
-            className="icon-button dashboard-icon-button desktop-only"
-            type="button"
-            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          <PanelToggle
+            className="desktop-only"
+            isCollapsed={isSidebarCollapsed}
+            ariaLabel={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsSidebarCollapsed((value) => !value)}
-          >
-            <Menu size={20} aria-hidden="true" />
-          </button>
-          <button
+          />
+          <PanelToggle
             ref={mobileCloseButtonRef}
-            className="icon-button dashboard-icon-button mobile-only"
-            type="button"
-            aria-label="Close navigation"
+            className="mobile-only"
+            isOpen={true}
+            ariaLabel="Close navigation"
             onClick={() => {
               setIsDrawerOpen(false)
               mobileMenuButtonRef.current?.focus({ preventScroll: true })
             }}
-          >
-            <X size={20} aria-hidden="true" />
-          </button>
+          />
         </div>
 
         <nav
@@ -576,18 +573,16 @@ export default function AdminDashboard() {
       <div className="dashboard-main">
         <header className="dashboard-topbar">
           <div className="topbar-leading">
-            <button
+            <PanelToggle
               ref={mobileMenuButtonRef}
-              className="icon-button dashboard-icon-button mobile-only"
-              type="button"
-              aria-label="Open navigation"
+              className="mobile-only"
+              isOpen={false}
+              ariaLabel="Open navigation"
               onClick={() => {
                 setIsAlertsOpen(false)
                 setIsDrawerOpen(true)
               }}
-            >
-              <Menu size={20} aria-hidden="true" />
-            </button>
+            />
             <div>
               <h1 className="topbar-label">{pageMeta.title}</h1>
               <p className="topbar-subtitle">{pageMeta.subtitle}</p>
@@ -600,11 +595,11 @@ export default function AdminDashboard() {
                 ? 'Live'
                 : alertConnectionStatus === 'polling'
                   ? 'Polling'
-                : alertConnectionStatus === 'connecting'
-                  ? 'Connecting'
-                  : alertConnectionStatus === 'degraded'
-                    ? 'Real-time temporarily unavailable — retrying'
-                    : 'Reconnecting'}
+                  : alertConnectionStatus === 'connecting'
+                    ? 'Connecting'
+                    : alertConnectionStatus === 'degraded'
+                      ? 'Real-time temporarily unavailable — retrying'
+                      : 'Reconnecting'}
             </span>
             <DashboardClock />
             <button

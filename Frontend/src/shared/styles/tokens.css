@@ -3327,6 +3327,7 @@ button:disabled {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -3364,7 +3365,7 @@ button:disabled {
 
 .mobile-only,
 .sidebar-backdrop {
-  display: none;
+  display: none !important;
 }
 
 .placeholder-shell {
@@ -3486,11 +3487,11 @@ button:disabled {
   }
 
   .desktop-only {
-    display: none;
+    display: none !important;
   }
 
   .mobile-only {
-    display: inline-grid;
+    display: inline-grid !important;
   }
 
   .sidebar-backdrop {
