@@ -117,7 +117,7 @@ describe('AnalyticsOperationsDetails', () => {
     expect(container.querySelector('.analytics-sensor-chart')).toHaveAttribute('aria-hidden', 'true')
     expect(within(sensorLegend).getAllByRole('listitem')).toHaveLength(5)
     expect(within(sensorLegend).getByText('S-01')).toBeInTheDocument()
-    expect(within(sensorLegend).getByText('1 event - 20% of process events')).toBeInTheDocument()
+    expect(within(sensorLegend).getAllByText('1 event - 20% of process events')).toHaveLength(5)
     expect(within(sensorLegend).getByText('S-05')).toBeInTheDocument()
   })
 

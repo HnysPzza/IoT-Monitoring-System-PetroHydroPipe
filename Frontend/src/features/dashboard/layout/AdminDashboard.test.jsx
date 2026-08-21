@@ -18,8 +18,8 @@ function activeAlert() {
     id: 'alert-1',
     severity: 'Critical',
     status: 'Active',
-    title: 'Inside Filler downtime detected',
-    message: 'S-04 Inside Filler has no pulse.',
+    title: 'Outside Filler Wire downtime detected',
+    message: 'S-04 Outside Filler Wire has no pulse.',
     revision: '1',
   }
 }
@@ -184,7 +184,7 @@ describe('AdminDashboard alerts', () => {
     const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
     await user.click(bell)
 
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /acknowledge/i }))
 
@@ -220,7 +220,7 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByLabelText('Alert count unavailable')).toHaveTextContent('—')
 
     act(() => streamHandlers.onEvent({ type: 'alert.created', payload: { alert: activeAlert() } }))
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Alert list failed.')
 
@@ -255,7 +255,7 @@ describe('AdminDashboard alerts', () => {
 
     const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
     await user.click(bell)
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
   })
 
   it('does not replay a post-load SSE delta into a later polling response', async () => {
@@ -351,7 +351,7 @@ describe('AdminDashboard alerts', () => {
       }
     })
 
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Acknowledgement failed.')
     expect(screen.getByRole('button', { name: /acknowledge/i })).toBeEnabled()
   })
@@ -380,7 +380,7 @@ describe('AdminDashboard alerts', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
     expect(screen.getByRole('alert')).toHaveTextContent('Polling failed.')
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
 
     act(() => streamHandlers.onRecovery())
     expect(screen.getByRole('status')).toHaveTextContent('Live')

@@ -31,9 +31,9 @@ function sensorFixture(overrides = {}) {
   return {
     id: 'sensor-1',
     sensorCode: 'S-01',
-    label: 'Raw Material Detection',
+    label: 'Raw Material & Coil Joint',
     esp32DeviceId: 'ESP32-01',
-    purpose: 'Raw Material Detection',
+    purpose: 'Raw Material & Coil Joint',
     status: 'Active',
     updatedAt: '2026-08-09T02:00:00.000Z',
     ...overrides,
@@ -151,14 +151,14 @@ describe('MachinesSection request states', () => {
 
     renderWithAuth(<MachinesSection />)
 
-    expect(await screen.findByRole('heading', { name: 'Raw Material Detection' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Raw Material & Coil Joint' })).toBeInTheDocument()
     expect(screen.getByLabelText('Sensor status')).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Refresh sensors' }))
 
     const staleNotice = await screen.findByText(/Sensor data is stale/i)
     expect(staleNotice).toHaveTextContent('Sensor refresh failed.')
     expect(staleNotice.querySelector('time')).toHaveAttribute('dateTime')
-    expect(screen.getByRole('heading', { name: 'Raw Material Detection' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Raw Material & Coil Joint' })).toBeInTheDocument()
     expect(screen.getByLabelText('Sensor status')).toBeDisabled()
   })
 
@@ -329,7 +329,7 @@ describe('MachinesSection request states', () => {
     expect(oldSensorStatus).toBeDisabled()
 
     view.rerender(renderTree('second-token'))
-    expect(await screen.findByRole('heading', { name: 'Outside Filler' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Inside Filler Wire' })).toBeInTheDocument()
 
     await act(async () => {
       oldMutation.resolve({ sensor: sensorFixture({ label: 'Old session sensor', status: 'Inactive' }) })

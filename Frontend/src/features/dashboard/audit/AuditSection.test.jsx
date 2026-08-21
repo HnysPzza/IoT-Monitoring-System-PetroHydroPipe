@@ -54,7 +54,7 @@ describe('AuditSection', () => {
           createdAt: '2026-06-11T00:00:00.000Z',
           actor: null,
           metadata: {
-            title: 'Inside Filler downtime detected',
+            title: 'Outside Filler Wire downtime detected',
             sensorCode: 'S-04',
             signal: 'no_pulse',
             eventId: 'event-1',
@@ -72,7 +72,7 @@ describe('AuditSection', () => {
 
     expect(screen.getByText('Readable details')).toBeInTheDocument()
     expect(screen.getByText('What happened')).toBeInTheDocument()
-    expect(screen.getAllByText(/inside filler downtime detected was created/i).length).toBeGreaterThan(1)
+    expect(screen.getAllByText(/outside filler wire downtime detected was created/i).length).toBeGreaterThan(1)
     expect(screen.queryByText('Action code')).not.toBeInTheDocument()
     expect(screen.queryByText('event-1')).not.toBeInTheDocument()
 

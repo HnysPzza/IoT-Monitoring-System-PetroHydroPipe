@@ -558,8 +558,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
           id: alertId,
           severity: 'Critical',
           status: 'Active',
-          title: 'Inside Filler downtime detected',
-          message: 'S-04 Inside Filler has no pulse.',
+          title: 'Outside Filler Wire downtime detected',
+          message: 'S-04 Outside Filler Wire has no pulse.',
           revision: '1',
         }],
         snapshotRevision: '1',
@@ -568,8 +568,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
         id: targetAlertId,
         severity: 'Critical',
         status: 'Acknowledged',
-        title: 'Inside Filler downtime detected',
-        message: 'S-04 Inside Filler has no pulse.',
+        title: 'Outside Filler Wire downtime detected',
+        message: 'S-04 Outside Filler Wire has no pulse.',
         revision: '2',
         acknowledgedAt: '2026-06-11T00:00:00.000Z',
         acknowledgedBy: {
@@ -586,8 +586,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
               id: alertId,
               severity: 'Critical',
               status: 'Active',
-              title: 'Inside Filler downtime detected',
-              message: 'S-04 Inside Filler has no pulse.',
+              title: 'Outside Filler Wire downtime detected',
+              message: 'S-04 Outside Filler Wire has no pulse.',
               revision: '1',
             },
           })
@@ -609,7 +609,7 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
     })
 
     assert.equal(listed.response.status, 200)
-    assert.equal(listed.body.alerts[0].message, 'S-04 Inside Filler has no pulse.')
+    assert.equal(listed.body.alerts[0].message, 'S-04 Outside Filler Wire has no pulse.')
     assert.equal(listed.body.alerts[0].revision, '1')
     assert.equal(listed.body.snapshotRevision, '1')
 
