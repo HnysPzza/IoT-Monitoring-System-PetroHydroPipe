@@ -1,4 +1,21 @@
-import { BarChart3, Bell, ChartNoAxesCombined, Check, Gauge, LogOut, Logs, Monitor, MoveRight, Rss, Settings, TriangleAlert, UserRound, Users } from 'lucide-react'
+import {
+  BarChart3,
+  Bell,
+  ChartNoAxesCombined,
+  Check,
+  Gauge,
+  History,
+  LogOut,
+  Logs,
+  Monitor,
+  MoveRight,
+  Rss,
+  Settings,
+  TriangleAlert,
+  UserRound,
+  UserRoundCheck,
+  Users,
+} from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -672,12 +689,20 @@ export default function AdminDashboard() {
                   <ul className="alerts-popover-list">
                     {[...activeAlerts, ...acknowledgedAlerts].map((alert) => {
                       const isAcked = alert.status === 'Acknowledged'
+                      const isRecoveryPending = alert.status === 'Active' && Boolean(alert.metadata?.recoveryPending)
                       const statusLabel = getAlertStatusLabel(alert)
+                      const rowStateClass = isRecoveryPending
+                        ? 'is-recovered'
+                        : isAcked
+                          ? 'is-acknowledged'
+                          : 'is-active'
                       return (
-                        <li key={alert.id} className={`alert-row ${isAcked ? 'is-acknowledged' : 'is-active'}`}>
+                        <li key={alert.id} className={`alert-row ${rowStateClass}`}>
                           <div className="alert-row-indicator">
-                            {isAcked ? (
-                              <Check size={14} className="alert-dot-acked" aria-hidden="true" />
+                            {isRecoveryPending ? (
+                              <History size={14} className="alert-icon-recovered" aria-hidden="true" />
+                            ) : isAcked ? (
+                              <UserRoundCheck size={14} className="alert-icon-acked" aria-hidden="true" />
                             ) : (
                               <span className="alert-dot-active" aria-hidden="true" />
                             )}
@@ -708,7 +733,7 @@ export default function AdminDashboard() {
                             </button>
                           ) : (
                             <span className="alert-acked-tag">
-                              <Check size={12} aria-hidden="true" /> Acked
+                              <UserRoundCheck size={12} aria-hidden="true" /> Acked
                             </span>
                           )}
                         </li>

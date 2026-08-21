@@ -1451,12 +1451,20 @@ button:disabled {
 }
 
 .alert-row.is-acknowledged {
-  opacity: 0.6;
+  opacity: 0.85;
 }
 
 .alert-row.is-acknowledged:hover {
-  opacity: 0.85;
+  opacity: 1;
   background: #F8FAFC;
+}
+
+.alert-row.is-recovered {
+  opacity: 1;
+}
+
+.alert-row.is-recovered:hover {
+  background: #F0FDF4;
 }
 
 :root[data-theme='dark'] .alert-row {
@@ -1468,10 +1476,14 @@ button:disabled {
   background: rgba(255, 255, 255, 0.04);
 }
 
+:root[data-theme='dark'] .alert-row.is-recovered:hover {
+  background: rgba(16, 185, 129, 0.08);
+}
+
 .alert-row-indicator {
   display: grid;
   place-items: center;
-  width: 12px;
+  width: 14px;
   min-height: 18px;
   flex-shrink: 0;
 }
@@ -1484,12 +1496,22 @@ button:disabled {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
 }
 
-.alert-dot-acked {
-  color: #64748B;
+.alert-icon-recovered {
+  color: #10B981;
+  flex-shrink: 0;
 }
 
-:root[data-theme='dark'] .alert-dot-acked {
-  color: #94A3B8;
+.alert-icon-acked {
+  color: #EF4444;
+  flex-shrink: 0;
+}
+
+:root[data-theme='dark'] .alert-icon-recovered {
+  color: #34D399;
+}
+
+:root[data-theme='dark'] .alert-icon-acked {
+  color: #F87171;
 }
 
 .alert-row-body {
@@ -1544,7 +1566,11 @@ button:disabled {
 }
 
 .alert-row.is-acknowledged .alert-status-text {
-  color: #64748B;
+  color: #DC2626;
+}
+
+.alert-row.is-recovered .alert-status-text {
+  color: #059669;
 }
 
 :root[data-theme='dark'] .alert-row.is-active .alert-status-text {
@@ -1552,7 +1578,11 @@ button:disabled {
 }
 
 :root[data-theme='dark'] .alert-row.is-acknowledged .alert-status-text {
-  color: #94A3B8;
+  color: #F87171;
+}
+
+:root[data-theme='dark'] .alert-row.is-recovered .alert-status-text {
+  color: #34D399;
 }
 
 .alert-acknowledgement-error {
@@ -1609,16 +1639,18 @@ button:disabled {
   gap: 3px;
   font-size: 0.68rem;
   font-weight: 600;
-  color: #64748B;
-  padding: 2px 5px;
+  color: #DC2626;
+  padding: 2px 6px;
   border-radius: 4px;
-  background: #F1F5F9;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   white-space: nowrap;
 }
 
 :root[data-theme='dark'] .alert-acked-tag {
-  color: #94A3B8;
-  background: rgba(255, 255, 255, 0.06);
+  color: #F87171;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .alerts-empty-state {
