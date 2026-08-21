@@ -1,4 +1,4 @@
-import { BarChart3, Bell, ChartNoAxesCombined, Check, Gauge, LogOut, Logs, Monitor, Rss, Settings, TriangleAlert, UserRound, Users } from 'lucide-react'
+import { BarChart3, Bell, ChartNoAxesCombined, Check, Gauge, LogOut, Logs, Monitor, MoveRight, Rss, Settings, TriangleAlert, UserRound, Users } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -537,12 +537,12 @@ export default function AdminDashboard() {
                       end={item.to === '/dashboard'}
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
-                      className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''}`}
+                      className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
                     >
                       <Icon
                         className="sidebar-link-icon"
-                        size={21}
-                        strokeWidth={item.icon === 'logs' ? 2.25 : 2}
+                        size={20}
+                        strokeWidth={1.75}
                         aria-hidden="true"
                       />
                       <span className="sidebar-link-copy">
@@ -559,7 +559,7 @@ export default function AdminDashboard() {
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="sidebar-avatar" aria-hidden="true">
-              <UserRound size={20} />
+              <UserRound size={18} strokeWidth={1.75} />
             </span>
             <div className="sidebar-user-copy">
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
@@ -567,7 +567,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>
-            <LogOut size={20} aria-hidden="true" />
+            <LogOut className="sidebar-logout-icon" size={18} strokeWidth={1.75} aria-hidden="true" />
             <span>Logout</span>
           </button>
         </div>
@@ -619,7 +619,7 @@ export default function AdminDashboard() {
             <DashboardClock />
             <button
               ref={alertsButtonRef}
-              className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
+              className={`notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
               type="button"
               aria-label={
                 !hasTrustedAlertList
@@ -634,7 +634,12 @@ export default function AdminDashboard() {
                 setIsAlertsOpen((value) => !value)
               }}
             >
-              <Bell size={18} aria-hidden="true" />
+              <Bell className="bell-icon" size={20} aria-hidden="true" />
+              {hasTrustedAlertList && activeAlertCount > 0 ? (
+                <span key={activeAlertCount} className="notification-badge" aria-hidden="true">
+                  {activeAlertCount > 99 ? '99+' : activeAlertCount}
+                </span>
+              ) : null}
               <span className="sr-only">
                 {!hasTrustedAlertList
                   ? 'Alert status unavailable'
@@ -646,10 +651,14 @@ export default function AdminDashboard() {
             {isAlertsOpen ? (
               <div ref={alertsPopoverRef} className="alerts-popover" role="dialog" aria-label="Active alerts" tabIndex="-1">
                 <div className="alerts-popover-header">
-                  <strong>Notifications</strong>
-                  <span aria-label={!hasTrustedAlertList ? 'Alert count unavailable' : undefined}>
-                    {hasTrustedAlertList ? activeAlertCount : '—'}
-                  </span>
+                  <div className="alerts-header-title-wrap">
+                    <strong>Notifications</strong>
+                    {hasTrustedAlertList && activeAlertCount > 0 ? (
+                      <span className="alerts-header-count" aria-label={`${activeAlertCount} active alerts`}>
+                        {activeAlertCount}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 {alertLoadError ? (
                   <div className="alert-load-error" role="alert">
@@ -660,37 +669,67 @@ export default function AdminDashboard() {
                   </div>
                 ) : null}
                 {alerts.length > 0 ? (
-                  <ul>
-                    {[...activeAlerts, ...acknowledgedAlerts].map((alert) => (
-                      <li key={alert.id} className={alert.status === 'Acknowledged' ? 'is-acknowledged' : ''}>
-                        <TriangleAlert size={15} aria-hidden="true" />
-                        <div className="alert-popover-copy">
-                          <span className="alert-popover-title">{alert.title}</span>
-                          <span>{alert.message}</span>
-                          <span className="alert-popover-meta">{getAlertStatusLabel(alert)}</span>
-                          {alertAcknowledgementErrors[alert.id] ? (
-                            <span className="alert-acknowledgement-error" role="alert">
-                              {alertAcknowledgementErrors[alert.id]}
+                  <ul className="alerts-popover-list">
+                    {[...activeAlerts, ...acknowledgedAlerts].map((alert) => {
+                      const isAcked = alert.status === 'Acknowledged'
+                      const statusLabel = getAlertStatusLabel(alert)
+                      return (
+                        <li key={alert.id} className={`alert-row ${isAcked ? 'is-acknowledged' : 'is-active'}`}>
+                          <div className="alert-row-indicator">
+                            {isAcked ? (
+                              <Check size={14} className="alert-dot-acked" aria-hidden="true" />
+                            ) : (
+                              <span className="alert-dot-active" aria-hidden="true" />
+                            )}
+                          </div>
+                          <div className="alert-row-body">
+                            <p className="alert-row-primary">
+                              {alert.message || alert.title}
+                            </p>
+                            <div className="alert-row-meta">
+                              <span>{alert.machineName || 'Spiral Mill 01'}</span>
+                              <span className="meta-separator">·</span>
+                              <span className="alert-status-text">{statusLabel}</span>
+                              {alertAcknowledgementErrors[alert.id] ? (
+                                <span className="alert-acknowledgement-error" role="alert">
+                                  {alertAcknowledgementErrors[alert.id]}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          {!isAcked ? (
+                            <button
+                              className="alert-acknowledge-ghost-btn"
+                              type="button"
+                              disabled={acknowledgingAlertIds.includes(alert.id)}
+                              onClick={() => handleAcknowledgeAlert(alert.id)}
+                            >
+                              Acknowledge
+                            </button>
+                          ) : (
+                            <span className="alert-acked-tag">
+                              <Check size={12} aria-hidden="true" /> Acked
                             </span>
-                          ) : null}
-                        </div>
-                        {alert.status === 'Active' ? (
-                          <button
-                            className="btn btn-secondary alert-acknowledge-button"
-                            type="button"
-                            disabled={acknowledgingAlertIds.includes(alert.id)}
-                            onClick={() => handleAcknowledgeAlert(alert.id)}
-                          >
-                            <Check size={14} aria-hidden="true" />
-                            Acknowledge
-                          </button>
-                        ) : null}
-                      </li>
-                    ))}
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 ) : hasTrustedAlertList ? (
-                  <p>No active alerts.</p>
+                  <div className="alerts-empty-state">
+                    <p>No active alerts.</p>
+                  </div>
                 ) : null}
+                <div className="alerts-popover-footer">
+                  <NavLink
+                    to="/dashboard/downtime"
+                    className="alerts-footer-link"
+                    onClick={() => setIsAlertsOpen(false)}
+                  >
+                    <span>View all downtime logs</span>
+                    <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
+                  </NavLink>
+                </div>
               </div>
             ) : null}
           </div>
