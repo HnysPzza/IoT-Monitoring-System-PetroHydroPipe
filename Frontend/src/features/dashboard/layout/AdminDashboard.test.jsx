@@ -44,6 +44,34 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+function createControllableMatchMedia(initialMatches = false) {
+  let matches = initialMatches
+  const listeners = new Set()
+  const mediaQuery = {
+    media: '(max-width: 900px)',
+    get matches() {
+      return matches
+    },
+    onchange: null,
+    addEventListener: vi.fn((type, listener) => {
+      if (type === 'change') listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((type, listener) => {
+      if (type === 'change') listeners.delete(listener)
+    }),
+  }
+
+  return {
+    matchMedia: vi.fn(() => mediaQuery),
+    setMatches(nextMatches) {
+      matches = nextMatches
+      const event = { matches, media: mediaQuery.media }
+      mediaQuery.onchange?.(event)
+      listeners.forEach((listener) => listener(event))
+    },
+  }
+}
+
 describe('AdminDashboard alerts', () => {
   beforeEach(() => {
     acknowledgeAlert.mockReset()
@@ -67,6 +95,23 @@ describe('AdminDashboard alerts', () => {
 
     expect(screen.getByText('Analytics', { selector: '.sidebar-nav-heading' })).toBeInTheDocument()
     expect(screen.queryByText('Analyze', { selector: '.sidebar-nav-heading' })).not.toBeInTheDocument()
+  })
+
+  it('renders the requested Lucide icons while keeping Reports on BarChart3', () => {
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const liveFeedIcon = screen.getByRole('link', { name: 'Live Feed' }).querySelector('svg')
+    const reportsIcon = screen.getByRole('link', { name: 'Reports' }).querySelector('svg')
+    const analyticsIcon = screen.getByRole('link', { name: 'Analytics' }).querySelector('svg')
+    const auditLogIcon = screen.getByRole('link', { name: 'Audit Log' }).querySelector('svg')
+
+    expect(liveFeedIcon).toHaveClass('lucide-rss')
+    expect(reportsIcon).toHaveClass('lucide-chart-column')
+    expect(analyticsIcon).toHaveClass('lucide-chart-no-axes-combined')
+    expect(auditLogIcon).toHaveClass('lucide-logs')
+    expect(auditLogIcon).toHaveAttribute('stroke-width', '2.25')
   })
 
   it('keeps the sidebar scrollbar visible while navigation is being scrolled', () => {
@@ -152,6 +197,7 @@ describe('AdminDashboard alerts', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('shows an unavailable alert status on initial failure and retries without calling it empty', async () => {
@@ -873,6 +919,8 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('closes alerts before opening the mobile navigation drawer', async () => {
+    const viewport = createControllableMatchMedia(true)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
     const user = userEvent.setup()
 
     getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
@@ -880,9 +928,12 @@ describe('AdminDashboard alerts', () => {
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
     await user.click(await screen.findByRole('button', { name: /open alerts, 1 active/i }))
-    await user.click(screen.getByRole('button', { name: /open navigation/i }))
+    const openNavigationButton = screen.getByRole('button', { name: /open navigation/i })
+    expect(openNavigationButton).not.toHaveClass('sidebar-toggle')
+    await user.click(openNavigationButton)
 
     expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveClass('sidebar-toggle')
     expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveFocus()
   })
 
@@ -894,6 +945,7 @@ describe('AdminDashboard alerts', () => {
 
     const collapseBtn = screen.getByRole('button', { name: 'Collapse sidebar' })
     expect(collapseBtn).toBeInTheDocument()
+    expect(collapseBtn).toHaveClass('sidebar-toggle')
     expect(collapseBtn).toHaveAttribute('aria-expanded', 'true')
     expect(collapseBtn).toHaveClass('is-pointing-left')
 
@@ -908,5 +960,45 @@ describe('AdminDashboard alerts', () => {
     await user.click(expandBtn)
     expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
     expect(screen.getByRole('complementary')).not.toHaveClass('is-collapsed')
+  })
+
+  it('keeps the desktop collapse preference while the mobile drawer stays expanded and labeled', async () => {
+    const viewport = createControllableMatchMedia(false)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
+    const user = userEvent.setup()
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const sidebar = screen.getByRole('complementary')
+    const liveFeedLink = screen.getByRole('link', { name: 'Live Feed' })
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+
+    expect(sidebar).toHaveClass('is-collapsed')
+    expect(liveFeedLink).toHaveAttribute('title', 'Live Feed')
+    expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
+
+    act(() => viewport.setMatches(true))
+
+    await waitFor(() => expect(sidebar).not.toHaveClass('is-collapsed'))
+    expect(liveFeedLink).not.toHaveAttribute('title')
+    expect(liveFeedLink).not.toHaveAttribute('aria-label')
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+
+    expect(sidebar).toHaveClass('is-open')
+    expect(sidebar).not.toHaveClass('is-collapsed')
+    expect(screen.getByRole('link', { name: 'Live Feed' })).toHaveTextContent('Live Feed')
+    expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveFocus()
+
+    act(() => viewport.setMatches(false))
+
+    await waitFor(() => {
+      expect(sidebar).toHaveClass('is-collapsed')
+      expect(sidebar).not.toHaveClass('is-open')
+      expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveFocus()
+    })
+    expect(liveFeedLink).toHaveAttribute('title', 'Live Feed')
+    expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
   })
 })

@@ -63,6 +63,33 @@
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
 }
 
+/* Sidebar-header toggles keep a full touch target while rendering as an icon only. */
+.panel-toggle-btn.sidebar-toggle,
+.panel-toggle-btn.sidebar-toggle:hover,
+.panel-toggle-btn.sidebar-toggle:active {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.panel-toggle-btn.sidebar-toggle:hover,
+.panel-toggle-btn.sidebar-toggle:active {
+  color: var(--c-text, #F8FAFC);
+}
+
+.panel-toggle-btn.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--c-primary, #1677FF);
+  outline-offset: 2px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
 /* Base Lucide SVG */
 .panel-toggle-svg {
   display: block;

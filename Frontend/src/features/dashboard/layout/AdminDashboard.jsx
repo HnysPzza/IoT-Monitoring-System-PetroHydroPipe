@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Monitor, Settings, TriangleAlert, UserRound, Users } from 'lucide-react'
+import { BarChart3, Bell, ChartNoAxesCombined, Check, Gauge, LogOut, Logs, Monitor, Rss, Settings, TriangleAlert, UserRound, Users } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -26,12 +26,13 @@ const ACKNOWLEDGEMENT_RESPONSE_STATUSES = new Set(['Acknowledged', 'Resolved'])
 
 const icons = {
   gauge: Gauge,
-  activity: Activity,
+  rss: Rss,
   'triangle-alert': TriangleAlert,
   'bar-chart-3': BarChart3,
+  'chart-no-axes-combined': ChartNoAxesCombined,
   users: Users,
   monitor: Monitor,
-  history: History,
+  logs: Logs,
   settings: Settings,
 }
 
@@ -94,6 +95,7 @@ export default function AdminDashboard() {
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
+  const desktopSidebarToggleRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
   const sidebarScrollTimerRef = useRef(null)
@@ -122,6 +124,7 @@ export default function AdminDashboard() {
   const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
   const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
   const activeAlertCount = activeAlerts.length
+  const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
@@ -144,10 +147,17 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!isDrawerOpen) return
+    if (isMobileViewport || !isDrawerOpen) return
+
+    setIsDrawerOpen(false)
+    desktopSidebarToggleRef.current?.focus({ preventScroll: true })
+  }, [isDrawerOpen, isMobileViewport])
+
+  useEffect(() => {
+    if (!isMobileViewport || !isDrawerOpen) return
 
     mobileCloseButtonRef.current?.focus({ preventScroll: true })
-  }, [isDrawerOpen])
+  }, [isDrawerOpen, isMobileViewport])
 
   useEffect(() => {
     if (!isAlertsOpen) return
@@ -479,7 +489,7 @@ export default function AdminDashboard() {
   return (
     <main className="dashboard-shell">
       <aside
-        className={`dashboard-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
+        className={`dashboard-sidebar ${isDesktopSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
         aria-hidden={isMobileViewport && !isDrawerOpen ? 'true' : undefined}
         inert={isMobileViewport && !isDrawerOpen}
       >
@@ -491,14 +501,15 @@ export default function AdminDashboard() {
             </div>
           </div>
           <PanelToggle
-            className="desktop-only"
-            isCollapsed={isSidebarCollapsed}
-            ariaLabel={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            ref={desktopSidebarToggleRef}
+            className="sidebar-toggle desktop-only"
+            isCollapsed={isDesktopSidebarCollapsed}
+            ariaLabel={isDesktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsSidebarCollapsed((value) => !value)}
           />
           <PanelToggle
             ref={mobileCloseButtonRef}
-            className="mobile-only"
+            className="sidebar-toggle mobile-only"
             isOpen={true}
             ariaLabel="Close navigation"
             onClick={() => {
@@ -524,12 +535,16 @@ export default function AdminDashboard() {
                       key={item.to}
                       to={item.to}
                       end={item.to === '/dashboard'}
-                      title={isSidebarCollapsed ? item.label : undefined}
+                      title={isDesktopSidebarCollapsed ? item.label : undefined}
+                      aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
                       className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''}`}
                     >
-                      <span className="sidebar-link-icon" aria-hidden="true">
-                        <Icon size={18} />
-                      </span>
+                      <Icon
+                        className="sidebar-link-icon"
+                        size={21}
+                        strokeWidth={item.icon === 'logs' ? 2.25 : 2}
+                        aria-hidden="true"
+                      />
                       <span className="sidebar-link-copy">
                         <span className="sidebar-link-label">{item.label}</span>
                       </span>
@@ -544,7 +559,7 @@ export default function AdminDashboard() {
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="sidebar-avatar" aria-hidden="true">
-              <UserRound size={18} />
+              <UserRound size={20} />
             </span>
             <div className="sidebar-user-copy">
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
@@ -552,7 +567,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>
-            <LogOut size={18} aria-hidden="true" />
+            <LogOut size={20} aria-hidden="true" />
             <span>Logout</span>
           </button>
         </div>

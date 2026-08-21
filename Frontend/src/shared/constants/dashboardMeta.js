@@ -11,7 +11,7 @@ export const navItems = [
   {
     label: 'Live Feed',
     to: '/dashboard/live',
-    icon: 'activity',
+    icon: 'rss',
     group: 'monitor',
     roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
     subtitle: 'Live status across five monitoring points.',
@@ -35,7 +35,7 @@ export const navItems = [
   {
     label: 'Analytics',
     to: '/dashboard/analytics',
-    icon: 'bar-chart-3',
+    icon: 'chart-no-axes-combined',
     group: 'analyze',
     roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor'],
     subtitle: 'Explore local production, downtime, and process trends.',
@@ -43,7 +43,7 @@ export const navItems = [
   {
     label: 'Audit Log',
     to: '/dashboard/audit',
-    icon: 'history',
+    icon: 'logs',
     group: 'analyze',
     roles: ['Admin'],
     subtitle: 'Trace operator actions and system changes.',

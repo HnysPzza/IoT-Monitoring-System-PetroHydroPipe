@@ -580,10 +580,10 @@ button:disabled {
   top: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: 236px;
+  width: 220px;
   height: 100dvh;
   max-height: 100vh;
-  padding: 16px 12px;
+  padding: 14px 10px;
   overflow: hidden;
   border-right: 1px solid var(--subtle-border);
   background: var(--sidebar-bg);
@@ -593,8 +593,8 @@ button:disabled {
 }
 
 .dashboard-sidebar.is-collapsed {
-  width: 76px;
-  padding: 16px 10px;
+  width: 66px;
+  padding: 14px 10px;
 }
 
 .sidebar-header,
@@ -610,14 +610,14 @@ button:disabled {
 
 .sidebar-header,
 .sidebar-footer {
-  gap: 12px;
+  gap: 8px;
 }
 
 .sidebar-header {
   align-items: center;
   justify-content: space-between;
-  min-height: 48px;
-  margin-bottom: 16px;
+  min-height: 44px;
+  margin-bottom: 12px;
 }
 
 .dashboard-sidebar.is-collapsed .sidebar-header {
@@ -625,17 +625,17 @@ button:disabled {
 }
 
 .sidebar-brand {
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .sidebar-user {
-  gap: 16px;
+  gap: 10px;
 }
 
 .sidebar-logo {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
   flex: 0 0 auto;
 }
@@ -658,7 +658,7 @@ button:disabled {
 }
 
 .sidebar-brand-name {
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   letter-spacing: -0.02em;
 }
 
@@ -673,7 +673,7 @@ button:disabled {
 
 .sidebar-brand-subtitle,
 .sidebar-user-role {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 
 .dashboard-sidebar.is-collapsed .sidebar-brand-copy,
@@ -699,7 +699,7 @@ button:disabled {
 
 .sidebar-nav {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   align-content: start;
   min-height: 0;
   overflow-y: auto;
@@ -713,22 +713,46 @@ button:disabled {
 }
 
 .sidebar-nav-group {
-  gap: 6px;
+  gap: 4px;
+}
+
+.sidebar-nav-group+.sidebar-nav-group {
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--subtle-border);
 }
 
 .sidebar-nav-links {
-  gap: 4px;
+  gap: 3px;
 }
 
 .sidebar-nav-heading {
   margin: 0;
-  padding: 0 10px;
+  padding: 0 8px 2px;
   color: #7890A2;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.6;
   text-transform: uppercase;
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-nav {
+  width: 44px;
+  padding-right: 0;
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-nav-group+.sidebar-nav-group {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--subtle-border);
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -762,10 +786,10 @@ button:disabled {
 
 .sidebar-link {
   display: grid;
-  grid-template-columns: 36px 1fr;
+  grid-template-columns: 21px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
+  gap: 12px;
+  min-height: 44px;
   padding: 6px 10px;
   overflow: hidden;
   border: 1px solid transparent;
@@ -776,10 +800,16 @@ button:disabled {
 }
 
 .dashboard-sidebar.is-collapsed .sidebar-link {
-  grid-template-columns: 36px;
+  grid-template-columns: 21px;
+  width: 44px;
+  height: 44px;
   justify-content: center;
-  min-height: 48px;
-  padding: 6px;
+  justify-self: center;
+  min-height: 44px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .dashboard-sidebar.is-collapsed .sidebar-footer,
@@ -789,12 +819,12 @@ button:disabled {
 
 .dashboard-sidebar.is-collapsed .sidebar-user {
   display: grid;
-  grid-template-columns: 36px;
+  grid-template-columns: 44px;
   justify-content: center;
   gap: 0;
   width: 100%;
-  min-height: 48px;
-  padding: 6px;
+  min-height: 44px;
+  padding: 0;
 }
 
 .sidebar-link:hover:not(.is-active) {
@@ -821,14 +851,24 @@ button:disabled {
   box-shadow: 0 10px 26px rgba(22, 119, 255, 0.32);
 }
 
-.sidebar-link-icon {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 8px;
+.dashboard-sidebar.is-collapsed .sidebar-link:hover,
+.dashboard-sidebar.is-collapsed .sidebar-link.is-active,
+.dashboard-sidebar.is-collapsed .sidebar-link.is-active:hover {
+  border-color: transparent;
   background: transparent;
+  box-shadow: none;
+}
+
+.dashboard-sidebar.is-collapsed .sidebar-link.is-active .sidebar-link-icon {
+  color: #60A5FA;
+}
+
+.sidebar-link-icon {
+  display: block;
+  width: 21px;
+  height: 21px;
   color: var(--c-text);
+  flex: 0 0 auto;
 }
 
 .sidebar-link-label,
@@ -841,7 +881,9 @@ button:disabled {
 
 .sidebar-link-label {
   font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1.25;
 }
 
 :root[data-theme='light'] .sidebar-link-label {
@@ -850,13 +892,13 @@ button:disabled {
 
 .sidebar-link.is-active .sidebar-link-label {
   color: #FFFFFF;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .sidebar-footer {
   display: grid;
-  gap: 12px;
-  padding-top: 14px;
+  gap: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--subtle-border);
   min-width: 0;
   background: var(--sidebar-bg);
@@ -882,13 +924,14 @@ button:disabled {
 }
 
 .sidebar-user-name {
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sidebar-user-role {
+  font-size: 0.75rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -898,8 +941,11 @@ button:disabled {
   width: 100%;
   min-height: 44px;
   justify-content: flex-start;
+  gap: 12px;
   padding-inline: 12px;
   color: var(--c-text);
+  font-size: 0.875rem;
+  font-weight: 600;
   border-color: transparent;
   background: transparent;
 }
@@ -1229,9 +1275,7 @@ button:disabled {
 
 /* Overview controls toolbar & unified refresh */
 .overview-controls-card {
-  position: sticky;
-  top: 76px;
-  z-index: 15;
+  position: static;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1242,8 +1286,6 @@ button:disabled {
   border-radius: 12px;
   background: var(--card-bg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .overview-meta-strip {
@@ -1276,7 +1318,6 @@ button:disabled {
 
 @media (max-width: 680px) {
   .overview-controls-card {
-    top: 68px;
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
@@ -3471,7 +3512,7 @@ button:disabled {
   .dashboard-sidebar {
     position: fixed;
     left: 0;
-    width: min(320px, 82vw);
+    width: min(78vw, 256px);
     height: 100dvh;
     max-height: 100dvh;
     transform: translateX(-100%);
