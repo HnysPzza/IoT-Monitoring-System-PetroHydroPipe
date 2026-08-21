@@ -559,7 +559,7 @@ export default function AdminDashboard() {
                       <Icon
                         className="sidebar-link-icon"
                         size={20}
-                        strokeWidth={1.75}
+                        strokeWidth={item.icon === 'logs' ? 2.25 : 1.75}
                         aria-hidden="true"
                       />
                       <span className="sidebar-link-copy">
@@ -576,7 +576,7 @@ export default function AdminDashboard() {
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="sidebar-avatar" aria-hidden="true">
-              <UserRound size={18} strokeWidth={1.75} />
+              <UserRound size={18} />
             </span>
             <div className="sidebar-user-copy">
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
@@ -584,7 +584,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>
-            <LogOut className="sidebar-logout-icon" size={18} strokeWidth={1.75} aria-hidden="true" />
+            <LogOut size={18} aria-hidden="true" />
             <span>Logout</span>
           </button>
         </div>
@@ -636,7 +636,7 @@ export default function AdminDashboard() {
             <DashboardClock />
             <button
               ref={alertsButtonRef}
-              className={`notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
+              className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
               type="button"
               aria-label={
                 !hasTrustedAlertList
@@ -670,11 +670,12 @@ export default function AdminDashboard() {
                 <div className="alerts-popover-header">
                   <div className="alerts-header-title-wrap">
                     <strong>Notifications</strong>
-                    {hasTrustedAlertList && activeAlertCount > 0 ? (
-                      <span className="alerts-header-count" aria-label={`${activeAlertCount} active alerts`}>
-                        {activeAlertCount}
-                      </span>
-                    ) : null}
+                    <span
+                      className="alerts-header-count"
+                      aria-label={!hasTrustedAlertList ? 'Alert count unavailable' : `${activeAlertCount} active alerts`}
+                    >
+                      {hasTrustedAlertList ? (activeAlertCount > 99 ? '99+' : activeAlertCount) : '—'}
+                    </span>
                   </div>
                 </div>
                 {alertLoadError ? (
@@ -709,8 +710,11 @@ export default function AdminDashboard() {
                           </div>
                           <div className="alert-row-body">
                             <p className="alert-row-primary">
-                              {alert.message || alert.title}
+                              {alert.title || alert.message}
                             </p>
+                            {alert.title && alert.message && alert.title !== alert.message ? (
+                              <p className="alert-row-message">{alert.message}</p>
+                            ) : null}
                             <div className="alert-row-meta">
                               <span>{alert.machineName || 'Spiral Mill 01'}</span>
                               <span className="meta-separator">·</span>

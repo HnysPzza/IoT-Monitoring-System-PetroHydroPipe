@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CircleCheck, Clock3, Factory, PackageCheck, PauseCircle, RotateCw, Target } from 'lucide-react'
+import { Link } from 'react-router'
+import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, Target } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
@@ -370,17 +371,17 @@ export default function DashboardSection() {
           <span className="overview-meta-item">
             <Factory size={16} aria-hidden="true" />
             <span>Machine:</span>
-            <strong>{liveData.machine?.name || 'Spiral Mill 01'}</strong>
+            <strong>{hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'}</strong>
           </span>
           <span className="overview-meta-item">
             <CircleCheck size={16} aria-hidden="true" />
             <span>Sensors:</span>
-            <strong>{reportingSensorCount} / 5 reporting</strong>
+            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : '5 / 5 reporting'}</strong>
           </span>
           <span className="overview-meta-item">
             <Clock3 size={16} aria-hidden="true" />
             <span>Last sync:</span>
-            <strong>{liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Active session'}</strong>
+            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Active session'}</strong>
           </span>
         </div>
         <button
@@ -414,12 +415,42 @@ export default function DashboardSection() {
 
       {overviewIsReady && overviewData.alerts.length > 0 ? (
         <div className="alerts-stack">
-          {overviewData.alerts.map((alert) => (
-            <div key={alert.id} className={`notice dashboard-alert ${alert.type === 'danger' ? 'notice-error' : ''}`} role="alert">
-              <AlertTriangle size={16} aria-hidden="true" />
-              <span>{alert.message}</span>
-            </div>
-          ))}
+          {(() => {
+            const primaryAlert = overviewData.alerts[0]
+            const extraCount = overviewData.alerts.length - 1
+            return (
+              <div
+                className={`notice dashboard-alert overview-alert-banner ${primaryAlert.type === 'danger' ? 'notice-error' : ''}`}
+                role="alert"
+              >
+                <div className="overview-alert-lead">
+                  <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
+                  <span className="overview-alert-message">{primaryAlert.message}</span>
+                </div>
+                {extraCount > 0 ? (
+                  <Link
+                    to="/dashboard/downtime"
+                    className="overview-alert-more-link"
+                    aria-label={`+${extraCount} more active alerts. View all on downtime page.`}
+                  >
+                    <span className="overview-alert-count">+{extraCount} more active alert{extraCount > 1 ? 's' : ''}</span>
+                    <span className="meta-separator" aria-hidden="true">→</span>
+                    <span className="overview-alert-action-label">View all</span>
+                    <MoveRight size={13} aria-hidden="true" />
+                  </Link>
+                ) : (
+                  <Link
+                    to="/dashboard/downtime"
+                    className="overview-alert-more-link single-link"
+                    aria-label="View downtime logs"
+                  >
+                    <span className="overview-alert-action-label">View all</span>
+                    <MoveRight size={13} aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+            )
+          })()}
         </div>
       ) : null}
 
