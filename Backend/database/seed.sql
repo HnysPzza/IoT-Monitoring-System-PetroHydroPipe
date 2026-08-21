@@ -68,10 +68,10 @@ select
 from machines
 cross join (
   values
-    ('S-01', 'esp32-m01-s01', 'Raw Material Detection'),
-    ('S-02', 'esp32-m01-s02', 'Outside Filler'),
-    ('S-03', 'esp32-m01-s03', 'Coil Joint'),
-    ('S-04', 'esp32-m01-s04', 'Inside Filler'),
+    ('S-01', 'esp32-m01-s01', 'Raw Material & Coil Joint'),
+    ('S-02', 'esp32-m01-s02', 'Inside Filler Wire'),
+    ('S-03', 'esp32-m01-s03', 'Machine Main Sensor'),
+    ('S-04', 'esp32-m01-s04', 'Outside Filler Wire'),
     ('S-05', 'esp32-m01-s05', 'Production Output Cutting')
 ) as sensor_seed(sensor_code, esp32_device_id, label)
 where machines.machine_code = 'M-01'

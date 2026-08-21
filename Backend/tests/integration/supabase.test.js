@@ -33,15 +33,11 @@ test('Supabase schema and seed data are readable', { skip: shouldRunIntegration 
 
   assert.ifError(sensorsError)
   assert.equal(sensors.length, 5)
+  const registry = require('../../src/shared/sensor-registry.json')
+  const expectedSensors = registry.sensors.map((s) => `${s.code}:${s.label}`)
   assert.deepEqual(
     sensors.map((sensor) => `${sensor.sensor_code}:${sensor.label}`),
-    [
-      'S-01:Raw Material Detection',
-      'S-02:Outside Filler',
-      'S-03:Coil Joint',
-      'S-04:Inside Filler',
-      'S-05:Production Output Cutting',
-    ],
+    expectedSensors,
   )
   assert.ok(sensors.every((sensor) => sensor.esp32_device_id && sensor.device_key_hash))
 
