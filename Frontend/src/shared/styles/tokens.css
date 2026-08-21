@@ -888,21 +888,35 @@ button:disabled {
 }
 
 /* Micro-Animations on Hover */
-.sidebar-link.is-gauge:hover .sidebar-link-icon {
-  animation: gauge-twitch 350ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+.sidebar-link.is-gauge .sidebar-link-icon {
+  transition: transform 320ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes gauge-twitch {
+.sidebar-link.is-gauge:hover .sidebar-link-icon {
+  transform: scale(1.12);
+}
+
+.sidebar-link.is-gauge .sidebar-link-icon path:first-child {
+  transform-origin: 12px 14px;
+  transform-box: view-box;
+  transition: transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-link.is-gauge:hover .sidebar-link-icon path:first-child {
+  animation: gauge-needle-sweep 950ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes gauge-needle-sweep {
   0% {
-    transform: rotate(0deg);
+    transform: rotate(-160deg);
   }
 
-  35% {
-    transform: rotate(22deg);
+  60% {
+    transform: rotate(10deg);
   }
 
-  70% {
-    transform: rotate(-10deg);
+  80% {
+    transform: rotate(-4deg);
   }
 
   100% {

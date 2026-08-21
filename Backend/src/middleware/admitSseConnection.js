@@ -4,6 +4,7 @@ const { ipKeyGenerator } = require('express-rate-limit')
 const { randomUUID } = require('node:crypto')
 const logger = require('../utils/logger')
 
+//This function is for token expiration and safe validation
 function admitSseConnection(req, res, next) {
   const expiresAtSeconds = req.tokenPayload?.exp
   const expiresAtMs = expiresAtSeconds * 1000
@@ -24,12 +25,13 @@ function admitSseConnection(req, res, next) {
       },
     })
   }
-
+  //Resource Quota Limiting
+  //limit stream per ip and prevent socket exhaustion
   const admission = connectionRegistry.acquire({
     userId,
     ip: ipKeyGenerator(req.ip || 'unknown'),
   })
-
+  //if quota exceede logs a warning and return 429 with a retry after 5 header
   if (!admission.release) {
     incrementSseMetric('connectionLimited')
     logger.warn('SSE connection limited.', {
@@ -49,7 +51,7 @@ function admitSseConnection(req, res, next) {
 
   req.sseConnectionId = randomUUID()
   req.sseConnectionRelease = admission.release
-
+  //attaches "listener/tripwire" drop if fail
   let streamSetupStarted = false
   const removePreStreamListeners = () => {
     req.off('aborted', releaseBeforeStreamSetup)
@@ -64,14 +66,15 @@ function admitSseConnection(req, res, next) {
     req.sseConnectionRelease = null
     req.sseConnectionHandoff = null
   }
-
+  //Edge Race condition
   req.sseConnectionHandoff = () => {
     if (streamSetupStarted) return
     streamSetupStarted = true
     removePreStreamListeners()
     req.sseConnectionHandoff = null
   }
-
+  //check the socket state if flag run immediate health check 
+  //if not run next() downstream controller takes over
   req.once('aborted', releaseBeforeStreamSetup)
   res.once('close', releaseBeforeStreamSetup)
   res.once('error', releaseBeforeStreamSetup)
