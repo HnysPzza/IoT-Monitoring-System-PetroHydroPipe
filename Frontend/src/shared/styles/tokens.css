@@ -587,7 +587,8 @@ button:disabled {
   overflow: hidden;
   border-right: 1px solid var(--subtle-border);
   background: var(--sidebar-bg);
-  transition: width 200ms var(--ease-std), transform 200ms var(--ease-std);
+  transition: width 320ms cubic-bezier(0.4, 0, 0.2, 1), transform 320ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
   z-index: 30;
   color: var(--c-text);
 }
@@ -703,8 +704,10 @@ button:disabled {
   align-content: start;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   padding-right: 2px;
+  transition: width 320ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-nav-group,
@@ -890,10 +893,21 @@ button:disabled {
 }
 
 @keyframes gauge-twitch {
-  0% { transform: rotate(0deg); }
-  35% { transform: rotate(22deg); }
-  70% { transform: rotate(-10deg); }
-  100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  35% {
+    transform: rotate(22deg);
+  }
+
+  70% {
+    transform: rotate(-10deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 .sidebar-link.is-rss:hover .sidebar-link-icon {
@@ -901,8 +915,15 @@ button:disabled {
 }
 
 @keyframes wave-expand {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15) translate(1px, -1px); }
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.15) translate(1px, -1px);
+  }
 }
 
 .sidebar-link.is-triangle-alert:hover .sidebar-link-icon {
@@ -910,9 +931,19 @@ button:disabled {
 }
 
 @keyframes warning-nudge {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  40% { transform: translateY(-2px) rotate(-6deg); }
-  75% { transform: translateY(0) rotate(3deg); }
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  40% {
+    transform: translateY(-2px) rotate(-6deg);
+  }
+
+  75% {
+    transform: translateY(0) rotate(3deg);
+  }
 }
 
 .sidebar-link.is-bar-chart-3:hover .sidebar-link-icon {
@@ -920,8 +951,15 @@ button:disabled {
 }
 
 @keyframes bar-grow {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.22) translateY(-1px); }
+
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  50% {
+    transform: scaleY(1.22) translateY(-1px);
+  }
 }
 
 .sidebar-link.is-chart-no-axes-combined:hover .sidebar-link-icon {
@@ -1146,15 +1184,19 @@ button:disabled {
   0% {
     transform: rotate(0deg);
   }
+
   30% {
     transform: rotate(11deg);
   }
+
   65% {
     transform: rotate(-7deg);
   }
+
   85% {
     transform: rotate(3deg);
   }
+
   100% {
     transform: rotate(0deg);
   }
@@ -1166,21 +1208,33 @@ button:disabled {
 }
 
 @keyframes bell-shake {
-  0%, 50%, 100% {
+
+  0%,
+  50%,
+  100% {
     transform: rotate(0deg);
   }
-  5%, 15%, 25% {
+
+  5%,
+  15%,
+  25% {
     transform: rotate(14deg);
   }
-  10%, 20%, 30% {
+
+  10%,
+  20%,
+  30% {
     transform: rotate(-14deg);
   }
+
   35% {
     transform: rotate(6deg);
   }
+
   40% {
     transform: rotate(-6deg);
   }
+
   45% {
     transform: rotate(0deg);
   }
@@ -1212,9 +1266,11 @@ button:disabled {
     transform: scale(0.3);
     opacity: 0;
   }
+
   70% {
     transform: scale(1.18);
   }
+
   100% {
     transform: scale(1);
     opacity: 1;
@@ -1267,6 +1323,7 @@ button:disabled {
     opacity: 0;
     transform: translateY(-8px) scale(0.97);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1647,6 +1704,7 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .notification-button .bell-icon,
   .notification-button:hover .bell-icon,
   .notification-button.is-alerting .bell-icon,
