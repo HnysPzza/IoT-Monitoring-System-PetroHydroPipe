@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 ## System Flow
 
@@ -172,10 +172,10 @@ The current `main` branch is designed around one production machine:
 
 Five ESP32-backed inductive proximity sensors are assigned to that machine:
 
-- `S-01` - Raw Material Detection
-- `S-02` - Outside Filler
-- `S-03` - Coil Joint
-- `S-04` - Inside Filler
+- `S-01` - Raw Material & Coil Joint
+- `S-02` - Inside Filler Wire
+- `S-03` - Machine Main Sensor
+- `S-04` - Outside Filler Wire
 - `S-05` - Production Output Cutting
 
 The monitoring UI should describe these sensor states and events. It should not introduce unsupported machine telemetry such as speed, pressure, temperature, RPM, bar, or degrees Celsius.

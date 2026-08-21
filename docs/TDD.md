@@ -9,11 +9,11 @@
 ## 1. Architecture Overview
 
 ```
-[Sensor 1: Coil Joint]      ─┐
-[Sensor 2: Inside Filler]   ─┤
-[Sensor 3: Downtime]        ─┼─► ESP32 nodes (x5) ─► MikroTik hAP lite (Cat6, wired) ─► Express.js API
-[Sensor 4: Outside Filler]  ─┤                                                             │
-[Sensor 5: Pipe Count]      ─┘                                                             ▼
+[Sensor 1: Raw Material & Coil Joint]  ─┐
+[Sensor 2: Inside Filler Wire]         ─┤
+[Sensor 3: Machine Main Sensor]        ─┼─► ESP32 nodes (x5) ─► MikroTik hAP lite (Cat6, wired) ─► Express.js API
+[Sensor 4: Outside Filler Wire]        ─┤                                                             │
+[Sensor 5: Production Output Cutting]  ─┘                                                             ▼
                                                                                    Supabase (Postgres, Pro tier)
                                                                                              │
                                                                                              ▼
@@ -37,11 +37,11 @@ Nodes currently transmit on **every raw sensor pulse**, not on confirmed state t
 
 | Sensor | Monitoring Point | Type | Behavior |
 |---|---|---|---|
-| 1 | Raw Materials / Coil Joint | **A — discrete event** | One transmission per confirmed coil-joint detection |
+| 1 | Raw Material & Coil Joint | **A — discrete event** | One transmission per confirmed coil-joint detection |
 | 2 | Inside Filler Wire | **A — discrete event** (tentative) | See note below |
 | 3 | Machine Main Sensor | **B — continuous activity** | State machine: RUNNING ↔ DOWN, driven by absence/presence of signal over a threshold window |
 | 4 | Outside Filler Wire | **A — discrete event** (tentative) | See note below |
-| 5 | Finished Pipe Output | **A — discrete event** | One transmission per confirmed pipe count at the cutter |
+| 5 | Production Output Cutting | **A — discrete event** | One transmission per confirmed pipe count at the cutter |
 
 
 ### 2.3 Type A firmware logic (discrete event nodes: 1, 2*, 4*, 5)
