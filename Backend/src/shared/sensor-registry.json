@@ -1,0 +1,35 @@
+{
+  "outputSensorCode": "S-05",
+  "sensors": [
+    {
+      "code": "S-01",
+      "deviceId": "esp32-m01-s01",
+      "label": "Raw Material & Coil Joint",
+      "purpose": "Detects raw material presence and coil joint activity at the entry uncoiler."
+    },
+    {
+      "code": "S-02",
+      "deviceId": "esp32-m01-s02",
+      "label": "Inside Filler Wire",
+      "purpose": "Monitors inside filler wire feeding during submerged arc welding."
+    },
+    {
+      "code": "S-03",
+      "deviceId": "esp32-m01-s03",
+      "label": "Machine Main Sensor",
+      "purpose": "Monitors continuous machine movement and primary production downtime."
+    },
+    {
+      "code": "S-04",
+      "deviceId": "esp32-m01-s04",
+      "label": "Outside Filler Wire",
+      "purpose": "Monitors outside filler wire feeding during external pipe welding."
+    },
+    {
+      "code": "S-05",
+      "deviceId": "esp32-m01-s05",
+      "label": "Production Output Cutting",
+      "purpose": "Counts finished pipe cutting events at the flying cutter exit table."
+    }
+  ]
+}
