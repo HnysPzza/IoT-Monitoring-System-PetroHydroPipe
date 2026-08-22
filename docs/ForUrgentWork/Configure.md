@@ -13,7 +13,7 @@ This document defines the approved direction for machine operational settings. T
 
 Phase 2 does not change machine state, downtime, alerts, availability, production loss, firmware, or frontend controls.
 
-Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Apply migration `010` before deploying the API.
+Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Phase 3 backend support is implemented through migrations `011` and `012`, the authenticated heartbeat API, the restart-safe watchdog, and shared break-aware metrics. Apply migrations in numeric order. Keep `WATCHDOG_MODE=disabled` until the deployment gates below are satisfied.
 
 ## Sensor absence settings
 
@@ -29,7 +29,7 @@ Proposed trigger values:
 
 These are configuration defaults, not proof that the physical sensors emit the heartbeats required for absence detection.
 
-When Phase 3 is implemented, expected transitions are:
+Phase 3 implements these transitions:
 
 1. Confirmed heartbeat/activity keeps the applicable sensor running.
 2. Missing activity below the trigger threshold is a grace state and does not open downtime.
@@ -57,7 +57,7 @@ The stored/API fields are `workStart`, `workEnd`, named `breaks` with `startTime
 
 The work window is nine elapsed hours with 90 minutes of breaks, leaving 7.5 scheduled production hours before grace treatment.
 
-Phase 3 must calculate interval overlap rather than label an entire stoppage from its start time. Only the portions overlapping a break or approved grace window are excluded from unplanned downtime metrics.
+Phase 3 calculates interval overlap rather than labeling an entire stoppage from its start time. Only the portions overlapping a break or approved grace window are excluded from unplanned downtime metrics. Simultaneous sensor downtime is unioned once for machine availability and total loss.
 
 Overnight shifts, holidays, temporary schedule exceptions, and multiple shifts are outside the current design.
 
@@ -67,7 +67,7 @@ Overnight shifts, holidays, temporary schedule exceptions, and multiple shifts a
 - Keep the backend as the source of truth so configuration changes do not require ESP32 reflashing.
 - Use versioned GET/PATCH machine-settings APIs.
 - Update settings and audit history atomically in PostgreSQL.
-- Use a later backend heartbeat watchdog for no-event detection. The ingestion RPC cannot detect an event that never arrives.
+- Use the backend heartbeat watchdog for no-event detection. The ingestion RPC cannot detect an event that never arrives.
 - Keep production-target management separate until effective dates and reporting behavior are designed.
 
 ## Required validation before enabling enforcement
@@ -77,3 +77,30 @@ Overnight shifts, holidays, temporary schedule exceptions, and multiple shifts a
 - Calibrate recovery confirmation timing through parallel-run evidence.
 - Distinguish a device/network outage from a real production stoppage.
 - Verify the watchdog after backend restart and against duplicate/stale heartbeats.
+
+## Runtime modes
+
+Set these values in `Backend/.env`:
+
+```env
+IOT_HEARTBEAT_EXPECTED_INTERVAL_MS=10000
+IOT_HEARTBEAT_STALE_AFTER_MS=30000
+WATCHDOG_MODE=disabled
+WATCHDOG_TICK_INTERVAL_MS=5000
+WATCHDOG_EVALUATION_TIMEOUT_MS=4000
+```
+
+- `disabled`: heartbeat storage and diagnostics work, but the evaluator cannot create operational transitions.
+- `observe`: threshold candidates and connectivity are recorded, but production downtime is not created.
+- `enforce`: enabled sensors may create or resolve watchdog-owned downtime through the atomic database function.
+
+Changing a sensor threshold or schedule uses the Admin settings API and an expected version. Changing the global mode is an environment/deployment action and requires a backend restart. There is intentionally no public mode-mutation endpoint.
+
+## Safe activation order
+
+1. Apply migration `011` and deploy with `WATCHDOG_MODE=disabled`.
+2. Send authenticated heartbeats and verify ordered boot counter, boot ID, sequence, and connectivity behavior.
+3. Apply migration `012` and use `observe` only after heartbeat behavior is stable.
+4. Enable absence observation one physically validated sensor at a time. Never enable S-05.
+5. Compare observe-mode evidence with the manual log through the parallel run.
+6. Request separate approval before using `enforce`.

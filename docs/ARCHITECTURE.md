@@ -67,7 +67,7 @@ The downtime list is loaded through the backend API:
 React dashboard -> GET /api/downtime -> Express backend -> Supabase PostgreSQL
 ```
 
-The frontend sends status, cause, date, page, and limit query parameters. The backend applies the filters, returns paginated records, and computes summary totals through the database summary function.
+The frontend sends status, cause, date, page, and limit query parameters. The backend applies interval-overlap filters, pages deterministically through all metric rows, returns paginated records, and computes break-aware summaries from effective-dated settings history. Machine totals union simultaneous sensor intervals so availability and loss are not counted twice.
 
 Realtime dashboard updates currently use Server-Sent Events:
 
@@ -188,7 +188,21 @@ Production targets currently come from fixed backend values for day, week, and m
 
 Phase 2 adds one `machine_operational_settings` row per explicitly provisioned machine and exposes it through `GET` and Admin-only `PATCH` requests at `/api/machines/:machineId/settings`. Updates use optimistic concurrency and one PostgreSQL transaction for both the settings change and its `SETTINGS_UPDATED` audit row. Migration `010` provisions M-01; future machines require explicit settings provisioning after their sensors are defined.
 
-This storage/API phase does not enforce sensor absence thresholds. The current ingestion RPC runs only when an event arrives, so it cannot detect an event that never arrives. Phase 3 must add periodic heartbeats plus a backend watchdog and an idempotent atomic transition function before stored thresholds affect machine state or downtime.
+The event-ingestion RPC still cannot detect an event that never arrives. Phase 3 therefore adds authenticated device heartbeats, persisted watchdog runtime, and an idempotent atomic evaluator. `WATCHDOG_MODE` defaults to `disabled`; `observe` records candidates without operational mutations, while `enforce` may create or resolve watchdog-owned downtime only for sensors whose absence detection is explicitly enabled. Connectivity loss creates a separate connectivity condition and cannot create production downtime. S-05 absence detection is permanently prohibited.
+
+Settings updates now also maintain `machine_operational_settings_history` in the same transaction. Downtime, dashboard, and report metrics use the schedule version effective at the requested time, exclude breaks and post-break grace, include records that overlap a window even if they started earlier, and return not-applicable availability when scheduled eligible time is zero.
+
+Phase 3 operational flow:
+
+```text
+ESP32 heartbeat -> device-authenticated API -> atomic heartbeat state
+watchdog tick -> atomic database evaluation -> committed downtime/alert/audit -> post-commit SSE
+settings history + downtime overlap -> shared operational-time engine -> dashboard/report metrics
+```
+
+The watchdog runner starts only from `server.js`, runs immediately without overlapping its own cycles, isolates one sensor failure, uses a bounded timeout, and stops before SSE during graceful shutdown. Admins can inspect aggregate non-identifying state through `GET /api/operations/watchdog`.
+
+Code support does not authorize enforcement. Physical signal classification, heartbeat reliability, recovery calibration, disposable PostgreSQL concurrency tests, and parallel-run evidence remain required before changing `WATCHDOG_MODE` to `enforce`.
 
 Production targets are deliberately outside Phase 2. They require a separate effective-date and reporting-period design before replacing the current fixed values.
 

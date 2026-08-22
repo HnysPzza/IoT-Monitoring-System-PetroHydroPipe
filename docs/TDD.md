@@ -147,7 +147,7 @@ This stays inside the Express-only rule in section 1. The current publisher is a
 
 UC018 currently defines only the trigger threshold. The clear/resume threshold needs:
 1. A concrete value (e.g., "Sensor 3 must show continuous activity for N seconds before the alert auto-resolves").
-2. The source is **implemented as backend-managed per-machine configuration**. Phase 2 stores, validates, versions, exposes, and atomically audits it; Phase 3 adds the heartbeat/watchdog consumer. The concrete recovery value remains open pending calibration.
+2. The source is **implemented as backend-managed per-machine configuration**. Phase 2 stores, validates, versions, exposes, and atomically audits it; Phase 3 consumes effective-dated settings through authenticated heartbeats and a restart-safe backend watchdog. The concrete recovery value remains open pending calibration, so enforcement stays disabled.
 3. A rewrite of UC018's description in the paper to state both thresholds explicitly — right now a panelist reading UC018 would reasonably assume the system already has a defined resume condition, and it doesn't.
 
 ## 7. Reporting & Export (UC022, UC023)
@@ -172,7 +172,7 @@ Needed for: temporary password delivery on account creation (UC005), forced firs
 | ~~5-node vs 4-node scope~~ | **Resolved — 5 nodes** | Order the 5th ESP32/sensor/enclosure set now if not already procured (Table 3 already prices for x5) |
 | Sensor 2 & 4: Type A or Type B | Yes, before firmware fix | Physically inspect signal behavior during lab testing, don't assume |
 | Debounce/clear threshold value | Yes, before firmware fix | Pick a starting value (e.g. 5–10s), validate/tune during parallel run |
-| ~~Threshold storage: firmware-hardcoded vs. server-config~~ | **Implemented - backend-managed per-machine configuration** | Phase 2 storage/API is complete; implement the heartbeat/watchdog consumer in Phase 3 and do not claim the ingestion RPC can detect an event that never arrives |
+| ~~Threshold storage: firmware-hardcoded vs. server-config~~ | **Implemented - backend-managed per-machine configuration** | Phase 2 storage/API is complete and the Phase 3 heartbeat/watchdog consumer is implemented; the ingestion RPC still cannot detect an event that never arrives, and production enforcement requires hardware evidence |
 | ~~Email vendor~~ | **Resolved — Resend** | Update the paper (Overview paragraph + NonFunc_024) to replace "Brevo" |
 | Supabase Pro funding | Yes, before production deployment | Confirm with Petro Hydro management |
 | PDF library: Puppeteer vs PDFKit | No | Pick one, avoid mixing two rendering approaches |

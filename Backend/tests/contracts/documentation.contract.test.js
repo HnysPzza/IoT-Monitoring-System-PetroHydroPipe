@@ -13,6 +13,7 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
     path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md'),
     path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md'),
     path.resolve(__dirname, '../../../docs/superpowers/plans/2026-08-22-phase-1-sensor-label-harmonization.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentFix/Plans/phase 3.md'),
   ]
 
   const obsoletePatterns = [
@@ -33,18 +34,47 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
   }
 })
 
-test('database guide documents migrations 008 through 010', () => {
+test('database guide documents migrations 008 through 012', () => {
   const databaseGuidePath = path.resolve(__dirname, '../../database/README.md')
   const content = fs.readFileSync(databaseGuidePath, 'utf8')
 
   assert.match(content, /008_harmonize_plant_sensor_labels\.sql/)
   assert.match(content, /009_align_sensor_downtime_causes\.sql/)
   assert.match(content, /010_create_machine_operational_settings\.sql/)
+  assert.match(content, /011_add_settings_history_and_watchdog_runtime\.sql/)
+  assert.match(content, /012_add_atomic_watchdog_transitions\.sql/)
   assert.match(content, /S-02 Inside Filler Wire/)
   assert.match(content, /S-04 Outside Filler Wire/)
   assert.match(content, /S-02 and S-04 downtime faults to `Consumable Shortage`/)
   assert.match(content, /S-03 faults remain `Pending Cause Review`/)
   assert.match(content, /update_machine_operational_settings/)
+  assert.match(content, /WATCHDOG_MODE=disabled/)
+  assert.match(content, /POST \/api\/iot\/heartbeats/)
+})
+
+test('Phase 3 operations docs preserve the safe activation boundary', () => {
+  const root = path.resolve(__dirname, '../../..')
+  const files = {
+    environment: path.join(root, 'Backend/.env.example'),
+    architecture: path.join(root, 'docs/ARCHITECTURE.md'),
+    configure: path.join(root, 'docs/ForUrgentWork/Configure.md'),
+    runbook: path.join(root, 'docs/RUNBOOK.md'),
+    plan: path.join(root, 'docs/ForUrgentFix/Plans/phase 3.md'),
+  }
+  const docs = Object.fromEntries(
+    Object.entries(files).map(([name, filePath]) => [name, fs.readFileSync(filePath, 'utf8')]),
+  )
+
+  assert.match(docs.environment, /WATCHDOG_MODE=disabled/)
+  assert.match(docs.environment, /IOT_HEARTBEAT_EXPECTED_INTERVAL_MS=10000/)
+  assert.match(docs.architecture, /Connectivity loss.*cannot create production downtime/i)
+  assert.match(docs.architecture, /`GET \/api\/operations\/watchdog`/)
+  assert.match(docs.configure, /Never enable S-05/i)
+  assert.match(docs.configure, /separate approval before using `enforce`/i)
+  assert.match(docs.runbook, /Apply database migrations `011` and `012` in numeric order/i)
+  assert.match(docs.runbook, /Preserve settings history.*runtime\/transition evidence/i)
+  assert.match(docs.plan, /Status: Backend implementation completed/i)
+  assert.match(docs.plan, /Production enforcement is not active/i)
 })
 
 test('Phase 2 documents preserve the approved machine-settings boundary', () => {

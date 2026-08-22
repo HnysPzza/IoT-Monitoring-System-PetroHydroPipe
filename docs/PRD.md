@@ -154,7 +154,7 @@ UC018 still needs a decided clear/debounce threshold for sustained recovered act
 | 5-node scope | **Resolved** — 5 nodes confirmed | Hardware BOM, firmware classification already written for 5 in the TDD |
 | Email vendor | **Resolved** — Resend | Paper still says Brevo; needs a text correction, add to `changes-summary.md` |
 | UC018 debounce/clear-threshold value | Open | Needed before firmware can implement Sensor 3 state tracking correctly |
-| UC018 threshold source: hardcoded in firmware vs. server configuration | **Resolved and stored - backend-managed per-machine configuration** | Phase 2 storage/API is implemented; Phase 3 implements the heartbeat/watchdog consumer, so admin changes do not require a firmware re-flash |
+| UC018 threshold source: hardcoded in firmware vs. server configuration | **Implemented - backend-managed per-machine configuration** | Phase 2 stores settings and Phase 3 consumes effective-dated settings through authenticated heartbeats and a backend watchdog; enforcement remains disabled until calibration and parallel-run approval |
 | Supabase Pro tier funding ($25/mo) | Open — Petro Hydro has not confirmed | Free tier auto-pauses and has no backups — disqualifying for a production deployment on a real company's floor |
 | ESP32 firmware Type A (discrete event) vs Type B (continuous activity) classification for all 5 nodes | Open — proposed in TDD §2, needs sign-off | Determines whether each node is currently spamming raw pulses (breaking UC018/downtime logic) or transmitting confirmed state transitions |
 

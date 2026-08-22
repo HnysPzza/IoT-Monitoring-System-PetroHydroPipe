@@ -1,6 +1,6 @@
 # Database Setup
 
-This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the PetroHydroPipe IoT monitoring system.
+This folder contains the Supabase/PostgreSQL database foundation for the PetroHydroPipe IoT monitoring system through Phase 3.
 
 ## Files
 
@@ -17,6 +17,8 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `migrations/008_harmonize_plant_sensor_labels.sql` applies the canonical plant sensor labels.
 - `migrations/009_align_sensor_downtime_causes.sql` assigns future filler-wire faults to `Consumable Shortage`.
 - `migrations/010_create_machine_operational_settings.sql` adds versioned per-machine thresholds and shift schedules plus an atomic settings/audit RPC.
+- `migrations/011_add_settings_history_and_watchdog_runtime.sql` adds effective-dated settings history, bounded heartbeat/watchdog state, transition evidence, and atomic heartbeat ingestion.
+- `migrations/012_add_atomic_watchdog_transitions.sql` adds downtime ownership and atomic disabled/observe/enforce watchdog evaluation.
 
 ## Tables
 
@@ -31,6 +33,9 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `alerts`: active, acknowledged, and resolved operational alerts.
 - `alert_revision_state`: service-role-only singleton counter for transactional global alert revisions.
 - `machine_operational_settings`: service-role-readable per-machine sensor thresholds, shift schedule, version, and updater metadata.
+- `machine_operational_settings_history`: immutable settings versions with effective intervals for stable historical metrics.
+- `sensor_watchdog_state`: one bounded current heartbeat, connectivity, absence, and recovery state row per sensor.
+- `sensor_watchdog_transitions`: bounded transition evidence for observation, connectivity, downtime, and recovery decisions.
 
 ## How To Run In Supabase
 
@@ -119,6 +124,30 @@ Run the focused checks from `Backend`:
 
 ```bash
 node --test tests/settings.migration.pglite.test.js tests/settings.validation.test.js tests/settings.service.test.js
+```
+
+### Migrations 011 and 012
+
+Apply migration `011` before deploying the heartbeat API. It reconstructs settings history, adds one current runtime row per sensor, and replaces the settings RPC so settings, history, and audit changes remain atomic. Apply migration `012` before starting the watchdog in observe or enforce mode. It adds transition ownership and the atomic watchdog evaluator while preserving explicit fault behavior.
+
+Both migrations are forward-only. Do not drop settings history, runtime evidence, downtime, alerts, or audits during rollback. Disable the application behavior with `WATCHDOG_MODE=disabled`, then repair forward.
+
+Required deployment order:
+
+1. Back up and test a disposable staging copy.
+2. Apply migration `011` and verify its history/runtime rows.
+3. Deploy the heartbeat API with `WATCHDOG_MODE=disabled`.
+4. Verify heartbeats from the simulator or firmware without enabling absence detection.
+5. Apply migration `012`.
+6. Use `WATCHDOG_MODE=observe` only after heartbeat behavior is stable.
+7. Use `WATCHDOG_MODE=enforce` only after physical calibration and parallel-run approval for each enabled sensor. Never enable S-05 absence detection.
+
+Focused automated checks:
+
+```bash
+node --test tests/watchdog-runtime.migration.pglite.test.js tests/watchdog-transition.migration.pglite.test.js
+node --test tests/heartbeat.api.test.js tests/heartbeat.service.test.js tests/watchdog.service.test.js
+node --test tests/operationalTime.test.js tests/operationalMetrics.test.js tests/operationalRepositories.test.js
 ```
 
 ## ESP32 Device Keys
@@ -232,5 +261,7 @@ Current IoT backend endpoints:
 
 ```text
 POST /api/iot/events
+POST /api/iot/heartbeats
 GET /api/iot/live
+GET /api/operations/watchdog (Admin only)
 ```
