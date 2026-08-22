@@ -11,6 +11,7 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
     path.resolve(__dirname, '../../../docs/README.md'),
     path.resolve(__dirname, '../../../docs/ForUrgentWork/ForUrgentFix.md'),
     path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md'),
     path.resolve(__dirname, '../../../docs/superpowers/plans/2026-08-22-phase-1-sensor-label-harmonization.md'),
   ]
 
@@ -42,4 +43,28 @@ test('database guide documents migrations 008 and 009', () => {
   assert.match(content, /S-04 Outside Filler Wire/)
   assert.match(content, /S-02 and S-04 downtime faults to `Consumable Shortage`/)
   assert.match(content, /S-03 faults remain `Pending Cause Review`/)
+})
+
+test('Phase 2 documents preserve the approved machine-settings boundary', () => {
+  const phaseTwoPlanPath = path.resolve(
+    __dirname,
+    '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md',
+  )
+  const phasePlanPath = path.resolve(__dirname, '../../../docs/phase plan.md')
+  const configurePath = path.resolve(__dirname, '../../../docs/ForUrgentWork/Configure.md')
+  const phaseTwoPlan = fs.readFileSync(phaseTwoPlanPath, 'utf8')
+  const phasePlan = fs.readFileSync(phasePlanPath, 'utf8')
+  const configure = fs.readFileSync(configurePath, 'utf8')
+
+  for (const content of [phaseTwoPlan, phasePlan, configure]) {
+    assert.match(content, /machine_operational_settings/)
+    assert.match(content, /cannot detect an event that never arrives/i)
+  }
+
+  assert.match(phaseTwoPlan, /GET `\/api\/machines\/:machineId\/settings`/)
+  assert.match(phaseTwoPlan, /PATCH `\/api\/machines\/:machineId\/settings`/)
+  assert.match(phaseTwoPlan, /optimistic concurrency/i)
+  assert.match(phaseTwoPlan, /audit.*roll back together/i)
+  assert.match(phaseTwoPlan, /Production targets.*outside Phase 2/i)
+  assert.match(configure, /S-05.*Permanently disabled for absence detection/i)
 })

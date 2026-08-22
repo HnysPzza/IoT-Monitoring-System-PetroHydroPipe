@@ -147,7 +147,7 @@ This stays inside the Express-only rule in section 1. The current publisher is a
 
 UC018 currently defines only the trigger threshold. The clear/resume threshold needs:
 1. A concrete value (e.g., "Sensor 3 must show continuous activity for N seconds before the alert auto-resolves").
-2. A decision on whether this value is **hardcoded in firmware** or **fetched from a server config endpoint** (also flagged open in PRD §11 — this determines whether a threshold change means re-flashing 5 boards or one API call).
+2. The source is **resolved as backend-managed per-machine configuration**. Phase 2 stores and audits it; Phase 3 adds the heartbeat/watchdog consumer. The concrete recovery value remains open pending calibration.
 3. A rewrite of UC018's description in the paper to state both thresholds explicitly — right now a panelist reading UC018 would reasonably assume the system already has a defined resume condition, and it doesn't.
 
 ## 7. Reporting & Export (UC022, UC023)
@@ -172,7 +172,7 @@ Needed for: temporary password delivery on account creation (UC005), forced firs
 | ~~5-node vs 4-node scope~~ | **Resolved — 5 nodes** | Order the 5th ESP32/sensor/enclosure set now if not already procured (Table 3 already prices for x5) |
 | Sensor 2 & 4: Type A or Type B | Yes, before firmware fix | Physically inspect signal behavior during lab testing, don't assume |
 | Debounce/clear threshold value | Yes, before firmware fix | Pick a starting value (e.g. 5–10s), validate/tune during parallel run |
-| Threshold storage: firmware-hardcoded vs. server-config | Yes, before firmware fix | Recommend server-config given UC025 already implies per-machine sensor threshold configuration through the dashboard — hardcoding would contradict that use case |
+| ~~Threshold storage: firmware-hardcoded vs. server-config~~ | **Resolved - backend-managed per-machine configuration** | Implement storage/API in Phase 2 and the heartbeat/watchdog consumer in Phase 3; do not claim the ingestion RPC can detect an event that never arrives |
 | ~~Email vendor~~ | **Resolved — Resend** | Update the paper (Overview paragraph + NonFunc_024) to replace "Brevo" |
 | Supabase Pro funding | Yes, before production deployment | Confirm with Petro Hydro management |
 | PDF library: Puppeteer vs PDFKit | No | Pick one, avoid mixing two rendering approaches |
