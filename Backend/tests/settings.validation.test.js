@@ -42,6 +42,17 @@ test('settings params require a UUID machine id', () => {
   assert.equal(settingsParamsSchema.safeParse({ params: { machineId: 'M-01' } }).success, false)
 })
 
+test('settings version accepts only the positive PostgreSQL bigint range', () => {
+  const sensorThresholds = {
+    'S-01': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null },
+  }
+  const request = (expectedVersion) => ({ params: { machineId }, body: { expectedVersion, sensorThresholds } })
+
+  assert.equal(patchSettingsSchema.safeParse(request('9223372036854775807')).success, true)
+  assert.equal(patchSettingsSchema.safeParse(request('9223372036854775808')).success, false)
+  assert.equal(patchSettingsSchema.safeParse(request('9'.repeat(100))).success, false)
+})
+
 test('settings patch accepts complete sensor entries and strict boundary values', () => {
   const result = patchSettingsSchema.safeParse({
     params: { machineId },

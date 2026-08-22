@@ -11,7 +11,16 @@ const SETTINGS_LIMITS = Object.freeze({
   rampUpGraceMinutes: Object.freeze({ minimum: 0, maximum: 30 }),
 })
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Time must use 24-hour HH:MM format.')
-const positiveVersionSchema = z.string().regex(/^[1-9]\d*$/, 'Version must be a positive decimal string.')
+const MAX_SETTINGS_VERSION = 9223372036854775807n
+const positiveVersionSchema = z.string().superRefine((value, context) => {
+  if (!/^[1-9]\d*$/.test(value)) {
+    context.addIssue({ code: 'custom', message: 'Version must be a positive decimal string.' })
+    return
+  }
+  if (BigInt(value) > MAX_SETTINGS_VERSION) {
+    context.addIssue({ code: 'custom', message: 'Version exceeds the supported database range.' })
+  }
+})
 
 function toMinutes(time) {
   const [hours, minutes] = time.split(':').map(Number)

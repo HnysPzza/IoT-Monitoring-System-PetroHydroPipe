@@ -175,6 +175,8 @@ Database tests cover migration order, safe reapplication, schema parity, service
 
 Backend tests cover one RPC per live request, strict snapshot validation, fresh/stale/disabled state, settings constraints, enforcement lockout, roles, unexpected queries, route tampering, no-store headers, and internal-error masking.
 
+The final fuzzing gate found and fixed an oversized `expectedVersion` boundary. Settings versions are now rejected above PostgreSQL's positive `BIGINT` maximum before any service or database call. Repeated fuzz runs also cover malformed tokens, duplicate and polluted queries, suffix and method tampering, unsupported content types, malformed JSON, unknown fields, oversized bodies, S-05 payloads, and role-spoofing attempts.
+
 Frontend tests cover:
 
 - backend-driven limits and S-05 locking;
