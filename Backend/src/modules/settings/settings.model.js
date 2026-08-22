@@ -160,6 +160,18 @@ const completeSettingsSchema = z.strictObject({
   shiftSchedule: shiftScheduleSchema,
 })
 
+const storedSettingsRecordSchema = z.strictObject({
+  machine_id: z.string().uuid(),
+  sensor_thresholds: completeSensorThresholdsSchema,
+  shift_schedule: shiftScheduleSchema,
+  version: z.union([
+    positiveVersionSchema,
+    z.number().int().positive().refine(Number.isSafeInteger, 'Stored version exceeds safe integer range.'),
+  ]),
+  updated_at: z.string().datetime({ offset: true }),
+  updated_by: z.string().uuid().nullable(),
+})
+
 module.exports = {
   SENSOR_CODES,
   completeSensorThresholdsSchema,
@@ -168,4 +180,5 @@ module.exports = {
   sensorThresholdSchema,
   settingsParamsSchema,
   shiftScheduleSchema,
+  storedSettingsRecordSchema,
 }

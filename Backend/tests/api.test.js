@@ -394,6 +394,164 @@ test('machine routes allow admin status update and block production supervisor',
   })
 })
 
+test('machine settings GET supports all dashboard roles and validates machine ids', async () => {
+  const settings = {
+    machineId,
+    timeZone: 'Asia/Manila',
+    sensorThresholds: {},
+    shiftSchedule: {},
+    version: '1',
+    updatedAt: '2026-08-22T00:00:00.000Z',
+    updatedBy: null,
+  }
+  const app = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getMachineSettings: async (targetMachineId) => {
+        assert.equal(targetMachineId, machineId)
+        return settings
+      },
+      updateMachineSettings: async () => settings,
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const roles = [
+      'Admin',
+      'Operation Manager',
+      'Asst. Operation Manager',
+      'Engineering Supervisor',
+      'Production Supervisor',
+    ]
+
+    for (const role of roles) {
+      const result = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+        headers: authHeader(role),
+      })
+      assert.equal(result.response.status, 200, role)
+      assert.deepEqual(result.body, { settings })
+    }
+
+    const unauthenticated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`)
+    assert.equal(unauthenticated.response.status, 401)
+    assertError(unauthenticated.body, 'UNAUTHENTICATED')
+
+    const invalid = await requestJson(baseUrl, '/api/machines/not-a-uuid/settings', {
+      headers: authHeader(),
+    })
+    assert.equal(invalid.response.status, 400)
+    assertError(invalid.body, 'VALIDATION_ERROR')
+  })
+})
+
+test('machine settings PATCH is Admin-only and forwards validated partial updates', async () => {
+  const calls = []
+  const settings = {
+    machineId,
+    timeZone: 'Asia/Manila',
+    sensorThresholds: {},
+    shiftSchedule: {},
+    version: '2',
+    updatedAt: '2026-08-22T00:01:00.000Z',
+    updatedBy: userId,
+  }
+  const app = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getMachineSettings: async () => settings,
+      updateMachineSettings: async (values) => {
+        calls.push(values)
+        return settings
+      },
+    },
+  })
+  const sensorThreshold = {
+    absenceDetectionEnabled: false,
+    triggerSeconds: 60,
+    recoverySeconds: null,
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    const forbidden = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader('Engineering Supervisor'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+    })
+    assert.equal(forbidden.response.status, 403)
+    assertError(forbidden.body, 'FORBIDDEN')
+
+    const updated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+    })
+    assert.equal(updated.response.status, 200)
+    assert.deepEqual(updated.body, { settings })
+    assert.deepEqual(calls, [{
+      machineId,
+      expectedVersion: '1',
+      sensorThresholds: { 'S-03': sensorThreshold },
+      shiftSchedule: undefined,
+      actorUserId: userId,
+    }])
+
+    const invalid = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-99': sensorThreshold } },
+    })
+    assert.equal(invalid.response.status, 400)
+    assertError(invalid.body, 'VALIDATION_ERROR')
+    assert.equal(calls.length, 1)
+  })
+})
+
+test('machine settings API preserves conflicts and masks internal failures', async () => {
+  const conflict = createHttpError(409, 'SETTINGS_VERSION_CONFLICT', 'Machine settings were updated by another request.')
+  const conflictApp = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getMachineSettings: async () => ({}),
+      updateMachineSettings: async () => { throw conflict },
+    },
+  })
+  const body = {
+    expectedVersion: '1',
+    sensorThresholds: {
+      'S-03': {
+        absenceDetectionEnabled: false,
+        triggerSeconds: 60,
+        recoverySeconds: null,
+      },
+    },
+  }
+
+  await withTestServer(conflictApp, async (baseUrl) => {
+    const result = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body,
+    })
+    assert.equal(result.response.status, 409)
+    assertError(result.body, 'SETTINGS_VERSION_CONFLICT')
+  })
+
+  const failure = createHttpError(500, 'SETTINGS_QUERY_FAILED', 'private database failure')
+  const failureApp = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getMachineSettings: async () => { throw failure },
+      updateMachineSettings: async () => ({}),
+    },
+  })
+
+  await withTestServer(failureApp, async (baseUrl) => {
+    const result = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      headers: authHeader(),
+    })
+    assert.equal(result.response.status, 500)
+    assertError(result.body, 'SETTINGS_QUERY_FAILED')
+    assert.equal(result.body.error.message, 'Unexpected server error.')
+    assert.doesNotMatch(JSON.stringify(result.body), /private database failure/)
+  })
+})
+
 test('dashboard overview route returns backend summary for allowed roles', async () => {
   const app = loadAppWithMocks({
     'src/modules/dashboard/dashboard.service.js': {
