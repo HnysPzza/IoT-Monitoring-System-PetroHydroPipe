@@ -90,7 +90,7 @@ WATCHDOG_TICK_INTERVAL_MS=5000
 WATCHDOG_EVALUATION_TIMEOUT_MS=4000
 ```
 
-- `disabled`: heartbeat storage and diagnostics work, but the evaluator cannot create operational transitions.
+- `disabled`: heartbeat storage and diagnostics work, while the periodic evaluation runner remains stopped.
 - `observe`: threshold candidates and connectivity are recorded, but production downtime is not created.
 - `enforce`: enabled sensors may create or resolve watchdog-owned downtime through the atomic database function.
 

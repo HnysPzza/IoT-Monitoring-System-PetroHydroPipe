@@ -79,6 +79,10 @@ function createWatchdogRunner({
   }
 
   function start() {
+    if (mode === 'disabled') {
+      runnerLogger.info('Sensor watchdog is disabled.', { mode })
+      return false
+    }
     if (running) return false
     running = true
     runnerLogger.info('Sensor watchdog started.', { mode })

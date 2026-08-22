@@ -163,7 +163,7 @@ WATCHDOG_MODE=disabled | observe | enforce
 
 Default: `disabled`.
 
-- `disabled`: heartbeat ingestion may run, but no watchdog cycle changes candidate or operational state.
+- `disabled`: heartbeat ingestion and stored diagnostics remain available, but the evaluation runner does not start.
 - `observe`: candidate watchdog state and transition evidence are stored, but machine, sensor, downtime, and alert records are not changed.
 - `enforce`: operational transitions are allowed only for a sensor whose Phase 2 `absenceDetectionEnabled` value is also `true`.
 
@@ -611,9 +611,9 @@ Startup:
 
 1. Validate environment relationships.
 2. Start the HTTP server.
-3. Start heartbeat/watchdog diagnostics.
-4. Run one immediate watchdog cycle so restart recovery does not wait for the first interval.
-5. Schedule later cycles only after the prior cycle settles.
+3. Start heartbeat diagnostics in every mode.
+4. When mode is `observe` or `enforce`, start the watchdog runner and run one immediate cycle so restart recovery does not wait for the first interval.
+5. Schedule later cycles only after the prior cycle settles. In `disabled`, schedule no evaluation cycles.
 
 Cycle behavior:
 
@@ -622,6 +622,7 @@ Cycle behavior:
 - Evaluate sensors sequentially or with a bounded concurrency of two; five unbounded promises are unnecessary.
 - Failure for one sensor is logged and counted, then other sensors continue.
 - A cycle timeout aborts pending Supabase requests where supported.
+- Once a cycle is aborted, stop immediately instead of attempting or logging failures for the remaining sensors.
 - Repeated database failures do not create local fallback transitions.
 - The next normal interval retries; do not use an unbounded rapid retry loop.
 
@@ -991,7 +992,7 @@ Files:
 
 Work:
 
-- Start in `disabled` mode, add immediate/non-overlapping cycles, timeouts, safe shutdown, structured metrics, and Admin diagnostics.
+- Keep the evaluation runner stopped in `disabled`; add immediate/non-overlapping cycles for `observe` and `enforce`, timeouts, abort-aware iteration, safe shutdown, structured metrics, and Admin diagnostics.
 
 Commit:
 

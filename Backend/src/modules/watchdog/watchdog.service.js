@@ -5,6 +5,18 @@ const { publishTransitionDescriptors } = require('../operations/transitionPublis
 const CONNECTIVITY_STATES = new Set(['unknown', 'online', 'offline'])
 const DETECTION_STATES = new Set(['disabled', 'suspended', 'healthy', 'grace', 'downtime', 'recovering'])
 
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return
+
+  if (signal.reason instanceof Error && typeof signal.reason.code === 'string') {
+    throw signal.reason
+  }
+
+  const error = new Error('Watchdog cycle was aborted.')
+  error.code = 'WATCHDOG_CYCLE_ABORTED'
+  throw error
+}
+
 function validateEvaluationResult(result, sensorId) {
   const valid = result?.evaluated_sensor_id === sensorId
     && CONNECTIVITY_STATES.has(result.connectivity_state)
@@ -27,9 +39,12 @@ function createWatchdogService({
 } = {}) {
   return {
     async runCycle({ evaluatedAt, mode, staleAfterSeconds, signal, metrics }) {
+      throwIfAborted(signal)
       const sensors = await watchdogRepository.listSensors(signal)
+      throwIfAborted(signal)
 
       for (const sensor of sensors) {
+        throwIfAborted(signal)
         try {
           const result = validateEvaluationResult(await watchdogRepository.evaluateSensor({
             sensorId: sensor.sensorId,
@@ -47,6 +62,7 @@ function createWatchdogService({
             })
           }
         } catch (error) {
+          throwIfAborted(signal)
           metrics.sensorEvaluated({ failed: true })
           serviceLogger.error('Watchdog sensor evaluation failed.', {
             sensorCode: sensor.sensorCode,
@@ -56,7 +72,9 @@ function createWatchdogService({
         }
       }
 
+      throwIfAborted(signal)
       const states = await watchdogRepository.getStateCounts(signal)
+      throwIfAborted(signal)
       metrics.setStates(states)
       return { sensorCount: sensors.length }
     },
