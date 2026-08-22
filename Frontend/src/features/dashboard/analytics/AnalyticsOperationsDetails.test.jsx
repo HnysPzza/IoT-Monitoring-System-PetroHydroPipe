@@ -1,6 +1,5 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, within } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import { buildAnalyticsSnapshot } from './analyticsService.js'
@@ -18,61 +17,26 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.queryByRole('heading', { name: 'Downtime events' })).not.toBeInTheDocument()
   })
 
-  it('shows the local cause details tooltip when a donut sector is hovered', async () => {
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback) {
-        this.callback = callback
-      }
+  it('updates the local cause details when a semantic legend item is hovered', () => {
+    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
+    const causeChart = container.querySelector('.analytics-cause-chart')
+    const causeLegend = screen.getByRole('list', { name: 'Downtime cause distribution' })
+    const correctiveMaintenance = within(causeLegend).getByText('Corrective Maintenance').closest('li')
+    const fluxRefill = within(causeLegend).getByText('Flux Refill').closest('li')
+    const focusableChartDescendants = Array.from(causeChart.querySelectorAll('*')).filter(
+      (element) => element.tabIndex >= 0,
+    )
 
-      observe() {
-        this.callback([{ contentRect: { width: 320, height: 220 } }])
-      }
+    expect(causeChart).toHaveAttribute('aria-hidden', 'true')
+    expect(focusableChartDescendants).toHaveLength(0)
 
-      disconnect() {}
-    })
+    fireEvent.mouseEnter(correctiveMaintenance)
+    expect(correctiveMaintenance).toHaveClass('is-hovered')
+    expect(fluxRefill).not.toHaveClass('is-hovered')
 
-    let view
-    try {
-      view = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
-      const sectors = await waitFor(() => {
-        const renderedSectors = view.container.querySelectorAll('.recharts-pie-sector')
-
-        expect(renderedSectors).toHaveLength(5)
-        return renderedSectors
-      })
-      const causeChart = view.container.querySelector('.analytics-cause-chart')
-      const focusableChartDescendants = Array.from(causeChart.querySelectorAll('*')).filter(
-        (element) => element.tabIndex >= 0,
-      )
-
-      expect(causeChart).toHaveAttribute('aria-hidden', 'true')
-      expect(focusableChartDescendants).toHaveLength(0)
-
-      fireEvent.mouseEnter(sectors[0])
-
-      await waitFor(() => {
-        const tooltip = view.container.querySelector('.analytics-cause-tooltip')
-
-        expect(tooltip).toBeVisible()
-        expect(tooltip).toHaveTextContent('Corrective Maintenance')
-        expect(tooltip).toHaveTextContent('43 min')
-        expect(tooltip).toHaveTextContent('33% of recorded downtime')
-      })
-
-      fireEvent.mouseEnter(sectors[sectors.length - 1])
-
-      await waitFor(() => {
-        const tooltip = view.container.querySelector('.analytics-cause-tooltip')
-
-        expect(tooltip).toBeVisible()
-        expect(tooltip).toHaveTextContent('Flux Refill')
-        expect(tooltip).toHaveTextContent('12 min')
-        expect(tooltip).toHaveTextContent('9% of recorded downtime')
-      })
-    } finally {
-      view?.unmount()
-      vi.unstubAllGlobals()
-    }
+    fireEvent.mouseEnter(fluxRefill)
+    expect(correctiveMaintenance).not.toHaveClass('is-hovered')
+    expect(fluxRefill).toHaveClass('is-hovered')
   })
 
   it('shows an explicit no-cause state without drawing a chart or inventing cause rows', () => {
@@ -121,41 +85,19 @@ describe('AnalyticsOperationsDetails', () => {
     expect(within(sensorLegend).getByText('S-05')).toBeInTheDocument()
   })
 
-  it('shows the sensor details tooltip when a bar in the distribution chart is hovered', async () => {
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback) {
-        this.callback = callback
-      }
+  it('updates the local sensor state when a semantic legend item is hovered', () => {
+    renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
+    const sensorLegend = screen.getByRole('list', { name: 'Process event distribution' })
+    const firstSensor = within(sensorLegend).getByText('S-01').closest('li')
+    const secondSensor = within(sensorLegend).getByText('S-02').closest('li')
 
-      observe() {
-        this.callback([{ contentRect: { width: 320, height: 220 } }])
-      }
+    fireEvent.mouseEnter(firstSensor)
+    expect(firstSensor).toHaveClass('is-hovered')
+    expect(secondSensor).not.toHaveClass('is-hovered')
 
-      disconnect() {}
-    })
-
-    let view
-    try {
-      view = renderWithAuth(<AnalyticsOperationsDetails snapshot={buildAnalyticsSnapshot()} />)
-      const rectangles = await waitFor(() => {
-        const renderedBars = view.container.querySelectorAll('.recharts-bar-rectangle')
-        expect(renderedBars).toHaveLength(5)
-        return renderedBars
-      })
-
-      fireEvent.mouseEnter(rectangles[0])
-
-      await waitFor(() => {
-        const tooltip = view.container.querySelector('.analytics-sensor-tooltip')
-        expect(tooltip).toBeVisible()
-        expect(tooltip).toHaveTextContent('Sensor S-01')
-        expect(tooltip).toHaveTextContent('1 event')
-        expect(tooltip).toHaveTextContent('20% of process events')
-      })
-    } finally {
-      view?.unmount()
-      vi.unstubAllGlobals()
-    }
+    fireEvent.mouseEnter(secondSensor)
+    expect(firstSensor).not.toHaveClass('is-hovered')
+    expect(secondSensor).toHaveClass('is-hovered')
   })
 
   it('shows an explicit no-process-events state when snapshot contains no process events', () => {

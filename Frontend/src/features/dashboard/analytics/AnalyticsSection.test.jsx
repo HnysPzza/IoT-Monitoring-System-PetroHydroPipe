@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AnalyticsSection from './AnalyticsSection.jsx'
 
+vi.mock('./AnalyticsOperationsDetails.jsx', () => ({
+  default: () => <div data-testid="analytics-operations-details" />,
+}))
+
 const successfulSnapshot = {
   source: 'local-fixture',
   timeZone: 'Asia/Manila',
