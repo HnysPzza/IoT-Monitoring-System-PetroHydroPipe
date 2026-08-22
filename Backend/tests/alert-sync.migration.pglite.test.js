@@ -4,11 +4,14 @@ const path = require('node:path')
 const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
-const currentSchemaSql = fs.readFileSync(path.join(backendRoot, 'database', 'schema.sql'), 'utf8')
-const downtimeMigrationSql = fs.readFileSync(
+const normalizeSql = (sql) => sql.replace(/\r\n/g, '\n')
+const currentSchemaSql = normalizeSql(
+  fs.readFileSync(path.join(backendRoot, 'database', 'schema.sql'), 'utf8'),
+)
+const downtimeMigrationSql = normalizeSql(fs.readFileSync(
   path.join(backendRoot, 'database', 'migrations', '006_downtime_open_record_unique_index.sql'),
   'utf8',
-)
+))
 const alertIntegrityMigrationSql = fs.readFileSync(
   path.join(backendRoot, 'database', 'migrations', '007_alert_sync_integrity.sql'),
   'utf8',
