@@ -6,6 +6,12 @@ function createTimeoutError() {
   return error
 }
 
+function createCancellationError() {
+  const error = new Error('Watchdog cycle cancelled during shutdown.')
+  error.code = 'WATCHDOG_CYCLE_CANCELLED'
+  return error
+}
+
 function createWatchdogRunner({
   service,
   metrics,
@@ -55,12 +61,29 @@ function createWatchdogRunner({
           signal: controller.signal,
           metrics,
         }))
-      await Promise.race([workPromise, timeoutPromise])
-      metrics.cycleCompleted(clock().toISOString(), { success: true })
+      const result = await Promise.race([workPromise, timeoutPromise])
+      if (controller.signal.aborted) throw controller.signal.reason
+      const outcome = result?.outcome === 'partial' ? 'partial' : 'success'
+      metrics.cycleCompleted(clock().toISOString(), {
+        outcome,
+        errorCode: outcome === 'partial' ? 'WATCHDOG_CYCLE_PARTIAL_FAILURE' : null,
+      })
+      if (outcome === 'partial') {
+        runnerLogger.warn?.('Watchdog cycle partially failed.', {
+          errorCode: 'WATCHDOG_CYCLE_PARTIAL_FAILURE',
+          failedSensors: result.failedSensors,
+          successfulSensors: result.successfulSensors,
+        })
+      }
     } catch (error) {
       const errorCode = error.code || (controller.signal.aborted ? 'WATCHDOG_CYCLE_ABORTED' : 'WATCHDOG_CYCLE_FAILED')
-      metrics.cycleCompleted(clock().toISOString(), { success: false, errorCode })
-      runnerLogger.error('Watchdog cycle failed.', { errorCode })
+      if (errorCode === 'WATCHDOG_CYCLE_CANCELLED') {
+        metrics.cycleCompleted(clock().toISOString(), { outcome: 'cancelled' })
+        runnerLogger.info('Watchdog cycle cancelled during shutdown.', { mode })
+      } else {
+        metrics.cycleCompleted(clock().toISOString(), { outcome: 'failed', errorCode })
+        runnerLogger.error('Watchdog cycle failed.', { errorCode })
+      }
     } finally {
       if (timeout) cancel(timeout)
       // Do not schedule another cycle until aborted work actually settles.
@@ -95,7 +118,7 @@ function createWatchdogRunner({
     running = false
     if (nextTimer) cancel(nextTimer)
     nextTimer = null
-    controller?.abort()
+    controller?.abort(createCancellationError())
     if (inFlight) {
       let stopTimer = null
       await Promise.race([

@@ -1,13 +1,17 @@
 function createWatchdogMetrics() {
   const state = {
     cycles: 0,
+    cycleSuccesses: 0,
+    cyclePartialFailures: 0,
     cycleFailures: 0,
+    cycleCancellations: 0,
     sensorEvaluations: 0,
     sensorFailures: 0,
     transitions: 0,
     lastStartedAt: null,
     lastCompletedAt: null,
     lastSuccessAt: null,
+    lastOutcome: 'idle',
     lastErrorCode: null,
     states: {
       unknown: 0,
@@ -26,13 +30,24 @@ function createWatchdogMetrics() {
     cycleStarted(at) {
       state.cycles += 1
       state.lastStartedAt = at
-      state.lastErrorCode = null
     },
-    cycleCompleted(at, { success, errorCode = null } = {}) {
+    cycleCompleted(at, { outcome, errorCode = null } = {}) {
       state.lastCompletedAt = at
-      if (success) state.lastSuccessAt = at
-      else state.cycleFailures += 1
-      state.lastErrorCode = errorCode
+      state.lastOutcome = outcome
+      if (outcome === 'success') {
+        state.cycleSuccesses += 1
+        state.lastSuccessAt = at
+        state.lastErrorCode = null
+      } else if (outcome === 'partial') {
+        state.cyclePartialFailures += 1
+        state.lastErrorCode = errorCode || 'WATCHDOG_CYCLE_PARTIAL_FAILURE'
+      } else if (outcome === 'cancelled') {
+        state.cycleCancellations += 1
+        state.lastErrorCode = null
+      } else {
+        state.cycleFailures += 1
+        state.lastErrorCode = errorCode || 'WATCHDOG_CYCLE_FAILED'
+      }
     },
     sensorEvaluated({ failed = false, transitions = 0 } = {}) {
       state.sensorEvaluations += 1

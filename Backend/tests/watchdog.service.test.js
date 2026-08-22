@@ -3,71 +3,92 @@ const test = require('node:test')
 
 const { createWatchdogMetrics } = require('../src/modules/watchdog/watchdog.metrics')
 const { createWatchdogRunner } = require('../src/modules/watchdog/watchdog.runner')
-const { createWatchdogService, validateEvaluationResult } = require('../src/modules/watchdog/watchdog.service')
+const { createWatchdogService, validateCycleResult } = require('../src/modules/watchdog/watchdog.service')
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-function result(sensorId, descriptors = []) {
+function evaluation(sensorNumber, overrides = {}) {
+  const code = `S-${String(sensorNumber).padStart(2, '0')}`
   return {
-    evaluated_sensor_id: sensorId,
+    evaluated_sensor_id: `30000000-0000-4000-8000-${String(sensorNumber).padStart(12, '0')}`,
+    sensor_code: code,
+    machine_code: 'M-01',
+    succeeded: true,
     connectivity_state: 'online',
     detection_state: 'healthy',
-    transition_descriptors: descriptors,
+    transition_descriptors: [],
+    error_code: null,
+    ...overrides,
   }
 }
 
-test('watchdog service evaluates sensors in order, publishes committed descriptors, and isolates one failure', async () => {
+function failedEvaluation(sensorNumber) {
+  return evaluation(sensorNumber, {
+    succeeded: false,
+    connectivity_state: null,
+    detection_state: null,
+    transition_descriptors: [],
+    error_code: 'WATCHDOG_EVALUATION_FAILED',
+  })
+}
+
+function cycleResult(evaluations, states) {
+  return { evaluations, states }
+}
+
+function runnerLogger(logs = []) {
+  return {
+    info: (message, metadata) => logs.push({ level: 'info', message, metadata }),
+    warn: (message, metadata) => logs.push({ level: 'warn', message, metadata }),
+    error: (message, metadata) => logs.push({ level: 'error', message, metadata }),
+  }
+}
+
+test('watchdog service uses one batch call, publishes successes, and reports a partial outcome', async () => {
   const calls = []
   const published = []
   const logs = []
   const metrics = createWatchdogMetrics()
-  const repository = {
-    async listSensors() {
-      return [
-        { sensorId: 'sensor-1', sensorCode: 'S-01', machineCode: 'M-01' },
-        { sensorId: 'sensor-2', sensorCode: 'S-02', machineCode: 'M-01' },
-        { sensorId: 'sensor-3', sensorCode: 'S-03', machineCode: 'M-01' },
-      ]
-    },
-    async evaluateSensor({ sensorId }) {
-      calls.push(sensorId)
-      if (sensorId === 'sensor-2') {
-        const error = new Error('private failure')
-        error.code = 'WATCHDOG_EVALUATION_FAILED'
-        throw error
-      }
-      return result(sensorId, [{ kind: 'downtime', action: 'created', id: sensorId }])
-    },
-    async getStateCounts() {
-      return { online: 3, healthy: 2, suspended: 1 }
-    },
-  }
+  const result = cycleResult([
+    evaluation(1, { transition_descriptors: [{ kind: 'downtime', action: 'created', id: 'one' }] }),
+    failedEvaluation(2),
+    evaluation(3, { transition_descriptors: [{ kind: 'alert', action: 'created', record: { id: 'three' } }] }),
+  ], { online: 3, healthy: 2, suspended: 1 })
   const service = createWatchdogService({
-    watchdogRepository: repository,
+    watchdogRepository: {
+      async evaluateCycle(args) {
+        calls.push(args)
+        return result
+      },
+    },
     publisher: (descriptors) => {
       published.push(...descriptors)
       return descriptors.length
     },
     serviceLogger: { error: (message, metadata) => logs.push({ message, metadata }), warn: () => {} },
   })
+  const signal = new AbortController().signal
 
-  await service.runCycle({
+  const outcome = await service.runCycle({
     evaluatedAt: '2026-08-22T04:00:00.000Z',
     mode: 'observe',
     staleAfterSeconds: 30,
-    signal: new AbortController().signal,
+    signal,
     metrics,
   })
 
-  assert.deepEqual(calls, ['sensor-1', 'sensor-2', 'sensor-3'])
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0], {
+    evaluatedAt: '2026-08-22T04:00:00.000Z', mode: 'observe', staleAfterSeconds: 30, signal,
+  })
+  assert.deepEqual(outcome, {
+    outcome: 'partial', sensorCount: 3, successfulSensors: 2, failedSensors: 1,
+  })
   assert.equal(published.length, 2)
-  assert.equal(logs.length, 1)
   assert.deepEqual(logs[0].metadata, {
-    sensorCode: 'S-02',
-    machineCode: 'M-01',
-    errorCode: 'WATCHDOG_EVALUATION_FAILED',
+    sensorCode: 'S-02', machineCode: 'M-01', errorCode: 'WATCHDOG_EVALUATION_FAILED',
   })
   const snapshot = metrics.snapshot()
   assert.equal(snapshot.sensorEvaluations, 3)
@@ -76,19 +97,49 @@ test('watchdog service evaluates sensors in order, publishes committed descripto
   assert.equal(snapshot.states.online, 3)
 })
 
-test('watchdog result validation rejects malformed and mismatched database data', () => {
-  assert.throws(() => validateEvaluationResult(null, 'sensor-1'), { code: 'WATCHDOG_EVALUATION_RESULT_INVALID' })
-  assert.throws(
-    () => validateEvaluationResult(result('another-sensor'), 'sensor-1'),
-    { code: 'WATCHDOG_EVALUATION_RESULT_INVALID' },
-  )
-  assert.throws(
-    () => validateEvaluationResult({ ...result('sensor-1'), transition_descriptors: {} }, 'sensor-1'),
-    { code: 'WATCHDOG_EVALUATION_RESULT_INVALID' },
-  )
+test('watchdog service rejects empty and completely failed cycles', async () => {
+  for (const [result, code] of [
+    [cycleResult([], {}), 'WATCHDOG_NO_SENSORS_CONFIGURED'],
+    [cycleResult([failedEvaluation(1), failedEvaluation(2)], { offline: 2, disabled: 2 }), 'WATCHDOG_ALL_SENSOR_EVALUATIONS_FAILED'],
+  ]) {
+    const metrics = createWatchdogMetrics()
+    const service = createWatchdogService({
+      watchdogRepository: { evaluateCycle: async () => result },
+      serviceLogger: { error: () => {}, warn: () => {} },
+    })
+    await assert.rejects(
+      service.runCycle({
+        evaluatedAt: '2026-08-22T04:00:00.000Z',
+        mode: 'observe',
+        staleAfterSeconds: 30,
+        signal: new AbortController().signal,
+        metrics,
+      }),
+      { code },
+    )
+  }
 })
 
-test('watchdog runner starts immediately, prevents overlap, and has idempotent lifecycle', async () => {
+test('watchdog batch result validation fails closed on malformed data', () => {
+  const valid = cycleResult([evaluation(1)], { online: 1, healthy: 1 })
+  const malformed = [
+    null,
+    { evaluations: {}, states: {} },
+    cycleResult([{ ...evaluation(1), evaluated_sensor_id: 'not-a-uuid' }], { online: 1, healthy: 1 }),
+    cycleResult([{ ...evaluation(1), sensor_code: 'S-99' }], { online: 1, healthy: 1 }),
+    cycleResult([{ ...evaluation(1), transition_descriptors: {} }], { online: 1, healthy: 1 }),
+    cycleResult([{ ...failedEvaluation(1), error_code: 'private database error' }], { offline: 1, disabled: 1 }),
+    cycleResult([evaluation(1), evaluation(1)], { online: 2, healthy: 2 }),
+    cycleResult([evaluation(1)], { online: 1, healthy: 1, injected: 1 }),
+    cycleResult([evaluation(1)], { online: 2, healthy: 1 }),
+  ]
+  assert.equal(validateCycleResult(valid), valid)
+  for (const result of malformed) {
+    assert.throws(() => validateCycleResult(result), { code: 'WATCHDOG_CYCLE_RESULT_INVALID' })
+  }
+})
+
+test('watchdog runner starts immediately, prevents overlap, and records successful cycles', async () => {
   let calls = 0
   let concurrent = 0
   let maximumConcurrent = 0
@@ -100,16 +151,12 @@ test('watchdog runner starts immediately, prevents overlap, and has idempotent l
       maximumConcurrent = Math.max(maximumConcurrent, concurrent)
       await delay(15)
       concurrent -= 1
+      return { outcome: 'success' }
     },
   }
   const runner = createWatchdogRunner({
-    service,
-    metrics,
-    mode: 'observe',
-    intervalMs: 5,
-    timeoutMs: 100,
-    staleAfterSeconds: 30,
-    runnerLogger: { info: () => {}, error: () => {} },
+    service, metrics, mode: 'observe', intervalMs: 5, timeoutMs: 100, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(),
   })
 
   assert.equal(runner.start(), true)
@@ -119,6 +166,7 @@ test('watchdog runner starts immediately, prevents overlap, and has idempotent l
   assert.ok(calls >= 2)
   assert.equal(maximumConcurrent, 1)
   assert.equal(runner.status().running, false)
+  assert.ok(metrics.snapshot().cycleSuccesses >= 1)
   assert.equal(await runner.stop(), false)
 })
 
@@ -127,17 +175,9 @@ test('disabled watchdog does not start or schedule evaluation cycles', async () 
   const logs = []
   const metrics = createWatchdogMetrics()
   const runner = createWatchdogRunner({
-    service: {
-      async runCycle() {
-        calls += 1
-      },
-    },
-    metrics,
-    mode: 'disabled',
-    intervalMs: 5,
-    timeoutMs: 100,
-    staleAfterSeconds: 30,
-    runnerLogger: { info: (message, metadata) => logs.push({ message, metadata }), error: () => {} },
+    service: { async runCycle() { calls += 1 } },
+    metrics, mode: 'disabled', intervalMs: 5, timeoutMs: 100, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(logs),
   })
 
   assert.equal(runner.start(), false)
@@ -145,52 +185,48 @@ test('disabled watchdog does not start or schedule evaluation cycles', async () 
   assert.equal(calls, 0)
   assert.deepEqual(runner.status(), { mode: 'disabled', running: false, inFlight: false })
   assert.equal(metrics.snapshot().cycles, 0)
+  assert.equal(metrics.snapshot().lastOutcome, 'idle')
   assert.equal(logs[0].message, 'Sensor watchdog is disabled.')
 })
 
-test('aborted watchdog evaluation stops the cycle without cascading sensor failures', async () => {
-  const controller = new AbortController()
-  const timeoutError = new Error('Watchdog cycle timed out.')
-  timeoutError.code = 'WATCHDOG_CYCLE_TIMEOUT'
-  const calls = []
-  const logs = []
+test('watchdog runner records partial cycles without claiming full success', async () => {
   const metrics = createWatchdogMetrics()
-  const repository = {
-    async listSensors() {
-      return [
-        { sensorId: 'sensor-1', sensorCode: 'S-01', machineCode: 'M-01' },
-        { sensorId: 'sensor-2', sensorCode: 'S-02', machineCode: 'M-01' },
-      ]
-    },
-    async evaluateSensor({ sensorId }) {
-      calls.push(sensorId)
-      controller.abort(timeoutError)
-      const error = new Error('Aborted database request.')
-      error.code = 'WATCHDOG_EVALUATION_FAILED'
-      throw error
-    },
-    async getStateCounts() {
-      throw new Error('State counts must not run after an abort.')
-    },
-  }
-  const service = createWatchdogService({
-    watchdogRepository: repository,
-    serviceLogger: { error: (message, metadata) => logs.push({ message, metadata }), warn: () => {} },
+  const logs = []
+  const runner = createWatchdogRunner({
+    service: { async runCycle() { return { outcome: 'partial', successfulSensors: 4, failedSensors: 1 } } },
+    metrics, mode: 'observe', intervalMs: 1000, timeoutMs: 100, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(logs),
   })
 
-  await assert.rejects(
-    service.runCycle({
-      evaluatedAt: '2026-08-22T04:00:00.000Z',
-      mode: 'observe',
-      staleAfterSeconds: 30,
-      signal: controller.signal,
-      metrics,
-    }),
-    { code: 'WATCHDOG_CYCLE_TIMEOUT' },
-  )
-  assert.deepEqual(calls, ['sensor-1'])
-  assert.equal(logs.length, 0)
-  assert.equal(metrics.snapshot().sensorFailures, 0)
+  runner.start()
+  await delay(20)
+  await runner.stop()
+  const snapshot = metrics.snapshot()
+  assert.equal(snapshot.cyclePartialFailures, 1)
+  assert.equal(snapshot.cycleSuccesses, 0)
+  assert.equal(snapshot.lastSuccessAt, null)
+  assert.equal(snapshot.lastOutcome, 'partial')
+  assert.equal(snapshot.lastErrorCode, 'WATCHDOG_CYCLE_PARTIAL_FAILURE')
+  assert.equal(logs.find((entry) => entry.level === 'warn').metadata.failedSensors, 1)
+})
+
+test('watchdog runner records total service failure as a failed cycle', async () => {
+  const metrics = createWatchdogMetrics()
+  const error = new Error('All failed.')
+  error.code = 'WATCHDOG_ALL_SENSOR_EVALUATIONS_FAILED'
+  const runner = createWatchdogRunner({
+    service: { async runCycle() { throw error } },
+    metrics, mode: 'observe', intervalMs: 1000, timeoutMs: 100, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(),
+  })
+
+  runner.start()
+  await delay(20)
+  await runner.stop()
+  const snapshot = metrics.snapshot()
+  assert.equal(snapshot.cycleFailures, 1)
+  assert.equal(snapshot.lastOutcome, 'failed')
+  assert.equal(snapshot.lastErrorCode, 'WATCHDOG_ALL_SENSOR_EVALUATIONS_FAILED')
 })
 
 test('watchdog runner aborts a timed-out cycle and records a safe error code', async () => {
@@ -199,47 +235,56 @@ test('watchdog runner aborts a timed-out cycle and records a safe error code', a
   const logs = []
   const service = {
     runCycle({ signal }) {
-      return new Promise((resolve) => {
-        signal.addEventListener('abort', () => {
-          aborted = true
-          resolve()
-        }, { once: true })
-      })
+      return new Promise((resolve) => signal.addEventListener('abort', () => {
+        aborted = true
+        resolve({ outcome: 'success' })
+      }, { once: true }))
     },
   }
   const runner = createWatchdogRunner({
-    service,
-    metrics,
-    mode: 'observe',
-    intervalMs: 100,
-    timeoutMs: 10,
-    staleAfterSeconds: 30,
-    runnerLogger: { info: () => {}, error: (message, metadata) => logs.push({ message, metadata }) },
+    service, metrics, mode: 'observe', intervalMs: 100, timeoutMs: 10, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(logs),
   })
 
   runner.start()
   await delay(25)
   await runner.stop()
   assert.equal(aborted, true)
+  assert.equal(metrics.snapshot().lastOutcome, 'failed')
   assert.equal(metrics.snapshot().lastErrorCode, 'WATCHDOG_CYCLE_TIMEOUT')
-  assert.equal(logs[0].metadata.errorCode, 'WATCHDOG_CYCLE_TIMEOUT')
+  assert.equal(logs.find((entry) => entry.level === 'error').metadata.errorCode, 'WATCHDOG_CYCLE_TIMEOUT')
+})
+
+test('graceful shutdown cancellation is not counted as a failure', async () => {
+  const metrics = createWatchdogMetrics()
+  const logs = []
+  const service = {
+    runCycle({ signal }) {
+      return new Promise((resolve) => signal.addEventListener('abort', () => resolve({ outcome: 'success' }), { once: true }))
+    },
+  }
+  const runner = createWatchdogRunner({
+    service, metrics, mode: 'observe', intervalMs: 1000, timeoutMs: 100, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(logs),
+  })
+
+  runner.start()
+  await delay(5)
+  await runner.stop()
+  const snapshot = metrics.snapshot()
+  assert.equal(snapshot.cycleCancellations, 1)
+  assert.equal(snapshot.cycleFailures, 0)
+  assert.equal(snapshot.lastOutcome, 'cancelled')
+  assert.equal(snapshot.lastErrorCode, null)
+  assert.equal(logs.some((entry) => entry.level === 'error'), false)
 })
 
 test('uncooperative timed-out work cannot overlap a later watchdog cycle', async () => {
   let calls = 0
   const runner = createWatchdogRunner({
-    service: {
-      runCycle() {
-        calls += 1
-        return new Promise(() => {})
-      },
-    },
-    metrics: createWatchdogMetrics(),
-    mode: 'observe',
-    intervalMs: 5,
-    timeoutMs: 10,
-    staleAfterSeconds: 30,
-    runnerLogger: { info: () => {}, error: () => {} },
+    service: { runCycle() { calls += 1; return new Promise(() => {}) } },
+    metrics: createWatchdogMetrics(), mode: 'observe', intervalMs: 5, timeoutMs: 10, staleAfterSeconds: 30,
+    runnerLogger: runnerLogger(),
   })
 
   runner.start()
