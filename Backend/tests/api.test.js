@@ -118,11 +118,74 @@ test('GET /api/operations/sse exposes aggregate diagnostics only to admins', asy
       headers: authHeader('Admin'),
     })
     assert.equal(watchdogAllowed.response.status, 200)
+    assert.equal(watchdogAllowed.response.headers.get('cache-control'), 'no-store')
     assert.equal(watchdogAllowed.body.watchdog.mode, 'disabled')
     assert.equal(watchdogAllowed.body.watchdog.running, false)
-    assert.equal(typeof watchdogAllowed.body.watchdog.cycles, 'number')
+    assert.equal(watchdogAllowed.body.watchdog.lastOutcome, 'idle')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycles, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycleSuccesses, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cyclePartialFailures, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycleFailures, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycleCancellations, 'number')
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'cycles'), false)
     assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'sensorIds'), false)
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'token'), false)
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'errorMessage'), false)
+
+    const unexpectedQuery = await requestJson(baseUrl, '/api/operations/watchdog?admin=true', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+
+    for (const pathName of ['/api/operations/watchdog.json', '/api/operations/watchdog%20']) {
+      const suffix = await requestJson(baseUrl, pathName, { headers: authHeader('Admin') })
+      assert.equal(suffix.response.status, 404)
+    }
+    const wrongMethod = await requestJson(baseUrl, '/api/operations/watchdog', {
+      method: 'POST', headers: authHeader('Admin'), body: {},
+    })
+    assert.equal(wrongMethod.response.status, 404)
   })
+})
+
+test('watchdog diagnostics reject invalid, expired, inactive, and archived authentication', async () => {
+  const invalidApp = loadAppWithMocks()
+  await withTestServer(invalidApp, async (baseUrl) => {
+    const invalid = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: { Authorization: 'Bearer not-a-jwt' },
+    })
+    assert.equal(invalid.response.status, 401)
+    assertError(invalid.body, 'UNAUTHENTICATED')
+
+    const expiredToken = jwt.sign(
+      { username: 'admin', role: 'Admin' },
+      JWT_SECRET,
+      { subject: userId, expiresIn: -1 },
+    )
+    const expired = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: { Authorization: `Bearer ${expiredToken}` },
+    })
+    assert.equal(expired.response.status, 401)
+    assertError(expired.body, 'UNAUTHENTICATED')
+  })
+
+  for (const [status, code] of [['Inactive', 'ACCOUNT_INACTIVE'], ['Archived', 'ACCOUNT_ARCHIVED']]) {
+    const error = createHttpError(403, code, `Account is ${status.toLowerCase()}.`)
+    const app = loadAppWithMocks({
+      'src/modules/auth/auth.service.js': {
+        login: async () => ({}),
+        getAuthenticatedUser: async () => { throw error },
+      },
+    })
+    await withTestServer(app, async (baseUrl) => {
+      const result = await requestJson(baseUrl, '/api/operations/watchdog', {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(result.response.status, 403)
+      assertError(result.body, code)
+    })
+  }
 })
 
 test('POST /api/auth/login succeeds with valid credentials', async () => {

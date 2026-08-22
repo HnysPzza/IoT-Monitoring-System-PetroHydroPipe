@@ -15,7 +15,27 @@ const runner = createWatchdogRunner({
 })
 
 function getWatchdogStatus() {
-  return { ...runner.status(), ...metrics.snapshot() }
+  const snapshot = metrics.snapshot()
+  const states = snapshot.cycles === 0 ? {} : snapshot.states
+  return {
+    ...runner.status(),
+    lastOutcome: snapshot.lastOutcome,
+    lastStartedAt: snapshot.lastStartedAt,
+    lastCompletedAt: snapshot.lastCompletedAt,
+    lastSuccessAt: snapshot.lastSuccessAt,
+    lastErrorCode: snapshot.lastErrorCode,
+    counters: {
+      cycles: snapshot.cycles,
+      cycleSuccesses: snapshot.cycleSuccesses,
+      cyclePartialFailures: snapshot.cyclePartialFailures,
+      cycleFailures: snapshot.cycleFailures,
+      cycleCancellations: snapshot.cycleCancellations,
+      sensorEvaluations: snapshot.sensorEvaluations,
+      sensorFailures: snapshot.sensorFailures,
+      transitions: snapshot.transitions,
+    },
+    states,
+  }
 }
 
 module.exports = {

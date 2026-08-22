@@ -5,6 +5,7 @@ function getSseStatus(req, res) {
 }
 
 function getWatchdogStatus(req, res) {
+  res.set('Cache-Control', 'no-store')
   res.json({ watchdog: operationsService.getWatchdogStatus() })
 }
 
