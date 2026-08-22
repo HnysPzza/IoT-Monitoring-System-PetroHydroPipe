@@ -141,3 +141,18 @@ test('fresh schema mirrors migration 012 downtime ownership and watchdog RPCs', 
   assert.match(schema, /function public\.ingest_iot_watchdog_observation/i)
   assert.match(schema, /function public\.evaluate_sensor_watchdog/i)
 })
+
+test('migration 014 defines one service-role-only batched watchdog cycle', () => {
+  const migration = read('database/migrations/014_add_batched_watchdog_evaluation.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /function public\.evaluate_watchdog_cycle/i)
+    assert.match(content, /public\.evaluate_sensor_watchdog/i)
+    assert.match(content, /order by machine\.machine_code, sensor\.sensor_code/i)
+    assert.match(content, /WATCHDOG_EVALUATION_FAILED/i)
+    assert.match(content, /set search_path = pg_catalog, public/i)
+    assert.match(content, /revoke execute[\s\S]*anon, authenticated/i)
+    assert.match(content, /grant execute[\s\S]*service_role/i)
+  }
+})
