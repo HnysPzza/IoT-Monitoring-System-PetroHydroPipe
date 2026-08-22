@@ -13,7 +13,7 @@ This document defines the approved direction for machine operational settings. T
 
 Phase 2 does not change machine state, downtime, alerts, availability, production loss, firmware, or frontend controls.
 
-Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Phase 3 backend support is implemented through migrations `011` and `012`, the authenticated heartbeat API, the restart-safe watchdog, and shared break-aware metrics. Apply migrations in numeric order. Keep `WATCHDOG_MODE=disabled` until the deployment gates below are satisfied.
+Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Phase 3 backend support is implemented through migrations `011`, `012`, and `013`, the authenticated heartbeat API, the restart-safe watchdog, and shared break-aware metrics. Apply migrations in numeric order. Keep `WATCHDOG_MODE=disabled` until the deployment gates below are satisfied.
 
 ## Sensor absence settings
 
@@ -98,11 +98,11 @@ Changing a sensor threshold or schedule uses the Admin settings API and an expec
 
 ## Safe activation order
 
-1. Apply migrations `011` and `012` in order before starting the completed Phase 3 backend.
+1. Apply migrations `011`, `012`, and `013` in order before starting the completed Phase 3 backend.
 2. Deploy with `WATCHDOG_MODE=disabled`, then send authenticated heartbeats and verify ordered boot counter, boot ID, sequence, and connectivity behavior.
 3. Use `observe` only after heartbeat behavior is stable.
 4. Enable absence observation one physically validated sensor at a time. Never enable S-05.
 5. Compare observe-mode evidence with the manual log through the parallel run.
 6. Request separate approval before using `enforce`.
 
-Do not run the completed backend between migrations `011` and `012`; the runner expects the migration `012` evaluator RPC even while disabled.
+Do not start the completed backend until migrations `011`, `012`, and `013` are all applied. The runner expects the migration `012` evaluator RPC even while disabled, and migration `013` repairs heartbeat hashing for hosted Supabase.

@@ -8,6 +8,28 @@ Phase 2 creates the persistent, audited configuration contract for Spiral Mill 0
 
 Phase 2 does not make thresholds operational. Threshold enforcement, break-aware calculations, ESP32 behavior, and the frontend settings form are later phases.
 
+### How It Works
+
+1. Migration `010` creates one versioned `machine_operational_settings` document for M-01.
+2. The document stores strict S-01 through S-05 absence settings and one Asia/Manila same-day shift schedule.
+3. Authenticated dashboard roles read settings through `GET /api/machines/:machineId/settings`.
+4. Only Admin can update settings through `PATCH /api/machines/:machineId/settings`.
+5. The client supplies the expected version so concurrent Admin changes cannot silently overwrite each other.
+6. PostgreSQL updates the settings and inserts the audit record in one transaction; both commit or both roll back.
+
+### Importance
+
+- Trigger, recovery, break, and grace values have one backend-controlled source of truth.
+- Administrators can change operational values without reflashing ESP32 firmware.
+- Strict validation prevents unknown sensors, invalid schedules, and unsafe S-05 absence detection.
+- Optimistic concurrency protects one Admin's changes from another Admin's stale screen.
+- Atomic auditing makes every accepted configuration change accountable.
+- Phase 3 can consume reliable versioned settings instead of hardcoded thresholds.
+
+### Implemented Result
+
+Migration `010`, validation, authenticated GET/Admin PATCH endpoints, optimistic concurrency, and atomic settings auditing are implemented and verified. Phase 3 now consumes this contract through effective-dated history, heartbeats, and the watchdog, while the Phase 4 Admin UI remains separate.
+
 ## 2. Scope
 
 ### Included

@@ -53,6 +53,22 @@ test('database guide documents migrations 008 through 013', () => {
   assert.match(content, /POST \/api\/iot\/heartbeats/)
 })
 
+test('phase documents explain purpose, operation, importance, and implemented result', () => {
+  const phaseDocuments = [
+    path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentFix/Plans/phase 3.md'),
+  ]
+
+  for (const filePath of phaseDocuments) {
+    const content = fs.readFileSync(filePath, 'utf8')
+    assert.match(content, /^#{2,3} (?:\d+\. )?Purpose$/m)
+    assert.match(content, /^#{2,3} How It Works$/m)
+    assert.match(content, /^#{2,3} Importance$/m)
+    assert.match(content, /^#{2,3} Implemented Result$/m)
+  }
+})
+
 test('Phase 3 operations docs preserve the safe activation boundary', () => {
   const root = path.resolve(__dirname, '../../..')
   const files = {
@@ -72,12 +88,13 @@ test('Phase 3 operations docs preserve the safe activation boundary', () => {
   assert.match(docs.architecture, /`GET \/api\/operations\/watchdog`/)
   assert.match(docs.configure, /Never enable S-05/i)
   assert.match(docs.configure, /separate approval before using `enforce`/i)
-  assert.match(docs.configure, /Do not run the completed backend between migrations `011` and `012`/i)
+  assert.match(docs.configure, /Do not start the completed backend until migrations `011`, `012`, and `013` are all applied/i)
   assert.match(docs.runbook, /Apply database migrations `011`, `012`, and `013` in numeric order/i)
   assert.match(docs.runbook, /Preserve settings history.*runtime\/transition evidence/i)
   assert.match(docs.plan, /Status: Backend implementation completed/i)
   assert.match(docs.plan, /Production enforcement is not active/i)
-  assert.match(docs.plan, /must not start between migrations 011 and 012/i)
+  assert.match(docs.plan, /Do not start the completed Phase 3 backend until migrations 011, 012, and 013/i)
+  assert.match(docs.plan, /Backend: `npm test` - 210 passed, 0 failed/i)
 })
 
 test('Phase 2 documents preserve the approved machine-settings boundary', () => {

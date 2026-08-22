@@ -2,11 +2,43 @@
 
 Status: Backend implementation completed on 2026-08-22. Automated verification is recorded below. Production enforcement is not active and still requires the physical, concurrency, soak, and parallel-run gates in this plan.
 
-## 1. Outcome
+## 1. Purpose
 
-Phase 3 will make the Phase 2 settings operational without confusing a disconnected ESP32 with a stopped production process.
+Phase 3 makes the Phase 2 settings operational without confusing a disconnected ESP32 with a stopped production process. It turns stored thresholds and schedules into a safe, restart-aware monitoring workflow.
 
-It will add:
+### How It Works
+
+```text
+ESP32 heartbeat
+  -> device authentication and ordering validation
+  -> persisted connectivity and activity state
+  -> scheduled watchdog evaluation
+  -> shift, break, grace, trigger, and recovery checks
+  -> atomic downtime, alert, machine-state, and audit transition
+  -> break-aware dashboard and report metrics
+```
+
+Each ESP32 sends an authenticated heartbeat with a boot counter, boot ID, sequence, timestamp, and activity observation. PostgreSQL rejects conflicting or stale ordering, stores bounded current runtime state, and keeps connectivity separate from production activity. The watchdog evaluates each sensor against the settings version and schedule effective at that time.
+
+The global modes provide a controlled rollout:
+
+- `disabled`: store heartbeats and diagnostics without watchdog-created production transitions.
+- `observe`: record candidates and connectivity behavior without creating production downtime.
+- `enforce`: allow atomic watchdog-owned downtime and recovery only for an explicitly enabled and physically approved sensor.
+
+### Importance
+
+- A Wi-Fi or ESP32 outage cannot be misreported as proven production downtime.
+- Admin-managed trigger, recovery, schedule, break, and grace values now affect real calculations.
+- Runtime state survives backend restarts because it is stored in PostgreSQL.
+- Historical settings prevent a new schedule from rewriting old availability and loss.
+- Simultaneous sensor incidents are unioned so machine downtime and loss are counted once.
+- Downtime, alerts, machine state, and audits commit atomically or roll back together.
+- S-05 remains protected as an output counter and can never use absence detection.
+
+### Implemented Result
+
+Phase 3 implements:
 
 - A lightweight authenticated heartbeat contract for each ESP32.
 - Persisted device-connectivity and sensor-activity runtime state.
@@ -17,7 +49,9 @@ It will add:
 - One break-aware interval engine used by downtime, dashboard, and reporting services.
 - Operational diagnostics, bounded retries, safe shutdown, and complete failure-path tests.
 
-Phase 3 will not add the Admin settings UI or the new live-status presentation. Those remain Phase 4.
+Migration `013` additionally repairs Supabase heartbeat hashing by qualifying `extensions.digest`, and the one-shot heartbeat simulator now exits cleanly after verification completes.
+
+Phase 3 does not add the Admin settings UI or the new live-status presentation. Those remain Phase 4. Production enforcement also remains inactive until the physical, concurrency, soak, and parallel-run gates pass.
 
 ## 2. Non-goals
 
@@ -359,6 +393,17 @@ Update the existing ingestion function without changing its public signature:
 - If an explicit fault arrives while watchdog downtime is open, reuse the one open row, record the confirmation in audit metadata, and preserve one alert rather than creating competing incidents.
 
 Migration 012 and fresh `schema.sql` must remain equivalent.
+
+### 9.3 Migration 013: Supabase heartbeat hashing repair
+
+Migration `013_fix_heartbeat_digest_schema.sql` repairs the heartbeat RPC for Supabase, where cryptographic functions are installed in the `extensions` schema and the security-definer function uses a restricted search path.
+
+- Replace the heartbeat RPC so it calls `extensions.digest(...)` explicitly.
+- Preserve the fixed `pg_catalog, public` search path and service-role-only execution boundary.
+- Keep the migration forward-only, safe to reapply, and free of data rewrites or destructive rollback SQL.
+- Keep the fresh `schema.sql` definition equivalent to the repaired migration path.
+
+This repair prevents a valid S-01 heartbeat from failing only in the hosted Supabase environment while retaining the hardened function boundary.
 
 ## 10. State Machines
 
@@ -725,6 +770,13 @@ No Phase 3 implementation is complete until every applicable category below pass
 - RLS and grants deny anon/authenticated direct access and direct service-role mutation.
 - RPC execution is service-role-only.
 
+Migration 013 repair coverage additionally verifies that:
+
+- The heartbeat RPC uses the schema-qualified `extensions.digest` function.
+- Reapplying the repair is safe and preserves service-role-only execution.
+- The fresh schema and the ordered migration path expose the same repaired function.
+- The simulator exits cleanly after a successful one-shot verification.
+
 ### 16.4 Heartbeat RPC tests
 
 - First boot/sequence applies and uses database receipt time.
@@ -982,6 +1034,23 @@ Commit:
 Align Phase 3 Operations Docs
 ```
 
+### Task 8: Hosted Supabase heartbeat repair
+
+Files:
+
+- Add migration `013_fix_heartbeat_digest_schema.sql`.
+- Align `schema.sql`, simulator shutdown behavior, database guidance, runbook, and regression tests.
+
+Work:
+
+- Schema-qualify heartbeat hashing for Supabase, preserve hardened RPC permissions, and make the one-shot simulator terminate cleanly after verification.
+
+Commit:
+
+```text
+Fix Supabase Heartbeat Digest
+```
+
 ## 18. Deployment and Rollback Plan
 
 ### Stage 1: additive database foundation
@@ -990,10 +1059,11 @@ Align Phase 3 Operations Docs
 2. Apply migration 011 in disposable staging.
 3. Verify history reconstruction and runtime rows.
 4. Apply migration 012 and verify its evaluator, ownership, and privilege contracts.
-5. Deploy the completed backend with `WATCHDOG_MODE=disabled`.
-6. Verify old event ingestion and the Phase 2 settings API remain compatible.
+5. Apply migration 013 and verify authenticated heartbeat hashing and service-role execution.
+6. Deploy the completed backend with `WATCHDOG_MODE=disabled`.
+7. Verify old event ingestion and the Phase 2 settings API remain compatible.
 
-The completed backend must not start between migrations 011 and 012 because its runner expects the migration 012 evaluator RPC even in disabled mode. Only the earlier heartbeat-API-only commit can be deployed after migration 011 alone.
+Do not start the completed Phase 3 backend until migrations 011, 012, and 013 have all been applied in numeric order. The runner requires the migration 012 evaluator RPC even in disabled mode, and hosted Supabase heartbeat hashing requires the migration 013 repair.
 
 ### Stage 2: heartbeat protocol
 
@@ -1060,13 +1130,17 @@ Implemented commits:
 - `21c85aa` Add Watchdog Transitions
 - `a77e042` Run Sensor Watchdog
 - `71d209d` Apply Break Aware Metrics
+- `4c9faf0` Align Phase 3 Operations Docs
+- `5484ee1` Correct Phase 3 Deployment Order
+- `a6f1567` Fix Supabase Heartbeat Digest
 
 Automated verification completed on 2026-08-22:
 
-- Backend: `npm test` - 208 passed, 0 failed.
+- Backend: `npm test` - 210 passed, 0 failed.
 - Frontend: `npm test` - 28 files and 201 tests passed, 0 failed.
 - Frontend: `npm run build` - production build completed successfully.
-- Migration 011/012, privilege, atomic rollback, heartbeat ordering, watchdog modes, runner lifecycle, overlap, history, pagination, dashboard, downtime, and report tests are included in the backend result.
+- Migration 011/012/013, privilege, atomic rollback, heartbeat ordering, watchdog modes, runner lifecycle, overlap, history, pagination, dashboard, downtime, and report tests are included in the backend result.
+- Live Supabase heartbeat verification passed after migration 013 was applied on 2026-08-22.
 
 These results complete the local automated implementation gate. They do not replace disposable real-PostgreSQL multi-connection races, extended restart/soak tests, physical sensor classification, calibration, or the manual-log parallel run. Those checks still block `WATCHDOG_MODE=enforce`.
 
