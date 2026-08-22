@@ -100,3 +100,30 @@ test('fresh schema and seed mirror migration 011 runtime storage and RPC', () =>
   assert.match(seed, /insert into machine_operational_settings_history/i)
   assert.match(seed, /insert into sensor_watchdog_state/i)
 })
+
+test('migration 012 defines guarded event ownership and atomic watchdog evaluation', () => {
+  const migration = read('database/migrations/012_add_atomic_watchdog_transitions.sql')
+
+  assert.match(migration, /detection_source/i)
+  assert.match(migration, /absence_watchdog/i)
+  assert.match(migration, /watchdog_eligible_seconds/i)
+  assert.match(migration, /watchdog_advance_eligible_time/i)
+  assert.match(migration, /ingest_iot_sensor_event_legacy/i)
+  assert.match(migration, /ingest_iot_watchdog_observation/i)
+  assert.match(migration, /evaluate_sensor_watchdog/i)
+  assert.match(migration, /p_mode not in \('disabled', 'observe', 'enforce'\)/i)
+  assert.match(migration, /sensor\.sensor_code <> 'S-05'/i)
+  assert.match(migration, /revoke execute on function public\.evaluate_sensor_watchdog[\s\S]*authenticated/i)
+  assert.match(migration, /grant execute on function public\.evaluate_sensor_watchdog[\s\S]*service_role/i)
+})
+
+test('fresh schema mirrors migration 012 downtime ownership and watchdog RPCs', () => {
+  const schema = read('database/schema.sql')
+
+  assert.match(schema, /detection_source text not null default 'sensor_event'/i)
+  assert.match(schema, /settings_version bigint/i)
+  assert.match(schema, /recovery_observation_count integer not null default 0/i)
+  assert.match(schema, /function public\.watchdog_eligible_seconds/i)
+  assert.match(schema, /function public\.ingest_iot_watchdog_observation/i)
+  assert.match(schema, /function public\.evaluate_sensor_watchdog/i)
+})
