@@ -51,7 +51,7 @@ function admitSseConnection(req, res, next) {
 
   req.sseConnectionId = randomUUID()
   req.sseConnectionRelease = admission.release
-  //attaches "listener/tripwire" drop if fail
+  //attaches "listener/tripwire" to each stream - drop if fail
   let streamSetupStarted = false
   const removePreStreamListeners = () => {
     req.off('aborted', releaseBeforeStreamSetup)
