@@ -16,6 +16,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `migrations/007_alert_sync_integrity.sql` makes IoT state, downtime, alert, and transition audits atomic; adds recorded-time ordering, transactional alert revisions, acknowledgement, and one-statement alert snapshots.
 - `migrations/008_harmonize_plant_sensor_labels.sql` applies the canonical plant sensor labels.
 - `migrations/009_align_sensor_downtime_causes.sql` assigns future filler-wire faults to `Consumable Shortage`.
+- `migrations/010_create_machine_operational_settings.sql` adds versioned per-machine thresholds and shift schedules plus an atomic settings/audit RPC.
 
 ## Tables
 
@@ -29,6 +30,7 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `audit_logs`: user/system activity history for accountability.
 - `alerts`: active, acknowledged, and resolved operational alerts.
 - `alert_revision_state`: service-role-only singleton counter for transactional global alert revisions.
+- `machine_operational_settings`: service-role-readable per-machine sensor thresholds, shift schedule, version, and updater metadata.
 
 ## How To Run In Supabase
 
@@ -105,6 +107,18 @@ Run the focused checks from `Backend`:
 
 ```bash
 node --test tests/downtime-cause.migration.pglite.test.js tests/downtime.model.test.js
+```
+
+### Migration 010
+
+Apply migration `010` before deploying the machine-settings API. It requires the existing M-01 machine row and fails without changing the database if M-01 is missing. It provisions one M-01 settings row, enables RLS, grants service-role reads, and requires all changes to use the atomic `update_machine_operational_settings` RPC.
+
+Migration `010` is forward-only. Do not add a destructive down migration that drops operational settings or audit history. Correct later changes with a new forward migration.
+
+Run the focused checks from `Backend`:
+
+```bash
+node --test tests/settings.migration.pglite.test.js tests/settings.validation.test.js tests/settings.service.test.js
 ```
 
 ## ESP32 Device Keys

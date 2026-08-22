@@ -1,6 +1,6 @@
 # Phase 2 Machine Operational Settings Storage and Backend API
 
-Status: Proposed and ready for approval
+Status: Implemented; final verification recorded in Section 8
 
 ## 1. Purpose
 
@@ -107,6 +107,21 @@ Default schedule:
 | Timezone | Asia/Manila, fixed and not editable |
 
 The work window spans nine elapsed hours and contains 90 minutes of scheduled breaks, leaving 7.5 scheduled production hours before later grace-period treatment.
+
+Persisted/API shape:
+
+```json
+{
+  "workStart": "08:00",
+  "workEnd": "17:00",
+  "breaks": [
+    { "name": "Morning Break", "startTime": "10:00", "endTime": "10:15" },
+    { "name": "Lunch Break", "startTime": "12:00", "endTime": "13:00" },
+    { "name": "Afternoon Break", "startTime": "15:00", "endTime": "15:15" }
+  ],
+  "rampUpGraceMinutes": 10
+}
+```
 
 Rules:
 
@@ -254,7 +269,7 @@ Internal database messages must not be returned to clients.
 
 ## 8. Implementation Tasks
 
-### Task 1 Database contract and migration
+### Task 1 Database contract and migration - Complete
 
 Files:
 
@@ -272,7 +287,7 @@ Steps:
 5. Run the migration test twice from a clean database.
 6. Commit only this database unit with message `add machine settings storage`.
 
-### Task 2 Validation contract
+### Task 2 Validation contract - Complete
 
 Files:
 
@@ -286,7 +301,7 @@ Steps:
 3. Test valid boundaries and reject unknown keys, missing sections, arbitrary sensor codes, enabled S-05, missing recovery values, overnight shifts, duplicate break names, overlaps, grace overlaps, and out-of-range values.
 4. Commit only validation and tests with message `validate machine settings`.
 
-### Task 3 Service and API
+### Task 3 Service and API - Complete
 
 Files:
 
@@ -307,7 +322,7 @@ Steps:
 6. Add API authorization, validation, response-shape, concurrency, and internal-error-masking tests.
 7. Commit only this API unit with message `add machine settings api`.
 
-### Task 4 Documentation and full verification
+### Task 4 Documentation and full verification - Complete
 
 Files:
 
@@ -324,6 +339,12 @@ cd ..\Frontend
 npm.cmd test
 npm.cmd run build
 ```
+
+Verified on 2026-08-22:
+
+- Backend: 142 tests passed.
+- Frontend: 201 tests passed across 28 files.
+- Frontend production build: passed.
 
 If a configured read-only Supabase integration environment exists, verify migration 010 objects and the M-01 default row without changing production settings.
 

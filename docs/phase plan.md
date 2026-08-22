@@ -9,7 +9,7 @@
 The implementation is divided into four sequential, low-risk phases:
 
 * **Phase 1: Foundation (Label Harmonization)** — Immediate, zero-risk alignment of sensor codes, labels, and purposes across the codebase and documentation to match the plant floor.
-* **Phase 2: Settings Storage & Backend API** — Creation of persistent data structures and REST endpoints for configurable thresholds and break windows.
+* **Phase 2: Settings Storage & Backend API (implemented)** — Persistent data structures and REST endpoints for configurable thresholds and break windows.
 * **Phase 3: Calculation Engine & Ingestion Logic** — Dynamic evaluation of downtime thresholds and planned break deductions in the backend and database RPCs.
 * **Phase 4: Frontend Settings UI & Live Visuals** — Building the user interface in the Settings section and reflecting active refill states in the Live Feed.
 
@@ -37,6 +37,8 @@ Align all sensor labels across the codebase and documentation to reflect Petro H
 ---
 
 ## Phase 2: Settings Storage & Backend API
+
+**Status:** Implemented. Threshold enforcement and the Admin UI remain in Phases 3 and 4.
 
 ### Goal
 Establish persistent per-machine storage and management APIs for sensor absence thresholds and same-day shift schedules. This phase stores and audits configuration; it does not enforce thresholds or alter downtime calculations.

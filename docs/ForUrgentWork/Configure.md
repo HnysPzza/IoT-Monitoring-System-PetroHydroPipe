@@ -13,6 +13,8 @@ This document defines the approved direction for machine operational settings. T
 
 Phase 2 does not change machine state, downtime, alerts, availability, production loss, firmware, or frontend controls.
 
+Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Apply migration `010` before deploying the API.
+
 ## Sensor absence settings
 
 Proposed trigger values:
@@ -50,6 +52,8 @@ Default same-day schedule in Asia/Manila:
 - Lunch break: 12:00 to 13:00.
 - Afternoon break: 15:00 to 15:15.
 - Ramp-up grace after each break: 10 minutes.
+
+The stored/API fields are `workStart`, `workEnd`, named `breaks` with `startTime` and `endTime`, and `rampUpGraceMinutes`. The timezone is fixed by the backend and is not editable.
 
 The work window is nine elapsed hours with 90 minutes of breaks, leaving 7.5 scheduled production hours before grace treatment.
 

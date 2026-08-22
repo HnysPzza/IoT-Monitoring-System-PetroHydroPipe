@@ -45,6 +45,7 @@ Main responsibilities:
 - Role authorization.
 - User account management.
 - Machine and sensor APIs.
+- Versioned machine operational-settings API.
 - IoT device authentication.
 - Sensor event ingestion.
 - Dashboard, downtime, report, and audit APIs.
@@ -138,6 +139,7 @@ Main tables:
 - `audit_logs`
 - `alerts`
 - `alert_revision_state`
+- `machine_operational_settings`
 
 ## Auth Model
 
@@ -182,11 +184,11 @@ The monitoring UI should describe these sensor states and events. It should not 
 
 Production targets currently come from fixed backend values for day, week, and month. The dashboard can display those values, but there is no current admin workflow or persistent configuration API for adding or editing targets.
 
-### Planned Machine Operational Settings
+### Machine Operational Settings
 
-Phase 2 will add one `machine_operational_settings` row per machine and expose it through `GET` and Admin-only `PATCH` requests at `/api/machines/:machineId/settings`. Updates use optimistic concurrency and one PostgreSQL transaction for both the settings change and its audit row.
+Phase 2 adds one `machine_operational_settings` row per explicitly provisioned machine and exposes it through `GET` and Admin-only `PATCH` requests at `/api/machines/:machineId/settings`. Updates use optimistic concurrency and one PostgreSQL transaction for both the settings change and its `SETTINGS_UPDATED` audit row. Migration `010` provisions M-01; future machines require explicit settings provisioning after their sensors are defined.
 
-This storage/API phase does not enforce sensor absence thresholds. The current ingestion RPC runs only when an event arrives, so it cannot detect a missing event. Phase 3 must add periodic heartbeats plus a backend watchdog and an idempotent atomic transition function before stored thresholds affect machine state or downtime.
+This storage/API phase does not enforce sensor absence thresholds. The current ingestion RPC runs only when an event arrives, so it cannot detect an event that never arrives. Phase 3 must add periodic heartbeats plus a backend watchdog and an idempotent atomic transition function before stored thresholds affect machine state or downtime.
 
 Production targets are deliberately outside Phase 2. They require a separate effective-date and reporting-period design before replacing the current fixed values.
 
