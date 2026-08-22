@@ -17,7 +17,7 @@ function downtimeRecord(overrides = {}) {
     displayLabel: 'S-03 08:42 AM',
     machine: 'Spiral Mill 01',
     sensor: 'S-03',
-    sensorLabel: 'S-03 - Machine Main Sensor',
+    sensorLabel: 'Machine Main Sensor',
     cause: 'Pending Cause Review',
     startedAt: '2026-06-11T00:42:00.000Z',
     endedAt: null,
@@ -46,7 +46,7 @@ describe('DowntimeSection', () => {
       id: '66666666-6666-4666-8666-666666666666',
       displayLabel: 'S-04 09:15 AM',
       sensor: 'S-04',
-      sensorLabel: 'S-04 - Outside Filler Wire',
+      sensorLabel: 'Outside Filler Wire',
       cause: 'Consumable Shortage',
       isCauseEditable: false,
       needsCauseReview: false,
@@ -94,6 +94,7 @@ describe('DowntimeSection', () => {
     renderWithAuth(<DowntimeSection />)
 
     expect(await screen.findByText('S-03 08:42 AM')).toBeInTheDocument()
+    expect(screen.getByText('S-03 - Machine Main Sensor')).toBeInTheDocument()
     expect(screen.getByText('Needs cause review')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /view details/i }))
@@ -304,7 +305,7 @@ describe('DowntimeSection', () => {
         downtimeRecord({
           displayLabel: 'S-04 08:42 AM',
           sensor: 'S-04',
-          sensorLabel: 'S-04 - Outside Filler Wire',
+          sensorLabel: 'Outside Filler Wire',
           cause: 'Consumable Shortage',
           isCauseEditable: false,
           needsCauseReview: false,
@@ -316,6 +317,7 @@ describe('DowntimeSection', () => {
     renderWithAuth(<DowntimeSection />)
 
     expect(await screen.findByText('S-04 08:42 AM')).toBeInTheDocument()
+    expect(screen.getByText('S-04 - Outside Filler Wire')).toBeInTheDocument()
     expect(screen.queryByText('Needs cause review')).not.toBeInTheDocument()
     expect(screen.getAllByText('Consumable Shortage').length).toBeGreaterThan(1)
     expect(screen.queryByLabelText(/cause for s-04/i)).not.toBeInTheDocument()

@@ -26,8 +26,19 @@ const historicalDowntimeCauses = [
 ]
 const downtimeEditRoles = new Set(['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor'])
 
+function getSensorName(record) {
+  if (!record.sensor) return record.sensorLabel || 'selected sensor'
+
+  const canonicalName = formatSensorName(record.sensor)
+  if (canonicalName !== record.sensor) return canonicalName
+  if (!record.sensorLabel) return record.sensor
+  return record.sensorLabel.startsWith(`${record.sensor} - `)
+    ? record.sensorLabel
+    : `${record.sensor} - ${record.sensorLabel}`
+}
+
 function getRecordLabel(record) {
-  const sensorName = record.sensorLabel || (record.sensor ? formatSensorName(record.sensor) : 'selected sensor')
+  const sensorName = getSensorName(record)
   return `${record.machine || 'Machine'} / ${sensorName}`
 }
 
@@ -317,7 +328,7 @@ export default function DowntimeSection() {
                         <span className="audit-action-label">{getDisplayLabel(record)}</span>
                         {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
                       </td>
-                      <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{record.sensorLabel || formatSensorName(record.sensor)}</span></td>
+                      <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{getSensorName(record)}</span></td>
                       <td data-label="Cause">
                         {record.isCauseEditable ? (
                           <>
@@ -388,7 +399,7 @@ export default function DowntimeSection() {
                                 </div>
                                 <div>
                                   <dt>Sensor</dt>
-                                  <dd>{record.sensorLabel || formatSensorName(record.sensor)}</dd>
+                                  <dd>{getSensorName(record)}</dd>
                                 </div>
                                 <div>
                                   <dt>Started</dt>

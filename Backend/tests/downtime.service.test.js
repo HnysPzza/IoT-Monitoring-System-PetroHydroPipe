@@ -32,7 +32,7 @@ function attachRelations(record) {
     machines: { name: 'Spiral Mill 01' },
     sensors: {
       sensor_code: isManual ? 'S-03' : 'S-04',
-      label: isManual ? 'Coil Joint' : 'Inside Filler',
+      label: isManual ? 'Machine Main Sensor' : 'Outside Filler Wire',
     },
   }
 }
