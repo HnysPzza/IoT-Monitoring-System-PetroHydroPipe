@@ -9,6 +9,16 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
+async function waitFor(predicate, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      assert.fail('Timed out waiting for watchdog test condition.')
+    }
+    await delay(5)
+  }
+}
+
 function evaluation(sensorNumber, overrides = {}) {
   const code = `S-${String(sensorNumber).padStart(2, '0')}`
   return {
@@ -161,7 +171,7 @@ test('watchdog runner starts immediately, prevents overlap, and records successf
 
   assert.equal(runner.start(), true)
   assert.equal(runner.start(), false)
-  await delay(45)
+  await waitFor(() => calls >= 2)
   await runner.stop()
   assert.ok(calls >= 2)
   assert.equal(maximumConcurrent, 1)
