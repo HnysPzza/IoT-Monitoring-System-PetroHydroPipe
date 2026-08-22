@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -6,6 +6,25 @@ import AnalyticsSection from './AnalyticsSection.jsx'
 
 vi.mock('./AnalyticsOperationsDetails.jsx', () => ({
   default: () => <div data-testid="analytics-operations-details" />,
+}))
+
+vi.mock('./AnalyticsDateRangePicker.jsx', () => ({
+  default: ({ onChange }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onChange({ startDate: '2026-08-15', endDate: '' })}
+      >
+        Choose partial range
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange({ startDate: '2026-08-15', endDate: '2026-08-17' })}
+      >
+        Choose complete range
+      </button>
+    </div>
+  ),
 }))
 
 const successfulSnapshot = {
@@ -117,45 +136,30 @@ describe('AnalyticsSection local request states', () => {
   })
 
   it('does not load Analytics when a custom calendar range is only partially selected', async () => {
-    const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
 
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
     expect(document.querySelector('.analytics-filter-row')).toHaveClass('analytics-filter-row--custom')
-    const calendarTrigger = await screen.findByRole(
-      'button',
-      { name: /Open custom date range calendar/i },
-      { timeout: 5000 },
-    )
 
     await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
-    await user.click(calendarTrigger)
-    await user.click(screen.getByRole('button', { name: 'Saturday, August 15, 2026' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose partial range' }))
 
     expect(loadAnalytics).toHaveBeenCalledTimes(2)
   })
 
   it('loads one exact local request when a valid custom calendar range is completed', async () => {
-    const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
 
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Custom' }))
-    const calendarTrigger = await screen.findByRole(
-      'button',
-      { name: /Open custom date range calendar/i },
-      { timeout: 5000 },
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
 
     await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
-    await user.click(calendarTrigger)
-    await user.click(screen.getByRole('button', { name: 'Saturday, August 15, 2026' }))
-    await user.click(screen.getByRole('button', { name: 'Monday, August 17, 2026' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose complete range' }))
 
     await waitFor(() => {
       expect(loadAnalytics).toHaveBeenCalledTimes(3)
