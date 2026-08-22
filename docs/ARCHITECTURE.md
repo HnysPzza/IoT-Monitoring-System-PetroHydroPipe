@@ -202,6 +202,12 @@ settings history + downtime overlap -> shared operational-time engine -> dashboa
 
 The watchdog runner starts only from `server.js` in observe or enforce mode, runs immediately without overlapping its own cycles, uses one database RPC per cycle, applies a bounded timeout, and stops before SSE during graceful shutdown. Cycles are classified as success, partial, failed, or cancelled; disabled mode remains idle. Admins can inspect nested aggregate, non-identifying state through `GET /api/operations/watchdog`, which is Admin-only and not cacheable.
 
+Phase 4 adds a controlled frontend over this backend state. The Admin Settings route loads settings plus backend-derived constraints and separately checks Admin-only watchdog diagnostics. It saves the complete versioned document, locks S-05, fails closed when mode is unknown, and refuses writes while enforcement is active. The global watchdog mode remains deployment-owned and has no mutation endpoint.
+
+Migration `015` adds the service-role-only `get_machine_live_snapshot` function. It returns M-01, all five sensors, each sensor's independently selected latest event, and current watchdog state from one consistent read. `GET /api/iot/live` strictly validates that result, masks disabled or stale evaluation state, rejects unexpected query fields, and sends `Cache-Control: no-store`.
+
+The Live Feed makes one request every 15 seconds with an in-flight guard. Hidden tabs pause polling, visibility restoration triggers a refresh, and failures retain the last trusted snapshot. A pure presentation layer keeps connectivity, grace, observe-only thresholds, recovery confirmation, and confirmed operational downtime distinct. S-05 is always presented as production output sensing and never receives an absence state. No additional SSE stream or browser-side transition calculation is used.
+
 Code support does not authorize enforcement. Physical signal classification, heartbeat reliability, recovery calibration, disposable PostgreSQL concurrency tests, and parallel-run evidence remain required before changing `WATCHDOG_MODE` to `enforce`.
 
 Production targets are deliberately outside Phase 2. They require a separate effective-date and reporting-period design before replacing the current fixed values.

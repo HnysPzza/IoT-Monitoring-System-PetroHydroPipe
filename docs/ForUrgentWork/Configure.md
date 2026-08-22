@@ -13,7 +13,15 @@ This document defines the approved direction for machine operational settings. T
 
 Phase 2 does not change machine state, downtime, alerts, availability, production loss, firmware, or frontend controls.
 
-Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Phase 3 backend support is implemented through migrations `011`, `012`, `013`, and `014`, the authenticated heartbeat API, the batched restart-safe watchdog, and shared break-aware metrics. Apply migrations in numeric order. Keep `WATCHDOG_MODE=disabled` until the deployment gates below are satisfied.
+Phase 2 is implemented through migration `010`, strict backend validation, and the versioned machine-settings API. Phase 3 backend support is implemented through migrations `011`, `012`, `013`, and `014`, the authenticated heartbeat API, the batched restart-safe watchdog, and shared break-aware metrics. Phase 4 is implemented through migration `015`, the Admin settings interface, and watchdog-aware Live Feed polling. Apply migrations in numeric order. Keep `WATCHDOG_MODE=disabled` until the deployment gates below are satisfied.
+
+## Phase 4 controls
+
+The Admin Settings page loads the backend settings constraints, current M-01 version, and watchdog diagnostics. It allows one complete atomic save in disabled or observe mode, locks all S-05 absence fields, and becomes read-only during enforce mode or when diagnostics are unavailable. Version conflicts keep the local draft and require an explicit reload.
+
+The Live Feed uses one database snapshot and polls every 15 seconds without overlapping requests. Hidden tabs pause polling. A refresh failure preserves the last trusted snapshot. Grace, recovery, observe-only thresholds, connectivity loss, and stale monitoring are displayed separately; none is silently promoted to confirmed production downtime.
+
+The global watchdog mode remains an environment and deployment decision. Phase 4 intentionally adds no mode-mutation API or UI control.
 
 ## Sensor absence settings
 
@@ -98,11 +106,11 @@ Changing a sensor threshold or schedule uses the Admin settings API and an expec
 
 ## Safe activation order
 
-1. Apply migrations `011`, `012`, `013`, and `014` in order before starting the completed Phase 3 backend.
+1. Apply migrations `011`, `012`, `013`, `014`, and `015` in order before deploying the completed Phase 4 application.
 2. Deploy with `WATCHDOG_MODE=disabled`, then send authenticated heartbeats and verify ordered boot counter, boot ID, sequence, and connectivity behavior.
 3. Use `observe` only after heartbeat behavior is stable.
 4. Enable absence observation one physically validated sensor at a time. Never enable S-05.
 5. Compare observe-mode evidence with the manual log through the parallel run.
 6. Request separate approval before using `enforce`.
 
-Do not deploy the completed backend until migrations `011`, `012`, `013`, and `014` are all applied. Disabled mode schedules no evaluation cycles. Migration `013` repairs hosted heartbeat hashing, and migration `014` is required before observe mode can run its single batched evaluation request.
+Do not deploy the completed backend until migrations `011`, `012`, `013`, and `014` are all applied. Do not deploy the Phase 4 live snapshot backend until migration `015` is also applied. Disabled mode schedules no evaluation cycles. Migration `013` repairs hosted heartbeat hashing, migration `014` supplies the single batched evaluation request, and migration `015` supplies the single live monitoring snapshot.

@@ -14,6 +14,7 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
     path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md'),
     path.resolve(__dirname, '../../../docs/superpowers/plans/2026-08-22-phase-1-sensor-label-harmonization.md'),
     path.resolve(__dirname, '../../../docs/ForUrgentFix/Plans/phase 3.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentFix/Plans/phase 4.md'),
   ]
 
   const obsoletePatterns = [
@@ -34,7 +35,7 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
   }
 })
 
-test('database guide documents migrations 008 through 014', () => {
+test('database guide documents migrations 008 through 015', () => {
   const databaseGuidePath = path.resolve(__dirname, '../../database/README.md')
   const content = fs.readFileSync(databaseGuidePath, 'utf8')
 
@@ -45,6 +46,7 @@ test('database guide documents migrations 008 through 014', () => {
   assert.match(content, /012_add_atomic_watchdog_transitions\.sql/)
   assert.match(content, /013_fix_heartbeat_digest_schema\.sql/)
   assert.match(content, /014_add_batched_watchdog_evaluation\.sql/)
+  assert.match(content, /015_add_live_monitoring_snapshot\.sql/)
   assert.match(content, /S-02 Inside Filler Wire/)
   assert.match(content, /S-04 Outside Filler Wire/)
   assert.match(content, /S-02 and S-04 downtime faults to `Consumable Shortage`/)
@@ -59,6 +61,7 @@ test('phase documents explain purpose, operation, importance, and implemented re
     path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md'),
     path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md'),
     path.resolve(__dirname, '../../../docs/ForUrgentFix/Plans/phase 3.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentFix/Plans/phase 4.md'),
   ]
 
   for (const filePath of phaseDocuments) {
@@ -68,6 +71,23 @@ test('phase documents explain purpose, operation, importance, and implemented re
     assert.match(content, /^#{2,3} Importance$/m)
     assert.match(content, /^#{2,3} Implemented Result$/m)
   }
+})
+
+test('Phase 4 docs preserve the settings and live monitoring safety boundary', () => {
+  const root = path.resolve(__dirname, '../../..')
+  const plan = fs.readFileSync(path.join(root, 'docs/ForUrgentFix/Plans/phase 4.md'), 'utf8')
+  const architecture = fs.readFileSync(path.join(root, 'docs/ARCHITECTURE.md'), 'utf8')
+  const configure = fs.readFileSync(path.join(root, 'docs/ForUrgentWork/Configure.md'), 'utf8')
+  const runbook = fs.readFileSync(path.join(root, 'docs/RUNBOOK.md'), 'utf8')
+
+  assert.match(plan, /Migration `015` must be applied/i)
+  assert.match(plan, /S-05 remains locked/i)
+  assert.match(plan, /one request every 15 seconds/i)
+  assert.match(plan, /Production enforcement remains blocked/i)
+  assert.match(architecture, /get_machine_live_snapshot/)
+  assert.match(architecture, /Hidden tabs pause polling/i)
+  assert.match(configure, /no mode-mutation API or UI control/i)
+  assert.match(runbook, /Do not use enforce mode as a UI test/i)
 })
 
 test('Phase 3 operations docs preserve the safe activation boundary', () => {

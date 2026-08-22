@@ -10,8 +10,8 @@ The implementation is divided into four sequential, low-risk phases:
 
 * **Phase 1: Foundation (Label Harmonization)** — Immediate, zero-risk alignment of sensor codes, labels, and purposes across the codebase and documentation to match the plant floor.
 * **Phase 2: Settings Storage & Backend API (implemented)** — Persistent data structures and REST endpoints for configurable thresholds and break windows.
-* **Phase 3: Calculation Engine & Ingestion Logic** — Dynamic evaluation of downtime thresholds and planned break deductions in the backend and database RPCs.
-* **Phase 4: Frontend Settings UI & Live Visuals** — Building the user interface in the Settings section and reflecting active refill states in the Live Feed.
+* **Phase 3: Calculation Engine & Ingestion Logic (implemented)** — Dynamic evaluation of downtime thresholds and planned break deductions in the backend and database RPCs.
+* **Phase 4: Frontend Settings UI & Live Visuals (implemented)** — Admin operational controls and watchdog-aware live presentation backed by one database snapshot.
 
 ---
 
@@ -60,6 +60,8 @@ Establish persistent per-machine storage and management APIs for sensor absence 
 
 ## Phase 3: Calculation Engine & Ingestion Logic
 
+**Status:** Implemented through migrations `011`-`014`, authenticated heartbeats, the batched watchdog, and break-aware metrics. Production enforcement remains gated.
+
 ### Goal
 Upgrade the backend and database ingestion logic to use dynamic thresholds and exclude planned breaks from production loss calculations.
 
@@ -75,15 +77,22 @@ Upgrade the backend and database ingestion logic to use dynamic thresholds and e
 
 ## Phase 4: Frontend Settings UI & Live Visuals
 
+**Status:** Implemented. Apply migration `015` before deploying the Phase 4 backend.
+
 ### Goal
 Provide an intuitive interface for supervisors to adjust parameters and visually monitor active refill states.
 
 ### Action Items
 * **Settings Module (`Frontend/src/features/dashboard/settings/`):**
-  * Build the **Sensor Refill Tolerances Card** (numeric inputs and time units for each consumable sensor).
-  * Build the **Shift & Break Windows Card** (time pickers for break windows and number input for ramp-up grace minutes).
+  * Uses backend-returned limits for trigger, recovery, breaks, and grace.
+  * Saves one complete optimistic-concurrency document and retains drafts on conflicts.
+  * Locks S-05 and becomes read-only during enforce mode or unavailable diagnostics.
 * **Live Feed Module (`Frontend/src/features/dashboard/live/`):**
-  * When a sensor is empty but still within its allowable threshold, display machine and sensor status cleanly as **`Idle (Refill in progress)`** without triggering equipment alarms.
+  * Uses migration `015` and one snapshot RPC for the machine, every latest sensor event, and watchdog state.
+  * Polls every 15 seconds without overlap, pauses in hidden tabs, and retains last-good data on failure.
+  * Distinguishes grace, recovery, observe-only thresholds, connectivity, stale monitoring, and confirmed operational downtime.
+
+The complete implemented contract is in `docs/ForUrgentFix/Plans/phase 4.md`.
 
 ---
 

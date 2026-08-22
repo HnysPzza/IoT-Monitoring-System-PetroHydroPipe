@@ -118,6 +118,35 @@ If the watchdog behaves unsafely:
 4. Diagnose with safe aggregate diagnostics and server logs.
 5. Correct forward with reviewed code or a new migration.
 
+## Phase 4 Settings and Live Feed Checks
+
+Apply migration `015` after migration `014` before deploying the Phase 4 backend. Review it first and use a backup or disposable staging database. It adds a read-only service-role snapshot and has no destructive rollback.
+
+Start the backend with `WATCHDOG_MODE=disabled`, log in as Admin, then verify:
+
+1. Settings loads Spiral Mill 01 and shows Watchdog disabled.
+2. S-05 trigger and recovery inputs are locked.
+3. A reviewed harmless settings change saves once and increments the version once.
+4. A stale browser version receives a conflict, retains the draft, and requires Reload latest.
+5. `GET /api/iot/live` returns `Cache-Control: no-store`, one machine, and five sensors.
+6. Live Feed refreshes every 15 seconds, never overlaps requests, and pauses in a hidden tab.
+7. Disconnecting the network keeps the last snapshot visible with a stale-data warning.
+8. Production Supervisor can read Live Feed but cannot access the Admin Settings route.
+
+Focused local checks:
+
+```powershell
+cd Backend
+node --test tests/live-monitoring-snapshot.migration.pglite.test.js tests/database.contract.test.js tests/iot.service.test.js tests/settings.service.test.js tests/api.test.js
+
+cd ../Frontend
+npm.cmd test -- src/features/dashboard/settings/SettingsSection.test.jsx src/features/dashboard/settings/settingsUtils.test.js
+npm.cmd test -- src/features/dashboard/live/LiveSection.test.jsx src/features/dashboard/live/livePresentation.test.js
+npm.cmd run build
+```
+
+The Settings page does not change `WATCHDOG_MODE`. Do not use enforce mode as a UI test. Enforcement still requires the Phase 3 physical calibration, concurrency, soak, and parallel-run approvals.
+
 ## Deployment Planning
 
 Current production direction:

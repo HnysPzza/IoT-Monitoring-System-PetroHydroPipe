@@ -1,6 +1,6 @@
 # Database Setup
 
-This folder contains the Supabase/PostgreSQL database foundation for the PetroHydroPipe IoT monitoring system through Phase 3.
+This folder contains the Supabase/PostgreSQL database foundation for the PetroHydroPipe IoT monitoring system through Phase 4.
 
 ## Files
 
@@ -21,6 +21,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/012_add_atomic_watchdog_transitions.sql` adds downtime ownership and atomic disabled/observe/enforce watchdog evaluation.
 - `migrations/013_fix_heartbeat_digest_schema.sql` repairs heartbeat hashing for Supabase's `extensions.pgcrypto` layout.
 - `migrations/014_add_batched_watchdog_evaluation.sql` adds one service-role-only watchdog cycle RPC with isolated sensor failures and aggregate state counts.
+- `migrations/015_add_live_monitoring_snapshot.sql` adds one service-role-only read snapshot for M-01, its five latest sensor events, and watchdog state.
 
 ## Tables
 
@@ -178,6 +179,18 @@ Run the focused regression from `Backend`:
 
 ```bash
 node --test tests/watchdog-batch.migration.pglite.test.js tests/watchdog.repository.test.js tests/watchdog.service.test.js tests/database.contract.test.js
+```
+
+### Migration 015
+
+Apply migration `015` after migration `014` and before deploying the Phase 4 backend. It adds `get_machine_live_snapshot(machine_code)`, which selects the machine, all configured sensors in deterministic order, each sensor's latest event through an independent lateral lookup, and current watchdog state in one read-only result.
+
+The function is service-role-only, uses a fixed security-definer search path, is safe to reapply, mirrors `schema.sql`, and contains no destructive rollback. Public, anon, and authenticated roles cannot execute it.
+
+Run the focused regression from `Backend`:
+
+```bash
+node --test tests/live-monitoring-snapshot.migration.pglite.test.js tests/database.contract.test.js tests/iot.service.test.js tests/api.test.js
 ```
 
 ## ESP32 Device Keys

@@ -19,6 +19,7 @@ Use this folder for technical project documentation. Use the Obsidian vault for 
 | System architecture | [ARCHITECTURE.md](./ARCHITECTURE.md) |
 | Deployment and auth planning | [DEPLOYMENT_AUTH_PLANNING.md](./DEPLOYMENT_AUTH_PLANNING.md) |
 | Common commands and workflows | [RUNBOOK.md](./RUNBOOK.md) |
+| Phase 4 settings and live monitoring | [ForUrgentFix/Plans/phase 4.md](./ForUrgentFix/Plans/phase%204.md) |
 | Analytics module comprehensive audit | [superpowers/audits/2026-08-16-analytics-module-comprehensive-audit.md](./superpowers/audits/2026-08-16-analytics-module-comprehensive-audit.md) |
 | Phase 30 alert acknowledgement | [phase-30-alert-acknowledgement-realtime-notifications/README.md](./phase-30-alert-acknowledgement-realtime-notifications/README.md) |
 
@@ -33,6 +34,8 @@ The system monitors Spiral Mill 01 using 5 ESP32-backed sensors. The frontend is
 - Machine and sensor management.
 - ESP32 event ingestion and live feed.
 - ESP32 simulator for hardware-free testing.
+- Admin operational settings with version conflict protection.
+- Watchdog-aware Live Feed with bounded non-overlapping polling.
 - Backend-backed dashboard overview, downtime, reports, and audit logs.
 - Persistent alert acknowledgement and realtime dashboard notifications.
 - Backend and frontend automated test baselines.
