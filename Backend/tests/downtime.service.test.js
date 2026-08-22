@@ -188,12 +188,12 @@ test('manual sensor cause and notes are updated through the database RPC', async
 
   const result = await service.updateDowntime({
     downtimeId: 'downtime-1',
-    values: { cause: 'Coil Joint', notes: 'Operator confirmed replacement.' },
+    values: { cause: 'Misalignment', notes: 'Operator confirmed roller tracking issue.' },
     actorUserId: 'user-1',
   })
 
-  assert.equal(result.record.cause, 'Coil Joint')
-  assert.equal(result.record.notes, 'Operator confirmed replacement.')
+  assert.equal(result.record.cause, 'Misalignment')
+  assert.equal(result.record.notes, 'Operator confirmed roller tracking issue.')
   assert.equal(calls.find((call) => call.operation === 'rpc').functionName, 'update_downtime_record')
   assert.equal(auditLogs[0].action, 'DOWNTIME_UPDATED')
 })

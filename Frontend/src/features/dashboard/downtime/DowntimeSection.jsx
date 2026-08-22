@@ -7,9 +7,18 @@ import { getDowntimeStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getDowntimeRecords, subscribeToDowntime, updateDowntimeRecord } from './downtimeService.js'
 
 const statusFilters = ['All', 'Open', 'Resolved']
-const downtimeCauses = [
+const editableDowntimeCauses = [
   'Corrective Maintenance',
   'Manual Cutting',
+  'Misalignment',
+  'Consumable Shortage',
+  'Hydraulic Failure',
+  'Electrical Failure',
+  'Crane Failure',
+  'Other',
+]
+const historicalDowntimeCauses = [
+  ...editableDowntimeCauses,
   'Coil Joint',
   'Weld Wire Refill',
   'Flux Refill',
@@ -246,7 +255,7 @@ export default function DowntimeSection() {
             autoComplete="off"
           >
             <option value="All">All causes</option>
-            {downtimeCauses.map((cause) => (
+            {historicalDowntimeCauses.map((cause) => (
               <option key={cause} value={cause}>{cause}</option>
             ))}
           </select>
@@ -310,21 +319,30 @@ export default function DowntimeSection() {
                       </td>
                       <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{record.sensorLabel || formatSensorName(record.sensor)}</span></td>
                       <td data-label="Cause">
-                        <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
-                        <select
-                          id={`downtime-cause-${record.id}`}
-                          name={`downtimeCause-${record.id}`}
-                          className="inline-select"
-                          value={record.cause}
-                          disabled={!canEditDowntime || !record.isCauseEditable || updatingRecordId === record.id}
-                          onChange={(event) => updateCause(record.id, event.target.value)}
-                          autoComplete="off"
-                          title={record.isCauseEditable ? 'Select downtime cause' : 'Cause is assigned automatically by the sensor'}
-                        >
-                          {downtimeCauses.map((cause) => (
-                            <option key={cause} value={cause}>{cause}</option>
-                          ))}
-                        </select>
+                        {record.isCauseEditable ? (
+                          <>
+                            <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
+                            <select
+                              id={`downtime-cause-${record.id}`}
+                              name={`downtimeCause-${record.id}`}
+                              className="inline-select"
+                              value={record.cause}
+                              disabled={!canEditDowntime || updatingRecordId === record.id}
+                              onChange={(event) => updateCause(record.id, event.target.value)}
+                              autoComplete="off"
+                              title="Select downtime cause"
+                            >
+                              {!editableDowntimeCauses.includes(record.cause) ? (
+                                <option value={record.cause} disabled>{record.cause}</option>
+                              ) : null}
+                              {editableDowntimeCauses.map((cause) => (
+                                <option key={cause} value={cause}>{cause}</option>
+                              ))}
+                            </select>
+                          </>
+                        ) : (
+                          <span className="table-muted">{record.cause}</span>
+                        )}
                       </td>
                       <td data-label="Duration">{record.durationMinutes} min</td>
                       <td data-label="Status"><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>

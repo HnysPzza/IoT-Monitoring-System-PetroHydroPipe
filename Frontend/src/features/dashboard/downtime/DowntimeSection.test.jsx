@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -47,7 +47,7 @@ describe('DowntimeSection', () => {
       displayLabel: 'S-04 09:15 AM',
       sensor: 'S-04',
       sensorLabel: 'S-04 - Outside Filler Wire',
-      cause: 'Flux Refill',
+      cause: 'Consumable Shortage',
       isCauseEditable: false,
       needsCauseReview: false,
     })
@@ -79,6 +79,7 @@ describe('DowntimeSection', () => {
     })
 
     expect(await screen.findByText('S-04 09:15 AM')).toBeInTheDocument()
+    expect(screen.getAllByText('Consumable Shortage').length).toBeGreaterThan(1)
     expect(screen.getByText('1')).toBeInTheDocument()
     expect(getDowntimeRecords).toHaveBeenCalledTimes(2)
   })
@@ -100,6 +101,11 @@ describe('DowntimeSection', () => {
     expect(screen.getByText('Downtime review')).toBeInTheDocument()
     expect(screen.getByText('Estimated loss')).toBeInTheDocument()
     expect(screen.getAllByText('28 pcs').length).toBeGreaterThan(0)
+    const causeSelect = screen.getByLabelText('Cause for S-03 08:42 AM')
+    expect(causeSelect).toHaveValue('Pending Cause Review')
+    expect(within(causeSelect).getByRole('option', { name: 'Misalignment' })).toBeInTheDocument()
+    expect(within(causeSelect).getByRole('option', { name: 'Consumable Shortage' })).toBeInTheDocument()
+    expect(within(causeSelect).queryByRole('option', { name: 'Flux Refill' })).not.toBeInTheDocument()
   })
 
   it('renders downtime records read-only for assistant operation managers', async () => {
@@ -299,7 +305,7 @@ describe('DowntimeSection', () => {
           displayLabel: 'S-04 08:42 AM',
           sensor: 'S-04',
           sensorLabel: 'S-04 - Outside Filler Wire',
-          cause: 'Flux Refill',
+          cause: 'Consumable Shortage',
           isCauseEditable: false,
           needsCauseReview: false,
         }),
@@ -311,6 +317,7 @@ describe('DowntimeSection', () => {
 
     expect(await screen.findByText('S-04 08:42 AM')).toBeInTheDocument()
     expect(screen.queryByText('Needs cause review')).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/cause for s-04/i)).toBeDisabled()
+    expect(screen.getAllByText('Consumable Shortage').length).toBeGreaterThan(1)
+    expect(screen.queryByLabelText(/cause for s-04/i)).not.toBeInTheDocument()
   })
 })
