@@ -30,7 +30,7 @@ const iotIngressRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
-    res.status(429).json(rateLimitResponse('Too many ESP32 event requests from this source. Please try again later.'))
+    res.status(429).json(rateLimitResponse('Too many ESP32 requests from this source. Please try again later.'))
   },
 })
 
@@ -43,7 +43,7 @@ const iotVerifiedDeviceRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.iotDevice.id,
   handler: (req, res) => {
-    res.status(429).json(rateLimitResponse('Too many ESP32 events. Please slow down this device.'))
+    res.status(429).json(rateLimitResponse('Too many ESP32 requests. Please slow down this device.'))
   },
 })
 

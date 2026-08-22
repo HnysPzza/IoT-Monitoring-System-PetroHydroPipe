@@ -8,17 +8,19 @@ const SIGNAL_BY_EVENT_TYPE = {
   recovered: 'active',
 }
 
+const deviceHeadersSchema = z.object({
+  'x-device-id': z.string().trim()
+    .min(3, 'x-device-id must be at least 3 characters.')
+    .max(64, 'x-device-id must be at most 64 characters.')
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/, 'x-device-id contains unsupported characters.'),
+  'x-device-key': z.string()
+    .min(1, 'x-device-key is required.')
+    .max(128, 'x-device-key must be at most 128 characters.'),
+})
+
 const sensorEventSchema = z.object({
-  headers: z.object({
-    'x-device-id': z.string().trim()
-      .min(3, 'x-device-id must be at least 3 characters.')
-      .max(64, 'x-device-id must be at most 64 characters.')
-      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/, 'x-device-id contains unsupported characters.'),
-    'x-device-key': z.string()
-      .min(1, 'x-device-key is required.')
-      .max(128, 'x-device-key must be at most 128 characters.'),
-  }),
-  body: z.object({
+  headers: deviceHeadersSchema,
+  body: z.strictObject({
     eventId: z.string().uuid('eventId must be a UUID.'),
     eventType: z.enum(['pulse', 'idle', 'downtime', 'fault', 'recovered']),
     signal: z.enum(['active', 'idle', 'no_pulse', 'fault']),
@@ -36,5 +38,6 @@ const sensorEventSchema = z.object({
 })
 
 module.exports = {
+  deviceHeadersSchema,
   sensorEventSchema,
 }

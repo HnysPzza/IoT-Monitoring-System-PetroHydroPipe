@@ -12,7 +12,9 @@
     "iot:keys": "node scripts/generate-device-keys.js",
     "iot:simulate:once": "node scripts/simulate-sensor-events.js --once",
     "iot:simulate:verify": "node scripts/simulate-sensor-events.js --verify-sensor=S-04",
-    "iot:simulate": "node scripts/simulate-sensor-events.js"
+    "iot:simulate": "node scripts/simulate-sensor-events.js",
+    "iot:heartbeat:once": "node scripts/simulate-heartbeats.js --once",
+    "iot:heartbeat": "node scripts/simulate-heartbeats.js"
   },
   "keywords": [],
   "author": "",

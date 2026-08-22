@@ -44,6 +44,21 @@ function toEventResponse(eventRecord, sensorRecord, processing = {}) {
   }
 }
 
+function toHeartbeatResponse(processing, sensorRecord) {
+  const machine = getMachineRecord(sensorRecord)
+
+  return {
+    heartbeatId: processing.heartbeat_id,
+    sensorCode: sensorRecord.sensor_code,
+    machineCode: machine?.machine_code || null,
+    receivedAt: processing.received_at,
+    connectivityState: processing.connectivity_state,
+    duplicate: processing.duplicate,
+    stale: processing.stale,
+    stateApplied: processing.state_applied,
+  }
+}
+
 function toLiveSensorResponse(sensorRecord, latestEvent) {
   const signal = latestEvent?.event_value?.signal || null
 
@@ -166,6 +181,51 @@ async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
   return data
 }
 
+function validateHeartbeatResult(data, heartbeatId) {
+  const isTimestamp = typeof data?.received_at === 'string'
+    && !Number.isNaN(new Date(data.received_at).getTime())
+  const isValid = data?.heartbeat_id === heartbeatId
+    && typeof data.duplicate === 'boolean'
+    && typeof data.stale === 'boolean'
+    && typeof data.state_applied === 'boolean'
+    && isTimestamp
+    && ['unknown', 'online', 'offline'].includes(data.connectivity_state)
+    && Number(data.duplicate) + Number(data.stale) + Number(data.state_applied) === 1
+
+  if (!isValid) {
+    throw createIotError(500, 'HEARTBEAT_PROCESSING_FAILED', 'Unable to process device heartbeat.')
+  }
+
+  return data
+}
+
+async function processHeartbeat({ sensor, machine, payload }) {
+  const { data, error } = await getSupabaseClient()
+    .rpc('ingest_iot_heartbeat', {
+      p_heartbeat_id: payload.heartbeatId,
+      p_sensor_id: sensor.id,
+      p_machine_id: machine.id,
+      p_boot_counter: payload.bootCounter,
+      p_boot_id: payload.bootId,
+      p_sequence: payload.sequence,
+      p_recorded_at: payload.recordedAt,
+      p_activity_observed: payload.activityObserved,
+    })
+    .single()
+
+  if (error) {
+    if (error.code === '22023') {
+      throw createIotError(400, 'HEARTBEAT_REJECTED', 'Heartbeat timestamp or fields are invalid.')
+    }
+    if (error.code === '23505') {
+      throw createIotError(409, 'HEARTBEAT_CONFLICT', 'Heartbeat ordering conflicts with device state.')
+    }
+    throw createIotError(500, 'HEARTBEAT_PROCESSING_FAILED', 'Unable to process device heartbeat.')
+  }
+
+  return validateHeartbeatResult(data, payload.heartbeatId)
+}
+
 function publishCommittedTransitions({ sensor, machine, processing }) {
   if (processing.downtime_action) {
     if (!['created', 'resolved'].includes(processing.downtime_action) || !processing.downtime_id) {
@@ -235,6 +295,17 @@ async function createSensorEvent({ sensor, payload }) {
   }
 
   return toEventResponse(eventRecord, sensor, processing)
+}
+
+async function createHeartbeat({ sensor, payload }) {
+  const machine = getMachineRecord(sensor)
+
+  if (!machine) {
+    throw createIotError(500, 'DEVICE_MACHINE_MISSING', 'ESP32 device is not assigned to a machine.')
+  }
+
+  const processing = await processHeartbeat({ sensor, machine, payload })
+  return toHeartbeatResponse(processing, sensor)
 }
 
 async function getLiveFeed() {
@@ -309,6 +380,7 @@ async function getLiveFeed() {
 
 module.exports = {
   authenticateDevice,
+  createHeartbeat,
   createSensorEvent,
   getLiveFeed,
 }
