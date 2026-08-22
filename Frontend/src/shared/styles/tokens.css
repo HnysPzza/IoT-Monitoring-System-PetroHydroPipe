@@ -3407,6 +3407,143 @@ button:disabled {
   gap: 24px;
 }
 
+.settings-layout,
+.settings-form,
+.settings-break-list {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 14px;
+  overflow-x: auto;
+}
+
+.settings-sensor-card {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.settings-sensor-card legend {
+  padding: 0 6px;
+  color: var(--c-text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+}
+
+.settings-sensor-card label,
+.settings-time-grid label,
+.settings-break-row label {
+  display: grid;
+  gap: 7px;
+  color: var(--c-text-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.settings-sensor-card input:not([type='checkbox']),
+.settings-time-grid input,
+.settings-break-row input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  color: var(--c-text);
+  background: var(--c-surface2);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.settings-sensor-card small,
+.settings-mode-note,
+.settings-actions span {
+  color: var(--c-text-2);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.settings-check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.settings-mode-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--c-primary);
+  background: var(--panel-bg);
+}
+
+.settings-mode-note.is-warning {
+  border-left-color: var(--c-danger);
+  color: var(--status-downtime-text);
+}
+
+.settings-time-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.settings-break-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(120px, 0.45fr)) 44px;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.settings-add-break {
+  justify-self: start;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--subtle-border);
+}
+
+.settings-actions span {
+  margin-right: auto;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+@media (max-width: 900px) {
+  .settings-sensor-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .settings-break-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-sensor-grid,
+  .settings-time-grid,
+  .settings-break-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-actions .btn {
+    width: 100%;
+  }
+}
+
 .settings-profile-section {
   display: grid;
   gap: 4px;
