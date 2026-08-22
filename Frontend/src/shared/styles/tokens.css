@@ -2736,8 +2736,37 @@ button:disabled {
   align-content: start;
 }
 
+.live-heading-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.live-detection-state {
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--card-border);
+  color: var(--c-text-2);
+  background: var(--panel-bg);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .live-sensor-meta {
   grid-template-columns: 1fr;
+}
+
+.live-sensor-meta dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-sensor-meta dd.live-offline {
+  color: var(--status-downtime-text);
 }
 
 .live-purpose-row,
