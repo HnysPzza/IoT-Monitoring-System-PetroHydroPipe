@@ -51,6 +51,11 @@ set
   status = excluded.status,
   location = excluded.location;
 
+-- Operational settings are provisioned explicitly per machine.
+insert into machine_operational_settings (machine_id)
+select id from machines where machine_code = 'M-01'
+on conflict (machine_id) do nothing;
+
 -- Five sensors attached to Spiral Mill 01; each maps to one ESP32 device.
 insert into sensors (
   machine_id,
