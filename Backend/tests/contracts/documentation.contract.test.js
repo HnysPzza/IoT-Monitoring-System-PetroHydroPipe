@@ -8,6 +8,10 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
     path.resolve(__dirname, '../../../docs/PRD.md'),
     path.resolve(__dirname, '../../../docs/TDD.md'),
     path.resolve(__dirname, '../../../docs/ARCHITECTURE.md'),
+    path.resolve(__dirname, '../../../docs/README.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentWork/ForUrgentFix.md'),
+    path.resolve(__dirname, '../../../docs/ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md'),
+    path.resolve(__dirname, '../../../docs/superpowers/plans/2026-08-22-phase-1-sensor-label-harmonization.md'),
   ]
 
   const obsoletePatterns = [
