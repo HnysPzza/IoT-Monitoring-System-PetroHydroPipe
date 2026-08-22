@@ -66,3 +66,37 @@ test('fresh schema mirrors migration 010 machine settings storage and RPC', () =
   assert.match(schema, /machine_settings_service_role_select/i)
   assert.match(seed, /insert into machine_operational_settings[\s\S]*machine_code = 'M-01'/i)
 })
+
+test('migration 011 defines effective settings history and bounded heartbeat runtime', () => {
+  const migration = read('database/migrations/011_add_settings_history_and_watchdog_runtime.sql')
+
+  assert.match(migration, /begin;/i)
+  assert.match(migration, /machine_operational_settings_history/i)
+  assert.match(migration, /sensor_watchdog_state/i)
+  assert.match(migration, /sensor_watchdog_transitions/i)
+  assert.match(migration, /idx_machine_settings_history_current/i)
+  assert.match(migration, /Settings audit history is not contiguous/i)
+  assert.match(migration, /function public\.ingest_iot_heartbeat/i)
+  assert.match(migration, /Heartbeat sequence was reused with different content/i)
+  assert.match(migration, /clock_timestamp\(\)/i)
+  assert.match(migration, /revoke all on table public\.sensor_watchdog_state[\s\S]*service_role/i)
+  assert.match(migration, /grant execute on function public\.ingest_iot_heartbeat[\s\S]*to service_role/i)
+  assert.match(migration, /commit;/i)
+})
+
+test('fresh schema and seed mirror migration 011 runtime storage and RPC', () => {
+  const schema = read('database/schema.sql')
+  const seed = read('database/seed.sql')
+
+  for (const table of [
+    'machine_operational_settings_history',
+    'sensor_watchdog_state',
+    'sensor_watchdog_transitions',
+  ]) {
+    assert.match(schema, new RegExp(`create table if not exists ${table}`, 'i'))
+  }
+  assert.match(schema, /function public\.ingest_iot_heartbeat/i)
+  assert.match(schema, /Current settings history is missing/i)
+  assert.match(seed, /insert into machine_operational_settings_history/i)
+  assert.match(seed, /insert into sensor_watchdog_state/i)
+})

@@ -56,6 +56,30 @@ insert into machine_operational_settings (machine_id)
 select id from machines where machine_code = 'M-01'
 on conflict (machine_id) do nothing;
 
+insert into machine_operational_settings_history (
+  machine_id,
+  version,
+  sensor_thresholds,
+  shift_schedule,
+  effective_from,
+  effective_to,
+  changed_by,
+  created_at
+)
+select
+  settings.machine_id,
+  settings.version,
+  settings.sensor_thresholds,
+  settings.shift_schedule,
+  null,
+  null,
+  settings.updated_by,
+  settings.updated_at
+from machine_operational_settings settings
+join machines on machines.id = settings.machine_id
+where machines.machine_code = 'M-01'
+on conflict (machine_id, version) do nothing;
+
 -- Five sensors attached to Spiral Mill 01; each maps to one ESP32 device.
 insert into sensors (
   machine_id,
@@ -86,3 +110,11 @@ set
   esp32_device_id = excluded.esp32_device_id,
   label = excluded.label,
   status = excluded.status;
+
+insert into sensor_watchdog_state (sensor_id, machine_id, settings_version)
+select sensor.id, sensor.machine_id, settings.version
+from sensors sensor
+join machines on machines.id = sensor.machine_id
+left join machine_operational_settings settings on settings.machine_id = sensor.machine_id
+where machines.machine_code = 'M-01'
+on conflict (sensor_id) do nothing;
