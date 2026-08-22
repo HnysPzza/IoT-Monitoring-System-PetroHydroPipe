@@ -156,3 +156,15 @@ test('migration 014 defines one service-role-only batched watchdog cycle', () =>
     assert.match(content, /grant execute[\s\S]*service_role/i)
   }
 })
+
+test('migration 015 defines one service-role-only live monitoring snapshot', () => {
+  const migration = read('database/migrations/015_add_live_monitoring_snapshot.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /function public\.get_machine_live_snapshot/i)
+    assert.match(content, /left join lateral[\s\S]*order by event\.recorded_at desc[\s\S]*limit 1/i)
+    assert.match(content, /revoke execute on function public\.get_machine_live_snapshot\(text\)[\s\S]*authenticated/i)
+    assert.match(content, /grant execute on function public\.get_machine_live_snapshot\(text\)[\s\S]*service_role/i)
+  }
+})
