@@ -27,3 +27,15 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
     }
   }
 })
+
+test('database guide documents migrations 008 and 009', () => {
+  const databaseGuidePath = path.resolve(__dirname, '../../database/README.md')
+  const content = fs.readFileSync(databaseGuidePath, 'utf8')
+
+  assert.match(content, /008_harmonize_plant_sensor_labels\.sql/)
+  assert.match(content, /009_align_sensor_downtime_causes\.sql/)
+  assert.match(content, /S-02 Inside Filler Wire/)
+  assert.match(content, /S-04 Outside Filler Wire/)
+  assert.match(content, /S-02 and S-04 downtime faults to `Consumable Shortage`/)
+  assert.match(content, /S-03 faults remain `Pending Cause Review`/)
+})

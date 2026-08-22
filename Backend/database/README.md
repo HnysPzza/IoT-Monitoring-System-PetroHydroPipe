@@ -14,6 +14,8 @@ This folder contains the Phase 2 Supabase/PostgreSQL database foundation for the
 - `migrations/005_create_alerts.sql` adds persistent alert acknowledgement records for realtime dashboard notifications.
 - `migrations/006_downtime_open_record_unique_index.sql` adds idempotent event IDs, atomic IoT/downtime RPCs, and downtime state constraints.
 - `migrations/007_alert_sync_integrity.sql` makes IoT state, downtime, alert, and transition audits atomic; adds recorded-time ordering, transactional alert revisions, acknowledgement, and one-statement alert snapshots.
+- `migrations/008_harmonize_plant_sensor_labels.sql` applies the canonical plant sensor labels.
+- `migrations/009_align_sensor_downtime_causes.sql` assigns future filler-wire faults to `Consumable Shortage`.
 
 ## Tables
 
@@ -84,6 +86,26 @@ npm test
 PGlite verifies SQL execution, rollback, lifecycle, stale/duplicate handling, revision continuity, and privileges. Its `Promise.all` calls on one in-process database are serialized; they are not proof of real multi-connection PostgreSQL locking or deadlock behavior.
 
 Before deployment, use a disposable real PostgreSQL staging database to run true multi-connection repeated-fault and acknowledgement-versus-recovery races. Verify one unresolved alert, lifecycle correctness, contiguous committed revisions, and no deadlock. This is a mandatory pre-deployment gate. Do not run concurrency attacks against the configured production Supabase project.
+
+### Migrations 008 and 009
+
+Migration `008` uses this sensor map:
+
+- S-01 Raw Material and Coil Joint
+- S-02 Inside Filler Wire
+- S-03 Machine Main Sensor
+- S-04 Outside Filler Wire
+- S-05 Production Output Cutting
+
+Migration `009` maps future S-02 and S-04 downtime faults to `Consumable Shortage`. S-03 faults remain `Pending Cause Review`. Existing historical cause values are preserved for reporting.
+
+Migrations `008` and `009` have no supplied down migrations. Correct future changes with a new forward migration.
+
+Run the focused checks from `Backend`:
+
+```bash
+node --test tests/downtime-cause.migration.pglite.test.js tests/downtime.model.test.js
+```
 
 ## ESP32 Device Keys
 
