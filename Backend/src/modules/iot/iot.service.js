@@ -1,10 +1,8 @@
 const bcrypt = require('bcryptjs')
 const { getSupabaseClient } = require('../../database/client')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
-const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
-const alertsService = require('../alerts/alerts.service')
-const downtimeService = require('../downtime/downtime.service')
+const { publishIngestionTransitions } = require('../operations/transitionPublisher')
 
 function createIotError(status, code, message) {
   const error = new Error(message)
@@ -226,53 +224,6 @@ async function processHeartbeat({ sensor, machine, payload }) {
   return validateHeartbeatResult(data, payload.heartbeatId)
 }
 
-function publishCommittedTransitions({ sensor, machine, processing }) {
-  if (processing.downtime_action) {
-    if (!['created', 'resolved'].includes(processing.downtime_action) || !processing.downtime_id) {
-      logger.error('DOWNTIME_SSE_TRANSITION_INVALID', {
-        downtimeId: processing.downtime_id || null,
-        action: processing.downtime_action,
-      })
-    } else {
-      try {
-        downtimeService.publishDowntimeEvent(
-          processing.downtime_action === 'created' ? 'downtime.created' : 'downtime.resolved',
-          {
-            id: processing.downtime_id,
-            status: processing.downtime_action === 'created' ? 'Open' : 'Resolved',
-            sensorCode: sensor.sensor_code,
-            machineCode: machine.machine_code,
-          },
-        )
-      } catch {
-        logger.error('DOWNTIME_SSE_PUBLISH_FAILED', {
-          downtimeId: processing.downtime_id,
-          action: processing.downtime_action,
-        })
-      }
-    }
-  }
-
-  if (Boolean(processing.alert_action) !== Boolean(processing.alert_record)) {
-    logger.error('ALERT_SSE_TRANSITION_INVALID', {
-      alertId: processing.alert_record?.id || null,
-      action: processing.alert_action || null,
-    })
-    return
-  }
-
-  if (!processing.alert_action) return
-
-  try {
-    alertsService.publishAlertAction(processing.alert_action, processing.alert_record)
-  } catch {
-    logger.error('ALERT_SSE_PUBLISH_FAILED', {
-      alertId: processing.alert_record.id || null,
-      action: processing.alert_action,
-    })
-  }
-}
-
 async function createSensorEvent({ sensor, payload }) {
   const machine = getMachineRecord(sensor)
 
@@ -291,7 +242,7 @@ async function createSensorEvent({ sensor, payload }) {
   }
 
   if (processing.state_applied) {
-    publishCommittedTransitions({ sensor, machine, processing })
+    publishIngestionTransitions({ sensor, machine, processing })
   }
 
   return toEventResponse(eventRecord, sensor, processing)

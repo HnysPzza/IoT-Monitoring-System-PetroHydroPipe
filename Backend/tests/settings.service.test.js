@@ -223,6 +223,34 @@ test('settings update replaces the complete shift section', async () => {
   assert.deepEqual(calls.find((call) => call.type === 'rpc').args.p_shift_schedule, replacement)
 })
 
+test('settings activation rejects thresholds the heartbeat cadence cannot measure', async () => {
+  const cases = [
+    {
+      threshold: { absenceDetectionEnabled: true, triggerSeconds: 5, recoverySeconds: 20 },
+      code: 'WATCHDOG_TRIGGER_UNMEASURABLE',
+    },
+    {
+      threshold: { absenceDetectionEnabled: true, triggerSeconds: 10, recoverySeconds: 10 },
+      code: 'WATCHDOG_RECOVERY_UNMEASURABLE',
+    },
+  ]
+
+  for (const item of cases) {
+    const calls = []
+    const service = loadService({ tableResults: readableTables(), calls })
+    await assert.rejects(
+      () => service.updateMachineSettings({
+        machineId,
+        expectedVersion: '1',
+        sensorThresholds: { 'S-01': item.threshold },
+        actorUserId: actorId,
+      }),
+      { status: 400, code: item.code },
+    )
+    assert.equal(calls.some((call) => call.type === 'rpc'), false)
+  }
+})
+
 test('settings update maps database outcomes without exposing internal messages', async () => {
   const cases = [
     { error: { code: '40001', message: 'Settings version conflict.' }, expected: { status: 409, code: 'SETTINGS_VERSION_CONFLICT' } },

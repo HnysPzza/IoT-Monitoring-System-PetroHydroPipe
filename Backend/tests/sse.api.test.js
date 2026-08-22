@@ -63,7 +63,8 @@ test('alerts and downtime streams close at the signed JWT expiry boundary', asyn
 
   await withTestServer(app, async (baseUrl) => {
     const assertExpires = async (path) => {
-      const response = await streamRequest(baseUrl, path, createToken({ expiresIn: '1s' }))
+      // Parallel migration tests can consume most of a one-second JWT before admission starts.
+      const response = await streamRequest(baseUrl, path, createToken({ expiresIn: '3s' }))
       const body = await response.text()
 
       assert.equal(response.status, 200)

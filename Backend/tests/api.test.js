@@ -107,6 +107,21 @@ test('GET /api/operations/sse exposes aggregate diagnostics only to admins', asy
     assert.equal(typeof allowed.body.sse.counters.connectionLimited, 'number')
     assert.equal(Object.hasOwn(allowed.body.sse, 'users'), false)
     assert.equal(Object.hasOwn(allowed.body.sse, 'ips'), false)
+
+    const watchdogUnauthenticated = await requestJson(baseUrl, '/api/operations/watchdog')
+    assert.equal(watchdogUnauthenticated.response.status, 401)
+    const watchdogForbidden = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: authHeader('Production Supervisor'),
+    })
+    assert.equal(watchdogForbidden.response.status, 403)
+    const watchdogAllowed = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(watchdogAllowed.response.status, 200)
+    assert.equal(watchdogAllowed.body.watchdog.mode, 'disabled')
+    assert.equal(watchdogAllowed.body.watchdog.running, false)
+    assert.equal(typeof watchdogAllowed.body.watchdog.cycles, 'number')
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'sensorIds'), false)
   })
 })
 

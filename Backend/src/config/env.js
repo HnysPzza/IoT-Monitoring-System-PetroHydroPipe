@@ -13,6 +13,11 @@ const envSchema = z.object({
   IOT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   IOT_INGRESS_RATE_LIMIT: z.coerce.number().int().positive().default(300),
   IOT_DEVICE_RATE_LIMIT: z.coerce.number().int().positive().default(120),
+  IOT_HEARTBEAT_EXPECTED_INTERVAL_MS: z.coerce.number().int().min(1000).max(120_000).default(10_000),
+  IOT_HEARTBEAT_STALE_AFTER_MS: z.coerce.number().int().min(2000).max(600_000).default(30_000),
+  WATCHDOG_MODE: z.enum(['disabled', 'observe', 'enforce']).default('disabled'),
+  WATCHDOG_TICK_INTERVAL_MS: z.coerce.number().int().min(1000).max(120_000).default(5_000),
+  WATCHDOG_EVALUATION_TIMEOUT_MS: z.coerce.number().int().min(500).max(120_000).default(4_000),
   SSE_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
   SSE_AUTH_REVALIDATION_INTERVAL_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60_000),
   SSE_AUTH_REVALIDATION_TIMEOUT_MS: z.coerce.number().int().positive().max(2_147_483_647).default(5_000),
@@ -46,6 +51,18 @@ function validateEnv() {
 
   if (env.SSE_BACKPRESSURE_TIMEOUT_MS >= env.SSE_MAX_CONNECTION_LIFETIME_MS) {
     throw new Error('Invalid environment configuration. SSE_BACKPRESSURE_TIMEOUT_MS must be shorter than SSE_MAX_CONNECTION_LIFETIME_MS.')
+  }
+
+  if (env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS >= env.IOT_HEARTBEAT_STALE_AFTER_MS) {
+    throw new Error('Invalid environment configuration. IOT_HEARTBEAT_EXPECTED_INTERVAL_MS must be shorter than IOT_HEARTBEAT_STALE_AFTER_MS.')
+  }
+
+  if (env.WATCHDOG_TICK_INTERVAL_MS >= env.IOT_HEARTBEAT_STALE_AFTER_MS) {
+    throw new Error('Invalid environment configuration. WATCHDOG_TICK_INTERVAL_MS must be shorter than IOT_HEARTBEAT_STALE_AFTER_MS.')
+  }
+
+  if (env.WATCHDOG_EVALUATION_TIMEOUT_MS >= env.WATCHDOG_TICK_INTERVAL_MS) {
+    throw new Error('Invalid environment configuration. WATCHDOG_EVALUATION_TIMEOUT_MS must be shorter than WATCHDOG_TICK_INTERVAL_MS.')
   }
 
   const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)

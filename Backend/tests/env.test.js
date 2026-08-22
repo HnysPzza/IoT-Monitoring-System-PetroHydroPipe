@@ -64,3 +64,24 @@ test('SSE heartbeat interval stays within the client watchdog contract', () => {
     assert.throws(loadEnv, /SSE_HEARTBEAT_INTERVAL_MS/)
   })
 })
+
+test('watchdog timing relationships fail fast at startup', () => {
+  const cases = [
+    [{ IOT_HEARTBEAT_EXPECTED_INTERVAL_MS: '30000', IOT_HEARTBEAT_STALE_AFTER_MS: '30000' }, /EXPECTED_INTERVAL_MS must be shorter/],
+    [{ WATCHDOG_TICK_INTERVAL_MS: '30000', IOT_HEARTBEAT_STALE_AFTER_MS: '30000' }, /WATCHDOG_TICK_INTERVAL_MS must be shorter/],
+    [{ WATCHDOG_EVALUATION_TIMEOUT_MS: '5000', WATCHDOG_TICK_INTERVAL_MS: '5000' }, /WATCHDOG_EVALUATION_TIMEOUT_MS must be shorter/],
+    [{ WATCHDOG_MODE: 'automatic' }, /WATCHDOG_MODE/],
+  ]
+
+  for (const [overrides, pattern] of cases) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      IOT_HEARTBEAT_EXPECTED_INTERVAL_MS: '10000',
+      IOT_HEARTBEAT_STALE_AFTER_MS: '30000',
+      WATCHDOG_TICK_INTERVAL_MS: '5000',
+      WATCHDOG_EVALUATION_TIMEOUT_MS: '4000',
+      WATCHDOG_MODE: 'disabled',
+      ...overrides,
+    }, (loadEnv) => assert.throws(loadEnv, pattern))
+  }
+})

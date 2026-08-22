@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../../database/client')
+const env = require('../../config/env')
 const { completeSettingsSchema, storedSettingsRecordSchema } = require('./settings.model')
 
 function createSettingsError(status, code, message) {
@@ -35,6 +36,28 @@ function parseSettingsDocument(record, errorCode, expectedMachineId) {
     version: normalizeVersion(parsed.data.version, errorCode),
     updatedAt: parsed.data.updated_at,
     updatedBy: parsed.data.updated_by,
+  }
+}
+
+function validateWatchdogCapability(sensorThresholds) {
+  for (const [sensorCode, threshold] of Object.entries(sensorThresholds)) {
+    if (!threshold.absenceDetectionEnabled) continue
+
+    if ((threshold.triggerSeconds * 1000) < env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS) {
+      throw createSettingsError(
+        400,
+        'WATCHDOG_TRIGGER_UNMEASURABLE',
+        `${sensorCode} trigger must be at least one heartbeat interval.`,
+      )
+    }
+
+    if ((threshold.recoverySeconds * 1000) < (env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS * 2)) {
+      throw createSettingsError(
+        400,
+        'WATCHDOG_RECOVERY_UNMEASURABLE',
+        `${sensorCode} recovery must allow at least two heartbeat observations.`,
+      )
+    }
   }
 }
 
@@ -123,6 +146,7 @@ async function updateMachineSettings({
   if (!parsed.success) {
     throw createSettingsError(400, 'VALIDATION_ERROR', 'Machine settings are invalid.')
   }
+  validateWatchdogCapability(parsed.data.sensorThresholds)
 
   const { data, error } = await supabase
     .rpc('update_machine_operational_settings', {
