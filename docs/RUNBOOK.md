@@ -73,7 +73,7 @@ The selected issue sensor should appear in the dashboard notification bell. The 
 
 ## Phase 3 Heartbeat and Watchdog Checks
 
-Apply database migrations `011` and `012` in numeric order before running the Phase 3 backend. Take a backup and use a disposable staging copy first. Do not apply destructive rollback SQL; disable the feature and repair forward.
+Apply database migrations `011`, `012`, and `013` in numeric order before running the Phase 3 backend. Migration `013` repairs Supabase heartbeat hashing and is required even when `011` and `012` previously succeeded. Take a backup and use a disposable staging copy first. Do not apply destructive rollback SQL; disable the feature and repair forward.
 
 Keep the first deployment disabled:
 

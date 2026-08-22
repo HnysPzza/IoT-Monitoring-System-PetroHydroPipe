@@ -19,6 +19,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/010_create_machine_operational_settings.sql` adds versioned per-machine thresholds and shift schedules plus an atomic settings/audit RPC.
 - `migrations/011_add_settings_history_and_watchdog_runtime.sql` adds effective-dated settings history, bounded heartbeat/watchdog state, transition evidence, and atomic heartbeat ingestion.
 - `migrations/012_add_atomic_watchdog_transitions.sql` adds downtime ownership and atomic disabled/observe/enforce watchdog evaluation.
+- `migrations/013_fix_heartbeat_digest_schema.sql` repairs heartbeat hashing for Supabase's `extensions.pgcrypto` layout.
 
 ## Tables
 
@@ -150,6 +151,18 @@ Focused automated checks:
 node --test tests/watchdog-runtime.migration.pglite.test.js tests/watchdog-transition.migration.pglite.test.js
 node --test tests/heartbeat.api.test.js tests/heartbeat.service.test.js tests/watchdog.service.test.js
 node --test tests/operationalTime.test.js tests/operationalMetrics.test.js tests/operationalRepositories.test.js
+```
+
+### Migration 013
+
+Apply migration `013` after migrations `011` and `012`. Migration `011` originally referenced `digest` without its Supabase `extensions` schema, causing heartbeat ingestion to return PostgreSQL error `42883`. Migration `013` replaces only the heartbeat RPC with `extensions.digest(...)`, keeps its restricted security-definer search path, and reapplies service-role-only execution privileges.
+
+Migration `013` is safe to reapply and does not delete or rewrite heartbeat runtime data. Do not rerun or edit an already-applied migration `011`.
+
+Run the focused regression from `Backend`:
+
+```bash
+node --test tests/watchdog-runtime.migration.pglite.test.js tests/database.contract.test.js tests/heartbeat-simulator.test.js
 ```
 
 ## ESP32 Device Keys

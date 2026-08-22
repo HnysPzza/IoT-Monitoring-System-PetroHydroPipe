@@ -1,7 +1,8 @@
 -- PetroHydroPipe IoT Monitoring System
 -- Phase 2 simple Supabase/PostgreSQL database foundation.
 
-create extension if not exists "pgcrypto";
+create schema if not exists extensions;
+create extension if not exists "pgcrypto" with schema extensions;
 
 -- Access roles used by backend authorization and frontend navigation.
 create table if not exists roles (
@@ -1179,7 +1180,7 @@ begin
     raise exception using errcode = '55000', message = 'Heartbeat runtime state is not configured.';
   end if;
 
-  v_payload_hash := encode(digest(convert_to(jsonb_build_object(
+  v_payload_hash := encode(extensions.digest(convert_to(jsonb_build_object(
     'heartbeatId', p_heartbeat_id::text,
     'bootCounter', p_boot_counter::text,
     'bootId', p_boot_id::text,

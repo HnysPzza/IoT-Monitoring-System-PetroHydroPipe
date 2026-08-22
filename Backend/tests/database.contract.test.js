@@ -96,9 +96,23 @@ test('fresh schema and seed mirror migration 011 runtime storage and RPC', () =>
     assert.match(schema, new RegExp(`create table if not exists ${table}`, 'i'))
   }
   assert.match(schema, /function public\.ingest_iot_heartbeat/i)
+  assert.match(schema, /extensions\.digest\(convert_to/i)
   assert.match(schema, /Current settings history is missing/i)
   assert.match(seed, /insert into machine_operational_settings_history/i)
   assert.match(seed, /insert into sensor_watchdog_state/i)
+})
+
+test('migration 013 repairs Supabase heartbeat hashing without broadening the search path', () => {
+  const migration = read('database/migrations/013_fix_heartbeat_digest_schema.sql')
+
+  assert.match(migration, /begin;/i)
+  assert.match(migration, /requires migration 011/i)
+  assert.match(migration, /extensions\.digest\(bytea,text\)/i)
+  assert.match(migration, /extensions\.digest\(convert_to/i)
+  assert.match(migration, /set search_path = pg_catalog, public/i)
+  assert.match(migration, /revoke execute[\s\S]*anon, authenticated/i)
+  assert.match(migration, /grant execute[\s\S]*service_role/i)
+  assert.match(migration, /commit;/i)
 })
 
 test('migration 012 defines guarded event ownership and atomic watchdog evaluation', () => {

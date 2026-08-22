@@ -12,6 +12,10 @@ const migration011 = fs.readFileSync(
   path.join(backendRoot, 'database', 'migrations', '011_add_settings_history_and_watchdog_runtime.sql'),
   'utf8',
 )
+const migration013 = fs.readFileSync(
+  path.join(backendRoot, 'database', 'migrations', '013_fix_heartbeat_digest_schema.sql'),
+  'utf8',
+)
 
 const machineId = '10000000-0000-4000-8000-000000000001'
 const actorId = '20000000-0000-4000-8000-000000000001'
@@ -33,7 +37,8 @@ async function createDatabase() {
 
 async function createLegacyDatabase(db) {
   await db.exec(`
-    create extension if not exists "pgcrypto";
+    create schema if not exists extensions;
+    create extension if not exists "pgcrypto" with schema extensions;
     create table public.users (id uuid primary key);
     create table public.machines (
       id uuid primary key,
@@ -115,12 +120,14 @@ async function ingestHeartbeat(db, overrides = {}) {
   )
 }
 
-test('migration 011 creates baseline history and runtime rows and is safe to reapply', async (t) => {
+test('migrations 011 and 013 create runtime storage and are safe to reapply', async (t) => {
   const db = await createDatabase()
   t.after(() => db.close())
   await createLegacyDatabase(db)
   await db.exec(migration011)
   await db.exec(migration011)
+  await db.exec(migration013)
+  await db.exec(migration013)
 
   const { rows: history } = await db.query(`
     select version, effective_from, effective_to
@@ -222,6 +229,12 @@ test('heartbeat RPC applies ordered packets and treats exact retry and older pac
   await createLegacyDatabase(db)
   await db.exec(migration011)
 
+  await assert.rejects(
+    ingestHeartbeat(db),
+    /function digest\(bytea, unknown\) does not exist/,
+  )
+  await db.exec(migration013)
+
   const recordedAt = new Date().toISOString()
   const first = await ingestHeartbeat(db, { recordedAt })
   assert.equal(first.rows[0].state_applied, true)
@@ -259,6 +272,7 @@ test('heartbeat RPC rejects conflicting sequence and boot identity but accepts a
   t.after(() => db.close())
   await createLegacyDatabase(db)
   await db.exec(migration011)
+  await db.exec(migration013)
   await ingestHeartbeat(db)
 
   await assert.rejects(
@@ -291,6 +305,7 @@ test('heartbeat connectivity recovery needs two ordered packets and never enable
   t.after(() => db.close())
   await createLegacyDatabase(db)
   await db.exec(migration011)
+  await db.exec(migration013)
   await db.exec(`
     update public.sensor_watchdog_state
     set connectivity_state = 'offline', boot_counter = 1,
@@ -326,6 +341,7 @@ test('runtime tables deny direct client access and service-role mutation while R
   t.after(() => db.close())
   await createLegacyDatabase(db)
   await db.exec(migration011)
+  await db.exec(migration013)
 
   await db.exec('set role authenticated;')
   await assert.rejects(db.query('select * from public.sensor_watchdog_state'), /permission denied/)
