@@ -4,6 +4,12 @@ const registry = require('../../shared/sensor-registry.json')
 const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const SENSOR_CODES = Object.freeze(registry.sensors.map((sensor) => sensor.code))
+const SETTINGS_LIMITS = Object.freeze({
+  triggerSeconds: Object.freeze({ minimum: 1, maximum: 3600 }),
+  recoverySeconds: Object.freeze({ minimum: 1, maximum: 300 }),
+  breaks: Object.freeze({ maximum: 10 }),
+  rampUpGraceMinutes: Object.freeze({ minimum: 0, maximum: 30 }),
+})
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Time must use 24-hour HH:MM format.')
 const positiveVersionSchema = z.string().regex(/^[1-9]\d*$/, 'Version must be a positive decimal string.')
 
@@ -14,8 +20,8 @@ function toMinutes(time) {
 
 const sensorThresholdSchema = z.strictObject({
   absenceDetectionEnabled: z.boolean(),
-  triggerSeconds: z.number().int().min(1).max(3600).nullable(),
-  recoverySeconds: z.number().int().min(1).max(300).nullable(),
+  triggerSeconds: z.number().int().min(SETTINGS_LIMITS.triggerSeconds.minimum).max(SETTINGS_LIMITS.triggerSeconds.maximum).nullable(),
+  recoverySeconds: z.number().int().min(SETTINGS_LIMITS.recoverySeconds.minimum).max(SETTINGS_LIMITS.recoverySeconds.maximum).nullable(),
 }).superRefine((threshold, context) => {
   if (threshold.absenceDetectionEnabled
     && (threshold.triggerSeconds === null || threshold.recoverySeconds === null)) {
@@ -59,8 +65,8 @@ const breakSchema = z.strictObject({
 const shiftScheduleSchema = z.strictObject({
   workStart: timeSchema,
   workEnd: timeSchema,
-  breaks: z.array(breakSchema).max(10, 'At most 10 breaks are allowed.'),
-  rampUpGraceMinutes: z.number().int().min(0).max(30),
+  breaks: z.array(breakSchema).max(SETTINGS_LIMITS.breaks.maximum, 'At most 10 breaks are allowed.'),
+  rampUpGraceMinutes: z.number().int().min(SETTINGS_LIMITS.rampUpGraceMinutes.minimum).max(SETTINGS_LIMITS.rampUpGraceMinutes.maximum),
 }).superRefine((schedule, context) => {
   const workStart = toMinutes(schedule.workStart)
   const workEnd = toMinutes(schedule.workEnd)
@@ -139,12 +145,14 @@ const settingsParamsSchema = z.object({
   params: z.strictObject({
     machineId: z.string().uuid('Invalid machine id.'),
   }),
+  query: z.strictObject({}).optional().default({}),
 })
 
 const patchSettingsSchema = z.object({
   params: z.strictObject({
     machineId: z.string().uuid('Invalid machine id.'),
   }),
+  query: z.strictObject({}).optional().default({}),
   body: z.strictObject({
     expectedVersion: positiveVersionSchema,
     sensorThresholds: patchSensorThresholdsSchema.optional(),
@@ -174,6 +182,7 @@ const storedSettingsRecordSchema = z.strictObject({
 
 module.exports = {
   SENSOR_CODES,
+  SETTINGS_LIMITS,
   completeSensorThresholdsSchema,
   completeSettingsSchema,
   patchSettingsSchema,

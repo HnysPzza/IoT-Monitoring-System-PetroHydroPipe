@@ -10,7 +10,7 @@ const validateRequest = require('../../middleware/validateRequest')
 const iotController = require('./iot.controller')
 const heartbeatController = require('./heartbeat.controller')
 const authenticateIotDevice = require('./iotDevice.middleware')
-const { sensorEventSchema } = require('./iot.model')
+const { liveFeedRequestSchema, sensorEventSchema } = require('./iot.model')
 const { heartbeatSchema } = require('./heartbeat.model')
 
 const router = express.Router()
@@ -35,6 +35,7 @@ router.get(
   '/live',
   authenticate,
   authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']),
+  validateRequest(liveFeedRequestSchema),
   asyncHandler(iotController.getLiveFeed),
 )
 

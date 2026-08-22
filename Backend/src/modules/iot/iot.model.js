@@ -37,7 +37,12 @@ const sensorEventSchema = z.object({
   }),
 })
 
+const liveFeedRequestSchema = z.object({
+  query: z.strictObject({}).optional().default({}),
+})
+
 module.exports = {
   deviceHeadersSchema,
+  liveFeedRequestSchema,
   sensorEventSchema,
 }

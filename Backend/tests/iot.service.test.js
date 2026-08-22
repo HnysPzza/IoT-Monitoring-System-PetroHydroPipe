@@ -361,54 +361,107 @@ test('post-commit downtime and alert publication failures are isolated in both d
   assert.equal(alertFailure.logs[0].code, 'ALERT_SSE_PUBLISH_FAILED')
 })
 
-test('live feed returns machine state and the latest event for each sensor', async () => {
-  clearSourceCache()
-  const machine = {
-    id: 'machine-1',
-    machine_code: 'M-01',
-    name: 'Spiral Mill 01',
-    status: 'Running',
-    location: 'Production Floor',
-    updated_at: '2026-06-11T00:00:00.000Z',
+function liveSnapshot(overrides = {}) {
+  const snapshotAt = '2026-08-22T00:02:10.000Z'
+  const sensors = ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'].map((sensorCode, index) => ({
+    id: `10000000-0000-4000-8000-00000000000${index + 2}`,
+    sensor_code: sensorCode,
+    esp32_device_id: `device-${index + 1}`,
+    label: `Sensor ${index + 1}`,
+    status: index === 0 ? 'Active' : 'Inactive',
+    updated_at: '2026-08-22T00:02:00.000Z',
+    latest_event: index === 0 ? {
+      id: '20000000-0000-4000-8000-000000000001',
+      event_type: 'pulse',
+      signal: 'active',
+      recorded_at: '2026-08-22T00:02:00.000Z',
+    } : null,
+    watchdog: {
+      connectivity_state: 'online',
+      detection_state: index === 0 ? 'healthy' : 'disabled',
+      last_heartbeat_received_at: '2026-08-22T00:02:05.000Z',
+      last_activity_received_at: index === 0 ? '2026-08-22T00:02:00.000Z' : null,
+      last_evaluated_at: '2026-08-22T00:02:05.000Z',
+    },
+  }))
+
+  return {
+    snapshot_at: snapshotAt,
+    machine: {
+      id: '10000000-0000-4000-8000-000000000001',
+      machine_code: 'M-01',
+      name: 'Spiral Mill 01',
+      status: 'Running',
+      location: 'Production Floor',
+      updated_at: '2026-08-22T00:00:00.000Z',
+    },
+    sensors,
+    ...overrides,
   }
-  const sensors = [
-    { id: 'sensor-1', sensor_code: 'S-01', esp32_device_id: 'device-1', label: 'Raw Material Detection', status: 'Active' },
-    { id: 'sensor-2', sensor_code: 'S-02', esp32_device_id: 'device-2', label: 'Outside Filler', status: 'Inactive' },
-  ]
-  const events = [
-    { id: 'event-2', sensor_id: 'sensor-1', event_type: 'pulse', event_value: { signal: 'active' }, recorded_at: '2026-06-11T00:02:00.000Z' },
-    { id: 'event-1', sensor_id: 'sensor-1', event_type: 'idle', event_value: { signal: 'idle' }, recorded_at: '2026-06-11T00:01:00.000Z' },
-  ]
+}
+
+function loadLiveFeedService({ data = liveSnapshot(), error = null, mode = 'observe', calls = [] } = {}) {
+  clearSourceCache()
   const fakeSupabase = {
-    from(tableName) {
+    rpc(functionName, args) {
+      calls.push({ functionName, args })
       return {
-        select() { return this },
-        eq() { return this },
-        in() { return this },
-        order() { return this },
-        limit() { return this },
-        async maybeSingle() {
-          return { data: tableName === 'machines' ? machine : null, error: null }
-        },
-        then(resolve, reject) {
-          const data = tableName === 'sensors' ? sensors : tableName === 'sensor_events' ? events : []
-          return Promise.resolve({ data, error: null }).then(resolve, reject)
+        async single() {
+          return { data, error }
         },
       }
     },
   }
 
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
-  mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
-  mockModule('src/modules/alerts/alerts.service.js', {
-    publishAlertAction: () => true,
+  mockModule('src/config/env.js', {
+    WATCHDOG_MODE: mode,
+    WATCHDOG_TICK_INTERVAL_MS: 15000,
+    WATCHDOG_EVALUATION_TIMEOUT_MS: 10000,
   })
-  const service = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
+  mockModule('src/modules/operations/transitionPublisher.js', { publishIngestionTransitions: () => null })
+  return require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+}
 
+test('live feed uses one snapshot RPC and returns fresh monitoring state', async () => {
+  const calls = []
+  const service = loadLiveFeedService({ calls })
   const feed = await service.getLiveFeed()
 
+  assert.deepEqual(calls, [{
+    functionName: 'get_machine_live_snapshot',
+    args: { p_machine_code: 'M-01' },
+  }])
+  assert.equal(feed.monitoring.mode, 'observe')
   assert.equal(feed.machine.activeSensors, 1)
-  assert.equal(feed.machine.lastUpdated, '2026-06-11T00:02:00.000Z')
+  assert.equal(feed.machine.lastUpdated, '2026-08-22T00:02:00.000Z')
   assert.equal(feed.sensors[0].signal, 'active')
+  assert.equal(feed.sensors[0].monitoring.stateFresh, true)
+  assert.equal(feed.sensors[0].monitoring.detectionState, 'healthy')
   assert.equal(feed.sensors[1].status, 'Idle')
+})
+
+test('live feed masks watchdog states when monitoring is disabled or stale', async () => {
+  const disabled = await loadLiveFeedService({ mode: 'disabled' }).getLiveFeed()
+  assert.equal(disabled.sensors[0].monitoring.stateFresh, false)
+  assert.equal(disabled.sensors[0].monitoring.connectivityState, null)
+  assert.equal(disabled.sensors[0].monitoring.detectionState, null)
+
+  const snapshot = liveSnapshot()
+  snapshot.sensors[0].watchdog.last_evaluated_at = '2026-08-22T00:00:00.000Z'
+  const stale = await loadLiveFeedService({ data: snapshot }).getLiveFeed()
+  assert.equal(stale.sensors[0].monitoring.stateFresh, false)
+  assert.equal(stale.sensors[0].monitoring.detectionState, null)
+})
+
+test('live feed fails closed on database and malformed snapshot results', async () => {
+  await assert.rejects(
+    () => loadLiveFeedService({ error: { code: 'XX000', message: 'private database detail' } }).getLiveFeed(),
+    { status: 500, code: 'LIVE_SNAPSHOT_QUERY_FAILED' },
+  )
+  await assert.rejects(
+    () => loadLiveFeedService({ data: { private: 'invalid' } }).getLiveFeed(),
+    { status: 500, code: 'LIVE_SNAPSHOT_INVALID' },
+  )
 })

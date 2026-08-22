@@ -57,7 +57,7 @@ function settingsRow(overrides = {}) {
   }
 }
 
-function loadService({ tableResults = {}, rpcResult, calls = [] }) {
+function loadService({ tableResults = {}, rpcResult, calls = [], envOverrides = {} }) {
   clearSourceCache()
   const client = {
     from(table) {
@@ -87,6 +87,11 @@ function loadService({ tableResults = {}, rpcResult, calls = [] }) {
     },
   }
   mockModule('src/database/client.js', { getSupabaseClient: () => client })
+  mockModule('src/config/env.js', {
+    WATCHDOG_MODE: 'disabled',
+    IOT_HEARTBEAT_EXPECTED_INTERVAL_MS: 10000,
+    ...envOverrides,
+  })
   return require(path.join(backendRoot, 'src', 'modules', 'settings', 'settings.service.js'))
 }
 
@@ -110,6 +115,43 @@ test('settings read validates stored data and returns the public contract', asyn
     updatedAt: '2026-08-22T00:00:00.000Z',
     updatedBy: null,
   })
+})
+
+test('settings constraints expose backend limits and heartbeat-derived minimums', () => {
+  const service = loadService({
+    envOverrides: { IOT_HEARTBEAT_EXPECTED_INTERVAL_MS: 12500 },
+  })
+
+  assert.deepEqual(service.getSettingsConstraints(), {
+    sensorCodes: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'],
+    outputSensorCode: 'S-05',
+    triggerSeconds: { minimum: 1, maximum: 3600, minimumWhenEnabled: 13 },
+    recoverySeconds: { minimum: 1, maximum: 300, minimumWhenEnabled: 25 },
+    breaks: { maximum: 10 },
+    rampUpGraceMinutes: { minimum: 0, maximum: 30 },
+    sameDayShiftOnly: true,
+    timeZone: 'Asia/Manila',
+  })
+})
+
+test('settings update is blocked while watchdog enforcement is active', async () => {
+  const calls = []
+  const service = loadService({
+    calls,
+    tableResults: readableTables(),
+    envOverrides: { WATCHDOG_MODE: 'enforce' },
+  })
+
+  await assert.rejects(
+    () => service.updateMachineSettings({
+      machineId,
+      expectedVersion: '1',
+      sensorThresholds: { 'S-01': validThresholds()['S-01'] },
+      actorUserId: actorId,
+    }),
+    { status: 409, code: 'SETTINGS_ENFORCEMENT_ACTIVE' },
+  )
+  assert.equal(calls.length, 0)
 })
 
 test('settings read distinguishes missing machine, missing settings, and query failures', async () => {

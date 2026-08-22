@@ -1,6 +1,12 @@
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
-const { completeSettingsSchema, storedSettingsRecordSchema } = require('./settings.model')
+const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
+const {
+  SENSOR_CODES,
+  SETTINGS_LIMITS,
+  completeSettingsSchema,
+  storedSettingsRecordSchema,
+} = require('./settings.model')
 
 function createSettingsError(status, code, message) {
   const error = new Error(message)
@@ -58,6 +64,31 @@ function validateWatchdogCapability(sensorThresholds) {
         `${sensorCode} recovery must allow at least two heartbeat observations.`,
       )
     }
+  }
+}
+
+function getSettingsConstraints() {
+  return {
+    sensorCodes: SENSOR_CODES,
+    outputSensorCode: OUTPUT_SENSOR_CODE,
+    triggerSeconds: {
+      ...SETTINGS_LIMITS.triggerSeconds,
+      minimumWhenEnabled: Math.max(
+        SETTINGS_LIMITS.triggerSeconds.minimum,
+        Math.ceil(env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS / 1000),
+      ),
+    },
+    recoverySeconds: {
+      ...SETTINGS_LIMITS.recoverySeconds,
+      minimumWhenEnabled: Math.max(
+        SETTINGS_LIMITS.recoverySeconds.minimum,
+        Math.ceil((env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS * 2) / 1000),
+      ),
+    },
+    breaks: SETTINGS_LIMITS.breaks,
+    rampUpGraceMinutes: SETTINGS_LIMITS.rampUpGraceMinutes,
+    sameDayShiftOnly: true,
+    timeZone: 'Asia/Manila',
   }
 }
 
@@ -133,6 +164,14 @@ async function updateMachineSettings({
   shiftSchedule,
   actorUserId,
 }) {
+  if (env.WATCHDOG_MODE === 'enforce') {
+    throw createSettingsError(
+      409,
+      'SETTINGS_ENFORCEMENT_ACTIVE',
+      'Disable enforcement before changing operational settings.',
+    )
+  }
+
   const supabase = getSupabaseClient()
   const current = await getMachineSettings(machineId, supabase)
   const candidate = {
@@ -170,6 +209,7 @@ async function updateMachineSettings({
 }
 
 module.exports = {
+  getSettingsConstraints,
   getMachineSettings,
   updateMachineSettings,
 }

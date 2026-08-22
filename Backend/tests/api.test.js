@@ -13,6 +13,16 @@ const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const userId = '11111111-1111-4111-8111-111111111111'
 const machineId = '22222222-2222-4222-8222-222222222222'
 const sensorId = '33333333-3333-4333-8333-333333333333'
+const settingsConstraints = {
+  sensorCodes: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'],
+  outputSensorCode: 'S-05',
+  triggerSeconds: { minimum: 1, maximum: 3600, minimumWhenEnabled: 10 },
+  recoverySeconds: { minimum: 1, maximum: 300, minimumWhenEnabled: 20 },
+  breaks: { maximum: 10 },
+  rampUpGraceMinutes: { minimum: 0, maximum: 30 },
+  sameDayShiftOnly: true,
+  timeZone: 'Asia/Manila',
+}
 
 function createToken(role = 'Admin') {
   return jwt.sign(
@@ -484,6 +494,7 @@ test('machine settings GET supports all dashboard roles and validates machine id
   }
   const app = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
       getMachineSettings: async (targetMachineId) => {
         assert.equal(targetMachineId, machineId)
         return settings
@@ -506,7 +517,8 @@ test('machine settings GET supports all dashboard roles and validates machine id
         headers: authHeader(role),
       })
       assert.equal(result.response.status, 200, role)
-      assert.deepEqual(result.body, { settings })
+      assert.deepEqual(result.body, { settings, constraints: settingsConstraints })
+      assert.equal(result.response.headers.get('cache-control'), 'no-store')
     }
 
     const unauthenticated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`)
@@ -518,6 +530,12 @@ test('machine settings GET supports all dashboard roles and validates machine id
     })
     assert.equal(invalid.response.status, 400)
     assertError(invalid.body, 'VALIDATION_ERROR')
+
+    const unexpectedQuery = await requestJson(baseUrl, `/api/machines/${machineId}/settings?mode=enforce`, {
+      headers: authHeader(),
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
   })
 })
 
@@ -534,6 +552,7 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
   }
   const app = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
       getMachineSettings: async () => settings,
       updateMachineSettings: async (values) => {
         calls.push(values)
@@ -563,6 +582,7 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
     })
     assert.equal(updated.response.status, 200)
     assert.deepEqual(updated.body, { settings })
+    assert.equal(updated.response.headers.get('cache-control'), 'no-store')
     assert.deepEqual(calls, [{
       machineId,
       expectedVersion: '1',
@@ -579,6 +599,15 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
     assert.equal(invalid.response.status, 400)
     assertError(invalid.body, 'VALIDATION_ERROR')
     assert.equal(calls.length, 1)
+
+    const unexpectedQuery = await requestJson(baseUrl, `/api/machines/${machineId}/settings?force=true`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+    assert.equal(calls.length, 1)
   })
 })
 
@@ -586,6 +615,7 @@ test('machine settings API preserves conflicts and masks internal failures', asy
   const conflict = createHttpError(409, 'SETTINGS_VERSION_CONFLICT', 'Machine settings were updated by another request.')
   const conflictApp = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
       getMachineSettings: async () => ({}),
       updateMachineSettings: async () => { throw conflict },
     },
@@ -614,6 +644,7 @@ test('machine settings API preserves conflicts and masks internal failures', asy
   const failure = createHttpError(500, 'SETTINGS_QUERY_FAILED', 'private database failure')
   const failureApp = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
       getMachineSettings: async () => { throw failure },
       updateMachineSettings: async () => ({}),
     },
@@ -625,6 +656,79 @@ test('machine settings API preserves conflicts and masks internal failures', asy
     })
     assert.equal(result.response.status, 500)
     assertError(result.body, 'SETTINGS_QUERY_FAILED')
+    assert.equal(result.body.error.message, 'Unexpected server error.')
+    assert.doesNotMatch(JSON.stringify(result.body), /private database failure/)
+  })
+})
+
+test('live monitoring API is role-protected, non-cacheable, and rejects route tampering', async () => {
+  const liveFeed = {
+    monitoring: { mode: 'observe', capturedAt: '2026-08-22T00:02:10.000Z' },
+    machine: { id: machineId, machineCode: 'M-01', status: 'Running' },
+    sensors: [],
+  }
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => null,
+      createHeartbeat: async () => ({}),
+      createSensorEvent: async () => ({}),
+      getLiveFeed: async () => liveFeed,
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    for (const role of [
+      'Admin',
+      'Operation Manager',
+      'Asst. Operation Manager',
+      'Engineering Supervisor',
+      'Production Supervisor',
+    ]) {
+      const result = await requestJson(baseUrl, '/api/iot/live', { headers: authHeader(role) })
+      assert.equal(result.response.status, 200, role)
+      assert.deepEqual(result.body, liveFeed)
+      assert.equal(result.response.headers.get('cache-control'), 'no-store')
+    }
+
+    const unauthenticated = await requestJson(baseUrl, '/api/iot/live')
+    assert.equal(unauthenticated.response.status, 401)
+    assertError(unauthenticated.body, 'UNAUTHENTICATED')
+
+    const unexpectedQuery = await requestJson(baseUrl, '/api/iot/live?machine=M-02', {
+      headers: authHeader(),
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+
+    const wrongMethod = await requestJson(baseUrl, '/api/iot/live', {
+      method: 'POST',
+      headers: authHeader(),
+      body: {},
+    })
+    assert.equal(wrongMethod.response.status, 404)
+
+    const suffixTampering = await requestJson(baseUrl, '/api/iot/live/export', {
+      headers: authHeader(),
+    })
+    assert.equal(suffixTampering.response.status, 404)
+  })
+})
+
+test('live monitoring API masks private snapshot failures', async () => {
+  const failure = createHttpError(500, 'LIVE_SNAPSHOT_QUERY_FAILED', 'private database failure')
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => null,
+      createHeartbeat: async () => ({}),
+      createSensorEvent: async () => ({}),
+      getLiveFeed: async () => { throw failure },
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/iot/live', { headers: authHeader() })
+    assert.equal(result.response.status, 500)
+    assertError(result.body, 'LIVE_SNAPSHOT_QUERY_FAILED')
     assert.equal(result.body.error.message, 'Unexpected server error.')
     assert.doesNotMatch(JSON.stringify(result.body), /private database failure/)
   })
