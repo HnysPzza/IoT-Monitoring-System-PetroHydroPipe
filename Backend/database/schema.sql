@@ -498,8 +498,8 @@ begin
         p_recorded_at,
         case v_sensor.sensor_code
           when 'S-01' then 'Corrective Maintenance'
-          when 'S-02' then 'Weld Wire Refill'
-          when 'S-04' then 'Flux Refill'
+          when 'S-02' then 'Consumable Shortage'
+          when 'S-04' then 'Consumable Shortage'
           when 'S-05' then 'Manual Cutting'
           else 'Pending Cause Review'
         end,
