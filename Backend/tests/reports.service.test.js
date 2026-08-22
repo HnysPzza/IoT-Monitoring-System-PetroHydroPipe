@@ -3,6 +3,19 @@ const path = require('node:path')
 const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
+const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const DEFAULT_HISTORY = [{
+  machine_id: MACHINE_ID,
+  version: '1',
+  shift_schedule: {
+    workStart: '08:00',
+    workEnd: '17:00',
+    breaks: [],
+    rampUpGraceMinutes: 0,
+  },
+  effective_from: null,
+  effective_to: null,
+}]
 
 function clearSourceCache() {
   Object.keys(require.cache).forEach((cacheKey) => {
@@ -34,13 +47,15 @@ function applyFilters(rows, filters) {
 function createFakeSupabase({
   productionCounts = [],
   sensorEvents = [],
-  outputSensor = { id: 'sensor-5', machine_id: 'machine-1', sensor_code: 'S-05' },
+  outputSensor = { id: 'sensor-5', machine_id: MACHINE_ID, sensor_code: 'S-05' },
   outputSensorError = null,
+  downtimeEvents = [],
+  settingsHistory = DEFAULT_HISTORY,
 } = {}) {
   const queries = []
 
   function createQuery(tableName) {
-    const queryRecord = { tableName, filters: [], select: null }
+    const queryRecord = { tableName, filters: [], select: null, from: 0, to: Number.POSITIVE_INFINITY }
     queries.push(queryRecord)
 
     const query = {
@@ -60,9 +75,19 @@ function createFakeSupabase({
         queryRecord.filters.push({ operator: 'lt', column, value })
         return this
       },
+      or(expression) {
+        queryRecord.filters.push({ operator: 'or', expression })
+        return this
+      },
+      order() { return this },
+      range(from, to) {
+        queryRecord.from = from
+        queryRecord.to = to
+        return this
+      },
       async maybeSingle() {
         if (tableName === 'machines') {
-          return { data: { id: 'machine-1', name: 'Spiral Mill 01' }, error: null }
+          return { data: { id: MACHINE_ID, name: 'Spiral Mill 01' }, error: null }
         }
 
         if (tableName === 'sensors') {
@@ -79,7 +104,9 @@ function createFakeSupabase({
         } else if (tableName === 'sensor_events') {
           result = { count: applyFilters(sensorEvents, queryRecord.filters).length, error: null }
         } else if (tableName === 'downtime_events') {
-          result = { data: [], error: null }
+          result = { data: downtimeEvents.slice(queryRecord.from, queryRecord.to + 1), error: null }
+        } else if (tableName === 'machine_operational_settings_history') {
+          result = { data: settingsHistory.slice(queryRecord.from, queryRecord.to + 1), error: null }
         } else {
           result = { data: [], error: null }
         }
@@ -112,7 +139,7 @@ function getProductionSummary(report) {
 test('report preserves non-zero production aggregates without querying raw sensor events', async () => {
   const fakeSupabase = createFakeSupabase({
     productionCounts: [{
-      machine_id: 'machine-1',
+      machine_id: MACHINE_ID,
       count_value: 12,
       window_start: '2026-08-09T00:00:00.000Z',
     }],
@@ -129,12 +156,12 @@ test('report preserves non-zero production aggregates without querying raw senso
 test('report fallback counts only S-05 pulse events in the selected business window', async () => {
   const fakeSupabase = createFakeSupabase({
     sensorEvents: [
-      { machine_id: 'machine-1', sensor_id: 'sensor-1', event_type: 'pulse', recorded_at: '2026-08-09T01:00:00.000Z' },
-      { machine_id: 'machine-1', sensor_id: 'sensor-2', event_type: 'pulse', recorded_at: '2026-08-09T01:01:00.000Z' },
-      { machine_id: 'machine-1', sensor_id: 'sensor-4', event_type: 'pulse', recorded_at: '2026-08-09T01:02:00.000Z' },
-      { machine_id: 'machine-1', sensor_id: 'sensor-5', event_type: 'pulse', recorded_at: '2026-08-09T01:03:00.000Z' },
-      { machine_id: 'machine-1', sensor_id: 'sensor-5', event_type: 'idle', recorded_at: '2026-08-09T01:04:00.000Z' },
-      { machine_id: 'machine-1', sensor_id: 'sensor-5', event_type: 'pulse', recorded_at: '2026-08-09T16:00:00.000Z' },
+      { machine_id: MACHINE_ID, sensor_id: 'sensor-1', event_type: 'pulse', recorded_at: '2026-08-09T01:00:00.000Z' },
+      { machine_id: MACHINE_ID, sensor_id: 'sensor-2', event_type: 'pulse', recorded_at: '2026-08-09T01:01:00.000Z' },
+      { machine_id: MACHINE_ID, sensor_id: 'sensor-4', event_type: 'pulse', recorded_at: '2026-08-09T01:02:00.000Z' },
+      { machine_id: MACHINE_ID, sensor_id: 'sensor-5', event_type: 'pulse', recorded_at: '2026-08-09T01:03:00.000Z' },
+      { machine_id: MACHINE_ID, sensor_id: 'sensor-5', event_type: 'idle', recorded_at: '2026-08-09T01:04:00.000Z' },
+      { machine_id: MACHINE_ID, sensor_id: 'sensor-5', event_type: 'pulse', recorded_at: '2026-08-09T16:00:00.000Z' },
     ],
   })
   const reportsService = loadReportsService(fakeSupabase)
@@ -145,7 +172,7 @@ test('report fallback counts only S-05 pulse events in the selected business win
 
   const sensorQuery = fakeSupabase.queries.find((query) => query.tableName === 'sensors')
   assert.deepEqual(sensorQuery.filters, [
-    { operator: 'eq', column: 'machine_id', value: 'machine-1' },
+    { operator: 'eq', column: 'machine_id', value: MACHINE_ID },
     { operator: 'eq', column: 'sensor_code', value: 'S-05' },
   ])
 
@@ -172,4 +199,48 @@ test('report returns a controlled error when the S-05 lookup fails', async () =>
     () => reportsService.getSummary({ type: 'daily', date: '2026-08-09' }),
     (error) => error.status === 500 && error.code === 'REPORT_OUTPUT_SENSOR_QUERY_FAILED',
   )
+})
+
+test('report includes pre-window overlap, unions concurrent downtime, and excludes off-shift loss', async () => {
+  const fakeSupabase = createFakeSupabase({
+    productionCounts: [{ machine_id: MACHINE_ID, count_value: 1, window_start: '2026-08-09T00:00:00.000Z' }],
+    downtimeEvents: [
+      {
+        id: 'down-1',
+        machine_id: MACHINE_ID,
+        sensor_id: 'sensor-1',
+        started_at: '2026-08-08T15:30:00.000Z',
+        ended_at: '2026-08-09T00:30:00.000Z',
+        cause: 'Flux Refill',
+        status: 'Resolved',
+        sensors: { sensor_code: 'S-01' },
+      },
+      {
+        id: 'down-2',
+        machine_id: MACHINE_ID,
+        sensor_id: 'sensor-2',
+        started_at: '2026-08-09T00:00:00.000Z',
+        ended_at: '2026-08-09T01:00:00.000Z',
+        cause: 'ID Filler Refill',
+        status: 'Resolved',
+        sensors: { sensor_code: 'S-02' },
+      },
+    ],
+  })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-09' })
+
+  assert.deepEqual(report.metrics, {
+    durationMinutes: 540,
+    unplannedMinutes: 60,
+    plannedExcludedMinutes: 480,
+    scheduledEligibleMinutes: 540,
+    availabilityPercent: 89,
+    estimatedLoss: 138,
+  })
+  assert.equal(report.rows.some((row) => row.cause === 'Concurrent causes'), true)
+  const overlapQuery = fakeSupabase.queries.find((query) => query.tableName === 'downtime_events')
+  assert.equal(overlapQuery.filters.some((filter) => filter.operator === 'gte' && filter.column === 'started_at'), false)
+  assert.equal(overlapQuery.filters.some((filter) => filter.operator === 'or' && /ended_at\.gt\./.test(filter.expression)), true)
 })

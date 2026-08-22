@@ -10,6 +10,12 @@ const {
   startOfBusinessWeek,
 } = require('../../shared/businessTime')
 const { getSensorLabel, OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
+const {
+  attributeMachineDowntime,
+  calculateMachineMetrics,
+} = require('../../shared/operationalMetrics')
+const { getOverlappingDowntime } = require('../downtime/downtime.repository')
+const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 
 const OUTPUT_TARGETS = {
   day: 1400,
@@ -17,7 +23,6 @@ const OUTPUT_TARGETS = {
   month: 30000,
 }
 const DOWNTIME_THRESHOLD_MINUTES = 30
-const LOSS_PER_DOWNTIME_MINUTE = 2.3
 
 function createDashboardError(status, code, message) {
   const error = new Error(message)
@@ -162,30 +167,6 @@ function getProductionTotalFromSource(source, window) {
   }, 0)
 }
 
-async function getDowntimeRows(machineId, window) {
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from('downtime_events')
-    .select('id, started_at, ended_at, duration_seconds, cause, status, sensor_id, sensors(sensor_code, label)')
-    .eq('machine_id', machineId)
-    .gte('started_at', window.start.toISOString())
-    .lt('started_at', window.end.toISOString())
-    .order('started_at', { ascending: true })
-
-  if (error) {
-    throw createDashboardError(500, 'OVERVIEW_DOWNTIME_QUERY_FAILED', 'Unable to load overview downtime.')
-  }
-
-  return data || []
-}
-
-function getDowntimeMinutes(rows) {
-  return rows.reduce((sum, row) => {
-    const minutes = row.duration_seconds != null ? Math.round(row.duration_seconds / 60) : minutesBetween(row.started_at, row.ended_at)
-    return sum + minutes
-  }, 0)
-}
-
 function getModePointBoundaries(mode, window) {
   if (mode === 'month') {
     return Array.from({ length: 4 }, (_, index) => {
@@ -279,25 +260,33 @@ async function buildProductionAnalytics(machineId, anchorDate) {
   return analytics
 }
 
-function buildDowntimeImpact(rows, mode, anchorDate) {
+function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
   const window = getWindowForMode(mode, anchorDate)
   const boundaries = getModePointBoundaries(mode === 'today' ? 'day' : mode, window)
 
   return {
     thresholdMinutes: DOWNTIME_THRESHOLD_MINUTES,
     points: boundaries.map((boundary) => {
-      const matchingRows = rows.filter((row) => {
-        const startedAt = new Date(row.started_at)
-        return startedAt >= boundary.start && startedAt < boundary.end
+      const metrics = calculateMachineMetrics({
+        records: rows,
+        window: boundary,
+        settingsHistory,
+        asOf,
       })
-      const minutes = getDowntimeMinutes(matchingRows)
-      const primaryCause = matchingRows[0]?.cause || 'No downtime recorded'
+      const attributed = attributeMachineDowntime({
+        records: rows,
+        window: boundary,
+        settingsHistory,
+        asOf,
+      })
 
       return {
         label: boundary.label,
-        minutes,
-        estimatedLoss: Math.round(minutes * LOSS_PER_DOWNTIME_MINUTE),
-        cause: primaryCause,
+        minutes: metrics.durationMinutes,
+        unplannedMinutes: metrics.unplannedMinutes,
+        plannedExcludedMinutes: metrics.plannedExcludedMinutes,
+        estimatedLoss: metrics.estimatedLoss,
+        cause: attributed[0]?.cause || 'No downtime recorded',
       }
     }),
   }
@@ -327,9 +316,7 @@ function buildAlerts(machine, sensors, downtimeRows) {
   return alerts
 }
 
-function buildAvailability(machine, sensors, downtimeMinutes) {
-  const machineAvailability = Math.max(0, Math.round(100 - (downtimeMinutes / 1440) * 100))
-
+function buildAvailability(machine, sensors, machineAvailability) {
   return [
     { machineId: machine.name, percent: machineAvailability },
     ...sensors.map((sensor) => ({
@@ -340,46 +327,60 @@ function buildAvailability(machine, sensors, downtimeMinutes) {
 }
 
 async function getOverview(filters = {}) {
+  const asOf = new Date()
   const mode = filters.trendMode || 'week'
   const anchorDate = parseAnchorDate(filters.date)
   const { machine, sensors } = await getMachineAndSensors()
   const todayWindow = getWindowForMode('today', startOfBusinessDay())
   const trendWindow = getWindowForMode(mode, anchorDate)
-  const [todayDowntimeRows, trendDowntimeRows, productionAnalytics] = await Promise.all([
-    getDowntimeRows(machine.id, todayWindow),
-    getDowntimeRows(machine.id, trendWindow),
+  const [todayDowntimeRows, trendDowntimeRows, todaySettingsHistory, trendSettingsHistory, productionAnalytics] = await Promise.all([
+    getOverlappingDowntime(machine.id, todayWindow),
+    getOverlappingDowntime(machine.id, trendWindow),
+    getSettingsHistory(machine.id, todayWindow),
+    getSettingsHistory(machine.id, trendWindow),
     buildProductionAnalytics(machine.id, anchorDate),
   ])
 
   const productionToday = productionAnalytics.day.currentTotal
-  const downtimeTodayMinutes = getDowntimeMinutes(todayDowntimeRows)
+  const todayMetrics = calculateMachineMetrics({
+    records: todayDowntimeRows,
+    window: todayWindow,
+    settingsHistory: todaySettingsHistory,
+    asOf,
+  })
   const openDowntimeCount = todayDowntimeRows.filter((row) => row.status === 'Open').length
-  const availability = buildAvailability(machine, sensors, downtimeTodayMinutes)
-  const machineAvailability = availability[0]?.percent || 100
+  const availability = buildAvailability(machine, sensors, todayMetrics.availabilityPercent)
+  const availabilityValue = todayMetrics.availabilityPercent === null
+    ? 'N/A'
+    : `${todayMetrics.availabilityPercent}%`
 
   return {
     alerts: buildAlerts(machine, sensors, todayDowntimeRows),
     summary: [
       { id: 'pipes', label: 'Total Pipes Today', value: `${formatNumber(productionToday)} pcs`, tone: 'success', helper: 'From S-05 output cutting events' },
       { id: 'events', label: 'Downtime Events', value: String(todayDowntimeRows.length), tone: 'warning', helper: `${openDowntimeCount} unresolved today` },
-      { id: 'minutes', label: 'Downtime Today', value: `${downtimeTodayMinutes} min`, tone: 'danger', helper: 'From downtime records' },
-      { id: 'availability', label: 'Machine Availability', value: `${machineAvailability}%`, tone: 'primary', helper: `For ${machine.name}` },
+      { id: 'minutes', label: 'Downtime Today', value: `${todayMetrics.durationMinutes} min`, tone: 'danger', helper: `${todayMetrics.unplannedMinutes} unplanned min` },
+      { id: 'availability', label: 'Machine Availability', value: availabilityValue, tone: 'primary', helper: `For ${machine.name}` },
     ],
     productionAnalytics,
-    downtimeImpact: buildDowntimeImpact(trendDowntimeRows, mode, anchorDate),
+    downtimeImpact: buildDowntimeImpact(trendDowntimeRows, mode, anchorDate, trendSettingsHistory, asOf),
     availability,
     unreadAlerts: buildAlerts(machine, sensors, todayDowntimeRows).length,
   }
 }
 
 async function getDowntimeImpact(filters = {}) {
+  const asOf = new Date()
   const mode = filters.trendMode || 'week'
   const anchorDate = parseAnchorDate(filters.date)
   const { machine } = await getMachineAndSensors()
   const trendWindow = getWindowForMode(mode, anchorDate)
-  const trendDowntimeRows = await getDowntimeRows(machine.id, trendWindow)
+  const [trendDowntimeRows, settingsHistory] = await Promise.all([
+    getOverlappingDowntime(machine.id, trendWindow),
+    getSettingsHistory(machine.id, trendWindow),
+  ])
 
-  return buildDowntimeImpact(trendDowntimeRows, mode, anchorDate)
+  return buildDowntimeImpact(trendDowntimeRows, mode, anchorDate, settingsHistory, asOf)
 }
 
 module.exports = {
