@@ -98,9 +98,11 @@ Changing a sensor threshold or schedule uses the Admin settings API and an expec
 
 ## Safe activation order
 
-1. Apply migration `011` and deploy with `WATCHDOG_MODE=disabled`.
-2. Send authenticated heartbeats and verify ordered boot counter, boot ID, sequence, and connectivity behavior.
-3. Apply migration `012` and use `observe` only after heartbeat behavior is stable.
+1. Apply migrations `011` and `012` in order before starting the completed Phase 3 backend.
+2. Deploy with `WATCHDOG_MODE=disabled`, then send authenticated heartbeats and verify ordered boot counter, boot ID, sequence, and connectivity behavior.
+3. Use `observe` only after heartbeat behavior is stable.
 4. Enable absence observation one physically validated sensor at a time. Never enable S-05.
 5. Compare observe-mode evidence with the manual log through the parallel run.
 6. Request separate approval before using `enforce`.
+
+Do not run the completed backend between migrations `011` and `012`; the runner expects the migration `012` evaluator RPC even while disabled.

@@ -136,11 +136,13 @@ Required deployment order:
 
 1. Back up and test a disposable staging copy.
 2. Apply migration `011` and verify its history/runtime rows.
-3. Deploy the heartbeat API with `WATCHDOG_MODE=disabled`.
-4. Verify heartbeats from the simulator or firmware without enabling absence detection.
-5. Apply migration `012`.
+3. Apply migration `012` and verify its evaluator, ownership, and privilege contracts.
+4. Deploy this completed backend with `WATCHDOG_MODE=disabled`.
+5. Verify heartbeats from the simulator or firmware without enabling absence detection.
 6. Use `WATCHDOG_MODE=observe` only after heartbeat behavior is stable.
 7. Use `WATCHDOG_MODE=enforce` only after physical calibration and parallel-run approval for each enabled sensor. Never enable S-05 absence detection.
+
+Do not start the completed Phase 3 backend between migrations `011` and `012`: its runner expects the migration `012` evaluator RPC even in disabled mode. A heartbeat-API-only deployment at the earlier `74dd7fe` commit is the only supported reason to pause after migration `011`.
 
 Focused automated checks:
 

@@ -989,8 +989,11 @@ Align Phase 3 Operations Docs
 1. Back up the staging database.
 2. Apply migration 011 in disposable staging.
 3. Verify history reconstruction and runtime rows.
-4. Deploy heartbeat API with `WATCHDOG_MODE=disabled`.
-5. Verify old event ingestion and Phase 2 settings API remain compatible.
+4. Apply migration 012 and verify its evaluator, ownership, and privilege contracts.
+5. Deploy the completed backend with `WATCHDOG_MODE=disabled`.
+6. Verify old event ingestion and the Phase 2 settings API remain compatible.
+
+The completed backend must not start between migrations 011 and 012 because its runner expects the migration 012 evaluator RPC even in disabled mode. Only the earlier heartbeat-API-only commit can be deployed after migration 011 alone.
 
 ### Stage 2: heartbeat protocol
 
@@ -1000,11 +1003,10 @@ Align Phase 3 Operations Docs
 
 ### Stage 3: observe mode
 
-1. Apply migration 012.
-2. Deploy watchdog runner with `WATCHDOG_MODE=observe`.
-3. Keep every sensor's Phase 2 absence flag disabled initially.
-4. Enable observation for one physically validated sensor configuration at a time without operational enforcement.
-5. Compare transition evidence with the manual log.
+1. Change the deployed watchdog runner to `WATCHDOG_MODE=observe` and restart it.
+2. Keep every sensor's Phase 2 absence flag disabled initially.
+3. Enable observation for one physically validated sensor configuration at a time without operational enforcement.
+4. Compare transition evidence with the manual log.
 
 ### Stage 4: controlled enforcement
 

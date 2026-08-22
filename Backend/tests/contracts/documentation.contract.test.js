@@ -71,10 +71,12 @@ test('Phase 3 operations docs preserve the safe activation boundary', () => {
   assert.match(docs.architecture, /`GET \/api\/operations\/watchdog`/)
   assert.match(docs.configure, /Never enable S-05/i)
   assert.match(docs.configure, /separate approval before using `enforce`/i)
+  assert.match(docs.configure, /Do not run the completed backend between migrations `011` and `012`/i)
   assert.match(docs.runbook, /Apply database migrations `011` and `012` in numeric order/i)
   assert.match(docs.runbook, /Preserve settings history.*runtime\/transition evidence/i)
   assert.match(docs.plan, /Status: Backend implementation completed/i)
   assert.match(docs.plan, /Production enforcement is not active/i)
+  assert.match(docs.plan, /must not start between migrations 011 and 012/i)
 })
 
 test('Phase 2 documents preserve the approved machine-settings boundary', () => {
