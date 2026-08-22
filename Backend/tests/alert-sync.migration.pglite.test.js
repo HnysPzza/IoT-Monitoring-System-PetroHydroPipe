@@ -27,7 +27,7 @@ function buildPreAlertIntegritySchema() {
     '-- Atomic alert-sync integrity keeps state, alerts, revisions, and audits consistent.',
   )
   const currentIntegrityEnd = currentSchemaSql.indexOf(
-    'create or replace function public.get_downtime_summary(',
+    'create or replace function public.update_machine_operational_settings(',
     currentIntegrityStart,
   )
 
@@ -35,10 +35,11 @@ function buildPreAlertIntegritySchema() {
   assert.ok(currentIntegrityStart >= 0 && currentIntegrityEnd > currentIntegrityStart)
 
   const legacyIngest = downtimeMigrationSql.slice(legacyIngestStart, legacyIngestEnd)
-  const newPrivilegeBlock = `revoke all on table public.alert_revision_state from public, anon, authenticated;
+  const alertRevisionPrivilegeBlock = `revoke all on table public.alert_revision_state from public, anon, authenticated;
 grant select, update on table public.alert_revision_state to service_role;
 
-revoke execute on function public.assign_alert_revision() from public, anon, authenticated;
+`
+  const alertFunctionPrivilegeBlock = `revoke execute on function public.assign_alert_revision() from public, anon, authenticated;
 revoke execute on function public.alert_to_api_json(public.alerts) from public, anon, authenticated;
 revoke execute on function public.acknowledge_alert(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public.get_alerts_snapshot() from public, anon, authenticated;
@@ -65,7 +66,8 @@ grant execute on function public.get_alerts_snapshot() to service_role;
       '',
     )
     .replace('create unique index if not exists idx_alerts_revision on alerts(revision);\n', '')
-    .replace(newPrivilegeBlock, '')
+    .replace(alertRevisionPrivilegeBlock, '')
+    .replace(alertFunctionPrivilegeBlock, '')
 }
 
 async function createDatabase(sql) {
