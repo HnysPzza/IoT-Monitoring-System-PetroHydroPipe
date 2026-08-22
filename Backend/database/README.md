@@ -20,6 +20,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/011_add_settings_history_and_watchdog_runtime.sql` adds effective-dated settings history, bounded heartbeat/watchdog state, transition evidence, and atomic heartbeat ingestion.
 - `migrations/012_add_atomic_watchdog_transitions.sql` adds downtime ownership and atomic disabled/observe/enforce watchdog evaluation.
 - `migrations/013_fix_heartbeat_digest_schema.sql` repairs heartbeat hashing for Supabase's `extensions.pgcrypto` layout.
+- `migrations/014_add_batched_watchdog_evaluation.sql` adds one service-role-only watchdog cycle RPC with isolated sensor failures and aggregate state counts.
 
 ## Tables
 
@@ -127,29 +128,31 @@ Run the focused checks from `Backend`:
 node --test tests/settings.migration.pglite.test.js tests/settings.validation.test.js tests/settings.service.test.js
 ```
 
-### Migrations 011 and 012
+### Migrations 011 through 014
 
-Apply migration `011` before deploying the heartbeat API. It reconstructs settings history, adds one current runtime row per sensor, and replaces the settings RPC so settings, history, and audit changes remain atomic. Apply migration `012` before starting the watchdog in observe or enforce mode. It adds transition ownership and the atomic watchdog evaluator while preserving explicit fault behavior.
+Apply migration `011` before deploying the heartbeat API. It reconstructs settings history, adds one current runtime row per sensor, and replaces the settings RPC so settings, history, and audit changes remain atomic. Migration `012` adds transition ownership and the atomic per-sensor evaluator. Migration `013` repairs heartbeat hashing for hosted Supabase. Migration `014` wraps the per-sensor evaluator in one batched cycle RPC.
 
-Both migrations are forward-only. Do not drop settings history, runtime evidence, downtime, alerts, or audits during rollback. Disable the application behavior with `WATCHDOG_MODE=disabled`, then repair forward.
+All four migrations are forward-only. Do not drop settings history, runtime evidence, downtime, alerts, or audits during rollback. Disable the application behavior with `WATCHDOG_MODE=disabled`, then repair forward.
 
 Required deployment order:
 
 1. Back up and test a disposable staging copy.
 2. Apply migration `011` and verify its history/runtime rows.
 3. Apply migration `012` and verify its evaluator, ownership, and privilege contracts.
-4. Deploy this completed backend with `WATCHDOG_MODE=disabled`.
-5. Verify heartbeats from the simulator or firmware without enabling absence detection.
-6. Use `WATCHDOG_MODE=observe` only after heartbeat behavior is stable.
-7. Use `WATCHDOG_MODE=enforce` only after physical calibration and parallel-run approval for each enabled sensor. Never enable S-05 absence detection.
+4. Apply migration `013` and verify authenticated heartbeat hashing.
+5. Apply migration `014` and verify its batch, isolation, and privilege contracts.
+6. Deploy this completed backend with `WATCHDOG_MODE=disabled`.
+7. Verify heartbeats from the simulator or firmware without enabling absence detection.
+8. Use `WATCHDOG_MODE=observe` only after heartbeat behavior is stable.
+9. Use `WATCHDOG_MODE=enforce` only after physical calibration and parallel-run approval for each enabled sensor. Never enable S-05 absence detection.
 
-Do not start the completed Phase 3 backend between migrations `011` and `012`: its runner expects the migration `012` evaluator RPC even in disabled mode. A heartbeat-API-only deployment at the earlier `74dd7fe` commit is the only supported reason to pause after migration `011`.
+Apply migrations `011`, `012`, `013`, and `014` in order before deploying the completed Phase 3 backend. Disabled mode does not call the evaluator, but the full schema must be present before a later switch to observe mode.
 
 Focused automated checks:
 
 ```bash
-node --test tests/watchdog-runtime.migration.pglite.test.js tests/watchdog-transition.migration.pglite.test.js
-node --test tests/heartbeat.api.test.js tests/heartbeat.service.test.js tests/watchdog.service.test.js
+node --test tests/watchdog-runtime.migration.pglite.test.js tests/watchdog-transition.migration.pglite.test.js tests/watchdog-batch.migration.pglite.test.js
+node --test tests/heartbeat.api.test.js tests/heartbeat.service.test.js tests/watchdog.repository.test.js tests/watchdog.service.test.js
 node --test tests/operationalTime.test.js tests/operationalMetrics.test.js tests/operationalRepositories.test.js
 ```
 
@@ -163,6 +166,18 @@ Run the focused regression from `Backend`:
 
 ```bash
 node --test tests/watchdog-runtime.migration.pglite.test.js tests/database.contract.test.js tests/heartbeat-simulator.test.js
+```
+
+### Migration 014
+
+Apply migration `014` after migration `013`. It adds `evaluate_watchdog_cycle(evaluated_at, mode, stale_after_seconds)`, which evaluates configured sensors in deterministic order through one service-role-only request. Each sensor runs in its own PostgreSQL exception block, so a sensor failure does not undo successful sensor work. The RPC returns only controlled result fields and final aggregate state counts; database messages are not exposed.
+
+Migration `014` reuses `evaluate_sensor_watchdog`, preserves migration `012` compatibility, keeps RLS and direct-mutation restrictions, is safe to reapply, and contains no destructive rollback SQL.
+
+Run the focused regression from `Backend`:
+
+```bash
+node --test tests/watchdog-batch.migration.pglite.test.js tests/watchdog.repository.test.js tests/watchdog.service.test.js tests/database.contract.test.js
 ```
 
 ## ESP32 Device Keys

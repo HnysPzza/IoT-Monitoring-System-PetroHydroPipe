@@ -188,7 +188,7 @@ Production targets currently come from fixed backend values for day, week, and m
 
 Phase 2 adds one `machine_operational_settings` row per explicitly provisioned machine and exposes it through `GET` and Admin-only `PATCH` requests at `/api/machines/:machineId/settings`. Updates use optimistic concurrency and one PostgreSQL transaction for both the settings change and its `SETTINGS_UPDATED` audit row. Migration `010` provisions M-01; future machines require explicit settings provisioning after their sensors are defined.
 
-The event-ingestion RPC still cannot detect an event that never arrives. Phase 3 therefore adds authenticated device heartbeats, persisted watchdog runtime, and an idempotent atomic evaluator. `WATCHDOG_MODE` defaults to `disabled`, which keeps heartbeat ingestion active without starting periodic evaluation cycles; `observe` records candidates without operational mutations, while `enforce` may create or resolve watchdog-owned downtime only for sensors whose absence detection is explicitly enabled. Connectivity loss creates a separate connectivity condition and cannot create production downtime. S-05 absence detection is permanently prohibited.
+The event-ingestion RPC still cannot detect an event that never arrives. Phase 3 therefore adds authenticated device heartbeats, persisted watchdog runtime, and idempotent atomic evaluation. Migration `014` evaluates the configured sensor set through one service-role-only database request while isolating each sensor's work. `WATCHDOG_MODE` defaults to `disabled`, which keeps heartbeat ingestion active without starting periodic evaluation cycles; `observe` records candidates without operational mutations, while `enforce` may create or resolve watchdog-owned downtime only for sensors whose absence detection is explicitly enabled. Connectivity loss creates a separate connectivity condition and cannot create production downtime. S-05 absence detection is permanently prohibited.
 
 Settings updates now also maintain `machine_operational_settings_history` in the same transaction. Downtime, dashboard, and report metrics use the schedule version effective at the requested time, exclude breaks and post-break grace, include records that overlap a window even if they started earlier, and return not-applicable availability when scheduled eligible time is zero.
 
@@ -196,11 +196,11 @@ Phase 3 operational flow:
 
 ```text
 ESP32 heartbeat -> device-authenticated API -> atomic heartbeat state
-watchdog tick -> atomic database evaluation -> committed downtime/alert/audit -> post-commit SSE
+watchdog tick -> one batched database evaluation -> isolated atomic sensor transitions -> post-commit SSE
 settings history + downtime overlap -> shared operational-time engine -> dashboard/report metrics
 ```
 
-The watchdog runner starts only from `server.js`, runs immediately without overlapping its own cycles, isolates one sensor failure, uses a bounded timeout, and stops before SSE during graceful shutdown. Admins can inspect aggregate non-identifying state through `GET /api/operations/watchdog`.
+The watchdog runner starts only from `server.js` in observe or enforce mode, runs immediately without overlapping its own cycles, uses one database RPC per cycle, applies a bounded timeout, and stops before SSE during graceful shutdown. Cycles are classified as success, partial, failed, or cancelled; disabled mode remains idle. Admins can inspect nested aggregate, non-identifying state through `GET /api/operations/watchdog`, which is Admin-only and not cacheable.
 
 Code support does not authorize enforcement. Physical signal classification, heartbeat reliability, recovery calibration, disposable PostgreSQL concurrency tests, and parallel-run evidence remain required before changing `WATCHDOG_MODE` to `enforce`.
 

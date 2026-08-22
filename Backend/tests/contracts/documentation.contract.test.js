@@ -34,7 +34,7 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
   }
 })
 
-test('database guide documents migrations 008 through 013', () => {
+test('database guide documents migrations 008 through 014', () => {
   const databaseGuidePath = path.resolve(__dirname, '../../database/README.md')
   const content = fs.readFileSync(databaseGuidePath, 'utf8')
 
@@ -44,6 +44,7 @@ test('database guide documents migrations 008 through 013', () => {
   assert.match(content, /011_add_settings_history_and_watchdog_runtime\.sql/)
   assert.match(content, /012_add_atomic_watchdog_transitions\.sql/)
   assert.match(content, /013_fix_heartbeat_digest_schema\.sql/)
+  assert.match(content, /014_add_batched_watchdog_evaluation\.sql/)
   assert.match(content, /S-02 Inside Filler Wire/)
   assert.match(content, /S-04 Outside Filler Wire/)
   assert.match(content, /S-02 and S-04 downtime faults to `Consumable Shortage`/)
@@ -89,14 +90,16 @@ test('Phase 3 operations docs preserve the safe activation boundary', () => {
   assert.match(docs.configure, /Never enable S-05/i)
   assert.match(docs.configure, /separate approval before using `enforce`/i)
   assert.match(docs.configure, /periodic evaluation runner remains stopped/i)
-  assert.match(docs.configure, /Do not start the completed backend until migrations `011`, `012`, and `013` are all applied/i)
-  assert.match(docs.runbook, /Apply database migrations `011`, `012`, and `013` in numeric order/i)
+  assert.match(docs.architecture, /one service-role-only database request/i)
+  assert.match(docs.configure, /Do not deploy the completed backend until migrations `011`, `012`, `013`, and `014` are all applied/i)
+  assert.match(docs.runbook, /Apply database migrations `011`, `012`, `013`, and `014` in numeric order/i)
   assert.match(docs.runbook, /Preserve settings history.*runtime\/transition evidence/i)
   assert.match(docs.plan, /Status: Backend implementation completed/i)
   assert.match(docs.plan, /Production enforcement is not active/i)
   assert.match(docs.plan, /evaluation runner does not start/i)
-  assert.match(docs.plan, /Do not start the completed Phase 3 backend until migrations 011, 012, and 013/i)
-  assert.match(docs.plan, /Backend: `npm test` - 210 passed, 0 failed/i)
+  assert.match(docs.plan, /Do not deploy the completed Phase 3 backend until migrations 011, 012, 013, and 014/i)
+  assert.match(docs.plan, /cyclePartialFailures/)
+  assert.match(docs.plan, /Backend full suite: `node --test --test-concurrency=2 tests\/\*\.test\.js tests\/contracts\/\*\.test\.js` - 224 passed, 0 failed/i)
 })
 
 test('Phase 2 documents preserve the approved machine-settings boundary', () => {

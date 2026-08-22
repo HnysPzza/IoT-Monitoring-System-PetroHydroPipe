@@ -18,7 +18,7 @@ ESP32 heartbeat
   -> break-aware dashboard and report metrics
 ```
 
-Each ESP32 sends an authenticated heartbeat with a boot counter, boot ID, sequence, timestamp, and activity observation. PostgreSQL rejects conflicting or stale ordering, stores bounded current runtime state, and keeps connectivity separate from production activity. The watchdog evaluates each sensor against the settings version and schedule effective at that time.
+Each ESP32 sends an authenticated heartbeat with a boot counter, boot ID, sequence, timestamp, and activity observation. PostgreSQL rejects conflicting or stale ordering, stores bounded current runtime state, and keeps connectivity separate from production activity. The watchdog evaluates all configured sensors through one batched database call while each sensor still commits or rolls back independently.
 
 The global modes provide a controlled rollout:
 
@@ -48,8 +48,9 @@ Phase 3 implements:
 - Historical schedule versions so later setting changes do not rewrite old analytics.
 - One break-aware interval engine used by downtime, dashboard, and reporting services.
 - Operational diagnostics, bounded retries, safe shutdown, and complete failure-path tests.
+- One service-role-only batch RPC per watchdog cycle with success, partial, failed, and cancelled outcomes.
 
-Migration `013` additionally repairs Supabase heartbeat hashing by qualifying `extensions.digest`, and the one-shot heartbeat simulator now exits cleanly after verification completes.
+Migration `013` repairs Supabase heartbeat hashing by qualifying `extensions.digest`. Migration `014` adds the batched cycle evaluator and safe aggregate result contract. The one-shot heartbeat simulator exits cleanly after verification completes.
 
 Phase 3 does not add the Admin settings UI or the new live-status presentation. Those remain Phase 4. Production enforcement also remains inactive until the physical, concurrency, soak, and parallel-run gates pass.
 
@@ -91,7 +92,7 @@ Phase 3 does not add the Admin settings UI or the new live-status presentation. 
 | Connectivity clock | Backend database receipt time | Device clocks and buffered packets must not define whether a device is currently online. |
 | Device ordering | Persistent boot counter plus per-boot sequence, both sent as decimal strings | A UUID alone cannot order packets across retries and reboot. The boot counter changes only once per reboot, reducing NVS wear. |
 | Heartbeat storage | One current runtime row per sensor, not an unbounded raw-heartbeat table | Transition history is valuable; millions of repetitive heartbeat rows are not. |
-| Watchdog scheduling | One non-overlapping in-process runner with one atomic RPC per sensor | It is simple for the supported deployment, isolates failures by sensor, and remains safe if two processes briefly overlap. |
+| Watchdog scheduling | One non-overlapping in-process runner with one batched RPC per cycle | It bounds network latency, isolates failures inside PostgreSQL, and remains safe if two processes briefly overlap. |
 | Concurrency | Row locks and idempotent database state transitions | Process-local locks do not survive restart and do not protect against another backend instance. |
 | Rollout safety | Global `disabled`, `observe`, and `enforce` modes plus the per-sensor Phase 2 enable flag | Deployment, observation, and activation become separate decisions. |
 | Break handling | Pause new absence accumulation during off-shift, breaks, and grace; never auto-resolve an existing downtime merely because a break begins | Planned time changes metrics and detection eligibility, not physical recovery. |
@@ -135,15 +136,14 @@ ingest_iot_heartbeat RPC
 
 Watchdog runner every 5 seconds
   |
-  | one sensor at a time, no overlapping cycle
+  | one batched request, no overlapping cycle
   v
-evaluate_sensor_watchdog RPC
-  |-- locks sensor, machine, settings, and runtime state
-  |-- checks global mode, per-sensor flag, connectivity, schedule, and thresholds
-  |-- updates persisted watchdog state
-  |-- in observe mode records candidate transitions only
-  |-- in enforce mode atomically updates downtime, alerts, machine/sensor state, and audits
-  `-- returns committed transition descriptors
+evaluate_watchdog_cycle RPC
+  |-- visits configured sensors in deterministic order
+  |-- calls evaluate_sensor_watchdog in one exception-isolated block per sensor
+  |-- preserves successful sensor work when another sensor fails
+  |-- masks database messages with a controlled error code
+  `-- returns evaluations and final aggregate state counts
   |
   v
 Post-commit SSE publication through the existing alert/downtime channels
@@ -405,6 +405,20 @@ Migration `013_fix_heartbeat_digest_schema.sql` repairs the heartbeat RPC for Su
 
 This repair prevents a valid S-01 heartbeat from failing only in the hosted Supabase environment while retaining the hardened function boundary.
 
+### 9.4 Migration 014: batched watchdog reliability
+
+Migration `014_add_batched_watchdog_evaluation.sql` adds `evaluate_watchdog_cycle(evaluated_at, mode, stale_after_seconds)` after migration `013`.
+
+- Evaluate configured sensors in deterministic machine, sensor, and UUID order through one database request.
+- Reuse `evaluate_sensor_watchdog` so migration `012` remains compatible and owns each sensor's atomic transition.
+- Wrap each sensor call in a PostgreSQL exception block so a failed sensor rolls back only its own work.
+- Return successful and failed evaluations plus final aggregate state counts without returning database messages.
+- Reject invalid modes, timestamps, and stale thresholds before processing.
+- Permit execution only to `service_role`; preserve RLS and direct-mutation restrictions.
+- Keep the migration forward-only, safe to reapply, and equivalent to the fresh `schema.sql` definition.
+
+The outer function is still transactional. A fatal error outside the per-sensor isolation blocks rolls back the entire batch.
+
 ## 10. State Machines
 
 ### 10.1 Connectivity
@@ -585,9 +599,9 @@ Responsibilities:
 - `operationalTime.js`: pure interval functions only; no database, environment, logger, or current-clock imports.
 - `heartbeat.model.js`: strict API schemas and decimal-string validation.
 - `heartbeat.controller.js`: translate validated HTTP input to the IoT service and return the response envelope.
-- `watchdog.repository.js`: Supabase queries/RPC calls and controlled database error mapping only.
-- `watchdog.service.js`: one evaluation cycle, sensor isolation, result validation, and post-commit publication.
-- `watchdog.runner.js`: start, stop, immediate startup cycle, non-overlap, timeout/abort, and shutdown waiting.
+- `watchdog.repository.js`: one batched Supabase RPC per cycle and controlled database error mapping only.
+- `watchdog.service.js`: strict aggregate-result validation, outcome classification, and post-commit publication.
+- `watchdog.runner.js`: start, stop, immediate startup cycle, non-overlap, timeout/abort, intentional cancellation, and shutdown waiting.
 - `watchdog.metrics.js`: bounded in-memory counters and timestamps for diagnostics.
 - `transitionPublisher.js`: one shared validator/publisher for committed alert/downtime descriptors used by ingestion and watchdog paths.
 
@@ -618,11 +632,12 @@ Startup:
 Cycle behavior:
 
 - No overlapping cycle in one process.
-- Query the small configured sensor set.
-- Evaluate sensors sequentially or with a bounded concurrency of two; five unbounded promises are unnecessary.
-- Failure for one sensor is logged and counted, then other sensors continue.
+- Send exactly one `evaluate_watchdog_cycle` RPC.
+- Classify every configured sensor result after strict validation.
+- Full success updates `lastSuccessAt`; a partial result increments `cyclePartialFailures` and logs one warning.
+- An empty configured set, all-sensor failure, malformed result, or batch failure is a failed cycle.
 - A cycle timeout aborts pending Supabase requests where supported.
-- Once a cycle is aborted, stop immediately instead of attempting or logging failures for the remaining sensors.
+- Intentional shutdown cancellation increments `cycleCancellations`, not `cycleFailures`.
 - Repeated database failures do not create local fallback transitions.
 - The next normal interval retries; do not use an unbounded rapid retry loop.
 
@@ -656,15 +671,19 @@ Response:
     "mode": "observe",
     "running": true,
     "inFlight": false,
+    "lastOutcome": "success",
     "lastStartedAt": "2026-08-22T02:00:00.000Z",
     "lastCompletedAt": "2026-08-22T02:00:00.120Z",
     "lastSuccessAt": "2026-08-22T02:00:00.120Z",
     "lastErrorCode": null,
     "counters": {
       "cycles": 10,
+      "cycleSuccesses": 9,
+      "cyclePartialFailures": 1,
       "cycleFailures": 0,
+      "cycleCancellations": 0,
       "sensorEvaluations": 50,
-      "sensorFailures": 0,
+      "sensorFailures": 1,
       "transitions": 3
     },
     "states": {
@@ -682,7 +701,8 @@ Response:
 Security:
 
 - Admin only; no public diagnostics expansion.
-- Do not expose device IDs, source IPs, device keys, heartbeat IDs, payload hashes, or per-user information.
+- Send `Cache-Control: no-store` and reject unexpected query parameters.
+- Do not expose sensor UUIDs, device IDs, source IPs, device keys, heartbeat IDs, payload hashes, database messages, or per-user information.
 - Use the existing `{ error: { code, message } }` failure shape.
 - No manual-run or state-mutation operation endpoint.
 
@@ -824,21 +844,33 @@ Test every state and boundary in `disabled`, `observe`, and `enforce` modes:
 
 PGlite validates SQL logic but is not evidence of true multi-connection locking.
 
-### 16.6 Service and runner tests
+### 16.6 Migration 014 batch tests
+
+- Migration applies after `011` through `013`, is safe to reapply, and matches fresh-schema behavior.
+- Only `service_role` can execute the batch; public, anon, and authenticated roles are denied.
+- A successful five-sensor cycle returns deterministic evaluations and aggregate states.
+- One sensor failure is masked and isolated without rolling back successful sensors.
+- A fatal outer failure rolls back the entire batch.
+- S-05 cannot activate absence detection; observe mode cannot mutate operational state.
+- Enforce mode preserves the migration `012` atomic and idempotent transition contract.
+
+### 16.7 Service and runner tests
 
 - Immediate startup cycle.
 - No overlapping in-process cycle.
-- Bounded concurrency and deterministic sensor order.
-- One sensor failure does not stop others.
+- One network RPC per cycle and strict aggregate-result validation.
+- Full success, partial failure, total failure, empty sensor set, malformed result, timeout, and cancellation.
+- One sensor failure does not undo successful sensor evaluations.
 - Cycle timeout aborts or settles without unhandled rejection.
 - Repeated failures wait for the next interval and do not busy-loop.
 - Stop before start, double start, double stop, and shutdown during an in-flight cycle.
-- Database result validation rejects malformed transition descriptors.
+- Graceful shutdown increments cancellation counters without incrementing failures.
+- Disabled mode schedules zero cycles and remains idle.
 - Publisher exceptions are isolated after commit.
 - In-memory metrics increment accurately and remain bounded.
 - `WATCHDOG_MODE` and interval relationships fail fast at startup.
 
-### 16.7 Downtime, dashboard, and report service tests
+### 16.8 Downtime, dashboard, and report service tests
 
 - Queries include downtime that starts before but overlaps the selected range.
 - Raw, planned-excluded, and unplanned durations are consistent across all modules.
@@ -852,16 +884,17 @@ PGlite validates SQL logic but is not evidence of true multi-connection locking.
 - Settings/history query failure returns controlled errors with no hardcoded fallback.
 - Existing response fields remain present; new fields are additive.
 
-### 16.8 API security tests
+### 16.9 API security tests
 
 - Admin-only watchdog diagnostics reject missing JWT, stale JWT role, inactive user, archived user, and all non-Admin roles.
+- Diagnostics reject method, suffix, query, and content-type tampering; successful responses are not cacheable and match the nested contract.
 - Heartbeat endpoint rejects JWT-only access and accepts only verified device credentials.
 - Resource IDs cannot be changed through mass-assignment fields.
 - Unknown HTTP methods do not mutate state.
 - Errors contain stable codes and safe messages but no SQL, stack, key, token, payload hash, or internal IDs.
 - Rate limits cannot be bypassed with untrusted forwarded headers or device-ID rotation.
 
-### 16.9 Disposable real PostgreSQL concurrency tests
+### 16.10 Disposable real PostgreSQL concurrency tests
 
 Run only in a disposable staging database:
 
@@ -1052,6 +1085,30 @@ Commit:
 Fix Supabase Heartbeat Digest
 ```
 
+### Task 9: Batched watchdog reliability hardening
+
+Files:
+
+- Add migration `014_add_batched_watchdog_evaluation.sql` and fresh-schema parity.
+- Replace the repository's sequential calls with one batch RPC.
+- Extend service, runner, metrics, operations API, migration, fuzz, and authorization tests.
+- Align the database guide, architecture, configuration, runbook, and this plan.
+
+Work:
+
+- Isolate sensor failures inside PostgreSQL and return controlled aggregate results.
+- Classify success, partial, failed, and cancelled cycles without counting shutdown as failure.
+- Standardize non-cacheable Admin diagnostics around nested counters and aggregate states.
+
+Commits:
+
+```text
+Add Batched Watchdog Evaluation
+Fix Watchdog Cycle Outcomes
+Harden Watchdog Api Diagnostics
+Align Watchdog Reliability Docs
+```
+
 ## 18. Deployment and Rollback Plan
 
 ### Stage 1: additive database foundation
@@ -1061,10 +1118,11 @@ Fix Supabase Heartbeat Digest
 3. Verify history reconstruction and runtime rows.
 4. Apply migration 012 and verify its evaluator, ownership, and privilege contracts.
 5. Apply migration 013 and verify authenticated heartbeat hashing and service-role execution.
-6. Deploy the completed backend with `WATCHDOG_MODE=disabled`.
-7. Verify old event ingestion and the Phase 2 settings API remain compatible.
+6. Apply migration 014 and verify batched evaluation, sensor isolation, aggregate states, and service-role-only execution.
+7. Deploy the completed backend with `WATCHDOG_MODE=disabled`.
+8. Verify old event ingestion and the Phase 2 settings API remain compatible.
 
-Do not start the completed Phase 3 backend until migrations 011, 012, and 013 have all been applied in numeric order. The runner requires the migration 012 evaluator RPC even in disabled mode, and hosted Supabase heartbeat hashing requires the migration 013 repair.
+Do not deploy the completed Phase 3 backend until migrations 011, 012, 013, and 014 have all been applied in numeric order. Disabled mode schedules no evaluation cycles. Hosted heartbeat hashing requires migration 013, and observe mode requires migration 014's batched evaluator.
 
 ### Stage 2: heartbeat protocol
 
@@ -1134,16 +1192,22 @@ Implemented commits:
 - `4c9faf0` Align Phase 3 Operations Docs
 - `5484ee1` Correct Phase 3 Deployment Order
 - `a6f1567` Fix Supabase Heartbeat Digest
+- `78f8b15` Fix Disabled Watchdog Cycles
+- `d516c7d` Add Batched Watchdog Evaluation
+- `5dc9709` Fix Watchdog Cycle Outcomes
+- `750f49d` Harden Watchdog Api Diagnostics
+- `17f41a9` Stabilize Watchdog Runner Test
 
 Automated verification completed on 2026-08-22:
 
-- Backend: `npm test` - 210 passed, 0 failed.
+- Backend full suite: `node --test --test-concurrency=2 tests/*.test.js tests/contracts/*.test.js` - 224 passed, 0 failed.
 - Frontend: `npm test` - 28 files and 201 tests passed, 0 failed.
 - Frontend: `npm run build` - production build completed successfully.
-- Migration 011/012/013, privilege, atomic rollback, heartbeat ordering, watchdog modes, runner lifecycle, overlap, history, pagination, dashboard, downtime, and report tests are included in the backend result.
+- Migration 011/012/013/014, privilege, atomic rollback, heartbeat ordering, one-RPC batching, partial/failure/cancellation outcomes, API security/fuzzing, runner lifecycle, overlap, history, pagination, dashboard, downtime, and report tests are included in the backend result.
 - Live Supabase heartbeat verification passed after migration 013 was applied on 2026-08-22.
+- Hosted migration 014 and the 30-minute observe-mode soak remain pending reviewed user execution and separate approval.
 
-These results complete the local automated implementation gate. They do not replace disposable real-PostgreSQL multi-connection races, extended restart/soak tests, physical sensor classification, calibration, or the manual-log parallel run. Those checks still block `WATCHDOG_MODE=enforce`.
+These results complete the local automated implementation gate. Observe readiness still requires hosted migration `014` and the approved soak criteria. Disposable real-PostgreSQL multi-connection races, extended restart/soak tests, physical sensor classification, calibration, and the manual-log parallel run still block `WATCHDOG_MODE=enforce`.
 
 ## 21. Approval Boundary
 

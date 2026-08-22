@@ -73,7 +73,7 @@ The selected issue sensor should appear in the dashboard notification bell. The 
 
 ## Phase 3 Heartbeat and Watchdog Checks
 
-Apply database migrations `011`, `012`, and `013` in numeric order before running the Phase 3 backend. Migration `013` repairs Supabase heartbeat hashing and is required even when `011` and `012` previously succeeded. Take a backup and use a disposable staging copy first. Do not apply destructive rollback SQL; disable the feature and repair forward.
+Apply database migrations `011`, `012`, `013`, and `014` in numeric order before running the completed Phase 3 backend. Migration `013` repairs Supabase heartbeat hashing. Migration `014` replaces sequential watchdog requests with one service-role-only batched evaluation. Take a backup and use a disposable staging copy first. Do not apply destructive rollback SQL; disable the feature and repair forward.
 
 Keep the first deployment disabled:
 
@@ -105,6 +105,8 @@ As an Admin, inspect bounded aggregate diagnostics:
 ```text
 GET /api/operations/watchdog
 ```
+
+The response uses a nested `watchdog.counters` object, returns aggregate states only, and sends `Cache-Control: no-store`. In disabled mode, verify `running: false`, `lastOutcome: "idle"`, `counters.cycles: 0`, and `states: {}` while heartbeat ingestion continues normally.
 
 Do not switch directly from disabled to enforce. Verify heartbeat ordering and connectivity first, then run observe mode against the manual log. Enforcement requires separate physical calibration and parallel-run approval. S-05 must never have absence detection enabled.
 
