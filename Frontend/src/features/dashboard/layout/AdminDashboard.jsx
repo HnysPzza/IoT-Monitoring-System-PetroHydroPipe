@@ -30,16 +30,16 @@ import {
 } from '../alerts/alertReconciliation.js'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
 
-const ALERT_RESYNC_MIN_INTERVAL_MS = 5000
-const MAX_BUFFERED_ALERT_DELTAS = 256
-const SIDEBAR_SCROLL_ACTIVE_MS = 500
-const ALERT_STREAM_EVENT_TYPES = new Set([
+const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
+const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
+const SIDEBAR_SCROLL_ACTIVE_MS = 500 // transition duration active window for sidebar scroll animations
+const ALERT_STREAM_EVENT_TYPES = new Set([ //event filtering SSE 
   'alert.acknowledged',
   'alert.created',
   'alert.resolved',
   'alert.updated',
 ])
-const ACKNOWLEDGEMENT_RESPONSE_STATUSES = new Set(['Acknowledged', 'Resolved'])
+const ACKNOWLEDGEMENT_RESPONSE_STATUSES = new Set(['Acknowledged', 'Resolved']) //backend api can only return two valid result
 
 const icons = {
   gauge: Gauge,
@@ -85,7 +85,7 @@ function DashboardClock() {
     </time>
   )
 }
-
+//for notif case 1 - recover not yet acknowledge
 function getAlertStatusLabel(alert) {
   if (alert.status === 'Active' && alert.metadata?.recoveryPending) {
     return 'Recovered, waiting for acknowledgement'

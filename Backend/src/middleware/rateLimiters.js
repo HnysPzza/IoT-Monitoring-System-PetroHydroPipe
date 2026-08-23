@@ -11,6 +11,7 @@ function rateLimitResponse(message) {
 }
 
 // Login is IP-based to slow down password guessing.
+// User cant just refresh - it is check IP-Based to prevent brute force
 const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
@@ -22,6 +23,7 @@ const loginRateLimiter = rateLimit({
 })
 
 // This first layer limits untrusted callers before device lookup and bcrypt work.
+// This is for the sensors to avoid sensor attack and flood with false events.
 const iotIngressRateLimiter = rateLimit({
   windowMs: env.IOT_RATE_LIMIT_WINDOW_MS,
   limit: env.IOT_INGRESS_RATE_LIMIT,
@@ -30,11 +32,12 @@ const iotIngressRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
-    res.status(429).json(rateLimitResponse('Too many ESP32 requests from this source. Please try again later.'))
+    res.status(429).json(rateLimitResponse('Too many ESP32 event requests from this source. Please try again later.'))
   },
 })
 
 // This second layer can trust the database-backed sensor id established by authentication.
+// Esp base checking 
 const iotVerifiedDeviceRateLimiter = rateLimit({
   windowMs: env.IOT_RATE_LIMIT_WINDOW_MS,
   limit: env.IOT_DEVICE_RATE_LIMIT,
@@ -43,7 +46,7 @@ const iotVerifiedDeviceRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.iotDevice.id,
   handler: (req, res) => {
-    res.status(429).json(rateLimitResponse('Too many ESP32 requests. Please slow down this device.'))
+    res.status(429).json(rateLimitResponse('Too many ESP32 events. Please slow down this device.'))
   },
 })
 
