@@ -70,7 +70,7 @@ export const navItems = [
     icon: 'settings',
     group: 'admin',
     roles: ['Admin'],
-    subtitle: 'Appearance and display preferences.',
+    subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 ]
 
@@ -116,6 +116,6 @@ export const dashboardPageMeta = {
   },
   '/dashboard/settings': {
     title: 'Settings',
-    subtitle: 'Appearance and display preferences.',
+    subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 }

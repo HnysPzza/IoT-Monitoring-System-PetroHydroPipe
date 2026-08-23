@@ -1,5 +1,6 @@
-import { Gauge, Target, TrendingDown, TrendingUp } from 'lucide-react'
+import { Target, TrendingDown, TrendingUp } from 'lucide-react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
 import { formatNumber } from '../../../shared/utils/formatters.js'
 
 const analyticsModes = [
@@ -106,7 +107,7 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
       </div>
 
       <div className={isOnTarget ? 'analytics-insight is-positive' : 'analytics-insight is-warning'}>
-        {isOnTarget ? <Gauge size={16} aria-hidden="true" /> : <Target size={16} aria-hidden="true" />}
+        {isOnTarget ? <AnimatedGauge size={16} aria-hidden="true" /> : <Target size={16} aria-hidden="true" />}
         <span>{insight}</span>
       </div>
     </section>
