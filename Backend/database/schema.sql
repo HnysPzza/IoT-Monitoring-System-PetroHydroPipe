@@ -1321,6 +1321,7 @@ create or replace function public.update_downtime_record(
 )
 returns table (downtime_id uuid)
 language plpgsql
+security definer
 set search_path = public
 as $$
 declare

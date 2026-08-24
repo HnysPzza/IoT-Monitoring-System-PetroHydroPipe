@@ -35,7 +35,7 @@ test('markdown docs do not contain obsolete legacy sensor mappings', () => {
   }
 })
 
-test('database guide documents migrations 008 through 016', () => {
+test('database guide documents migrations 008 through 017', () => {
   const databaseGuidePath = path.resolve(__dirname, '../../database/README.md')
   const content = fs.readFileSync(databaseGuidePath, 'utf8')
 
@@ -48,6 +48,7 @@ test('database guide documents migrations 008 through 016', () => {
   assert.match(content, /014_add_batched_watchdog_evaluation\.sql/)
   assert.match(content, /015_add_live_monitoring_snapshot\.sql/)
   assert.match(content, /016_protect_base_tables\.sql/)
+  assert.match(content, /017_secure_downtime_update_rpc\.sql/)
   assert.match(content, /S-02 Inside Filler Wire/)
   assert.match(content, /S-04 Outside Filler Wire/)
   assert.match(content, /S-02 and S-04 downtime faults to `Consumable Shortage`/)

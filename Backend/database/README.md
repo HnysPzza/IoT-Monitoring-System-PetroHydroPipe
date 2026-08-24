@@ -199,10 +199,16 @@ Apply migration `016_protect_base_tables.sql` after migration `015`. It enables 
 
 Migration `016` is safe to reapply, fails closed if any required base table is missing, mirrors `schema.sql`, and contains no destructive data changes. It does not expose service-role policies to browser clients.
 
+### Migration 017
+
+Apply migration `017_secure_downtime_update_rpc.sql` after migration `016`. Migration `016` intentionally removes direct `UPDATE` access to `downtime_events`; migration `017` keeps that restriction and changes `update_downtime_record` to a security-definer function so the Express backend can resolve downtime and update approved manual fields through the existing RPC.
+
+Migration `017` is safe to reapply. Execute permission remains revoked from `public`, `anon`, and `authenticated` and is granted only to `service_role`.
+
 Run the focused regression from `Backend`:
 
 ```bash
-node --test tests/base-table-security.migration.pglite.test.js tests/database.contract.test.js
+node --test tests/base-table-security.migration.pglite.test.js tests/downtime-update-security.migration.pglite.test.js tests/database.contract.test.js
 ```
 
 ## ESP32 Device Keys
