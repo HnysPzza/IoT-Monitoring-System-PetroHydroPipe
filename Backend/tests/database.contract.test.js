@@ -168,3 +168,33 @@ test('migration 015 defines one service-role-only live monitoring snapshot', () 
     assert.match(content, /grant execute on function public\.get_machine_live_snapshot\(text\)[\s\S]*service_role/i)
   }
 })
+
+test('migration 016 and fresh schema protect every base table from client roles', () => {
+  const migration = read('database/migrations/016_protect_base_tables.sql')
+  const schema = read('database/schema.sql')
+  const baseTables = [
+    'roles',
+    'users',
+    'machines',
+    'sensors',
+    'sensor_events',
+    'downtime_events',
+    'production_counts',
+    'audit_logs',
+    'alerts',
+  ]
+
+  for (const content of [migration, schema]) {
+    for (const table of baseTables) {
+      assert.match(content, new RegExp(`alter table (?:public\\.)?${table} enable row level security`, 'i'))
+      assert.match(content, new RegExp(`revoke all on table public\\.${table} from public, anon, authenticated, service_role`, 'i'))
+    }
+  }
+
+  assert.match(migration, /grant select, insert, update on table public\.users to service_role/i)
+  assert.match(migration, /grant select, update on table public\.machines to service_role/i)
+  assert.match(migration, /grant select, update on table public\.sensors to service_role/i)
+  assert.match(migration, /grant select, insert on table public\.audit_logs to service_role/i)
+  assert.doesNotMatch(migration, /grant[^;]*delete[^;]*to service_role/i)
+  assert.match(migration, /commit;/i)
+})

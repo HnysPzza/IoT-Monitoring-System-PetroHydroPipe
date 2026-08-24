@@ -288,6 +288,39 @@ to service_role
 using (true)
 with check (true);
 
+-- Base tables are backend-only. Browser-facing Supabase roles have neither
+-- table privileges nor RLS policies; the server-side service role receives
+-- only the direct operations used by the Express application.
+alter table roles enable row level security;
+alter table users enable row level security;
+alter table machines enable row level security;
+alter table sensors enable row level security;
+alter table sensor_events enable row level security;
+alter table downtime_events enable row level security;
+alter table production_counts enable row level security;
+alter table audit_logs enable row level security;
+alter table alerts enable row level security;
+
+revoke all on table public.roles from public, anon, authenticated, service_role;
+revoke all on table public.users from public, anon, authenticated, service_role;
+revoke all on table public.machines from public, anon, authenticated, service_role;
+revoke all on table public.sensors from public, anon, authenticated, service_role;
+revoke all on table public.sensor_events from public, anon, authenticated, service_role;
+revoke all on table public.downtime_events from public, anon, authenticated, service_role;
+revoke all on table public.production_counts from public, anon, authenticated, service_role;
+revoke all on table public.audit_logs from public, anon, authenticated, service_role;
+revoke all on table public.alerts from public, anon, authenticated, service_role;
+
+grant select on table public.roles to service_role;
+grant select, insert, update on table public.users to service_role;
+grant select, update on table public.machines to service_role;
+grant select, update on table public.sensors to service_role;
+grant select on table public.sensor_events to service_role;
+grant select on table public.downtime_events to service_role;
+grant select on table public.production_counts to service_role;
+grant select, insert on table public.audit_logs to service_role;
+grant select on table public.alerts to service_role;
+
 -- Indexes keep dashboard and history lookups fast as event data grows.
 create index if not exists idx_users_role_id on users(role_id);
 create index if not exists idx_machines_status on machines(status);

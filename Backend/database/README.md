@@ -193,6 +193,18 @@ Run the focused regression from `Backend`:
 node --test tests/live-monitoring-snapshot.migration.pglite.test.js tests/database.contract.test.js tests/iot.service.test.js tests/api.test.js
 ```
 
+### Migration 016
+
+Apply migration `016_protect_base_tables.sql` after migration `015`. It enables Row Level Security on the nine legacy base tables and revokes all direct table privileges from `public`, `anon`, and `authenticated`. The server-side `service_role` retains only the direct reads and writes used by the Express backend; atomic sensor, downtime, alert, settings, and watchdog writes remain behind their existing security-definer RPCs.
+
+Migration `016` is safe to reapply, fails closed if any required base table is missing, mirrors `schema.sql`, and contains no destructive data changes. It does not expose service-role policies to browser clients.
+
+Run the focused regression from `Backend`:
+
+```bash
+node --test tests/base-table-security.migration.pglite.test.js tests/database.contract.test.js
+```
+
 ## ESP32 Device Keys
 
 For an existing Supabase database created before Phase 6, run `migrations/001_add_sensor_device_keys.sql` before running `device_key_setup.sql`.
