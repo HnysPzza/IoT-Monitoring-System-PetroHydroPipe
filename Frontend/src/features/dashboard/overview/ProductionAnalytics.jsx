@@ -1,13 +1,6 @@
-import { Target, TrendingDown, TrendingUp } from 'lucide-react'
+import { CircleHelp, Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
 import { formatNumber } from '../../../shared/utils/formatters.js'
-
-const analyticsModes = [
-  { id: 'day', label: 'Day' },
-  { id: 'week', label: 'Week' },
-  { id: 'month', label: 'Month' },
-]
 
 function ChartTooltip({ active, payload, label, unit }) {
   if (!active || !payload?.length) {
@@ -24,20 +17,36 @@ function ChartTooltip({ active, payload, label, unit }) {
           {item.name}: {formatNumber(item.value)} {unit}
         </span>
       ))}
-      <span>Estimated loss: {formatNumber(point?.estimatedLoss || 0)} pcs</span>
     </div>
   )
 }
 
-export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
-  // selected changes when the user switches Day / Week / Month.
-  const selected = analytics[mode]
-  const delta = selected.currentTotal - selected.previousTotal
-  const deltaPercent = selected.previousTotal ? (delta / selected.previousTotal) * 100 : 0
-  const targetGap = selected.currentTotal - selected.targetTotal
-  const isPositive = delta >= 0
-  const isOnTarget = targetGap >= 0
-  const insight = `${selected.currentLabel} is ${Math.abs(deltaPercent).toFixed(1)}% ${isPositive ? 'above' : 'below'} ${selected.previousLabel.toLowerCase()} and ${formatNumber(Math.abs(targetGap))} pcs ${isOnTarget ? 'above' : 'below'} target.`
+export default function ProductionAnalytics({ analytics }) {
+  const selected = analytics.day
+  const difference = selected.difference ?? (selected.currentTotal - selected.previousTotal)
+  const hasBaseline = selected.previousTotal > 0 && selected.differencePercent !== null
+  const isPositive = difference > 0
+  const isNegative = difference < 0
+  const comparisonClass = isPositive ? 'is-positive' : isNegative ? 'is-negative' : 'is-neutral'
+  let comparisonLabel = 'No change'
+  let insight = `${selected.currentLabel} matches ${selected.previousLabel.toLowerCase()} at ${formatNumber(selected.currentTotal)} ${selected.unit}.`
+  let InsightIcon = Minus
+
+  if (!hasBaseline) {
+    comparisonLabel = 'No baseline'
+    insight = selected.currentTotal > 0
+      ? `${selected.currentLabel} recorded ${formatNumber(selected.currentTotal)} ${selected.unit}; ${selected.previousLabel.toLowerCase()} recorded none.`
+      : `No output was recorded ${selected.currentLabel.toLowerCase()} or ${selected.previousLabel.toLowerCase()}.`
+    InsightIcon = selected.currentTotal > 0 ? CircleHelp : Minus
+  } else if (isPositive) {
+    comparisonLabel = `+${Math.abs(selected.differencePercent).toFixed(1)}%`
+    insight = `${selected.currentLabel} is ${Math.abs(selected.differencePercent).toFixed(1)}% above ${selected.previousLabel.toLowerCase()}.`
+    InsightIcon = TrendingUp
+  } else if (isNegative) {
+    comparisonLabel = `-${Math.abs(selected.differencePercent).toFixed(1)}%`
+    insight = `${selected.currentLabel} is ${Math.abs(selected.differencePercent).toFixed(1)}% below ${selected.previousLabel.toLowerCase()}.`
+    InsightIcon = TrendingDown
+  }
 
   return (
     <section className="section-card production-analytics-card industrial-chart-card" aria-labelledby="production-analytics-title">
@@ -45,19 +54,6 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
         <div>
           <p className="section-eyebrow">Data analytics</p>
           <h2 id="production-analytics-title">{selected.label}</h2>
-        </div>
-        <div className="trend-mode-toggle analytics-mode-toggle" role="group" aria-label="Production analytics range">
-          {analyticsModes.map((item) => (
-            <button
-              key={item.id}
-              className={`trend-mode-button ${mode === item.id ? 'is-selected' : ''}`}
-              type="button"
-              aria-pressed={mode === item.id}
-              onClick={() => onModeChange(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -71,12 +67,12 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
           <strong>{formatNumber(selected.previousTotal)} {selected.unit}</strong>
         </div>
         <div>
-          <span className="live-metric-label">Target Output</span>
-          <strong>{formatNumber(selected.targetTotal)} {selected.unit}</strong>
+          <span className="live-metric-label">Difference</span>
+          <strong>{difference > 0 ? '+' : ''}{formatNumber(difference)} {selected.unit}</strong>
         </div>
-        <div className={isPositive ? 'analytics-delta is-positive' : 'analytics-delta is-negative'}>
-          {isPositive ? <TrendingUp size={18} aria-hidden="true" /> : <TrendingDown size={18} aria-hidden="true" />}
-          <span>{isPositive ? '+' : ''}{deltaPercent.toFixed(1)}%</span>
+        <div className={`analytics-delta ${comparisonClass}`}>
+          <InsightIcon size={18} aria-hidden="true" />
+          <span>{comparisonLabel}</span>
         </div>
       </div>
 
@@ -84,10 +80,9 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
         <div className="chart-legend" aria-label="Production chart legend">
           <span><i className="legend-line legend-current" aria-hidden="true" />{selected.currentLabel}</span>
           <span><i className="legend-line legend-previous" aria-hidden="true" />{selected.previousLabel}</span>
-          <span><i className="legend-line legend-target" aria-hidden="true" />Target pace</span>
         </div>
         <ResponsiveContainer width="100%" height={320} minWidth={0}>
-          {/* ComposedChart layers current output, previous output, and target pace in one view. */}
+          {/* ComposedChart layers cumulative output for today and yesterday in one view. */}
           <ComposedChart data={selected.points} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="productionCurrentArea" x1="0" x2="0" y1="0" y2="1">
@@ -101,13 +96,12 @@ export default function ProductionAnalytics({ analytics, mode, onModeChange }) {
             <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.24 }} />
             <Area type="monotone" dataKey="current" name={selected.currentLabel} fill="url(#productionCurrentArea)" stroke="var(--chart-current)" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} />
             <Line type="monotone" dataKey="previous" name={selected.previousLabel} stroke="var(--chart-previous)" strokeWidth={2.5} strokeDasharray="7 7" dot={false} />
-            <Line type="monotone" dataKey="target" name="Target pace" stroke="var(--chart-target)" strokeWidth={2} strokeDasharray="4 6" dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      <div className={isOnTarget ? 'analytics-insight is-positive' : 'analytics-insight is-warning'}>
-        {isOnTarget ? <AnimatedGauge size={16} aria-hidden="true" /> : <Target size={16} aria-hidden="true" />}
+      <div className={`analytics-insight ${isPositive && hasBaseline ? 'is-positive' : isNegative ? 'is-warning' : 'is-neutral'}`}>
+        <InsightIcon size={16} aria-hidden="true" />
         <span>{insight}</span>
       </div>
     </section>

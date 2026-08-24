@@ -2809,10 +2809,6 @@ button:disabled {
 }
 
 /* Recharts analytics panels: production comparison and downtime impact. */
-.analytics-mode-toggle {
-  min-width: 270px;
-}
-
 .analytics-summary-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2852,6 +2848,10 @@ button:disabled {
 
 .analytics-delta.is-negative {
   color: var(--status-downtime-text);
+}
+
+.analytics-delta.is-neutral {
+  color: var(--c-text-2);
 }
 
 .analytics-chart {
@@ -2900,6 +2900,10 @@ button:disabled {
   color: var(--status-downtime-text);
   border-color: var(--status-downtime-border);
   background: var(--status-downtime-bg);
+}
+
+.analytics-insight.is-neutral {
+  color: var(--c-text-2);
 }
 
 .live-metric-label,
@@ -3049,11 +3053,6 @@ button:disabled {
 
 .legend-previous {
   border-color: var(--chart-previous);
-  border-top-style: dashed;
-}
-
-.legend-target {
-  border-color: var(--chart-target);
   border-top-style: dashed;
 }
 
@@ -5203,7 +5202,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
   .live-filter-group,
   .trend-mode-toggle,
-  .analytics-mode-toggle,
   .analytics-range-fieldset,
   .analytics-range-toggle,
   .filter-field,

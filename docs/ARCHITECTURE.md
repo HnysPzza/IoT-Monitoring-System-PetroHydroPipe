@@ -268,18 +268,19 @@ Backend-derived connection freshness
 Dashboard context strip
 ```
 
-### Admin-Managed Production Targets
+### Production Output Comparison
 
-Admins should eventually be able to add and edit target production output. This requires replacing the current fixed backend constants with persistent configuration and a role-protected API.
+Overview production analytics compares the current Manila calendar day with the immediately preceding Manila calendar day. It does not evaluate production against a configured target.
 
-Before implementation, define:
+The backend uses S-05 Output Cutting pulse events as the single source for both totals. One bounded query covers yesterday through the end of today, then the service derives:
 
-- Whether targets apply by day, week, month, shift, machine, or effective date.
-- Validation rules and units.
-- Change history and audit-log requirements.
-- How charts handle target changes inside a reporting period.
+- Today's pipe count.
+- Yesterday's pipe count.
+- The signed difference in pipes.
+- The percentage difference when yesterday is greater than zero.
+- Cumulative Today and Yesterday chart points.
 
-The design may show an Admin-only edit affordance, but it must remain documented as planned until the storage model, API contract, authorization, and audit behavior are implemented.
+When yesterday is zero, the API returns a null percentage so the frontend displays a no-baseline state instead of a misleading zero-percent change. Day, week, and month selectors remain available for downtime analysis only.
 
 ### Downtime Period Expansion
 

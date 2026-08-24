@@ -17,11 +17,6 @@ const {
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 
-const OUTPUT_TARGETS = {
-  day: 1400,
-  week: 7600,
-  month: 30000,
-}
 const DOWNTIME_THRESHOLD_MINUTES = 30
 
 function createDashboardError(status, code, message) {
@@ -50,16 +45,7 @@ function getWindowForMode(mode, anchorDate) {
   return { start, end: addBusinessDays(start, 1) }
 }
 
-function getPreviousWindow(mode, window) {
-  if (mode === 'month') {
-    const start = addBusinessMonths(window.start, -1)
-    return { start, end: window.start }
-  }
-
-  if (mode === 'week') {
-    return { start: addBusinessDays(window.start, -7), end: window.start }
-  }
-
+function getPreviousDayWindow(window) {
   return { start: addBusinessDays(window.start, -1), end: window.start }
 }
 
@@ -105,19 +91,8 @@ async function getMachineAndSensors() {
   return { machine, sensors: sensors || [] }
 }
 
-async function getProductionSource(machineId, range) {
+async function getProductionEvents(machineId, range) {
   const supabase = getSupabaseClient()
-  const { data: counts, error: countsError } = await supabase
-    .from('production_counts')
-    .select('count_value, window_start')
-    .eq('machine_id', machineId)
-    .gte('window_start', range.start.toISOString())
-    .lt('window_start', range.end.toISOString())
-
-  if (countsError) {
-    throw createDashboardError(500, 'PRODUCTION_COUNT_QUERY_FAILED', 'Unable to load production counts.')
-  }
-
   const { data: outputSensor, error: sensorError } = await supabase
     .from('sensors')
     .select('id')
@@ -130,7 +105,7 @@ async function getProductionSource(machineId, range) {
   }
 
   if (!outputSensor) {
-    return { counts: counts || [], events: [] }
+    return []
   }
 
   const { data: events, error: eventError } = await supabase
@@ -146,22 +121,14 @@ async function getProductionSource(machineId, range) {
     throw createDashboardError(500, 'PRODUCTION_EVENT_QUERY_FAILED', 'Unable to load production event count.')
   }
 
-  return { counts: counts || [], events: events || [] }
+  return events || []
 }
 
-function getProductionTotalFromSource(source, window) {
+function getProductionTotal(events, window) {
   const startTime = window.start.getTime()
   const endTime = window.end.getTime()
-  const summarizedCount = source.counts.reduce((sum, row) => {
-    const rowTime = new Date(row.window_start).getTime()
-    return rowTime >= startTime && rowTime < endTime ? sum + Number(row.count_value || 0) : sum
-  }, 0)
 
-  if (summarizedCount > 0) {
-    return summarizedCount
-  }
-
-  return source.events.reduce((count, row) => {
+  return events.reduce((count, row) => {
     const rowTime = new Date(row.recorded_at).getTime()
     return rowTime >= startTime && rowTime < endTime ? count + 1 : count
   }, 0)
@@ -200,64 +167,43 @@ function getModePointBoundaries(mode, window) {
 }
 
 async function buildProductionAnalytics(machineId, anchorDate) {
-  const modes = ['day', 'week', 'month']
-  const labels = {
-    day: ['Daily Output', 'Today', 'Yesterday'],
-    week: ['Weekly Output', 'This Week', 'Last Week'],
-    month: ['Monthly Output', 'This Month', 'Last Month'],
-  }
-  const analytics = {}
-  const configs = modes.map((mode) => {
-    const window = getWindowForMode(mode === 'day' ? 'today' : mode, anchorDate)
-    const previousWindow = getPreviousWindow(mode === 'day' ? 'today' : mode, window)
-    const boundaries = getModePointBoundaries(mode, window)
-    const previousBoundaries = getModePointBoundaries(mode, previousWindow)
-
-    return { mode, window, previousWindow, boundaries, previousBoundaries }
+  const window = getWindowForMode('today', anchorDate)
+  const previousWindow = getPreviousDayWindow(window)
+  const boundaries = getModePointBoundaries('day', window)
+  const previousBoundaries = getModePointBoundaries('day', previousWindow)
+  const events = await getProductionEvents(machineId, {
+    start: previousWindow.start,
+    end: window.end,
   })
-  const sourceRange = configs.reduce((range, config) => ({
-    start: config.previousWindow.start < range.start ? config.previousWindow.start : range.start,
-    end: config.window.end > range.end ? config.window.end : range.end,
-  }), { start: configs[0].previousWindow.start, end: configs[0].window.end })
-  const productionSource = await getProductionSource(machineId, sourceRange)
+  const currentTotal = getProductionTotal(events, window)
+  const previousTotal = getProductionTotal(events, previousWindow)
+  const difference = currentTotal - previousTotal
+  const differencePercent = previousTotal > 0
+    ? Number(((difference / previousTotal) * 100).toFixed(2))
+    : null
+  const points = boundaries.map((boundary, index) => ({
+    label: boundary.label,
+    shift: boundary.shift,
+    current: getProductionTotal(events, { start: window.start, end: boundary.end }),
+    previous: getProductionTotal(events, {
+      start: previousWindow.start,
+      end: previousBoundaries[index]?.end || previousWindow.end,
+    }),
+  }))
 
-  for (const config of configs) {
-    const { mode, window, previousWindow, boundaries, previousBoundaries } = config
-    const currentTotal = getProductionTotalFromSource(productionSource, window)
-    const previousTotal = getProductionTotalFromSource(productionSource, previousWindow)
-    const targetTotal = OUTPUT_TARGETS[mode]
-
-    const points = []
-    for (let index = 0; index < boundaries.length; index += 1) {
-      const currentBoundary = { start: window.start, end: boundaries[index].end }
-      const previousBoundary = { start: previousWindow.start, end: previousBoundaries[index]?.end || previousWindow.end }
-      const current = getProductionTotalFromSource(productionSource, currentBoundary)
-      const previous = getProductionTotalFromSource(productionSource, previousBoundary)
-      const target = Math.round((targetTotal / boundaries.length) * (index + 1))
-
-      points.push({
-        label: boundaries[index].label,
-        shift: boundaries[index].shift,
-        current,
-        previous,
-        target,
-        estimatedLoss: 0,
-      })
-    }
-
-    analytics[mode] = {
-      label: labels[mode][0],
-      currentLabel: labels[mode][1],
-      previousLabel: labels[mode][2],
+  return {
+    day: {
+      label: 'Today vs Yesterday',
+      currentLabel: 'Today',
+      previousLabel: 'Yesterday',
       currentTotal,
       previousTotal,
-      targetTotal,
-      unit: 'pcs',
+      difference,
+      differencePercent,
+      unit: 'pipes',
       points,
-    }
+    },
   }
-
-  return analytics
 }
 
 function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
@@ -338,7 +284,7 @@ async function getOverview(filters = {}) {
     getOverlappingDowntime(machine.id, trendWindow),
     getSettingsHistory(machine.id, todayWindow),
     getSettingsHistory(machine.id, trendWindow),
-    buildProductionAnalytics(machine.id, anchorDate),
+    buildProductionAnalytics(machine.id, todayWindow.start),
   ])
 
   const productionToday = productionAnalytics.day.currentTotal
@@ -357,7 +303,7 @@ async function getOverview(filters = {}) {
   return {
     alerts: buildAlerts(machine, sensors, todayDowntimeRows),
     summary: [
-      { id: 'pipes', label: 'Total Pipes Today', value: `${formatNumber(productionToday)} pcs`, tone: 'success', helper: 'From S-05 output cutting events' },
+      { id: 'pipes', label: 'Total Pipes Today', value: `${formatNumber(productionToday)} pipes`, tone: 'success', helper: 'From S-05 output cutting events' },
       { id: 'events', label: 'Downtime Events', value: String(todayDowntimeRows.length), tone: 'warning', helper: `${openDowntimeCount} unresolved today` },
       { id: 'minutes', label: 'Downtime Today', value: `${todayMetrics.durationMinutes} min`, tone: 'danger', helper: `${todayMetrics.unplannedMinutes} unplanned min` },
       { id: 'availability', label: 'Machine Availability', value: availabilityValue, tone: 'primary', helper: `For ${machine.name}` },

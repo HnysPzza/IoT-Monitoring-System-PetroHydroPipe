@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, Target } from 'lucide-react'
+import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
@@ -37,9 +37,6 @@ function ProductionAnalyticsSkeleton() {
         <div>
           <p className="section-eyebrow">Data analytics</p>
           <SkeletonBlock className="skeleton-heading" />
-        </div>
-        <div className="trend-controls-skeleton" aria-hidden="true">
-          <SkeletonBlock className="skeleton-toggle" style={{ width: '180px' }} />
         </div>
       </div>
       <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
@@ -130,7 +127,6 @@ export default function DashboardSection() {
   const downtimeChartRequestIdRef = useRef(0)
   const successfulDowntimeChartRef = useRef(null)
   const [trendMode, setTrendMode] = useState('today')
-  const [analyticsMode, setAnalyticsMode] = useState('day')
   const [trendAnchorDate, setTrendAnchorDate] = useState(() => startOfDay(new Date()))
   const today = startOfDay(new Date())
   const trendRangeLabel = getTrendRangeLabel(trendMode, trendAnchorDate)
@@ -286,7 +282,8 @@ export default function DashboardSection() {
     currentKey: liveKey,
   })
   const overviewIsReady = overviewDisplayState === 'success' && hasCurrentOverview
-  const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.[analyticsMode] : null
+  const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
+  const productionDifference = selectedAnalytics?.difference ?? 0
   const summaryById = overviewIsReady
     ? Object.fromEntries(overviewData.summary.map((item) => [item.id, item]))
     : {}
@@ -339,12 +336,16 @@ export default function DashboardSection() {
       tone: 'warning',
     },
     {
-      id: 'target',
-      label: 'Target Production Output',
-      value: selectedAnalytics ? `${formatNumber(selectedAnalytics.targetTotal)} ${selectedAnalytics.unit}` : '—',
-      helper: selectedAnalytics?.label || 'Selected period',
-      icon: Target,
-      tone: 'primary',
+      id: 'comparison',
+      label: 'Difference from Yesterday',
+      value: selectedAnalytics ? `${productionDifference > 0 ? '+' : ''}${formatNumber(productionDifference)} ${selectedAnalytics.unit}` : '—',
+      helper: !selectedAnalytics
+        ? 'Comparison unavailable'
+        : selectedAnalytics.differencePercent === null
+          ? 'No output baseline yesterday'
+          : `${Math.abs(selectedAnalytics.differencePercent).toFixed(1)}% ${productionDifference > 0 ? 'higher' : productionDifference < 0 ? 'lower' : 'change'}`,
+      icon: productionDifference < 0 ? TrendingDown : TrendingUp,
+      tone: productionDifference > 0 ? 'success' : productionDifference < 0 ? 'warning' : 'neutral',
     },
   ]
   const sensorHealth = sensorIdentities.map((identity) => {
@@ -474,11 +475,7 @@ export default function DashboardSection() {
 
       <div className="overview-charts-grid">
         {overviewIsReady ? (
-          <ProductionAnalytics
-            analytics={overviewData.productionAnalytics}
-            mode={analyticsMode}
-            onModeChange={setAnalyticsMode}
-          />
+          <ProductionAnalytics analytics={overviewData.productionAnalytics} />
         ) : overviewDisplayState === 'loading' && !hasCurrentOverview ? (
           <ProductionAnalyticsSkeleton />
         ) : null}

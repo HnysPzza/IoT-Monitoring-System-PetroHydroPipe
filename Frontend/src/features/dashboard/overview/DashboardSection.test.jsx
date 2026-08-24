@@ -38,14 +38,17 @@ vi.mock('./DowntimeTrendChart.jsx', async () => {
 function overviewPayload() {
   return {
     alerts: [],
-    summary: [{ id: 'output', label: 'Production Output', value: '5 pcs', helper: 'Today' }],
+    summary: [{ id: 'pipes', label: 'Production Output', value: '5 pipes', helper: 'Today' }],
     productionAnalytics: {
       day: {
         currentTotal: 5,
-        targetTotal: 1400,
-        unit: 'pcs',
+        previousTotal: 3,
+        difference: 2,
+        differencePercent: 66.67,
+        unit: 'pipes',
         currentLabel: 'Today',
-        label: 'Daily Output',
+        previousLabel: 'Yesterday',
+        label: 'Today vs Yesterday',
       },
     },
     availability: [{ machineId: 'Spiral Mill 01', percent: 98 }],
@@ -105,7 +108,8 @@ describe('DashboardSection', () => {
     expect(await screen.findByText('Production Output')).toBeInTheDocument()
     expect(await screen.findByTestId('downtime-chart')).toHaveTextContent('Downtime points: 1')
     expect(screen.getByText('1 / 1')).toBeInTheDocument()
-    expect(screen.getByText('Target Production Output')).toBeInTheDocument()
+    expect(screen.getByText('Difference from Yesterday')).toBeInTheDocument()
+    expect(screen.getByText('+2 pipes')).toBeInTheDocument()
     expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /last hour/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
