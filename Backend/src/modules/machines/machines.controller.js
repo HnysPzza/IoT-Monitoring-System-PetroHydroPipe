@@ -21,13 +21,14 @@ async function updateMachineStatus(req, res) {
 }
 
 async function updateSensorStatus(req, res) {
-  const sensor = await machinesService.updateSensorStatus({
+  const result = await machinesService.updateSensorStatus({
     sensorId: req.validated.params.id,
     status: req.validated.body.status,
+    overrideReason: req.validated.body.overrideReason,
     actorUserId: req.user.sub,
   })
 
-  res.json({ sensor })
+  res.json(result)
 }
 
 module.exports = {

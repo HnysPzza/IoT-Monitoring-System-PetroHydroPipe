@@ -383,4 +383,51 @@ describe('MachinesSection request states', () => {
     expect(screen.getAllByLabelText('Sensor status')[0]).toHaveValue('Inactive')
     expect(screen.getAllByLabelText('Sensor status')[1]).toHaveValue('Fault')
   })
+
+  it('requires a reason and applies Active as a coordinated recovery override', async () => {
+    const user = userEvent.setup()
+    const faultSensor = sensorFixture({ status: 'Fault', sensorCode: 'S-02', label: 'Inside Filler Wire' })
+    getMachines.mockResolvedValue({ machines: [machineFixture({ status: 'Downtime' })] })
+    getMachineSensors.mockResolvedValue({ sensors: [faultSensor] })
+    updateSensorStatus.mockResolvedValue({
+      sensor: { ...faultSensor, status: 'Active' },
+      machine: machineFixture({ status: 'Running' }),
+      recoveryOverride: { source: 'manual_override', alertAction: 'updated' },
+    })
+
+    renderWithAuth(<MachinesSection />)
+
+    await user.selectOptions(await screen.findByLabelText('Sensor status'), 'Active')
+
+    expect(screen.getByRole('heading', { name: 'Confirm S-02 recovery' })).toBeInTheDocument()
+    expect(updateSensorStatus).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Confirm recovery' })).toBeDisabled()
+
+    await user.type(screen.getByLabelText('Override reason'), 'Maintenance replaced the filler wire')
+    await user.click(screen.getByRole('button', { name: 'Confirm recovery' }))
+
+    expect(updateSensorStatus).toHaveBeenCalledWith(
+      'test-token',
+      faultSensor.id,
+      'Active',
+      'Maintenance replaced the filler wire',
+    )
+    expect(await screen.findByText(/recovery override applied/i)).toHaveTextContent('waiting for acknowledgement')
+    expect(screen.getByLabelText('Machine status')).toHaveValue('Running')
+    expect(screen.queryByRole('heading', { name: 'Confirm S-02 recovery' })).not.toBeInTheDocument()
+  })
+
+  it('can reconcile an already-active sensor left behind by the previous manual flow', async () => {
+    const user = userEvent.setup()
+    const activeSensor = sensorFixture({ status: 'Active', sensorCode: 'S-02', label: 'Inside Filler Wire' })
+    getMachines.mockResolvedValue({ machines: [machineFixture({ status: 'Downtime' })] })
+    getMachineSensors.mockResolvedValue({ sensors: [activeSensor] })
+
+    renderWithAuth(<MachinesSection />)
+
+    await user.click(await screen.findByRole('button', { name: 'Reconcile recovery' }))
+
+    expect(screen.getByRole('heading', { name: 'Confirm S-02 recovery' })).toBeInTheDocument()
+    expect(updateSensorStatus).not.toHaveBeenCalled()
+  })
 })

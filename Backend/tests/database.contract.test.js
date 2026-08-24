@@ -198,3 +198,18 @@ test('migration 016 and fresh schema protect every base table from client roles'
   assert.doesNotMatch(migration, /grant[^;]*delete[^;]*to service_role/i)
   assert.match(migration, /commit;/i)
 })
+
+test('migration 018 and fresh schema define the guarded manual recovery override', () => {
+  const migration = read('database/migrations/018_add_manual_sensor_recovery_override.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /function public\.override_sensor_recovery/i)
+    assert.match(content, /p_reason text/i)
+    assert.match(content, /SENSOR_MANUAL_RECOVERY_OVERRIDE/i)
+    assert.match(content, /recoveryPending/i)
+    assert.match(content, /security definer/i)
+    assert.match(content, /revoke execute[\s\S]*anon, authenticated/i)
+    assert.match(content, /grant execute[\s\S]*service_role/i)
+  }
+})

@@ -2850,6 +2850,45 @@ button:disabled {
   color: var(--status-downtime-text);
 }
 
+.sensor-recovery-override {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--status-idle-border);
+  border-radius: 8px;
+  background: var(--status-idle-bg);
+}
+
+.sensor-recovery-override h3,
+.sensor-recovery-override p {
+  margin: 0;
+}
+
+.sensor-recovery-override>div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.sensor-recovery-override textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  color: var(--c-text);
+  background: var(--c-surface);
+  font: inherit;
+}
+
+.sensor-recovery-override textarea:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
 .analytics-delta.is-neutral {
   color: var(--c-text-2);
 }
@@ -5118,6 +5157,11 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   .live-machine-grid,
   .machine-admin-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sensor-recovery-override {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }
 

@@ -21,6 +21,15 @@ const sensorStatusSchema = z.object({
   }),
   body: z.object({
     status: z.enum(['Active', 'Inactive', 'Fault']),
+    overrideReason: z.string().trim().min(1, 'A recovery override reason is required.').max(500, 'The recovery override reason is too long.').optional(),
+  }).superRefine((body, context) => {
+    if (body.status === 'Active' && !body.overrideReason) {
+      context.addIssue({
+        code: 'custom',
+        path: ['overrideReason'],
+        message: 'A recovery override reason is required when manually activating a sensor.',
+      })
+    }
   }),
 })
 

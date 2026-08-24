@@ -205,10 +205,16 @@ Apply migration `017_secure_downtime_update_rpc.sql` after migration `016`. Migr
 
 Migration `017` is safe to reapply. Execute permission remains revoked from `public`, `anon`, and `authenticated` and is granted only to `service_role`.
 
+### Migration 018
+
+Apply migration `018_add_manual_sensor_recovery_override.sql` after migration `017`. It adds a service-role-only, security-definer recovery override that atomically activates the selected sensor, recalculates its machine, resolves matching open downtime, records alert recovery metadata, and writes the required audit history. A non-empty reason is required.
+
+The override does not insert a sensor event or advance the device event watermark. A later physical `pulse` or `recovered` event continues through the normal IoT ingestion path without duplicating downtime. Migration `018` also restores the security-definer boundary on `acknowledge_alert`, which is required to complete a recovered alert after migration `016` removed direct alert writes.
+
 Run the focused regression from `Backend`:
 
 ```bash
-node --test tests/base-table-security.migration.pglite.test.js tests/downtime-update-security.migration.pglite.test.js tests/database.contract.test.js
+node --test tests/base-table-security.migration.pglite.test.js tests/downtime-update-security.migration.pglite.test.js tests/manual-recovery-override.migration.pglite.test.js tests/database.contract.test.js
 ```
 
 ## ESP32 Device Keys

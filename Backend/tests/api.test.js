@@ -454,12 +454,20 @@ test('admin can list, create, and archive users through mocked service', async (
 })
 
 test('machine routes allow admin status update and block production supervisor', async () => {
+  const sensorUpdateCalls = []
   const app = loadAppWithMocks({
     'src/modules/machines/machines.service.js': {
       listMachines: async () => [{ id: machineId, machineCode: 'M-01', name: 'Spiral Mill 01', status: 'Idle' }],
       listSensorsByMachine: async () => [{ id: sensorId, sensorCode: 'S-01', status: 'Active' }],
       updateMachineStatus: async ({ machineId: targetMachineId, status }) => ({ id: targetMachineId, status }),
-      updateSensorStatus: async ({ sensorId: targetSensorId, status }) => ({ id: targetSensorId, status }),
+      updateSensorStatus: async (values) => {
+        sensorUpdateCalls.push(values)
+        return {
+          sensor: { id: values.sensorId, status: values.status },
+          machine: { id: machineId, status: 'Running' },
+          recoveryOverride: { source: 'manual_override' },
+        }
+      },
     },
   })
 
@@ -479,6 +487,24 @@ test('machine routes allow admin status update and block production supervisor',
 
     assert.equal(updated.response.status, 200)
     assert.equal(updated.body.machine.status, 'Running')
+
+    const missingReason = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: { status: 'Active' },
+    })
+    assert.equal(missingReason.response.status, 400)
+    assertError(missingReason.body, 'VALIDATION_ERROR')
+
+    const recovered = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: { status: 'Active', overrideReason: 'Maintenance confirmed normal operation' },
+    })
+    assert.equal(recovered.response.status, 200)
+    assert.equal(recovered.body.sensor.status, 'Active')
+    assert.equal(recovered.body.machine.status, 'Running')
+    assert.equal(sensorUpdateCalls[0].overrideReason, 'Maintenance confirmed normal operation')
   })
 })
 

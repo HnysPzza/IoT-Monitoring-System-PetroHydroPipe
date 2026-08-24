@@ -282,6 +282,14 @@ The backend uses S-05 Output Cutting pulse events as the single source for both 
 
 When yesterday is zero, the API returns a null percentage so the frontend displays a no-baseline state instead of a misleading zero-percent change. Day, week, and month selectors remain available for downtime analysis only.
 
+### Manual Sensor Recovery Override
+
+Physical `pulse` and `recovered` events remain the normal authority for sensor recovery. Production administrators may use a separate manual recovery override when the physical issue has been verified but the recovery event is unavailable.
+
+The override requires a reason and atomically activates the selected sensor, recalculates the machine from all sensor states, resolves matching open downtime, marks the matching alert as recovered, and writes an audit record. It does not insert or imitate an IoT sensor event. A later physical event remains valid and is processed idempotently through the normal ingestion flow.
+
+An Active alert becomes recovered and waits for acknowledgement. An already acknowledged alert resolves immediately when recovery is recorded. Machine status must not be used by itself to recover a sensor-specific incident.
+
 ### Downtime Period Expansion
 
 The planned overview control uses `Last Hour`, `Today`, `Weekly`, and `Monthly`. The current dashboard supports today, week, and month ranges. `Last Hour` requires an additional backend time-window contract and should not be treated as implemented until the API and chart aggregation support it.
