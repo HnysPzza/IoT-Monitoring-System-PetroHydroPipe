@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Moon, Plus, RotateCw, Save, Sun, Trash2 } from 'lucide-react'
+import { AlertTriangle, Plus, RotateCw, Save, Trash2 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
-import { useTheme } from '../../../shared/hooks/useTheme.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
@@ -186,7 +185,6 @@ function numericValue(value) {
 
 export default function SettingsSection() {
   const { token } = useAuth()
-  const { theme, setTheme } = useTheme()
   const [machine, setMachine] = useState(null)
   const [settings, setSettings] = useState(null)
   const [constraints, setConstraints] = useState(null)
@@ -747,11 +745,6 @@ export default function SettingsSection() {
           </section>
         </form>
       )}
-
-      <section className="section-card settings-panel" aria-labelledby="display-settings-title">
-        <div className="section-copy"><p className="section-eyebrow">Display preferences</p><h2 id="display-settings-title">Interface</h2><p>Choose the appearance for this workstation.</p></div>
-        <div className="settings-row"><div className="settings-copy"><h3>Interface theme</h3><p>Switch between dark and light interfaces.</p></div><div className="theme-toggle" role="group" aria-label="Interface theme"><button className={`theme-option ${theme === 'dark' ? 'is-selected' : ''}`} type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}><Moon size={18} aria-hidden="true" /> Dark</button><button className={`theme-option ${theme === 'light' ? 'is-selected' : ''}`} type="button" aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><Sun size={18} aria-hidden="true" /> Light</button></div></div>
-      </section>
     </div>
   )
 }

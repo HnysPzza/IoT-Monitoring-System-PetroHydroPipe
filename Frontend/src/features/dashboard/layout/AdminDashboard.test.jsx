@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
+import { ThemeContext } from '../../../shared/context/ThemeContext.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AdminDashboard from './AdminDashboard.jsx'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
@@ -779,9 +780,11 @@ describe('AdminDashboard alerts', () => {
     function renderTree(sessionToken) {
       return (
         <AuthContext.Provider value={{ token: sessionToken, user, logout: vi.fn() }}>
-          <MemoryRouter initialEntries={['/dashboard']}>
-            <AdminDashboard />
-          </MemoryRouter>
+          <ThemeContext.Provider value={{ theme: 'light', setTheme: vi.fn() }}>
+            <MemoryRouter initialEntries={['/dashboard']}>
+              <AdminDashboard />
+            </MemoryRouter>
+          </ThemeContext.Provider>
         </AuthContext.Provider>
       )
     }
@@ -839,9 +842,11 @@ describe('AdminDashboard alerts', () => {
     function renderTree(sessionToken) {
       return (
         <AuthContext.Provider value={{ token: sessionToken, user, logout: vi.fn() }}>
-          <MemoryRouter initialEntries={['/dashboard']}>
-            <AdminDashboard />
-          </MemoryRouter>
+          <ThemeContext.Provider value={{ theme: 'light', setTheme: vi.fn() }}>
+            <MemoryRouter initialEntries={['/dashboard']}>
+              <AdminDashboard />
+            </MemoryRouter>
+          </ThemeContext.Provider>
         </AuthContext.Provider>
       )
     }
@@ -1001,4 +1006,33 @@ describe('AdminDashboard alerts', () => {
     expect(liveFeedLink).toHaveAttribute('title', 'Live Feed')
     expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
   })
+
+  it('renders topbar theme toggle and allows switching themes', async () => {
+    const setThemeMock = vi.fn()
+    const user = userEvent.setup()
+
+    renderWithAuth(<AdminDashboard />, {
+      themeValue: { theme: 'dark', setTheme: setThemeMock },
+    })
+
+    const toggleButton = screen.getByRole('button', { name: 'Switch to light theme' })
+    expect(toggleButton).toBeInTheDocument()
+    expect(toggleButton).toHaveAttribute('title', 'Switch to light theme')
+    expect(toggleButton.querySelector('.theme-toggle-icon.is-sun')).toBeInTheDocument()
+
+    await user.click(toggleButton)
+    expect(setThemeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders moon icon and switch to dark theme label when currently in light theme', async () => {
+    renderWithAuth(<AdminDashboard />, {
+      themeValue: { theme: 'light', setTheme: vi.fn() },
+    })
+
+    const toggleButton = screen.getByRole('button', { name: 'Switch to dark theme' })
+    expect(toggleButton).toBeInTheDocument()
+    expect(toggleButton).toHaveAttribute('title', 'Switch to dark theme')
+    expect(toggleButton.querySelector('.theme-toggle-icon.is-moon')).toBeInTheDocument()
+  })
 })
+

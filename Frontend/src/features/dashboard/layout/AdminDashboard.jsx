@@ -8,9 +8,11 @@ import {
   LogOut,
   Logs,
   Monitor,
+  Moon,
   MoveRight,
   Rss,
   Settings,
+  Sun,
   TriangleAlert,
   UserRound,
   UserRoundCheck,
@@ -19,6 +21,7 @@ import {
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useTheme } from '../../../shared/hooks/useTheme.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import {
@@ -124,6 +127,7 @@ export default function AdminDashboard() {
   const acknowledgementOperationsRef = useRef(new Map())
   const applyAlertDeltaRef = useRef(() => { })
   const { token, user, logout } = useAuth()
+  const { theme, setTheme } = useTheme()
   sessionTokenRef.current = token
   const navigate = useNavigate()
   const location = useLocation()
@@ -635,7 +639,23 @@ export default function AdminDashboard() {
                       ? 'Real-time temporarily unavailable — retrying'
                       : 'Reconnecting'}
             </span>
+            <div className="topbar-divider" aria-hidden="true" />
             <DashboardClock />
+            <div className="topbar-divider" aria-hidden="true" />
+            <button
+              className={`theme-toggle-btn is-${theme}`}
+              type="button"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            >
+              {theme === 'dark' ? (
+                <Sun className="theme-toggle-icon is-sun" size={18} aria-hidden="true" />
+              ) : (
+                <Moon className="theme-toggle-icon is-moon" size={18} aria-hidden="true" />
+              )}
+            </button>
+            <div className="topbar-divider" aria-hidden="true" />
             <button
               ref={alertsButtonRef}
               className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}

@@ -1,8 +1,9 @@
 import { MemoryRouter } from 'react-router'
 import { render } from '@testing-library/react'
 import { AuthContext } from '../features/auth/authSession.jsx'
+import { ThemeContext } from '../shared/context/ThemeContext.jsx'
 
-export function renderWithAuth(ui, { authValue = {}, route = '/' } = {}) {
+export function renderWithAuth(ui, { authValue = {}, themeValue = { theme: 'light', setTheme: () => {} }, route = '/' } = {}) {
   const defaultAuthValue = {
     token: 'test-token',
     user: {
@@ -18,9 +19,11 @@ export function renderWithAuth(ui, { authValue = {}, route = '/' } = {}) {
 
   return render(
     <AuthContext.Provider value={{ ...defaultAuthValue, ...authValue }}>
-      <MemoryRouter initialEntries={[route]}>
-        {ui}
-      </MemoryRouter>
+      <ThemeContext.Provider value={themeValue}>
+        <MemoryRouter initialEntries={[route]}>
+          {ui}
+        </MemoryRouter>
+      </ThemeContext.Provider>
     </AuthContext.Provider>,
   )
 }

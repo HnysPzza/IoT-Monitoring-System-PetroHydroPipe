@@ -13,7 +13,7 @@ export function AnimatedGauge({ size = 20, className = '', strokeWidth = 2, ...p
       className={`animated-gauge-icon ${className}`}
       {...props}
     >
-      <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+      <path d="M3.34 19a10 10 0 1 1 17.32 0" className="gauge-dial" />
       <path
         d="m12 14 4-4"
         className="gauge-needle"
