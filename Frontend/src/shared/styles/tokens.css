@@ -1022,8 +1022,111 @@ button:disabled {
   }
 }
 
+/* Animated Analytics (ChartNoAxesCombined) Micro-Animation */
+.sidebar-link.is-chart-no-axes-combined .sidebar-link-icon {
+  transition: transform 240ms ease;
+}
+
 .sidebar-link.is-chart-no-axes-combined:hover .sidebar-link-icon {
-  transform: translate(2px, -2px);
+  transform: scale(1.12);
+}
+
+.animated-analytics-icon {
+  overflow: visible !important;
+}
+
+.animated-analytics-icon .analytics-bar {
+  transform-origin: center bottom;
+  transform-box: fill-box;
+  transition: transform 300ms ease, opacity 300ms ease;
+  will-change: transform;
+}
+
+/* Staggered bar appearance & growth moving alongside the trendline pointer */
+.sidebar-link.is-chart-no-axes-combined:hover .analytics-bar,
+.sidebar-link:hover .animated-analytics-icon .analytics-bar,
+.animated-analytics-icon:hover .analytics-bar {
+  animation: analytics-bar-wave 200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.sidebar-link.is-chart-no-axes-combined:hover .analytics-bar:nth-child(1),
+.sidebar-link:hover .animated-analytics-icon .analytics-bar:nth-child(1),
+.animated-analytics-icon:hover .analytics-bar:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.sidebar-link.is-chart-no-axes-combined:hover .analytics-bar:nth-child(2),
+.sidebar-link:hover .animated-analytics-icon .analytics-bar:nth-child(2),
+.animated-analytics-icon:hover .analytics-bar:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.sidebar-link.is-chart-no-axes-combined:hover .analytics-bar:nth-child(3),
+.sidebar-link:hover .animated-analytics-icon .analytics-bar:nth-child(3),
+.animated-analytics-icon:hover .analytics-bar:nth-child(3) {
+  animation-delay: 220ms;
+}
+
+.sidebar-link.is-chart-no-axes-combined:hover .analytics-bar:nth-child(4),
+.sidebar-link:hover .animated-analytics-icon .analytics-bar:nth-child(4),
+.animated-analytics-icon:hover .analytics-bar:nth-child(4) {
+  animation-delay: 330ms;
+}
+
+.sidebar-link.is-chart-no-axes-combined:hover .analytics-bar:nth-child(5),
+.sidebar-link:hover .animated-analytics-icon .analytics-bar:nth-child(5),
+.animated-analytics-icon:hover .analytics-bar:nth-child(5) {
+  animation-delay: 440ms;
+}
+
+@keyframes analytics-bar-wave {
+  0% {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  70% {
+    transform: scaleY(1.35);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.animated-analytics-icon .analytics-trendline {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  will-change: stroke-dashoffset;
+  transition: stroke-dashoffset 400ms ease;
+}
+
+.sidebar-link.is-chart-no-axes-combined:hover .sidebar-link-icon .analytics-trendline,
+.sidebar-link:hover .animated-analytics-icon .analytics-trendline,
+.animated-analytics-icon:hover .analytics-trendline {
+  animation: trendline-draw-up 800ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes trendline-draw-up {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.2;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
 }
 
 .sidebar-link.is-logs:hover .sidebar-link-icon {

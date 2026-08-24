@@ -34,6 +34,7 @@ import {
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
 
 import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
+import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.jsx'
 
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
 const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
@@ -51,7 +52,7 @@ const icons = {
   rss: Rss,
   'triangle-alert': TriangleAlert,
   'bar-chart-3': BarChart3,
-  'chart-no-axes-combined': ChartNoAxesCombined,
+  'chart-no-axes-combined': AnimatedAnalytics,
   users: Users,
   monitor: Monitor,
   logs: Logs,
