@@ -158,18 +158,64 @@ test('dashboard downtime impact includes pre-window events and uses break-aware 
   const dashboardService = require('../src/modules/dashboard/dashboard.service')
 
   const result = await dashboardService.getDowntimeImpact({ trendMode: 'today', date: '2026-08-09' })
-  const nineAm = result.points.find((point) => point.label === '9AM')
+  const sixToNineAm = result.points.find((point) => point.label === '6-9AM')
 
   assert.equal(repositoryCalls[0].machineId, MACHINE_ID)
   assert.equal(repositoryCalls[0].window.start.toISOString(), '2026-08-08T16:00:00.000Z')
-  assert.deepEqual(nineAm, {
-    label: '9AM',
-    minutes: 510,
+  assert.deepEqual(sixToNineAm, {
+    label: '6-9AM',
+    periodState: 'completed',
+    minutes: 150,
     unplannedMinutes: 30,
-    plannedExcludedMinutes: 480,
+    plannedExcludedMinutes: 120,
     estimatedLoss: 69,
     cause: 'Flux Refill',
   })
+})
+
+test('current-day downtime appears only in its interval and future periods remain unobserved', async (t) => {
+  t.mock.timers.enable({
+    apis: ['Date'],
+    now: new Date('2026-08-25T07:39:00+08:00'),
+  })
+  clearSourceCache()
+  const settingsHistory = [{
+    machine_id: MACHINE_ID,
+    version: '1',
+    shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0 },
+    effective_from: null,
+    effective_to: null,
+  }]
+  mockModule('src/database/client.js', { getSupabaseClient: createMachineClient })
+  mockModule('src/modules/downtime/downtime.repository.js', {
+    getOverlappingDowntime: async () => [{
+      id: 'down-morning',
+      machine_id: MACHINE_ID,
+      started_at: '2026-08-24T23:23:00.000Z',
+      ended_at: '2026-08-24T23:31:00.000Z',
+      cause: 'Other',
+      status: 'Resolved',
+      sensors: { sensor_code: 'S-03' },
+    }],
+  })
+  mockModule('src/modules/settings/settingsHistory.repository.js', {
+    getSettingsHistory: async () => settingsHistory,
+  })
+  const dashboardService = require('../src/modules/dashboard/dashboard.service')
+
+  const result = await dashboardService.getDowntimeImpact({ trendMode: 'today', date: '2026-08-25' })
+
+  assert.deepEqual(
+    result.points.map(({ label, periodState, minutes }) => ({ label, periodState, minutes })),
+    [
+      { label: '12-6AM', periodState: 'completed', minutes: 0 },
+      { label: '6-9AM', periodState: 'current', minutes: 8 },
+      { label: '9AM-12PM', periodState: 'future', minutes: null },
+      { label: '12-3PM', periodState: 'future', minutes: null },
+      { label: '3-6PM', periodState: 'future', minutes: null },
+      { label: '6-9PM', periodState: 'future', minutes: null },
+    ],
+  )
 })
 
 test('overview compares today with yesterday using only S-05 pulse events', async () => {

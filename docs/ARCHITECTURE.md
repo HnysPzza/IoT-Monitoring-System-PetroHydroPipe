@@ -293,3 +293,5 @@ An Active alert becomes recovered and waits for acknowledgement. An already ackn
 ### Downtime Period Expansion
 
 The planned overview control uses `Last Hour`, `Today`, `Weekly`, and `Monthly`. The current dashboard supports today, week, and month ranges. `Last Hour` requires an additional backend time-window contract and should not be treated as implemented until the API and chart aggregation support it.
+
+Daily downtime uses non-overlapping Manila-time periods (`12-6AM`, `6-9AM`, `9AM-12PM`, `12-3PM`, `3-6PM`, and `6-9PM`). The current period is calculated only through the request time, while future periods return no observed value. Production comparison checkpoints remain cumulative and use a separate boundary calculation.

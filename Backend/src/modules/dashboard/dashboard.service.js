@@ -166,6 +166,34 @@ function getModePointBoundaries(mode, window) {
   })
 }
 
+function getDailyDowntimeBoundaries(window, asOf) {
+  const periods = [
+    { label: '12-6AM', startHour: 0, endHour: 6 },
+    { label: '6-9AM', startHour: 6, endHour: 9 },
+    { label: '9AM-12PM', startHour: 9, endHour: 12 },
+    { label: '12-3PM', startHour: 12, endHour: 15 },
+    { label: '3-6PM', startHour: 15, endHour: 18 },
+    { label: '6-9PM', startHour: 18, endHour: 21 },
+  ]
+
+  return periods.map((period) => {
+    const start = new Date(window.start.getTime() + (period.startHour * 60 * 60 * 1000))
+    const end = new Date(window.start.getTime() + (period.endHour * 60 * 60 * 1000))
+    const periodState = asOf <= start
+      ? 'future'
+      : asOf < end
+        ? 'current'
+        : 'completed'
+
+    return {
+      label: period.label,
+      start,
+      end: periodState === 'current' ? new Date(asOf) : end,
+      periodState,
+    }
+  })
+}
+
 async function buildProductionAnalytics(machineId, anchorDate) {
   const window = getWindowForMode('today', anchorDate)
   const previousWindow = getPreviousDayWindow(window)
@@ -208,11 +236,25 @@ async function buildProductionAnalytics(machineId, anchorDate) {
 
 function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
   const window = getWindowForMode(mode, anchorDate)
-  const boundaries = getModePointBoundaries(mode === 'today' ? 'day' : mode, window)
+  const boundaries = mode === 'today'
+    ? getDailyDowntimeBoundaries(window, asOf)
+    : getModePointBoundaries(mode, window)
 
   return {
     thresholdMinutes: DOWNTIME_THRESHOLD_MINUTES,
     points: boundaries.map((boundary) => {
+      if (boundary.periodState === 'future') {
+        return {
+          label: boundary.label,
+          periodState: 'future',
+          minutes: null,
+          unplannedMinutes: null,
+          plannedExcludedMinutes: null,
+          estimatedLoss: null,
+          cause: null,
+        }
+      }
+
       const metrics = calculateMachineMetrics({
         records: rows,
         window: boundary,
@@ -228,6 +270,7 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
 
       return {
         label: boundary.label,
+        ...(boundary.periodState ? { periodState: boundary.periodState } : {}),
         minutes: metrics.durationMinutes,
         unplannedMinutes: metrics.unplannedMinutes,
         plannedExcludedMinutes: metrics.plannedExcludedMinutes,
