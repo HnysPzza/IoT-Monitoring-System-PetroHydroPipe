@@ -3391,10 +3391,6 @@ button:disabled {
   opacity: 0.5;
 }
 
-.downtime-chart-card .trend-mode-toggle {
-  grid-template-columns: repeat(4, minmax(72px, 1fr));
-}
-
 .downtime-chart-card .section-heading {
   align-items: flex-start;
   flex-direction: column;

@@ -10,18 +10,15 @@ Use this folder for technical project documentation. Use the Obsidian vault for 
 |---|---|
 | Product requirements | [PRD.md](./PRD.md) |
 | Technical design | [TDD.md](./TDD.md) |
-| 2026-08-09 system audit verdicts | [audit-2026-08-09/README.md](./audit-2026-08-09/README.md) |
-| Project status | [SYSTEM_AUDIT_README.md](./SYSTEM_AUDIT_README.md) |
-| Frontend UI review | [FRONTEND_UI_AUDIT.MD](./FRONTEND_UI_AUDIT.MD) |
-| Full implementation history | [IMPLEMENTATION_HISTORY.md](./IMPLEMENTATION_HISTORY.md) |
-| Phase maintenance rule | [PHASES.md](./PHASES.md) |
+| Current whole-system audit | [ForUrgentFix/Whole System Audit.md](./ForUrgentFix/Whole%20System%20Audit.md) |
 | Setup instructions | [SETUP.md](./SETUP.md) |
 | System architecture | [ARCHITECTURE.md](./ARCHITECTURE.md) |
 | Deployment and auth planning | [DEPLOYMENT_AUTH_PLANNING.md](./DEPLOYMENT_AUTH_PLANNING.md) |
 | Common commands and workflows | [RUNBOOK.md](./RUNBOOK.md) |
+| Phase 1 sensor alignment | [ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md](./ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md) |
+| Phase 2 settings and backend API | [ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md](./ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md) |
+| Phase 3 operational-time watchdog | [ForUrgentFix/Plans/phase 3.md](./ForUrgentFix/Plans/phase%203.md) |
 | Phase 4 settings and live monitoring | [ForUrgentFix/Plans/phase 4.md](./ForUrgentFix/Plans/phase%204.md) |
-| Analytics module comprehensive audit | [superpowers/audits/2026-08-16-analytics-module-comprehensive-audit.md](./superpowers/audits/2026-08-16-analytics-module-comprehensive-audit.md) |
-| Phase 30 alert acknowledgement | [phase-30-alert-acknowledgement-realtime-notifications/README.md](./phase-30-alert-acknowledgement-realtime-notifications/README.md) |
 
 ## Current System Summary
 

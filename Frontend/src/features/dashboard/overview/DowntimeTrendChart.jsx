@@ -2,7 +2,6 @@ import { AlertTriangle } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 export const trendModes = [
-  { id: 'hour', label: 'Last Hour', disabled: true },
   { id: 'today', label: 'Daily' },
   { id: 'week', label: 'Weekly' },
   { id: 'month', label: 'Monthly' },

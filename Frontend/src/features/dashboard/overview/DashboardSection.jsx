@@ -503,8 +503,6 @@ export default function DashboardSection() {
                       key={mode.id}
                       className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
                       type="button"
-                      disabled={mode.disabled}
-                      title={mode.disabled ? 'Last Hour is not available yet' : undefined}
                       aria-pressed={trendMode === mode.id}
                       onClick={() => {
                         setTrendMode(mode.id)

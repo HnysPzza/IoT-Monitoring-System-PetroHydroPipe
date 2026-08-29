@@ -111,7 +111,7 @@ describe('DashboardSection', () => {
     expect(screen.getByText('Difference from Yesterday')).toBeInTheDocument()
     expect(screen.getByText('+2 pipes')).toBeInTheDocument()
     expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /last hour/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /last hour/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(screen.getByRole('button', { name: /weekly/i }))
