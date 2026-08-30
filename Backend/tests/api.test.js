@@ -788,6 +788,7 @@ test('dashboard overview route returns backend summary for allowed roles', async
     })
 
     assert.equal(result.response.status, 200)
+    assert.equal(result.response.headers.get('cache-control'), 'no-store')
     assert.equal(result.body.summary[0].id, 'pipes')
 
     const directorOverview = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
@@ -800,6 +801,7 @@ test('dashboard overview route returns backend summary for allowed roles', async
     })
 
     assert.equal(chart.response.status, 200)
+    assert.equal(chart.response.headers.get('cache-control'), 'no-store')
     assert.equal(chart.body.downtimeImpact.points[0].label, 'today')
 
     const noToken = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today')
@@ -846,6 +848,7 @@ test('downtime routes list and update records', async () => {
     })
 
     assert.equal(list.response.status, 200)
+    assert.equal(list.response.headers.get('cache-control'), 'no-store')
     assert.equal(list.body.records.length, 1)
 
     const directorList = await requestJson(baseUrl, '/api/downtime?status=Open', {
@@ -872,6 +875,7 @@ test('downtime routes list and update records', async () => {
     })
 
     assert.equal(updated.response.status, 200)
+    assert.equal(updated.response.headers.get('cache-control'), 'no-store')
     assert.equal(updated.body.record.status, 'Resolved')
 
     const clearNotes = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
@@ -928,6 +932,7 @@ test('reports summary is restricted to management roles', async () => {
     })
 
     assert.equal(allowed.response.status, 200)
+    assert.equal(allowed.response.headers.get('cache-control'), 'no-store')
     assert.equal(allowed.body.report.reportType, 'daily')
 
     const director = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
