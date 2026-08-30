@@ -98,6 +98,15 @@ describe('Analytics API service', () => {
       },
       {
         ...analyticsTestResponse.analytics,
+        selected: {
+          ...analyticsTestResponse.analytics.selected,
+          downtimeCauses: [{
+            cause: 'Pending Cause Review', eventCount: 1, durationMinutes: 10, estimatedLossPieces: 23,
+          }],
+        },
+      },
+      {
+        ...analyticsTestResponse.analytics,
         selected: { ...analyticsTestResponse.analytics.selected, downtimeSensors: [{ sensorCode: 'S-01' }] },
       },
       {

@@ -67,6 +67,10 @@ export const analyticsTestFixture = {
       downtimeMinutes: 130, downtimeEventCount: 5, availabilityPercent: 91,
       outputPieces: 595, processEventCount: 5, estimatedLossPieces: 299,
     },
+    causeCoverage: {
+      reviewedDurationMinutes: 130, pendingReviewDurationMinutes: 0,
+      pendingReviewEventCount: 0, coveragePercent: 100,
+    },
     trends: selectedTrends,
     downtimeCauses: [
       { cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 61, estimatedLossPieces: 140 },
@@ -85,6 +89,10 @@ export const analyticsTestFixture = {
     summary: {
       downtimeMinutes: 100, downtimeEventCount: 5, availabilityPercent: 93,
       outputPieces: 550, processEventCount: 5, estimatedLossPieces: 230,
+    },
+    causeCoverage: {
+      reviewedDurationMinutes: 100, pendingReviewDurationMinutes: 0,
+      pendingReviewEventCount: 0, coveragePercent: 100,
     },
     trends: comparisonTrends,
     downtimeCauses: [], downtimeSensors, processSensors,

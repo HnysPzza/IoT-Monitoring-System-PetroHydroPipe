@@ -373,7 +373,8 @@ export default function DowntimeSection() {
                           <button
                             className="btn btn-secondary table-action-button table-action-activate"
                             type="button"
-                            disabled={record.status === 'Resolved' || updatingRecordId === record.id}
+                            disabled={record.status === 'Resolved' || record.needsCauseReview || updatingRecordId === record.id}
+                            title={record.needsCauseReview ? 'Choose a downtime cause before resolving.' : undefined}
                             onClick={() => resolveRecord(record.id)}
                           >
                             <CheckCircle2 size={16} aria-hidden="true" />

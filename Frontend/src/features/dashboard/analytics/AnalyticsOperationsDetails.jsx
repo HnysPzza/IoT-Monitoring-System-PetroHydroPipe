@@ -121,6 +121,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
   }, [snapshot])
 
   const totalDowntimeMinutes = snapshot.selected.summary.downtimeMinutes
+  const causeCoverage = snapshot.selected.causeCoverage
   const hasObservedDowntime = totalDowntimeMinutes !== null && totalDowntimeMinutes !== undefined
   const totalSensorDowntimeMinutes = downtimeSensors.reduce((total, sensor) => total + sensor.durationMinutes, 0)
   const downtimeDistribution = downtimeSensors.map((sensor, index) => ({
@@ -299,30 +300,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           </div>
         )}
 
-        <div className="analytics-cause-breakdown">
-          <h3>Downtime by cause</h3>
-          {causeDistribution.length ? (
-            <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
-              {causeDistribution.map((cause) => (
-                <li key={cause.cause} className="analytics-cause-legend-item">
-                  <span className="analytics-cause-swatch" style={{ backgroundColor: cause.color }} aria-hidden="true" />
-                  <span className="analytics-cause-copy">
-                    <span className="analytics-cause-name">{cause.cause}</span>
-                    <span className="analytics-cause-meta">
-                      {cause.eventCount} downtime {cause.eventCount === 1 ? 'event' : 'events'}
-                    </span>
-                    <span className="analytics-cause-meta">
-                      {formatDuration(cause.durationMinutes)} - {cause.percentage}% of machine downtime
-                    </span>
-                    <span className="analytics-cause-meta">{cause.estimatedLossPieces} pcs estimated loss</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="analytics-cause-meta">No downtime causes recorded for this range.</p>
-          )}
-        </div>
       </section>
 
       <section className="section-card analytics-detail-card" aria-labelledby="analytics-process-title">
@@ -432,6 +409,51 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
               ))}
             </ul>
           </div>
+        )}
+      </section>
+
+      <section className="section-card analytics-detail-card analytics-cause-detail-card" aria-labelledby="analytics-cause-title">
+        <div className="section-heading">
+          <div>
+            <p className="section-eyebrow">Maintenance and downtime</p>
+            <h2 id="analytics-cause-title">Downtime by cause</h2>
+          </div>
+        </div>
+
+        {causeCoverage.pendingReviewEventCount > 0 ? (
+          <div className="notice dashboard-alert" role="status">
+            <Clock3 size={16} aria-hidden="true" />
+            <span>
+              {causeCoverage.pendingReviewEventCount} downtime {causeCoverage.pendingReviewEventCount === 1 ? 'event is' : 'events are'} awaiting cause review.
+              {' '}{formatDuration(causeCoverage.pendingReviewDurationMinutes)} remains excluded from cause percentages.
+            </span>
+          </div>
+        ) : null}
+
+        {causeDistribution.length ? (
+          <ul className="analytics-cause-legend analytics-cause-distribution-grid" aria-label="Downtime cause distribution">
+            {causeDistribution.map((cause) => (
+              <li key={cause.cause} className="analytics-cause-legend-item">
+                <span className="analytics-cause-swatch" style={{ backgroundColor: cause.color }} aria-hidden="true" />
+                <span className="analytics-cause-copy">
+                  <span className="analytics-cause-name">{cause.cause}</span>
+                  <span className="analytics-cause-meta">
+                    {cause.eventCount} downtime {cause.eventCount === 1 ? 'event' : 'events'}
+                  </span>
+                  <span className="analytics-cause-meta">
+                    {formatDuration(cause.durationMinutes)} - {cause.percentage}% of machine downtime
+                  </span>
+                  <span className="analytics-cause-meta">{cause.estimatedLossPieces} pcs estimated loss</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="analytics-cause-meta">
+            {causeCoverage.pendingReviewEventCount > 0
+              ? 'No reviewed downtime causes are available for this range.'
+              : 'No downtime causes recorded for this range.'}
+          </p>
         )}
       </section>
     </div>

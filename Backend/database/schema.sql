@@ -1346,6 +1346,13 @@ begin
     raise exception using errcode = '22023', message = 'Downtime cause is locked for this sensor.';
   end if;
 
+  if p_resolve
+    and v_sensor_code = 'S-03'
+    and coalesce(p_cause, v_downtime.cause, 'Pending Cause Review') = 'Pending Cause Review'
+  then
+    raise exception using errcode = '23514', message = 'Choose the downtime cause before resolving this record.';
+  end if;
+
   v_ended_at := case
     when p_resolve and v_downtime.status = 'Open' then now()
     else v_downtime.ended_at

@@ -96,6 +96,7 @@ describe('DowntimeSection', () => {
     expect(await screen.findByText('S-03 08:42 AM')).toBeInTheDocument()
     expect(screen.getByText('S-03 - Machine Main Sensor')).toBeInTheDocument()
     expect(screen.getByText('Needs cause review')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Resolve$/i })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: /view details/i }))
 
@@ -267,13 +268,15 @@ describe('DowntimeSection', () => {
   it('reloads records when filters change and resolves a downtime record', async () => {
     const user = userEvent.setup()
     const resolvedRecord = downtimeRecord({
+      cause: 'Misalignment',
+      needsCauseReview: false,
       status: 'Resolved',
       isOpen: false,
       endedAt: '2026-06-11T00:54:00.000Z',
     })
 
     getDowntimeRecords.mockResolvedValue({
-      records: [downtimeRecord()],
+      records: [downtimeRecord({ cause: 'Misalignment', needsCauseReview: false })],
       summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
     })
     updateDowntimeRecord.mockResolvedValue({ record: resolvedRecord })

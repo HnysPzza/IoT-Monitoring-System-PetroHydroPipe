@@ -120,6 +120,18 @@ function isSummary(value, metricNames = SUMMARY_METRICS) {
   return value && metricNames.every((metric) => isMetricValue(metric, value[metric]))
 }
 
+function isCauseCoverage(value, periodState) {
+  const metrics = [
+    value?.reviewedDurationMinutes,
+    value?.pendingReviewDurationMinutes,
+    value?.pendingReviewEventCount,
+    value?.coveragePercent,
+  ]
+  if (periodState === 'future') return metrics.every((metric) => metric === null)
+  return metrics.every((metric) => Number.isInteger(metric) && metric >= 0)
+    && value.coveragePercent <= 100
+}
+
 function hasExactSensorCodes(sensors, expectedCodes) {
   return sensors.length === expectedCodes.size
     && sensors.every((sensor) => expectedCodes.has(sensor?.sensorCode))
@@ -157,11 +169,13 @@ function isPeriod(value) {
     value
     && isRange(value.range)
     && isSummary(value.summary)
+    && isCauseCoverage(value.causeCoverage, value.range.periodState)
     && Array.isArray(value.trends)
     && value.trends.every(isTrendPoint)
     && Array.isArray(value.downtimeCauses)
     && value.downtimeCauses.every((cause) => (
       typeof cause?.cause === 'string' && cause.cause.trim().length > 0
+      && cause.cause !== 'Pending Cause Review'
       && Number.isInteger(cause.eventCount) && cause.eventCount >= 0
       && Number.isFinite(cause.durationMinutes) && cause.durationMinutes >= 0
       && Number.isFinite(cause.estimatedLossPieces) && cause.estimatedLossPieces >= 0

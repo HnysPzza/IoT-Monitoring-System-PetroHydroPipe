@@ -147,6 +147,53 @@ test('Analytics combines every cause into exactly five sensor downtime rows rank
   ])
 })
 
+test('Analytics excludes pending cause review until an admin assigns the operational cause', async () => {
+  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const pendingRecord = {
+    id: 'pending',
+    started_at: '2026-08-03T00:00:00.000Z',
+    ended_at: '2026-08-03T01:00:00.000Z',
+    cause: 'Pending Cause Review',
+    sensors: { sensor_code: 'S-03' },
+  }
+  const reviewedRecord = {
+    id: 'reviewed',
+    started_at: '2026-08-03T01:00:00.000Z',
+    ended_at: '2026-08-03T02:00:00.000Z',
+    cause: 'Corrective Maintenance',
+    sensors: { sensor_code: 'S-01' },
+  }
+  const pendingDependencies = createDependencies({ downtimeRows: [pendingRecord, reviewedRecord] }).dependencies
+
+  const pendingResult = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, pendingDependencies)
+
+  assert.equal(pendingResult.selected.summary.downtimeMinutes, 120)
+  assert.equal(pendingResult.selected.downtimeSensors.find((row) => row.sensorCode === 'S-03').durationMinutes, 60)
+  assert.deepEqual(pendingResult.selected.downtimeCauses.map((row) => row.cause), ['Corrective Maintenance'])
+  assert.deepEqual(pendingResult.selected.causeCoverage, {
+    reviewedDurationMinutes: 60,
+    pendingReviewDurationMinutes: 60,
+    pendingReviewEventCount: 1,
+    coveragePercent: 50,
+  })
+
+  const assignedDependencies = createDependencies({
+    downtimeRows: [{ ...pendingRecord, cause: 'Flux Refill' }, reviewedRecord],
+  }).dependencies
+  const assignedResult = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, assignedDependencies)
+
+  assert.deepEqual(new Set(assignedResult.selected.downtimeCauses.map((row) => row.cause)), new Set([
+    'Flux Refill',
+    'Corrective Maintenance',
+  ]))
+  assert.deepEqual(assignedResult.selected.causeCoverage, {
+    reviewedDurationMinutes: 120,
+    pendingReviewDurationMinutes: 0,
+    pendingReviewEventCount: 0,
+    coveragePercent: 100,
+  })
+})
+
 test('Analytics uses calendar-month buckets for ranges longer than 93 days', async () => {
   const { getAnalytics } = require('../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies()

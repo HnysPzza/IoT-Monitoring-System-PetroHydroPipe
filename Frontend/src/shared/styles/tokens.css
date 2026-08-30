@@ -2682,7 +2682,16 @@ button:disabled {
 
   .analytics-operations-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
     gap: 20px;
+  }
+
+  .analytics-cause-detail-card {
+    grid-column: 1 / -1;
+  }
+
+  .analytics-cause-distribution-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 
   .analytics-controls-card,

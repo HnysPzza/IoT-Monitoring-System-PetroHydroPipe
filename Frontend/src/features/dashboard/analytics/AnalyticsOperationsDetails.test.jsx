@@ -25,6 +25,10 @@ describe('AnalyticsOperationsDetails', () => {
     expect(within(legend).getByText(/1 hr 1 min - 47% of sensor downtime/i)).toBeInTheDocument()
 
     const causes = screen.getByRole('list', { name: 'Downtime cause distribution' })
+    expect(screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')).not.toBe(
+      screen.getByRole('heading', { name: 'Downtime by sensor' }).closest('section'),
+    )
+    expect(screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')).toHaveClass('analytics-cause-detail-card')
     const maintenanceCause = within(causes).getByText('Corrective Maintenance').closest('li')
     expect(maintenanceCause).toHaveTextContent(/2 downtime events/i)
     expect(maintenanceCause).toHaveTextContent(/140 pcs estimated loss/i)
@@ -50,6 +54,22 @@ describe('AnalyticsOperationsDetails', () => {
     })} />)
     expect(container.querySelector('.analytics-empty-donut')).toBeInTheDocument()
     expect(screen.getByRole('status', { name: 'No sensor downtime recorded' })).toHaveTextContent('0 min recorded')
+  })
+
+  it('discloses downtime excluded while cause review remains pending', () => {
+    renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
+      downtimeCauses: [],
+      causeCoverage: {
+        reviewedDurationMinutes: 0,
+        pendingReviewDurationMinutes: 60,
+        pendingReviewEventCount: 1,
+        coveragePercent: 0,
+      },
+    })} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('1 downtime event is awaiting cause review')
+    expect(screen.getByRole('status')).toHaveTextContent('1 hr remains excluded from cause percentages')
+    expect(screen.getByText('No reviewed downtime causes are available for this range.')).toBeInTheDocument()
   })
 
   it('calculates donut percentages from sensor readings rather than unioned machine downtime', () => {

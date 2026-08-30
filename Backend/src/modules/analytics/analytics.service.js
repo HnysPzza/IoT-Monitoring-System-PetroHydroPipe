@@ -121,6 +121,15 @@ function emptySummary() {
   }
 }
 
+function emptyCauseCoverage() {
+  return {
+    reviewedDurationMinutes: null,
+    pendingReviewDurationMinutes: null,
+    pendingReviewEventCount: null,
+    coveragePercent: null,
+  }
+}
+
 function countEvents(rows) {
   return rows.reduce((totals, row) => {
     const count = Number(row.event_count || 0)
@@ -189,8 +198,8 @@ function buildDowntimeSensors(records, configuredSensors, window, settingsHistor
   ))
 }
 
-function buildMetrics(records, window, settingsHistory, asOf, eventRows) {
-  const metrics = calculateMachineMetrics({ records, window, settingsHistory, asOf })
+function buildMetrics(records, window, settingsHistory, asOf, eventRows, suppliedMetrics) {
+  const metrics = suppliedMetrics || calculateMachineMetrics({ records, window, settingsHistory, asOf })
   const counts = countEvents(eventRows)
   return {
     downtimeMinutes: metrics.durationMinutes,
@@ -207,6 +216,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     return {
       range: range.api,
       summary: emptySummary(),
+      causeCoverage: emptyCauseCoverage(),
       trends: buildBuckets(range, bucketConfig, asOf).map((bucket) => ({
         key: bucket.key,
         label: bucket.label,
@@ -227,9 +237,41 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     dependencies.getOverlappingDowntime(machine.id, observedWindow),
     dependencies.getSettingsHistory(machine.id, observedWindow),
   ])
-  const summary = buildMetrics(downtimeRows, observedWindow, settingsHistory, asOf, eventRows)
-  const downtimeCauses = attributeMachineDowntime({
+  const totalMetrics = calculateMachineMetrics({
     records: downtimeRows,
+    window: observedWindow,
+    settingsHistory,
+    asOf,
+  })
+  const summary = buildMetrics(downtimeRows, observedWindow, settingsHistory, asOf, eventRows, totalMetrics)
+  const reviewedDowntimeRows = downtimeRows.filter((record) => (
+    record.cause && record.cause !== 'Pending Cause Review'
+  ))
+  const pendingReviewRows = downtimeRows.filter((record) => (
+    !record.cause || record.cause === 'Pending Cause Review'
+  ))
+  const reviewedMetrics = calculateMachineMetrics({
+    records: reviewedDowntimeRows,
+    window: observedWindow,
+    settingsHistory,
+    asOf,
+  })
+  const pendingReviewMetrics = calculateMachineMetrics({
+    records: pendingReviewRows,
+    window: observedWindow,
+    settingsHistory,
+    asOf,
+  })
+  const causeCoverage = {
+    reviewedDurationMinutes: reviewedMetrics.durationMinutes,
+    pendingReviewDurationMinutes: pendingReviewMetrics.durationMinutes,
+    pendingReviewEventCount: pendingReviewRows.length,
+    coveragePercent: totalMetrics.durationSeconds === 0
+      ? 100
+      : Math.round((reviewedMetrics.durationSeconds / totalMetrics.durationSeconds) * 100),
+  }
+  const downtimeCauses = attributeMachineDowntime({
+    records: reviewedDowntimeRows,
     window: observedWindow,
     settingsHistory,
     asOf,
@@ -277,6 +319,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
   return {
     range: range.api,
     summary,
+    causeCoverage,
     trends,
     downtimeCauses,
     downtimeSensors,

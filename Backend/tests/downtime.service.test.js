@@ -262,6 +262,36 @@ test('resolving is idempotent and never reopens a record', async () => {
   assert.equal(second.record.durationMinutes, first.record.durationMinutes)
 })
 
+test('manual sensor downtime cannot resolve before its cause is reviewed', async () => {
+  const records = [attachRelations({
+    id: 'downtime-1',
+    machine_id: MACHINE_ID,
+    sensor_id: 'sensor-3',
+    started_at: '2026-06-11T00:00:00.000Z',
+    cause: 'Pending Cause Review',
+    status: 'Open',
+  })]
+  const service = loadDowntimeService({ records })
+
+  await assert.rejects(
+    () => service.updateDowntime({
+      downtimeId: 'downtime-1',
+      values: { status: 'Resolved' },
+      actorUserId: 'user-1',
+    }),
+    { code: 'DOWNTIME_CAUSE_REQUIRED', status: 400 },
+  )
+
+  const result = await service.updateDowntime({
+    downtimeId: 'downtime-1',
+    values: { cause: 'Misalignment', status: 'Resolved' },
+    actorUserId: 'user-1',
+  })
+
+  assert.equal(result.record.cause, 'Misalignment')
+  assert.equal(result.record.status, 'Resolved')
+})
+
 test('automatic sensor downtime cause cannot be manually changed', async () => {
   const records = [attachRelations({
     id: 'downtime-1',

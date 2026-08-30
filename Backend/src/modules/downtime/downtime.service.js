@@ -289,6 +289,11 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
     }
   }
 
+  const resolvedCause = values.cause ?? existingRecord.cause
+  if (values.status === 'Resolved' && existingRecord.isCauseEditable && resolvedCause === 'Pending Cause Review') {
+    throw createDowntimeError(400, 'DOWNTIME_CAUSE_REQUIRED', 'Choose the downtime cause before resolving this record.')
+  }
+
   const { error } = await getSupabaseClient()
     .rpc('update_downtime_record', {
       p_downtime_id: downtimeId,
@@ -306,6 +311,10 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
 
     if (error.code === '22023') {
       throw createDowntimeError(400, 'DOWNTIME_CAUSE_LOCKED', 'This downtime cause is assigned automatically by the sensor.')
+    }
+
+    if (error.code === '23514') {
+      throw createDowntimeError(400, 'DOWNTIME_CAUSE_REQUIRED', 'Choose the downtime cause before resolving this record.')
     }
 
     throw createDowntimeError(500, 'DOWNTIME_UPDATE_FAILED', 'Unable to update downtime record.')
