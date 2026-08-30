@@ -28,7 +28,7 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
 
 export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricChange }) {
   const trend = buildAnalyticsTrend(snapshot, metricId)
-  const { metric, points, bucket } = trend
+  const { metric, points, bucket, isCalendarSegmentComparison } = trend
   const summary = getAnalyticsTrendSummary(trend)
   const evaluation = getTrendEvaluation(trend)
   const strokeColor = evaluation.strokeColor
@@ -71,6 +71,10 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           Prior period
         </span>
       </div>
+
+      {isCalendarSegmentComparison ? (
+        <p className="analytics-cause-meta">Monthly points align by sequence; hover a point to compare its actual periods.</p>
+      ) : null}
 
       <div
         className="analytics-trend-chart"

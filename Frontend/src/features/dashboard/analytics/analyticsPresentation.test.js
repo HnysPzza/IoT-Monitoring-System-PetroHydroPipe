@@ -67,8 +67,9 @@ describe('Analytics presentation helpers', () => {
     const trend = buildAnalyticsTrend(snapshot, 'production')
     expect(trend.points).toHaveLength(2)
     expect(trend.points[1]).toMatchObject({
-      label: 'Segment 2', selectedLabel: 'No selected segment', hasSelectedSegment: false, comparisonValue: 110,
+      label: 'Prior 2', selectedLabel: 'No selected segment', hasSelectedSegment: false, comparisonValue: 110,
     })
+    expect(trend.isCalendarSegmentComparison).toBe(true)
     expect(getAnalyticsTrendSummary(trend)).toBe('595 pcs across 1 observed bucket.')
   })
 

@@ -46,7 +46,7 @@ export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {
     return {
       ...(selectedPoint || {}),
       key: selectedPoint?.key || `comparison-only-${comparisonPoint?.key || index}`,
-      label: isCalendarSegmentComparison ? `Segment ${index + 1}` : selectedPoint?.label || comparisonPoint?.label,
+      label: selectedPoint?.label || comparisonPoint?.label,
       selectedLabel: selectedPoint?.label || 'No selected segment',
       comparisonLabel: comparisonPoint?.label || 'No prior segment',
       hasSelectedSegment: Boolean(selectedPoint),
@@ -62,6 +62,7 @@ export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {
     bucket: snapshot.selected.range.bucket,
     selectedSummaryValue: snapshot.selected.summary?.[metric.metricKey] ?? null,
     alignment: snapshot.trendAlignment,
+    isCalendarSegmentComparison,
   }
 }
 
