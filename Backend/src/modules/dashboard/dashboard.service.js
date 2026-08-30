@@ -337,9 +337,13 @@ async function getOverview(filters = {}) {
   ])
 
   const productionToday = productionAnalytics.day.currentTotal
+  const observedTodayWindow = {
+    start: todayWindow.start,
+    end: new Date(Math.min(todayWindow.end.getTime(), asOf.getTime())),
+  }
   const todayMetrics = calculateMachineMetrics({
     records: todayDowntimeRows,
-    window: todayWindow,
+    window: observedTodayWindow,
     settingsHistory: todaySettingsHistory,
     asOf,
   })

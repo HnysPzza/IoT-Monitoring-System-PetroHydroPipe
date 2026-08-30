@@ -84,7 +84,7 @@ function createProductionClient(events, queryLog) {
   }
 }
 
-async function getOverviewWithProductionEvents(events, queryLog = []) {
+async function getOverviewWithProductionEvents(events, queryLog = [], downtimeRows = []) {
   clearSourceCache()
   const settingsHistory = [{
     machine_id: MACHINE_ID,
@@ -98,7 +98,7 @@ async function getOverviewWithProductionEvents(events, queryLog = []) {
     getSupabaseClient: () => createProductionClient(events, queryLog),
   })
   mockModule('src/modules/downtime/downtime.repository.js', {
-    getOverlappingDowntime: async () => [],
+    getOverlappingDowntime: async () => downtimeRows,
   })
   mockModule('src/modules/settings/settingsHistory.repository.js', {
     getSettingsHistory: async () => settingsHistory,
@@ -106,6 +106,24 @@ async function getOverviewWithProductionEvents(events, queryLog = []) {
 
   return require('../src/modules/dashboard/dashboard.service').getOverview()
 }
+
+test('overview availability uses only elapsed eligible time for current day', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-31T12:00:00+08:00') })
+  const downtimeRows = [{
+    id: 'down-1',
+    machine_id: MACHINE_ID,
+    started_at: '2026-08-31T00:00:00.000Z',
+    ended_at: '2026-08-31T01:00:00.000Z',
+    cause: 'Flux Refill',
+    status: 'Resolved',
+    sensors: { sensor_code: 'S-01' },
+  }]
+
+  const result = await getOverviewWithProductionEvents([], [], downtimeRows)
+  const availability = result.summary.find((item) => item.id === 'availability')
+
+  assert.equal(availability.value, '75%')
+})
 
 test('dashboard downtime impact includes pre-window events and uses break-aware unplanned loss', async () => {
   clearSourceCache()
