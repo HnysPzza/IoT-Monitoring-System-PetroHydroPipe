@@ -64,7 +64,7 @@ function SensorTooltip({ active, payload }) {
 
   return (
     <div className="recharts-tooltip-card industrial-tooltip analytics-sensor-tooltip" role="status">
-      <strong>Sensor {sensor.sensorCode}</strong>
+      <strong>{sensor.sensorCode} — {sensor.sensorLabel}</strong>
       <span>{sensor.eventCount} {sensor.eventCount === 1 ? 'event' : 'events'}</span>
       <span>{sensor.percentage}% of process events</span>
     </div>
@@ -109,20 +109,22 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
     setActiveSensorIndex(null)
   }, [snapshot])
 
-  const totalDowntimeMinutes = causes.reduce((total, cause) => total + cause.durationMinutes, 0)
+  const totalDowntimeMinutes = snapshot.selected.summary.downtimeMinutes
+  const hasObservedDowntime = totalDowntimeMinutes !== null && totalDowntimeMinutes !== undefined
   const causeDistribution = causes.map((cause, index) => ({
     ...cause,
     color: CAUSE_COLORS[index % CAUSE_COLORS.length],
-    percentage: totalDowntimeMinutes
+    percentage: hasObservedDowntime && totalDowntimeMinutes > 0
       ? Math.round((cause.durationMinutes / totalDowntimeMinutes) * 100)
       : 0,
   }))
 
-  const totalProcessEvents = snapshot.processEvents.length
+  const totalProcessEvents = snapshot.selected.summary.processEventCount
+  const hasObservedProcessEvents = totalProcessEvents !== null && totalProcessEvents !== undefined
   const sensorDistribution = sensors.map((sensor, index) => ({
     ...sensor,
     color: SENSOR_COLORS[index % SENSOR_COLORS.length],
-    percentage: totalProcessEvents
+    percentage: hasObservedProcessEvents && totalProcessEvents > 0
       ? Math.round((sensor.eventCount / totalProcessEvents) * 100)
       : 0,
   }))
@@ -130,7 +132,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
   const activeCause = activeIndex !== null ? causeDistribution[activeIndex] : null
   const displayDuration = activeCause
     ? formatCompactDuration(activeCause.durationMinutes)
-    : formatCompactDuration(totalDowntimeMinutes)
+    : hasObservedDowntime ? formatCompactDuration(totalDowntimeMinutes) : 'Not observed'
   const displayLabel = activeCause
     ? `${activeCause.percentage}% DOWN`
     : 'TOTAL DOWN'
@@ -145,15 +147,34 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           </div>
           <span className="section-chip">
             <Clock3 size={16} aria-hidden="true" />
-            {formatDuration(totalDowntimeMinutes)} recorded
+            {hasObservedDowntime ? `${formatDuration(totalDowntimeMinutes)} recorded` : 'Not observed'}
           </span>
         </div>
 
         {causeDistribution.length === 0 ? (
-          <div className="analytics-cause-empty" role="status" aria-label="No downtime causes recorded">
-            <strong>No downtime causes recorded</strong>
-            <span>0 min recorded</span>
-            <p>No local downtime records fall within the selected date range.</p>
+          <div className="analytics-cause-content analytics-cause-content--empty">
+            <div className="analytics-cause-chart analytics-chart-empty" aria-hidden="true">
+              <svg viewBox="0 0 100 100" className="analytics-empty-donut" focusable="false">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="none"
+                  stroke="var(--c-text-3)"
+                  strokeOpacity="0.55"
+                  strokeWidth="2"
+                  strokeDasharray="4 6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+            <div className="analytics-cause-empty" role="status" aria-label={hasObservedDowntime ? 'No downtime causes recorded' : 'Downtime not observed'}>
+              <strong>{hasObservedDowntime ? 'No downtime causes recorded' : 'Downtime not observed'}</strong>
+              <span>{hasObservedDowntime ? '0 min recorded' : 'Not observed'}</span>
+              <p>{hasObservedDowntime
+                ? 'No downtime records fall within the selected date range yet.'
+                : 'This range has no observed downtime period yet.'}</p>
+            </div>
           </div>
         ) : (
           <div className="analytics-cause-content">
@@ -263,15 +284,28 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           </div>
           <span className="section-chip">
             <Activity size={16} aria-hidden="true" />
-            {totalProcessEvents} recorded
+            {hasObservedProcessEvents ? `${totalProcessEvents} recorded` : 'Not observed'}
           </span>
         </div>
 
-        {sensorDistribution.length === 0 ? (
-          <div className="analytics-cause-empty" role="status" aria-label="No process events recorded">
-            <strong>No process events recorded</strong>
-            <span>0 events recorded</span>
-            <p>No local process events fall within the selected date range.</p>
+        {!hasObservedProcessEvents || totalProcessEvents === 0 ? (
+          <div className="analytics-cause-content analytics-cause-content--empty">
+            <div className="analytics-sensor-chart analytics-chart-empty" aria-hidden="true">
+              <svg viewBox="0 0 100 60" className="analytics-empty-bars" focusable="false" preserveAspectRatio="none">
+                <rect x="8" y="36" width="12" height="18" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="26" y="24" width="12" height="30" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="44" y="42" width="12" height="12" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="62" y="30" width="12" height="24" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="80" y="46" width="12" height="8" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+              </svg>
+            </div>
+            <div className="analytics-cause-empty" role="status" aria-label={hasObservedProcessEvents ? 'No process events recorded' : 'Process events not observed'}>
+              <strong>{hasObservedProcessEvents ? 'No process events recorded' : 'Process events not observed'}</strong>
+              <span>{hasObservedProcessEvents ? '0 events recorded' : 'Not observed'}</span>
+              <p>{hasObservedProcessEvents
+                ? 'No process events fall within the selected date range yet.'
+                : 'This range has no observed process-event period yet.'}</p>
+            </div>
           </div>
         ) : (
           <div className="analytics-cause-content">
@@ -340,7 +374,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     aria-hidden="true"
                   />
                   <span className="analytics-cause-copy">
-                    <span className="analytics-cause-name">{sensor.sensorCode}</span>
+                    <span className="analytics-cause-name">{sensor.sensorCode} — {sensor.sensorLabel}</span>
                     <span className="analytics-cause-meta">
                       {sensor.eventCount} {sensor.eventCount === 1 ? 'event' : 'events'} - {sensor.percentage}% of process events
                     </span>

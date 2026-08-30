@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, AlertTriangle, Boxes, CalendarDays, Clock3, Database, Gauge, RotateCw } from 'lucide-react'
+import { Activity, AlertTriangle, Boxes, CalendarDays, Clock3, Gauge, RotateCw, TrendingDown } from 'lucide-react'
+import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getAnalyticsKpis } from './analyticsPresentation.js'
-import { getAnalyticsSnapshot, resolveAnalyticsRange } from './analyticsService.js'
+import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 import './analytics-date-range-picker.css'
@@ -11,6 +12,7 @@ const AnalyticsDateRangePicker = lazy(() => import('./AnalyticsDateRangePicker.j
 const rangePresets = [
   { id: 'this-week', label: 'This week' },
   { id: 'this-month', label: 'This month' },
+  { id: 'all', label: 'All time' },
   { id: 'custom', label: 'Custom' },
 ]
 
@@ -19,14 +21,13 @@ const kpiIcons = {
   availability: Gauge,
   production: Boxes,
   'process-events': Activity,
+  'estimated-loss': TrendingDown,
 }
 
-function hasAnalyticsRecords(snapshot) {
-  return Boolean(
-    snapshot?.downtimeEvents?.length
-    || snapshot?.processEvents?.length
-    || snapshot?.productionRecords?.length,
-  )
+function addDateDays(dateValue, amount) {
+  const date = new Date(`${dateValue}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + amount)
+  return date.toISOString().slice(0, 10)
 }
 
 function getRangeValidation(options) {
@@ -41,9 +42,11 @@ function getRangeValidation(options) {
 }
 
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
+  const { token } = useAuth()
+  const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
   const [period, setPeriod] = useState('this-week')
-  const [customStartDate, setCustomStartDate] = useState('2026-08-10')
-  const [customEndDate, setCustomEndDate] = useState('2026-08-14')
+  const [customStartDate, setCustomStartDate] = useState(() => addDateDays(currentManilaDate, -6))
+  const [customEndDate, setCustomEndDate] = useState(currentManilaDate)
   const [trendMetric, setTrendMetric] = useState('downtime')
   const [snapshot, setSnapshot] = useState(null)
   const [loadState, setLoadState] = useState('loading')
@@ -61,7 +64,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     [requestOptions],
   )
   const requestKey = range
-    ? `${range.period}:${range.startDate}:${range.endDate}:${range.bucket}`
+    ? `${token || 'anonymous'}:${range.period}:${range.range || range.startDate}:${range.endDate || ''}:${range.bucket}`
     : ''
 
   const loadSnapshot = useCallback(async () => {
@@ -77,7 +80,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     setErrorMessage('')
 
     try {
-      const nextSnapshot = await loadAnalytics(requestOptions)
+      const nextSnapshot = await loadAnalytics(token, requestOptions)
       if (requestId !== requestIdRef.current) return
 
       successfulSnapshotRef.current = { requestKey, snapshot: nextSnapshot }
@@ -86,7 +89,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     } catch (error) {
       if (requestId !== requestIdRef.current) return
 
-      const nextErrorMessage = error?.message || 'Unable to prepare the local Analytics preview.'
+      const nextErrorMessage = error?.message || 'Unable to load Analytics.'
       setErrorMessage(nextErrorMessage)
 
       if (hasMatchingSnapshot) {
@@ -97,7 +100,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
         setLoadState('error')
       }
     }
-  }, [loadAnalytics, range, requestKey, requestOptions])
+  }, [loadAnalytics, range, requestKey, requestOptions, token])
 
   const handleCustomDateRangeChange = useCallback(({ startDate, endDate }) => {
     setCustomStartDate(startDate)
@@ -106,7 +109,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
   useEffect(() => {
     if (!range) {
-      // A delayed local adapter must not overwrite the validation state after
+      // A delayed API response must not overwrite validation after
       // a user has made the custom range invalid.
       requestIdRef.current += 1
       setSnapshot(null)
@@ -119,7 +122,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   }, [loadSnapshot, range])
 
   const isInitialLoading = loadState === 'loading' && !snapshot
-  const isEmpty = snapshot && !hasAnalyticsRecords(snapshot)
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
 
   return (
@@ -127,13 +129,8 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       <section className="section-card analytics-controls-card" aria-labelledby="analytics-controls-title">
         <div className="section-heading">
           <div>
-            <p className="section-eyebrow">Analytics workspace</p>
-            <h2 id="analytics-controls-title">Local Analytics preview</h2>
+            <h2 id="analytics-controls-title">Analytics</h2>
           </div>
-          <span className="section-chip">
-            <Database size={16} aria-hidden="true" />
-            Local fixture only
-          </span>
         </div>
 
         <div className={`analytics-filter-row ${period === 'custom' ? 'analytics-filter-row--custom' : ''}`}>
@@ -174,7 +171,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
           <div className="analytics-bucket-summary" aria-live="polite">
             <CalendarDays size={17} aria-hidden="true" />
-            <span>Automatic aggregation</span>
             <strong>{range?.bucket || 'Fix dates'}</strong>
           </div>
 
@@ -194,14 +190,14 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       {loadState === 'refreshing' ? (
         <div className="notice dashboard-alert" role="status" aria-live="polite">
           <RotateCw className="spin-icon" size={16} aria-hidden="true" />
-          <span>Refreshing local Analytics preview...</span>
+          <span>Refreshing Analytics...</span>
         </div>
       ) : null}
 
       {loadState === 'stale' ? (
         <div className="notice notice-error dashboard-alert" role="alert">
           <AlertTriangle size={16} aria-hidden="true" />
-          <span>Showing the last local preview because refresh failed. {errorMessage}</span>
+          <span>Showing the last recorded result because refresh failed. {errorMessage}</span>
           <button className="btn btn-secondary table-action-button" type="button" onClick={loadSnapshot}>
             Retry
           </button>
@@ -216,10 +212,10 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       ) : null}
 
       {isInitialLoading ? (
-        <section className="section-card" aria-label="Loading Analytics preview">
+        <section className="section-card" aria-label="Loading Analytics">
           <div className="notice dashboard-alert" role="status" aria-live="polite">
             <RotateCw className="spin-icon" size={16} aria-hidden="true" />
-            <span>Loading Analytics workspace...</span>
+            <span>Loading Analytics...</span>
           </div>
           <div className="skeleton skeleton-panel" />
         </section>
@@ -228,8 +224,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       {loadState === 'error' ? (
         <section className="section-card section-placeholder" aria-labelledby="analytics-error-title">
           <div className="section-copy">
-            <p className="section-eyebrow">Analytics preview unavailable</p>
-            <h2 id="analytics-error-title">Unable to prepare Analytics</h2>
+            <h2 id="analytics-error-title">Unable to load Analytics</h2>
             <p role="alert">{errorMessage}</p>
             <button className="btn btn-secondary" type="button" onClick={loadSnapshot}>
               Retry
@@ -239,48 +234,38 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       ) : null}
 
       {snapshot && range && loadState !== 'error' && loadState !== 'validation' ? (
-        isEmpty ? (
-          <section className="section-card section-placeholder" aria-labelledby="analytics-empty-title">
-            <div className="section-copy">
-              <p className="section-eyebrow">No local records</p>
-              <h2 id="analytics-empty-title">No Analytics data in this range</h2>
-              <p>No local Analytics records fall inside this preview range.</p>
-            </div>
+        <>
+          <section className="analytics-kpi-grid" aria-label="Analytics summary">
+            {kpis.map((kpi) => {
+              const Icon = kpiIcons[kpi.id]
+              const isSelected = trendMetric === kpi.id
+
+              return (
+                <button
+                  key={kpi.id}
+                  className={`section-card analytics-kpi-card ${isSelected ? 'is-selected' : ''}`}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => setTrendMetric(kpi.id)}
+                >
+                  <div className="analytics-kpi-heading">
+                    <span className="stat-label">{kpi.label}</span>
+                    <Icon size={18} aria-hidden="true" />
+                  </div>
+                  <p className="stat-value">{kpi.value}</p>
+                  <p className="stat-helper">{kpi.helper}</p>
+                </button>
+              )
+            })}
           </section>
-        ) : (
-          <>
-            <section className="analytics-kpi-grid" aria-label="Analytics summary">
-              {kpis.map((kpi) => {
-                const Icon = kpiIcons[kpi.id]
-                const isSelected = trendMetric === kpi.id
 
-                return (
-                  <button
-                    key={kpi.id}
-                    className={`section-card analytics-kpi-card ${isSelected ? 'is-selected' : ''}`}
-                    type="button"
-                    aria-pressed={isSelected}
-                    aria-label={`${kpi.label}: ${kpi.value}. Click to plot in trend explorer.`}
-                    onClick={() => setTrendMetric(kpi.id)}
-                  >
-                    <div className="analytics-kpi-heading">
-                      <span className="stat-label">{kpi.label}</span>
-                      <Icon size={18} aria-hidden="true" />
-                    </div>
-                    <p className="stat-value">{kpi.value}</p>
-                  </button>
-                )
-              })}
-            </section>
-
-            <AnalyticsTrendExplorer
-              snapshot={snapshot}
-              metricId={trendMetric}
-              onMetricChange={setTrendMetric}
-            />
-            <AnalyticsOperationsDetails snapshot={snapshot} />
-          </>
-        )
+          <AnalyticsTrendExplorer
+            snapshot={snapshot}
+            metricId={trendMetric}
+            onMetricChange={setTrendMetric}
+          />
+          <AnalyticsOperationsDetails snapshot={snapshot} />
+        </>
       ) : null}
     </div>
   )

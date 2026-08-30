@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAnalyticsSnapshot } from './analyticsService.js'
+import { analyticsTestFixture } from './analyticsTestFixtures.js'
 import {
   buildAnalyticsTrend,
   formatCompactDuration,
@@ -11,167 +11,99 @@ import {
 } from './analyticsPresentation.js'
 
 describe('Analytics presentation helpers', () => {
-  it('derives KPI values from local records without a target output metric', () => {
-    const snapshot = buildAnalyticsSnapshot()
-    const kpis = getAnalyticsKpis(snapshot)
-
-    expect(kpis).toEqual([
-      expect.objectContaining({ id: 'downtime', value: '130 min' }),
-      expect.objectContaining({ id: 'availability', value: '98.7%' }),
+  it('formats backend-provided summaries without recomputing operational metrics', () => {
+    expect(getAnalyticsKpis(analyticsTestFixture)).toEqual([
+      expect.objectContaining({ id: 'downtime', value: '130 min', helper: '5 recorded events' }),
+      expect.objectContaining({ id: 'availability', value: '91.4%' }),
       expect.objectContaining({ id: 'production', value: '595 pcs' }),
       expect.objectContaining({ id: 'process-events', value: '5' }),
+      expect.objectContaining({ id: 'estimated-loss', value: '299 pcs' }),
     ])
-    expect(kpis.some((kpi) => /target/i.test(kpi.label))).toBe(false)
   })
 
-  it('preserves a real zero-percent availability instead of replacing it with 100 percent', () => {
-    const kpis = getAnalyticsKpis({
-      range: { daysInclusive: 1 },
-      downtimeEvents: [{ durationMinutes: 1440 }],
-      productionRecords: [],
-      processEvents: [],
-    })
+  it('distinguishes unobserved null values from measured zeroes', () => {
+    const snapshot = {
+      ...analyticsTestFixture,
+      selected: {
+        ...analyticsTestFixture.selected,
+        summary: {
+          ...analyticsTestFixture.selected.summary,
+          downtimeMinutes: 0,
+          downtimeEventCount: null,
+          availabilityPercent: null,
+          outputPieces: 0,
+        },
+      },
+    }
 
-    expect(kpis.find((kpi) => kpi.id === 'availability')?.value).toBe('0.0%')
+    const kpis = getAnalyticsKpis(snapshot)
+    expect(kpis.find((item) => item.id === 'downtime')?.value).toBe('0 min')
+    expect(kpis.find((item) => item.id === 'downtime')?.helper).toBe('Event count not observed')
+    expect(kpis.find((item) => item.id === 'availability')?.value).toBe('—')
+    expect(kpis.find((item) => item.id === 'production')?.value).toBe('0 pcs')
   })
 
-  it('keeps each trend metric in its own unit-safe series', () => {
-    const snapshot = buildAnalyticsSnapshot()
-    const downtime = buildAnalyticsTrend(snapshot, 'downtime')
-    const production = buildAnalyticsTrend(snapshot, 'production')
-    const availability = buildAnalyticsTrend(snapshot, 'availability')
+  it('uses server-generated selected and comparison trends in the same unit-safe series', () => {
+    const downtime = buildAnalyticsTrend(analyticsTestFixture, 'downtime')
+    const availability = buildAnalyticsTrend(analyticsTestFixture, 'availability')
 
     expect(downtime.metric.unit).toBe('minutes')
     expect(downtime.points).toHaveLength(7)
-    expect(downtime.points.reduce((total, point) => total + point.value, 0)).toBe(130)
-    expect(production.metric.unit).toBe('pieces')
-    expect(production.points.reduce((total, point) => total + point.value, 0)).toBe(595)
-    expect(availability.metric.unit).toBe('percent')
-    expect(availability.points.every((point) => point.value >= 0 && point.value <= 100)).toBe(true)
+    expect(downtime.points[0]).toMatchObject({ value: 43, comparisonValue: 20 })
+    expect(downtime.points.at(-1)).toMatchObject({ value: null })
+    expect(availability.points.at(-1)).toMatchObject({ value: null })
+    expect(downtime.bucket).toBe('daily')
   })
 
-  it('uses four-hour buckets for ranges of two days or less', () => {
-    const snapshot = buildAnalyticsSnapshot({
-      period: 'custom',
-      startDate: '2026-08-10',
-      endDate: '2026-08-11',
-    })
-    const trend = buildAnalyticsTrend(snapshot, 'downtime')
+  it('preserves unmatched monthly comparison segments under the explicit ordinal contract', () => {
+    const snapshot = {
+      ...analyticsTestFixture,
+      trendAlignment: { mode: 'ordinal-calendar-segments', selectedBucketCount: 1, comparisonBucketCount: 2 },
+      selected: { ...analyticsTestFixture.selected, trends: analyticsTestFixture.selected.trends.slice(0, 1) },
+      comparison: { ...analyticsTestFixture.comparison, trends: analyticsTestFixture.comparison.trends.slice(0, 2) },
+    }
 
-    expect(snapshot.range.bucket).toBe('four-hour')
-    expect(trend.points).toHaveLength(12)
-    expect(trend.points.find((point) => point.label === 'Aug 10 08:00')?.value).toBe(43)
-  })
-
-  it('keeps date-only production records in daily buckets instead of inventing midnight output', () => {
-    const snapshot = buildAnalyticsSnapshot({
-      period: 'custom',
-      startDate: '2026-08-10',
-      endDate: '2026-08-11',
-    })
     const trend = buildAnalyticsTrend(snapshot, 'production')
-
-    expect(snapshot.range.bucket).toBe('four-hour')
-    expect(trend.bucket).toBe('daily')
-    expect(trend.usesDailyProductionFallback).toBe(true)
-    expect(trend.points).toEqual([
-      expect.objectContaining({ label: 'Aug 10', value: 118 }),
-      expect.objectContaining({ label: 'Aug 11', value: 122 }),
-    ])
+    expect(trend.points).toHaveLength(2)
+    expect(trend.points[1]).toMatchObject({
+      label: 'Segment 2', selectedLabel: 'No selected segment', hasSelectedSegment: false, comparisonValue: 110,
+    })
+    expect(getAnalyticsTrendSummary(trend)).toBe('595 pcs across 1 observed bucket.')
   })
 
-  it('provides a visible text summary that matches the selected metric', () => {
-    const trend = buildAnalyticsTrend(buildAnalyticsSnapshot(), 'process-events')
-
-    expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 7 buckets.')
+  it('provides a visible summary from the selected server summary', () => {
+    const trend = buildAnalyticsTrend(analyticsTestFixture, 'process-events')
+    expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 6 observed buckets; 1 bucket is unobserved.')
   })
 
-  it('groups downtime by supported cause and process records by neutral sensor code', () => {
-    const snapshot = buildAnalyticsSnapshot()
-
-    expect(getDowntimeCauseBreakdown(snapshot)).toEqual([
-      expect.objectContaining({ cause: 'Corrective Maintenance', eventCount: 1, durationMinutes: 43 }),
-      expect.objectContaining({ cause: 'Manual Cutting', eventCount: 1, durationMinutes: 31 }),
-      expect.objectContaining({ cause: 'Weld Wire Refill', eventCount: 1, durationMinutes: 26 }),
-      expect.objectContaining({ cause: 'Coil Joint', eventCount: 1, durationMinutes: 18 }),
-      expect.objectContaining({ cause: 'Flux Refill', eventCount: 1, durationMinutes: 12 }),
-    ])
-    expect(getProcessSensorBreakdown(snapshot)).toEqual([
-      { sensorCode: 'S-01', eventCount: 1 },
-      { sensorCode: 'S-02', eventCount: 1 },
-      { sensorCode: 'S-03', eventCount: 1 },
-      { sensorCode: 'S-04', eventCount: 1 },
-      { sensorCode: 'S-05', eventCount: 1 },
-    ])
+  it('returns the server-provided cause and sensor aggregations unchanged', () => {
+    expect(getDowntimeCauseBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.downtimeCauses)
+    expect(getProcessSensorBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.processSensors)
   })
 
-  it('formats compact duration for donut chart centers without exceeding inner radius', () => {
+  it('formats compact duration for donut chart centers', () => {
     expect(formatCompactDuration(0)).toBe('0m')
     expect(formatCompactDuration(43)).toBe('43m')
     expect(formatCompactDuration(60)).toBe('1h')
     expect(formatCompactDuration(130)).toBe('2h 10m')
   })
 
-  it('evaluates trend directions and assigns red for downtime increases and green for production increases', () => {
-    const increasingDowntimeTrend = {
-      metric: { id: 'downtime' },
-      points: [{ value: 10 }, { value: 30 }, { value: 50 }],
-    }
-    const decreasingDowntimeTrend = {
-      metric: { id: 'downtime' },
-      points: [{ value: 50 }, { value: 30 }, { value: 10 }],
-    }
-    const increasingProductionTrend = {
+  it('evaluates only observed trend points', () => {
+    const result = getTrendEvaluation({
       metric: { id: 'production' },
-      points: [{ value: 100 }, { value: 120 }, { value: 150 }],
-    }
-    const decreasingProductionTrend = {
+      points: [{ value: 100 }, { value: 120 }, { value: null }],
+    })
+
+    expect(result.direction).toBe('up')
+    expect(result.strokeColor).toBe('var(--chart-target)')
+  })
+
+  it('labels a fully unobserved trend without implying a steady measurement', () => {
+    const result = getTrendEvaluation({
       metric: { id: 'production' },
-      points: [{ value: 150 }, { value: 120 }, { value: 100 }],
-    }
+      points: [{ value: null }, { value: null }],
+    })
 
-    const downtimeInc = getTrendEvaluation(increasingDowntimeTrend)
-    expect(downtimeInc.direction).toBe('up')
-    expect(downtimeInc.strokeColor).toBe('var(--chart-danger)')
-    expect(downtimeInc.sentiment).toBe('negative')
-
-    const downtimeDec = getTrendEvaluation(decreasingDowntimeTrend)
-    expect(downtimeDec.direction).toBe('down')
-    expect(downtimeDec.strokeColor).toBe('var(--chart-target)')
-    expect(downtimeDec.sentiment).toBe('positive')
-
-    const prodInc = getTrendEvaluation(increasingProductionTrend)
-    expect(prodInc.direction).toBe('up')
-    expect(prodInc.strokeColor).toBe('var(--chart-target)')
-    expect(prodInc.sentiment).toBe('positive')
-
-    const prodDec = getTrendEvaluation(decreasingProductionTrend)
-    expect(prodDec.direction).toBe('down')
-    expect(prodDec.strokeColor).toBe('var(--chart-danger)')
-    expect(prodDec.sentiment).toBe('negative')
-
-    // Monthly or Custom range with leading and trailing zero buckets
-    const monthDowntimeTrend = {
-      metric: { id: 'downtime' },
-      points: [
-        { value: 0 }, { value: 0 }, { value: 0 },
-        { value: 43 }, { value: 35 }, { value: 24 }, { value: 16 }, { value: 12 },
-        { value: 0 }, { value: 0 }, { value: 0 },
-      ],
-    }
-    const monthDowntimeEval = getTrendEvaluation(monthDowntimeTrend)
-    expect(monthDowntimeEval.direction).toBe('down')
-    expect(monthDowntimeEval.strokeColor).toBe('var(--chart-target)')
-    expect(monthDowntimeEval.sentiment).toBe('positive')
-
-    // Empty date range with all zeroes
-    const emptyTrend = {
-      metric: { id: 'downtime' },
-      points: [{ value: 0 }, { value: 0 }, { value: 0 }],
-    }
-    const emptyEval = getTrendEvaluation(emptyTrend)
-    expect(emptyEval.direction).toBe('flat')
-    expect(emptyEval.strokeColor).toBe('var(--chart-current)')
-    expect(emptyEval.sentiment).toBe('neutral')
+    expect(result.label).toBe('Not observed')
   })
 })

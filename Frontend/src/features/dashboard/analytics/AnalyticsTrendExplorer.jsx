@@ -14,23 +14,31 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
   return (
     <div className="recharts-tooltip-card industrial-tooltip">
       <strong>{label}</strong>
-      <span>{metric.label}: {formatAnalyticsTrendValue(payload[0].value, metric)}</span>
+      {payload.map((entry) => (
+        <span key={entry.dataKey}>
+          {entry.dataKey === 'comparisonValue'
+            ? `Prior period (${entry.payload.comparisonLabel})`
+            : `Selected period (${entry.payload.selectedLabel})`}:{' '}
+          {formatAnalyticsTrendValue(entry.value, metric)}
+        </span>
+      ))}
     </div>
   )
 }
 
 export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricChange }) {
   const trend = buildAnalyticsTrend(snapshot, metricId)
-  const { metric, points, bucket, usesDailyProductionFallback } = trend
+  const { metric, points, bucket } = trend
   const summary = getAnalyticsTrendSummary(trend)
   const evaluation = getTrendEvaluation(trend)
   const strokeColor = evaluation.strokeColor
+  const hasTrendData = points.some((point) => point.value !== null && point.value !== undefined)
+  const selectedRange = snapshot.selected.range
 
   return (
     <section className="section-card analytics-trend-card industrial-chart-card" aria-labelledby="analytics-trend-title">
       <div className="section-heading">
         <div>
-          <p className="section-eyebrow">Trend explorer</p>
           <h2 id="analytics-trend-title">Operational trend</h2>
         </div>
 
@@ -54,12 +62,20 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           <BarChart3 size={16} aria-hidden="true" />
           {metric.label} - {bucket} buckets
         </span>
+        <span className="section-chip">
+          <span aria-hidden="true" style={{ width: 18, borderTop: '3px solid var(--chart-current)' }} />
+          Selected period
+        </span>
+        <span className="section-chip">
+          <span aria-hidden="true" style={{ width: 18, borderTop: '2px dashed var(--chart-previous)' }} />
+          Prior period
+        </span>
       </div>
 
       <div
         className="analytics-trend-chart"
         role="img"
-        aria-label={`${metric.label} trend chart from ${snapshot.range.startDate} to ${snapshot.range.endDate}`}
+        aria-label={`${metric.label} trend chart from ${selectedRange.requestedStartDate} to ${selectedRange.requestedEndDate}, compared with the prior period`}
       >
         <ResponsiveContainer width="100%" height={320} minWidth={0}>
           <AreaChart data={points} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
@@ -100,9 +116,28 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
               isAnimationActive={true}
               animationDuration={600}
               animationEasing="ease-out"
+              connectNulls={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="comparisonValue"
+              name={`Prior ${metric.label}`}
+              stroke="var(--chart-previous)"
+              strokeWidth={2}
+              strokeDasharray="7 5"
+              fill="transparent"
+              dot={false}
+              activeDot={{ r: 5, strokeWidth: 2, fill: 'var(--chart-previous)', stroke: 'var(--c-surface)' }}
+              isAnimationActive={false}
+              connectNulls={false}
             />
           </AreaChart>
         </ResponsiveContainer>
+        {!hasTrendData ? (
+          <div className="analytics-trend-empty-watermark" aria-hidden="true">
+            No data yet
+          </div>
+        ) : null}
       </div>
 
       <div className="analytics-trend-summary-row">

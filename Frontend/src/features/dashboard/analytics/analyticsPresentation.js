@@ -1,332 +1,99 @@
 import { formatNumber } from '../../../shared/utils/formatters.js'
 
-const DAY_MINUTES = 24 * 60
-
 export const analyticsTrendMetrics = [
-  {
-    id: 'downtime',
-    label: 'Downtime',
-    unit: 'minutes',
-    shortUnit: 'min',
-    description: 'Minutes recorded in each automatic time bucket.',
-  },
-  {
-    id: 'production',
-    label: 'Output',
-    unit: 'pieces',
-    shortUnit: 'pcs',
-    description: 'Output recorded in each automatic time bucket.',
-  },
-  {
-    id: 'availability',
-    label: 'Availability',
-    unit: 'percent',
-    shortUnit: '%',
-    description: 'Availability calculated from the local downtime fixture for each automatic time bucket.',
-  },
-  {
-    id: 'process-events',
-    label: 'Process events',
-    unit: 'events',
-    shortUnit: 'events',
-    description: 'Process event count in each automatic time bucket.',
-  },
+  { id: 'downtime', label: 'Downtime', unit: 'minutes', shortUnit: 'min', metricKey: 'downtimeMinutes', description: 'Recorded downtime in each server-generated time bucket.' },
+  { id: 'production', label: 'Output', unit: 'pieces', shortUnit: 'pcs', metricKey: 'outputPieces', description: 'Production output pulses in each server-generated time bucket.' },
+  { id: 'availability', label: 'Availability', unit: 'percent', shortUnit: '%', metricKey: 'availabilityPercent', description: 'Availability from the operational schedule and recorded downtime.' },
+  { id: 'process-events', label: 'Process events', unit: 'events', shortUnit: 'events', metricKey: 'processEventCount', description: 'S-01, S-02, and S-04 pulse events in each server-generated time bucket.' },
+  { id: 'estimated-loss', label: 'Estimated loss', unit: 'pieces', shortUnit: 'pcs', metricKey: 'estimatedLossPieces', description: 'Estimated loss at the configured basis of 2.3 pcs per downtime minute.' },
 ]
-
-function parseDate(dateValue) {
-  const [year, month, day] = String(dateValue).slice(0, 10).split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day))
-}
-
-function toDateInput(date) {
-  return date.toISOString().slice(0, 10)
-}
-
-function addDays(date, days) {
-  const nextDate = new Date(date.getTime())
-  nextDate.setUTCDate(nextDate.getUTCDate() + days)
-  return nextDate
-}
-
-function getMondayStart(date) {
-  const weekday = date.getUTCDay()
-  return addDays(date, -(weekday === 0 ? 6 : weekday - 1))
-}
-
-function minDate(left, right) {
-  return left <= right ? left : right
-}
-
-function maxDate(left, right) {
-  return left >= right ? left : right
-}
-
-function getDateLabel(dateValue, options = {}) {
-  return new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'UTC',
-    month: 'short',
-    day: '2-digit',
-    ...options,
-  }).format(parseDate(dateValue))
-}
-
-function getRangeLabel(startDate, endDate) {
-  if (startDate === endDate) return getDateLabel(startDate)
-  return `${getDateLabel(startDate)} - ${getDateLabel(endDate)}`
-}
-
-function createDateBucket(startDate, endDate, label = getRangeLabel(startDate, endDate)) {
-  const daysInclusive = Math.floor((parseDate(endDate).getTime() - parseDate(startDate).getTime()) / 86400000) + 1
-
-  return {
-    key: `${startDate}:${endDate}`,
-    label,
-    startDate,
-    endDate,
-    capacityMinutes: daysInclusive * DAY_MINUTES,
-  }
-}
-
-function buildFourHourBuckets(range) {
-  const buckets = []
-  let date = parseDate(range.startDate)
-  const end = parseDate(range.endDate)
-
-  while (date <= end) {
-    const dateValue = toDateInput(date)
-
-    for (let hour = 0; hour < 24; hour += 4) {
-      const hourLabel = `${String(hour).padStart(2, '0')}:00`
-      buckets.push({
-        key: `${dateValue}T${String(hour).padStart(2, '0')}`,
-        label: `${getDateLabel(dateValue)} ${hourLabel}`,
-        startDate: dateValue,
-        endDate: dateValue,
-        startHour: hour,
-        endHour: hour + 3,
-        capacityMinutes: 4 * 60,
-      })
-    }
-
-    date = addDays(date, 1)
-  }
-
-  return buckets
-}
-
-function buildDailyBuckets(range) {
-  const buckets = []
-  let date = parseDate(range.startDate)
-  const end = parseDate(range.endDate)
-
-  while (date <= end) {
-    const dateValue = toDateInput(date)
-    buckets.push(createDateBucket(dateValue, dateValue))
-    date = addDays(date, 1)
-  }
-
-  return buckets
-}
-
-function buildWeeklyBuckets(range) {
-  const buckets = []
-  const rangeStart = parseDate(range.startDate)
-  const rangeEnd = parseDate(range.endDate)
-  let weekStart = getMondayStart(rangeStart)
-
-  while (weekStart <= rangeEnd) {
-    const weekEnd = addDays(weekStart, 6)
-    const bucketStart = maxDate(weekStart, rangeStart)
-    const bucketEnd = minDate(weekEnd, rangeEnd)
-    buckets.push(createDateBucket(toDateInput(bucketStart), toDateInput(bucketEnd)))
-    weekStart = addDays(weekStart, 7)
-  }
-
-  return buckets
-}
-
-function buildMonthlyBuckets(range) {
-  const buckets = []
-  const rangeStart = parseDate(range.startDate)
-  const rangeEnd = parseDate(range.endDate)
-  let monthStart = new Date(Date.UTC(rangeStart.getUTCFullYear(), rangeStart.getUTCMonth(), 1))
-
-  while (monthStart <= rangeEnd) {
-    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0))
-    const bucketStart = maxDate(monthStart, rangeStart)
-    const bucketEnd = minDate(monthEnd, rangeEnd)
-    buckets.push(createDateBucket(
-      toDateInput(bucketStart),
-      toDateInput(bucketEnd),
-      new Intl.DateTimeFormat('en-PH', { timeZone: 'UTC', month: 'short', year: 'numeric' }).format(monthStart),
-    ))
-    monthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1))
-  }
-
-  return buckets
-}
 
 export function getAnalyticsTrendMetric(metricId) {
   return analyticsTrendMetrics.find((metric) => metric.id === metricId) || analyticsTrendMetrics[0]
 }
 
-export function buildAnalyticsBuckets(range) {
-  if (range.bucket === 'four-hour') return buildFourHourBuckets(range)
-  if (range.bucket === 'daily') return buildDailyBuckets(range)
-  if (range.bucket === 'weekly') return buildWeeklyBuckets(range)
-  return buildMonthlyBuckets(range)
-}
-
-function getEventHour(value) {
-  const match = String(value).match(/T(\d{2}):/)
-  return match ? Number(match[1]) : 0
-}
-
-function findBucket(buckets, dateValue, hour) {
-  return buckets.find((bucket) => (
-    dateValue >= bucket.startDate
-    && dateValue <= bucket.endDate
-    && (bucket.startHour === undefined || (dateValue === bucket.startDate && hour >= bucket.startHour && hour <= bucket.endHour))
-  ))
-}
-
-function sumByBucket(buckets, rows, dateKey, getValue) {
-  const totals = new Map(buckets.map((bucket) => [bucket.key, 0]))
-
-  rows.forEach((row) => {
-    const value = row[dateKey]
-    const bucket = findBucket(buckets, String(value).slice(0, 10), getEventHour(value))
-    if (bucket) totals.set(bucket.key, totals.get(bucket.key) + getValue(row))
-  })
-
-  return totals
-}
-
-function roundToOneDecimal(value) {
-  return Math.round(value * 10) / 10
+function formatMetricValue(value, unit) {
+  if (value === null || value === undefined) return '—'
+  if (unit === 'percent') return `${Number(value).toFixed(1)}%`
+  return `${formatNumber(value)}${unit ? ` ${unit}` : ''}`
 }
 
 export function getAnalyticsKpis(snapshot) {
-  const downtimeMinutes = snapshot.downtimeEvents.reduce((total, event) => total + Number(event.durationMinutes || 0), 0)
-  const totalPieces = snapshot.productionRecords.reduce((total, record) => total + Number(record.actualPieces || 0), 0)
-  const processEventCount = snapshot.processEvents.length
-  const availableMinutes = Math.max(0, (snapshot.range.daysInclusive * DAY_MINUTES) - downtimeMinutes)
-  const availability = snapshot.range.daysInclusive
-    ? roundToOneDecimal((availableMinutes / (snapshot.range.daysInclusive * DAY_MINUTES)) * 100)
-    : 0
+  const summary = snapshot.selected.summary
+  const eventCount = summary.downtimeEventCount
+  const downtimeEventHelper = eventCount === null || eventCount === undefined
+    ? 'Event count not observed'
+    : `${formatNumber(eventCount)} recorded event${eventCount === 1 ? '' : 's'}`
 
   return [
-    {
-      id: 'downtime',
-      label: 'Downtime',
-      value: `${formatNumber(downtimeMinutes)} min`,
-      helper: `${formatNumber(snapshot.downtimeEvents.length)} recorded event${snapshot.downtimeEvents.length === 1 ? '' : 's'}`,
-    },
-    {
-      id: 'availability',
-      label: 'Availability',
-      value: `${availability.toFixed(1)}%`,
-      helper: 'Calculated from local downtime records',
-    },
-    {
-      id: 'production',
-      label: 'Output',
-      value: `${formatNumber(totalPieces)} pcs`,
-      helper: 'Recorded local production output',
-    },
-    {
-      id: 'process-events',
-      label: 'Process events',
-      value: formatNumber(processEventCount),
-      helper: 'Count from the local process fixture',
-    },
+    { id: 'downtime', label: 'Downtime', value: formatMetricValue(summary.downtimeMinutes, 'min'), helper: downtimeEventHelper },
+    { id: 'availability', label: 'Availability', value: formatMetricValue(summary.availabilityPercent, 'percent'), helper: 'Server-calculated operational availability' },
+    { id: 'production', label: 'Output', value: formatMetricValue(summary.outputPieces, 'pcs'), helper: 'Recorded S-05 output pulses' },
+    { id: 'process-events', label: 'Process events', value: formatMetricValue(summary.processEventCount, ''), helper: 'Recorded S-01, S-02, and S-04 pulses' },
+    { id: 'estimated-loss', label: 'Estimated loss', value: formatMetricValue(summary.estimatedLossPieces, 'pcs'), helper: 'Estimate based on 2.3 pcs per downtime minute' },
   ]
 }
 
 export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {
   const metric = getAnalyticsTrendMetric(metricId)
-  // Production fixture rows are date-only. Do not invent a midnight timestamp
-  // when a short selected range otherwise uses four-hour operational buckets.
-  const bucket = metric.id === 'production' && snapshot.range.bucket === 'four-hour'
-    ? 'daily'
-    : snapshot.range.bucket
-  const buckets = buildAnalyticsBuckets({ ...snapshot.range, bucket })
-  const downtimeTotals = sumByBucket(buckets, snapshot.downtimeEvents, 'startedAt', (event) => Number(event.durationMinutes || 0))
-  const productionTotals = sumByBucket(buckets, snapshot.productionRecords, 'date', (record) => Number(record.actualPieces || 0))
-  const processTotals = sumByBucket(buckets, snapshot.processEvents, 'occurredAt', () => 1)
-
-  const points = buckets.map((bucket) => {
-    const downtimeMinutes = downtimeTotals.get(bucket.key) || 0
-    let value = downtimeMinutes
-
-    if (metric.id === 'production') value = productionTotals.get(bucket.key) || 0
-    if (metric.id === 'process-events') value = processTotals.get(bucket.key) || 0
-    if (metric.id === 'availability') {
-      value = roundToOneDecimal(Math.max(0, ((bucket.capacityMinutes - downtimeMinutes) / bucket.capacityMinutes) * 100))
-    }
-
+  const selectedTrends = snapshot.selected.trends || []
+  const comparisonTrends = snapshot.comparison?.trends || []
+  const pointCount = Math.max(selectedTrends.length, comparisonTrends.length)
+  const isCalendarSegmentComparison = snapshot.trendAlignment?.mode === 'ordinal-calendar-segments'
+  const points = Array.from({ length: pointCount }, (_, index) => {
+    const selectedPoint = selectedTrends[index]
+    const comparisonPoint = comparisonTrends[index]
     return {
-      ...bucket,
-      value,
-      downtimeMinutes,
+      ...(selectedPoint || {}),
+      key: selectedPoint?.key || `comparison-only-${comparisonPoint?.key || index}`,
+      label: isCalendarSegmentComparison ? `Segment ${index + 1}` : selectedPoint?.label || comparisonPoint?.label,
+      selectedLabel: selectedPoint?.label || 'No selected segment',
+      comparisonLabel: comparisonPoint?.label || 'No prior segment',
+      hasSelectedSegment: Boolean(selectedPoint),
+      hasComparisonSegment: Boolean(comparisonPoint),
+      value: selectedPoint?.metrics?.[metric.metricKey] ?? null,
+      comparisonValue: comparisonPoint?.metrics?.[metric.metricKey] ?? null,
     }
   })
 
   return {
     metric,
     points,
-    bucket,
-    usesDailyProductionFallback: metric.id === 'production' && snapshot.range.bucket === 'four-hour',
+    bucket: snapshot.selected.range.bucket,
+    selectedSummaryValue: snapshot.selected.summary?.[metric.metricKey] ?? null,
+    alignment: snapshot.trendAlignment,
   }
 }
 
 export function formatAnalyticsTrendValue(value, metric) {
+  if (value === null || value === undefined) return 'Not observed'
   if (metric.unit === 'percent') return `${Number(value).toFixed(1)}%`
   return `${formatNumber(value)} ${metric.shortUnit}`
 }
 
 export function getAnalyticsTrendSummary(trend) {
-  const { metric, points } = trend
-
-  if (metric.id === 'availability') {
-    const average = points.length
-      ? points.reduce((total, point) => total + point.value, 0) / points.length
-      : 0
-    return `Average availability is ${average.toFixed(1)}% across ${points.length} ${points.length === 1 ? 'bucket' : 'buckets'}.`
+  const { metric, points, selectedSummaryValue } = trend
+  if (selectedSummaryValue === null || selectedSummaryValue === undefined) {
+    return `No observed ${metric.label.toLowerCase()} value is available for this range.`
   }
+  if (metric.id === 'availability') {
+    return `Availability is ${formatAnalyticsTrendValue(selectedSummaryValue, metric)} for the observed portion of this range.`
+  }
+  const selectedPoints = points.filter((point) => point.hasSelectedSegment !== false)
+  const observedBucketCount = selectedPoints.filter((point) => point.value !== null && point.value !== undefined).length
+  const unobservedBucketCount = selectedPoints.length - observedBucketCount
+  const observedSummary = `${formatAnalyticsTrendValue(selectedSummaryValue, metric)} across ${observedBucketCount} observed ${observedBucketCount === 1 ? 'bucket' : 'buckets'}`
 
-  const total = points.reduce((sum, point) => sum + point.value, 0)
-  return `${formatAnalyticsTrendValue(total, metric)} across ${points.length} ${points.length === 1 ? 'bucket' : 'buckets'}.`
+  if (unobservedBucketCount === 0) return `${observedSummary}.`
+  return `${observedSummary}; ${unobservedBucketCount} ${unobservedBucketCount === 1 ? 'bucket is' : 'buckets are'} unobserved.`
 }
 
 export function getDowntimeCauseBreakdown(snapshot) {
-  const causes = new Map()
-
-  snapshot.downtimeEvents.forEach((event) => {
-    const current = causes.get(event.cause) || {
-      cause: event.cause,
-      eventCount: 0,
-      durationMinutes: 0,
-    }
-    current.eventCount += 1
-    current.durationMinutes += Number(event.durationMinutes || 0)
-    causes.set(event.cause, current)
-  })
-
-  return [...causes.values()]
-    .sort((left, right) => right.durationMinutes - left.durationMinutes || left.cause.localeCompare(right.cause))
+  return snapshot.selected.downtimeCauses || []
 }
 
 export function getProcessSensorBreakdown(snapshot) {
-  const sensors = new Map()
-
-  snapshot.processEvents.forEach((event) => {
-    const current = sensors.get(event.sensorCode) || { sensorCode: event.sensorCode, eventCount: 0 }
-    current.eventCount += 1
-    sensors.set(event.sensorCode, current)
-  })
-
-  return [...sensors.values()].sort((left, right) => left.sensorCode.localeCompare(right.sensorCode))
+  return snapshot.selected.processSensors || []
 }
 
 export function formatCompactDuration(minutes) {
@@ -337,136 +104,46 @@ export function formatCompactDuration(minutes) {
   return remaining ? `${hours}h ${remaining}m` : `${hours}h`
 }
 
+function neutralEvaluation(label = 'Steady pace') {
+  return { direction: 'flat', delta: 0, deltaPercent: 0, strokeColor: 'var(--chart-current)', sentiment: 'neutral', label }
+}
+
 export function getTrendEvaluation(trend) {
-  const { metric, points } = trend
-  if (!points || points.length < 2) {
-    return {
-      direction: 'flat',
-      delta: 0,
-      deltaPercent: 0,
-      strokeColor: 'var(--chart-current)',
-      sentiment: 'neutral',
-      label: 'Steady pace',
-    }
+  const observedPoints = (trend.points || []).filter((point) => point.value !== null && point.value !== undefined)
+  if (observedPoints.length === 0) return neutralEvaluation('Not observed')
+  if (observedPoints.length === 1) return neutralEvaluation('Insufficient observations')
+
+  let activePoints = observedPoints
+  if (['downtime', 'production', 'process-events', 'estimated-loss'].includes(trend.metric.id)) {
+    const firstActive = observedPoints.findIndex((point) => Number(point.value) > 0)
+    if (firstActive === -1) return neutralEvaluation()
+    activePoints = observedPoints.slice(firstActive)
   }
+  if (activePoints.length < 2) return neutralEvaluation('Insufficient observations')
 
-  // Trim leading zeros so ranges that start before records began don't skew the initial baseline,
-  // but preserve trailing and intermediate drops so slowdowns and stoppages reflect accurately.
-  let activePoints = points
-  if (metric.id === 'downtime' || metric.id === 'production' || metric.id === 'process-events') {
-    const firstActiveIndex = points.findIndex((p) => Number(p.value) > 0)
-    if (firstActiveIndex > 0) {
-      activePoints = points.slice(firstActiveIndex)
-    } else if (firstActiveIndex === -1) {
-      return {
-        direction: 'flat',
-        delta: 0,
-        deltaPercent: 0,
-        strokeColor: 'var(--chart-current)',
-        sentiment: 'neutral',
-        label: 'Steady pace',
-      }
-    }
-  } else if (metric.id === 'availability') {
-    const firstActiveIndex = points.findIndex((p) => Number(p.value) < 100 || (p.downtimeMinutes && p.downtimeMinutes > 0))
-    if (firstActiveIndex > 0) {
-      activePoints = points.slice(firstActiveIndex)
-    }
-  }
+  const count = activePoints.length
+  const sumY = activePoints.reduce((total, point) => total + Number(point.value), 0)
+  const sumXY = activePoints.reduce((total, point, index) => total + (index * Number(point.value)), 0)
+  const sumX = (count * (count - 1)) / 2
+  const sumX2 = ((count - 1) * count * ((2 * count) - 1)) / 6
+  const denominator = sumX2 - ((sumX * sumX) / count)
+  const slope = denominator ? (sumXY - ((sumX * sumY) / count)) / denominator : 0
+  const delta = slope * (count - 1)
+  const mean = sumY / count
+  const deltaPercent = mean ? (delta / Math.abs(mean)) * 100 : 0
+  const direction = delta > 0.001 ? 'up' : delta < -0.001 ? 'down' : 'flat'
+  if (direction === 'flat') return neutralEvaluation()
 
-  if (activePoints.length < 2) {
-    return {
-      direction: 'flat',
-      delta: 0,
-      deltaPercent: 0,
-      strokeColor: 'var(--chart-current)',
-      sentiment: 'neutral',
-      label: 'Steady pace',
-    }
-  }
+  const positiveIncrease = ['production', 'availability'].includes(trend.metric.id)
+  const positive = positiveIncrease ? direction === 'up' : trend.metric.id === 'downtime' || trend.metric.id === 'estimated-loss' ? direction === 'down' : null
+  const sentiment = positive === null ? `neutral-${direction}` : positive ? 'positive' : 'negative'
+  const strokeColor = positive === null ? 'var(--chart-current)' : positive ? 'var(--chart-target)' : 'var(--chart-danger)'
+  const sign = deltaPercent > 0 ? '+' : ''
 
-  // Linear regression slope over activePoints
-  const n = activePoints.length
-  let sumX = 0
-  let sumY = 0
-  let sumXY = 0
-  let sumX2 = 0
-
-  for (let i = 0; i < n; i++) {
-    const x = i
-    const y = Number(activePoints[i].value) || 0
-    sumX += x
-    sumY += y
-    sumXY += x * y
-    sumX2 += x * x
-  }
-
-  const meanX = sumX / n
-  const meanY = sumY / n
-  const denominator = sumX2 - sumX * meanX
-
-  let slope = 0
-  if (Math.abs(denominator) > 0.0001) {
-    slope = (sumXY - sumX * meanY) / denominator
-  }
-
-  const delta = slope * (n - 1)
-  const deltaPercent = meanY !== 0 ? (delta / Math.abs(meanY)) * 100 : 0
-  const isIncreasing = delta > 0.001
-  const isDecreasing = delta < -0.001
-
-  let sentiment = 'neutral'
-  let strokeColor = 'var(--chart-current)'
-
-  if (metric.id === 'downtime') {
-    // For downtime: increase is red/danger, decrease is green/target
-    if (isIncreasing) {
-      sentiment = 'negative'
-      strokeColor = 'var(--chart-danger)'
-    } else if (isDecreasing) {
-      sentiment = 'positive'
-      strokeColor = 'var(--chart-target)'
-    }
-  } else if (metric.id === 'production' || metric.id === 'availability') {
-    // For actual pieces & availability: increase is green/target, decrease is red/danger
-    if (isIncreasing) {
-      sentiment = 'positive'
-      strokeColor = 'var(--chart-target)'
-    } else if (isDecreasing) {
-      sentiment = 'negative'
-      strokeColor = 'var(--chart-danger)'
-    }
-  } else {
-    sentiment = isIncreasing ? 'neutral-up' : isDecreasing ? 'neutral-down' : 'neutral'
-    strokeColor = 'var(--chart-current)'
-  }
-
-  const sign = delta > 0 ? '+' : ''
-  const percentText = Math.abs(deltaPercent).toFixed(1)
-
-  return {
-    direction: isIncreasing ? 'up' : isDecreasing ? 'down' : 'flat',
-    delta,
-    deltaPercent,
-    strokeColor,
-    sentiment,
-    label: isIncreasing
-      ? `Trending up (${sign}${percentText}%)`
-      : isDecreasing
-        ? `Trending down (${sign}${percentText}%)`
-        : 'Steady pace',
-  }
+  return { direction, delta, deltaPercent, strokeColor, sentiment, label: `Trending ${direction} (${sign}${deltaPercent.toFixed(1)}%)` }
 }
 
 export function formatAnalyticsDateTime(value, timeZone = 'Asia/Manila') {
   if (!value) return 'Not recorded'
-
-  return new Intl.DateTimeFormat('en-PH', {
-    timeZone,
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-PH', { timeZone, month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }

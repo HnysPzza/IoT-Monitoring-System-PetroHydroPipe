@@ -38,7 +38,7 @@ export const navItems = [
     icon: 'chart-no-axes-combined',
     group: 'analyze',
     roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor'],
-    subtitle: 'Explore local production, downtime, and process trends.',
+    subtitle: 'Explore production, downtime, and process trends.',
   },
   {
     label: 'Audit Log',
@@ -100,7 +100,7 @@ export const dashboardPageMeta = {
   },
   '/dashboard/analytics': {
     title: 'Analytics',
-    subtitle: 'Local-only production, downtime, and process trends.',
+    subtitle: 'Production, downtime, and process trends.',
   },
   '/dashboard/users': {
     title: 'User Accounts',

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AnalyticsSection from './AnalyticsSection.jsx'
+import { analyticsTestFixture } from './analyticsTestFixtures.js'
 
 vi.mock('./AnalyticsOperationsDetails.jsx', () => ({
   default: () => <div data-testid="analytics-operations-details" />,
@@ -11,179 +12,142 @@ vi.mock('./AnalyticsOperationsDetails.jsx', () => ({
 vi.mock('./AnalyticsDateRangePicker.jsx', () => ({
   default: ({ onChange }) => (
     <div>
-      <button
-        type="button"
-        onClick={() => onChange({ startDate: '2026-08-15', endDate: '' })}
-      >
-        Choose partial range
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange({ startDate: '2026-08-15', endDate: '2026-08-17' })}
-      >
-        Choose complete range
-      </button>
+      <button type="button" onClick={() => onChange({ startDate: '2026-08-15', endDate: '' })}>Choose partial range</button>
+      <button type="button" onClick={() => onChange({ startDate: '2026-08-15', endDate: '2026-08-17' })}>Choose complete range</button>
     </div>
   ),
 }))
 
-const successfulSnapshot = {
-  source: 'local-fixture',
-  timeZone: 'Asia/Manila',
-  machine: { code: 'M-01', name: 'Spiral Mill 01' },
-  range: { startDate: '2026-08-10', endDate: '2026-08-16', daysInclusive: 7, bucket: 'daily' },
-  downtimeEvents: [{ id: 'downtime-1' }],
-  processEvents: [{ id: 'process-1' }],
-  productionRecords: [{ date: '2026-08-10', actualPieces: 118 }],
-}
-
 function createDeferred() {
   let resolve
   let reject
-  const promise = new Promise((nextResolve, nextReject) => {
-    resolve = nextResolve
-    reject = nextReject
-  })
-
+  const promise = new Promise((nextResolve, nextReject) => { resolve = nextResolve; reject = nextReject })
   return { promise, resolve, reject }
 }
 
-describe('AnalyticsSection local request states', () => {
-  it('shows an initial loading state before rendering the local fixture identity', async () => {
+describe('AnalyticsSection recorded-data states', () => {
+  it('shows loading and omits redundant analytics notices', async () => {
     const deferred = createDeferred()
     const loadAnalytics = vi.fn(() => deferred.promise)
-
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
 
-    expect(screen.getByText('Loading Analytics workspace...')).toBeInTheDocument()
-    deferred.resolve(successfulSnapshot)
+    expect(screen.getByText('Loading Analytics...')).toBeInTheDocument()
+    deferred.resolve(analyticsTestFixture)
 
-    expect(await screen.findByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
-    expect(screen.getByText('Local fixture only')).toBeInTheDocument()
-    expect(loadAnalytics).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(screen.queryByText('Recorded system data')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Historical sensor heartbeat coverage is not stored/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
+    expect(loadAnalytics).toHaveBeenCalledWith('test-token', { period: 'this-week' })
+  }, 15000)
+
+  it('does not show the redundant comparison notice', async () => {
+    const loadAnalytics = vi.fn().mockResolvedValue({ ...analyticsTestFixture, comparisonClipped: true })
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/comparison is clipped to matching elapsed time/i)).not.toBeInTheDocument()
   })
 
-  it('shows an initial error and retries into a successful local preview', async () => {
+  it('shows an initial API error and retries into recorded data', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn()
-      .mockRejectedValueOnce(new Error('Fixture temporarily unavailable'))
-      .mockResolvedValueOnce(successfulSnapshot)
-
+      .mockRejectedValueOnce(new Error('Analytics temporarily unavailable'))
+      .mockResolvedValueOnce(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
 
-    expect(await screen.findByRole('heading', { name: 'Unable to prepare Analytics' })).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('Fixture temporarily unavailable')
-
+    expect(await screen.findByRole('heading', { name: 'Unable to load Analytics' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Analytics temporarily unavailable')
     await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+  }, 15000)
 
-    expect(await screen.findByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
-    expect(loadAnalytics).toHaveBeenCalledTimes(2)
-  })
-
-  it('keeps the last successful local preview visible when a refresh fails', async () => {
+  it('keeps the last successful recorded result visible when refresh fails', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn()
-      .mockResolvedValueOnce(successfulSnapshot)
+      .mockResolvedValueOnce(analyticsTestFixture)
       .mockRejectedValueOnce(new Error('Refresh unavailable'))
-
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
-    expect(await screen.findByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Refresh data' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Showing the last local preview because refresh failed.')
-    expect(screen.getByRole('heading', { name: 'Local Analytics preview' })).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Showing the last recorded result because refresh failed.')
+    expect(screen.getByText('130 min')).toBeInTheDocument()
   })
 
-  it('uses an explicit empty state when the selected fixture range has no records', async () => {
+  it('renders zero and unobserved KPI values without inventing measurements', async () => {
     const loadAnalytics = vi.fn().mockResolvedValue({
-      ...successfulSnapshot,
-      downtimeEvents: [],
-      processEvents: [],
-      productionRecords: [],
+      ...analyticsTestFixture,
+      selected: {
+        ...analyticsTestFixture.selected,
+        summary: {
+          ...analyticsTestFixture.selected.summary,
+          downtimeMinutes: 0, availabilityPercent: null, outputPieces: 0, processEventCount: 0,
+        },
+      },
     })
-
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
 
-    expect(await screen.findByText('No local Analytics records fall inside this preview range.')).toBeInTheDocument()
+    expect(await screen.findByText('0 min')).toBeInTheDocument()
+    expect(screen.getByText('0 pcs')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('updates the local fixture query when the user changes its date preset', async () => {
-    const user = userEvent.setup()
-    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
-
+  it('does not request Analytics while a custom range is incomplete and requests exact dates once complete', async () => {
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
-    expect(await screen.findByText('118 pcs')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'This month' }))
-
-    await waitFor(() => {
-      expect(loadAnalytics).toHaveBeenLastCalledWith({ period: 'this-month' })
-    })
-  })
-
-  it('switches the explorer to a separate output trend without mixing units', async () => {
-    const user = userEvent.setup()
-    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
-
-    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
-    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
-
-    await user.selectOptions(screen.getByLabelText('Trend metric'), 'production')
-
-    expect(screen.getByText('Output - daily buckets')).toBeInTheDocument()
-    expect(screen.getByText('118 pcs across 7 buckets.')).toBeInTheDocument()
-  })
-
-  it('does not load Analytics when a custom calendar range is only partially selected', async () => {
-    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
-
-    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
-    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
-    expect(document.querySelector('.analytics-filter-row')).toHaveClass('analytics-filter-row--custom')
-
     await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
     fireEvent.click(await screen.findByRole('button', { name: 'Choose partial range' }))
-
     expect(loadAnalytics).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose complete range' }))
+    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith('test-token', {
+      period: 'custom', startDate: '2026-08-15', endDate: '2026-08-17',
+    }))
   })
 
-  it('loads one exact local request when a valid custom calendar range is completed', async () => {
-    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
-
-    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
-    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
-
-    await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
-    fireEvent.click(await screen.findByRole('button', { name: 'Choose complete range' }))
-
-    await waitFor(() => {
-      expect(loadAnalytics).toHaveBeenCalledTimes(3)
-      expect(loadAnalytics).toHaveBeenLastCalledWith({
-        period: 'custom',
-        startDate: '2026-08-15',
-        endDate: '2026-08-17',
-      })
-    })
-  })
-
-  it('switches the trend explorer metric when clicking an interactive KPI card', async () => {
+  it('switches the trend explorer metric from an interactive KPI card', async () => {
     const user = userEvent.setup()
-    const loadAnalytics = vi.fn().mockResolvedValue(successfulSnapshot)
-
-    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    renderWithAuth(<AnalyticsSection loadAnalytics={vi.fn().mockResolvedValue(analyticsTestFixture)} />)
     expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
 
-    const availabilityCard = screen.getByRole('button', { name: /Availability.*Click to plot/i })
-    expect(availabilityCard).toHaveAttribute('aria-pressed', 'false')
-
+    const availabilityCard = screen.getByRole('button', {
+      name: /Availability.*Server-calculated operational availability/i,
+    })
     await user.click(availabilityCard)
-
     expect(availabilityCard).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/Availability - daily buckets/i)).toBeInTheDocument()
+  })
+
+  it('offers all recorded history as a backend-owned range choice', async () => {
+    const user = userEvent.setup()
+    const allTimeFixture = {
+      ...analyticsTestFixture,
+      selectionMode: 'all',
+      selected: {
+        ...analyticsTestFixture.selected,
+        range: {
+          ...analyticsTestFixture.selected.range,
+          requestedStartDate: '2024-01-15',
+          requestedEndDate: '2026-08-15',
+          daysInclusive: 944,
+          bucket: 'monthly',
+        },
+      },
+    }
+    const loadAnalytics = vi.fn()
+      .mockResolvedValueOnce(analyticsTestFixture)
+      .mockResolvedValueOnce(allTimeFixture)
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'All time' }))
+
+    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith('test-token', { period: 'all' }))
+    expect(screen.queryByText(/All recorded history:/i)).not.toBeInTheDocument()
   })
 })

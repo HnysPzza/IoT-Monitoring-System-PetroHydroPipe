@@ -9,17 +9,13 @@ const routeConfig = [
     { path: '/operations', module: 'operations' },
     { path: '/iot', module: 'iot' },
     { path: '/dashboard', module: 'dashboard' },
+    { path: '/analytics', module: 'analytics' },
     { path: '/downtime', module: 'downtime' },
     { path: '/reports', module: 'reports' },
     { path: '/audit', module: 'audit' },
 ]
 
 const router = express.Router()
-
-routeConfig.forEach(({ path, module }) => {
-    const moduleRoutes = require(`../modules/${module}/${module}.routes`)
-    router.use(path, moduleRoutes)
-})
 
 routeConfig.forEach(({ path, module: mod }) => {
     let moduleRoutes
@@ -33,3 +29,5 @@ routeConfig.forEach(({ path, module: mod }) => {
     }
     router.use(path, moduleRoutes)
 })
+
+module.exports = router
