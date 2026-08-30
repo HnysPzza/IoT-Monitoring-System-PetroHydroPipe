@@ -55,9 +55,16 @@ export const analyticsTestFixture = {
     },
     trends: selectedTrends,
     downtimeCauses: [
-      { cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 61, estimatedLossPieces: 140.3 },
-      { cause: 'Weld Wire Refill', eventCount: 1, durationMinutes: 38, estimatedLossPieces: 87.4 },
-      { cause: 'Manual Cutting', eventCount: 2, durationMinutes: 31, estimatedLossPieces: 71.3 },
+      { cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 61, estimatedLossPieces: 140 },
+      { cause: 'Consumable Shortage', eventCount: 1, durationMinutes: 38, estimatedLossPieces: 87 },
+      { cause: 'Manual Cutting', eventCount: 2, durationMinutes: 31, estimatedLossPieces: 71 },
+    ],
+    downtimeSensors: [
+      { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2, durationMinutes: 61 },
+      { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1, durationMinutes: 38 },
+      { sensorCode: 'S-05', sensorLabel: 'Production Output Cutting', eventCount: 2, durationMinutes: 31 },
+      { sensorCode: 'S-03', sensorLabel: 'Machine Main Sensor', eventCount: 0, durationMinutes: 0 },
+      { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 0, durationMinutes: 0 },
     ],
     processSensors: [
       { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2 },
@@ -76,7 +83,7 @@ export const analyticsTestFixture = {
       outputPieces: 550, processEventCount: 5, estimatedLossPieces: 230,
     },
     trends: comparisonTrends,
-    downtimeCauses: [], processSensors: [],
+    downtimeCauses: [], downtimeSensors: [], processSensors: [],
   },
 }
 

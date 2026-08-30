@@ -153,6 +153,15 @@ function isPeriod(value) {
       && Number.isFinite(cause.durationMinutes)
       && Number.isFinite(cause.estimatedLossPieces)
     ))
+    && Array.isArray(value.downtimeSensors)
+    && value.downtimeSensors.length <= 5
+    && new Set(value.downtimeSensors.map((sensor) => sensor?.sensorCode)).size === value.downtimeSensors.length
+    && value.downtimeSensors.every((sensor) => (
+      typeof sensor?.sensorCode === 'string'
+      && typeof sensor.sensorLabel === 'string'
+      && Number.isFinite(sensor.eventCount)
+      && Number.isFinite(sensor.durationMinutes)
+    ))
     && Array.isArray(value.processSensors)
     && value.processSensors.every((sensor) => (
       typeof sensor?.sensorCode === 'string'

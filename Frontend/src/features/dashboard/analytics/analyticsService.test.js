@@ -83,6 +83,14 @@ describe('Analytics API service', () => {
       },
       {
         ...analyticsTestResponse.analytics,
+        selected: { ...analyticsTestResponse.analytics.selected, downtimeCauses: [{ cause: 'Maintenance' }] },
+      },
+      {
+        ...analyticsTestResponse.analytics,
+        selected: { ...analyticsTestResponse.analytics.selected, downtimeSensors: [{ sensorCode: 'S-01' }] },
+      },
+      {
+        ...analyticsTestResponse.analytics,
         trendAlignment: { ...analyticsTestResponse.analytics.trendAlignment, comparisonBucketCount: 99 },
       },
     ]

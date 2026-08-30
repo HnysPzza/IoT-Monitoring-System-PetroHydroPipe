@@ -113,6 +113,38 @@ test('Analytics unions concurrent downtime and keeps zero-eligible availability 
   assert.equal(result.selected.summary.estimatedLossPieces, 207)
   assert.equal(result.selected.trends[0].metrics.availabilityPercent, null)
   assert.equal(result.selected.downtimeCauses.some((row) => row.cause === 'Concurrent causes'), true)
+  assert.deepEqual(result.selected.downtimeSensors.slice(0, 2).map(({ sensorCode, durationMinutes }) => ({ sensorCode, durationMinutes })), [
+    { sensorCode: 'S-01', durationMinutes: 60 },
+    { sensorCode: 'S-02', durationMinutes: 60 },
+  ])
+})
+
+test('Analytics combines every cause into exactly five sensor downtime rows ranked by duration', async () => {
+  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies({
+    downtimeRows: [
+      { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Corrective Maintenance', sensors: { sensor_code: 'S-01' } },
+      { id: 'd2', started_at: '2026-08-03T01:00:00.000Z', ended_at: '2026-08-03T02:00:00.000Z', cause: 'Misalignment', sensors: { sensor_code: 'S-01' } },
+      { id: 'd3', started_at: '2026-08-03T00:30:00.000Z', ended_at: '2026-08-03T01:30:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-02' } },
+      { id: 'd4', started_at: '2026-08-03T02:00:00.000Z', ended_at: '2026-08-03T02:30:00.000Z', cause: 'Manual Cutting', sensors: { sensor_code: 'S-05' } },
+    ],
+  })
+
+  const result = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, dependencies)
+
+  assert.deepEqual(new Set(result.selected.downtimeCauses.map((row) => row.cause)), new Set([
+    'Corrective Maintenance',
+    'Concurrent causes',
+    'Misalignment',
+    'Manual Cutting',
+  ]))
+  assert.deepEqual(result.selected.downtimeSensors, [
+    { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2, durationMinutes: 120 },
+    { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1, durationMinutes: 60 },
+    { sensorCode: 'S-05', sensorLabel: 'Production Output Cutting', eventCount: 1, durationMinutes: 30 },
+    { sensorCode: 'S-03', sensorLabel: 'Machine Main Sensor', eventCount: 0, durationMinutes: 0 },
+    { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 0, durationMinutes: 0 },
+  ])
 })
 
 test('Analytics uses calendar-month buckets for ranges longer than 93 days', async () => {
@@ -129,6 +161,7 @@ test('Analytics uses calendar-month buckets for ranges longer than 93 days', asy
     selectedBucketCount: result.selected.trends.length,
     comparisonBucketCount: result.comparison.trends.length,
   })
+  assert.equal(result.selected.downtimeSensors.length, 5)
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
 })
 
@@ -158,5 +191,6 @@ test('Analytics all-time range starts on the first contributing record and bypas
   assert.equal(result.selected.range.requestedEndDate, '2026-08-03')
   assert.equal(result.selected.range.daysInclusive, 932)
   assert.equal(result.selected.range.bucket, 'monthly')
+  assert.equal(result.selected.downtimeSensors.length, 5)
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
 })

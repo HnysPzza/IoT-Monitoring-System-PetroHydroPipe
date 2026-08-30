@@ -161,16 +161,40 @@ function buildProcessSensors(rows, configuredSensors) {
   return [...totals.values()].sort((left, right) => left.sensorCode.localeCompare(right.sensorCode))
 }
 
+function getRecordSensorCode(record) {
+  const sensor = Array.isArray(record.sensors) ? record.sensors[0] : record.sensors
+  return sensor?.sensor_code || null
+}
+
+function overlapsWindow(record, window, asOf) {
+  const start = new Date(record.started_at)
+  const end = record.ended_at ? new Date(record.ended_at) : asOf
+  return start < window.end && end > window.start
+}
+
+function buildDowntimeSensors(records, configuredSensors, window, settingsHistory, asOf) {
+  return configuredSensors.map((sensor) => {
+    const sensorRecords = records.filter((record) => (
+      getRecordSensorCode(record) === sensor.sensor_code && overlapsWindow(record, window, asOf)
+    ))
+    const metrics = calculateMachineMetrics({ records: sensorRecords, window, settingsHistory, asOf })
+    return {
+      sensorCode: sensor.sensor_code,
+      sensorLabel: sensor.label,
+      eventCount: sensorRecords.length,
+      durationMinutes: metrics.durationMinutes,
+    }
+  }).sort((left, right) => (
+    right.durationMinutes - left.durationMinutes || left.sensorCode.localeCompare(right.sensorCode)
+  ))
+}
+
 function buildMetrics(records, window, settingsHistory, asOf, eventRows) {
   const metrics = calculateMachineMetrics({ records, window, settingsHistory, asOf })
   const counts = countEvents(eventRows)
   return {
     downtimeMinutes: metrics.durationMinutes,
-    downtimeEventCount: records.filter((record) => {
-      const start = new Date(record.started_at)
-      const end = record.ended_at ? new Date(record.ended_at) : asOf
-      return start < window.end && end > window.start
-    }).length,
+    downtimeEventCount: records.filter((record) => overlapsWindow(record, window, asOf)).length,
     availabilityPercent: metrics.availabilityPercent,
     outputPieces: counts.outputPieces,
     processEventCount: counts.processEventCount,
@@ -192,6 +216,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
         metrics: emptySummary(),
       })),
       downtimeCauses: [],
+      downtimeSensors: [],
       processSensors: buildProcessSensors([], machine.sensors),
     }
   }
@@ -214,6 +239,13 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     durationMinutes: row.durationMinutes,
     estimatedLossPieces: row.estimatedLoss,
   }))
+  const downtimeSensors = buildDowntimeSensors(
+    downtimeRows,
+    machine.sensors,
+    observedWindow,
+    settingsHistory,
+    asOf,
+  )
   const trends = buildBuckets(range, bucketConfig, asOf).map((bucket) => {
     if (bucket.periodState === 'future') {
       return {
@@ -247,6 +279,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     summary,
     trends,
     downtimeCauses,
+    downtimeSensors,
     processSensors: buildProcessSensors(eventRows, machine.sensors),
   }
 }

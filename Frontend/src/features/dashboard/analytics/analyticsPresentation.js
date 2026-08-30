@@ -88,6 +88,10 @@ export function getAnalyticsTrendSummary(trend) {
   return `${observedSummary}; ${unobservedBucketCount} ${unobservedBucketCount === 1 ? 'bucket is' : 'buckets are'} unobserved.`
 }
 
+export function getDowntimeSensorBreakdown(snapshot) {
+  return snapshot.selected.downtimeSensors || []
+}
+
 export function getDowntimeCauseBreakdown(snapshot) {
   return snapshot.selected.downtimeCauses || []
 }

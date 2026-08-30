@@ -6,6 +6,7 @@ import {
   getAnalyticsKpis,
   getAnalyticsTrendSummary,
   getDowntimeCauseBreakdown,
+  getDowntimeSensorBreakdown,
   getProcessSensorBreakdown,
   getTrendEvaluation,
 } from './analyticsPresentation.js'
@@ -76,8 +77,9 @@ describe('Analytics presentation helpers', () => {
     expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 6 observed buckets; 1 bucket is unobserved.')
   })
 
-  it('returns the server-provided cause and sensor aggregations unchanged', () => {
+  it('returns the server-provided downtime cause and sensor aggregations unchanged', () => {
     expect(getDowntimeCauseBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.downtimeCauses)
+    expect(getDowntimeSensorBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.downtimeSensors)
     expect(getProcessSensorBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.processSensors)
   })
 

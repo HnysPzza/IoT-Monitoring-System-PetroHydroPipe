@@ -16,10 +16,11 @@ import {
 import {
   formatCompactDuration,
   getDowntimeCauseBreakdown,
+  getDowntimeSensorBreakdown,
   getProcessSensorBreakdown,
 } from './analyticsPresentation.js'
 
-const CAUSE_COLORS = [
+const DOWNTIME_SENSOR_COLORS = [
   'var(--chart-current)',
   'var(--chart-previous)',
   'var(--chart-target)',
@@ -43,16 +44,25 @@ function formatDuration(minutes) {
   return remainingMinutes ? `${hours} hr ${remainingMinutes} min` : `${hours} hr`
 }
 
-function CauseTooltip({ active, payload }) {
-  const cause = payload?.[0]?.payload
+function formatDowntimePercentage(percentage, durationMinutes) {
+  return durationMinutes > 0 && percentage === 0 ? '<1%' : `${percentage}%`
+}
 
-  if (!active || !cause) return null
+export function getDonutDisplayMinutes(durationMinutes, totalMinutes) {
+  return durationMinutes > 0 ? Math.max(durationMinutes, totalMinutes * 0.01) : 0
+}
+
+function DowntimeSensorTooltip({ active, payload }) {
+  const sensor = payload?.[0]?.payload
+
+  if (!active || !sensor) return null
 
   return (
     <div className="recharts-tooltip-card industrial-tooltip analytics-cause-tooltip" role="status">
-      <strong>{cause.cause}</strong>
-      <span>{formatDuration(cause.durationMinutes)}</span>
-      <span>{cause.percentage}% of recorded downtime</span>
+      <strong>{sensor.sensorCode} — {sensor.sensorLabel}</strong>
+      <span>{sensor.eventCount} maintenance {sensor.eventCount === 1 ? 'event' : 'events'}</span>
+      <span>{formatDuration(sensor.durationMinutes)}</span>
+      <span>{formatDowntimePercentage(sensor.percentage, sensor.durationMinutes)} of sensor downtime</span>
     </div>
   )
 }
@@ -101,7 +111,8 @@ const renderActiveSector = (props) => {
 export default function AnalyticsOperationsDetails({ snapshot }) {
   const [activeIndex, setActiveIndex] = useState(null)
   const [activeSensorIndex, setActiveSensorIndex] = useState(null)
-  const causes = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
+  const downtimeCauses = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
+  const downtimeSensors = useMemo(() => getDowntimeSensorBreakdown(snapshot), [snapshot])
   const sensors = useMemo(() => getProcessSensorBreakdown(snapshot), [snapshot])
 
   useEffect(() => {
@@ -111,9 +122,18 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
 
   const totalDowntimeMinutes = snapshot.selected.summary.downtimeMinutes
   const hasObservedDowntime = totalDowntimeMinutes !== null && totalDowntimeMinutes !== undefined
-  const causeDistribution = causes.map((cause, index) => ({
+  const totalSensorDowntimeMinutes = downtimeSensors.reduce((total, sensor) => total + sensor.durationMinutes, 0)
+  const downtimeDistribution = downtimeSensors.map((sensor, index) => ({
+    ...sensor,
+    color: DOWNTIME_SENSOR_COLORS[index % DOWNTIME_SENSOR_COLORS.length],
+    chartDurationMinutes: getDonutDisplayMinutes(sensor.durationMinutes, totalSensorDowntimeMinutes),
+    percentage: hasObservedDowntime && totalSensorDowntimeMinutes > 0
+      ? Math.round((sensor.durationMinutes / totalSensorDowntimeMinutes) * 100)
+      : 0,
+  }))
+  const causeDistribution = downtimeCauses.map((cause, index) => ({
     ...cause,
-    color: CAUSE_COLORS[index % CAUSE_COLORS.length],
+    color: DOWNTIME_SENSOR_COLORS[index % DOWNTIME_SENSOR_COLORS.length],
     percentage: hasObservedDowntime && totalDowntimeMinutes > 0
       ? Math.round((cause.durationMinutes / totalDowntimeMinutes) * 100)
       : 0,
@@ -129,13 +149,13 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       : 0,
   }))
 
-  const activeCause = activeIndex !== null ? causeDistribution[activeIndex] : null
-  const displayDuration = activeCause
-    ? formatCompactDuration(activeCause.durationMinutes)
-    : hasObservedDowntime ? formatCompactDuration(totalDowntimeMinutes) : 'Not observed'
-  const displayLabel = activeCause
-    ? `${activeCause.percentage}% DOWN`
-    : 'TOTAL DOWN'
+  const activeDowntimeSensor = activeIndex !== null ? downtimeDistribution[activeIndex] : null
+  const displayDuration = activeDowntimeSensor
+    ? formatCompactDuration(activeDowntimeSensor.durationMinutes)
+    : hasObservedDowntime ? formatCompactDuration(totalSensorDowntimeMinutes) : 'Not observed'
+  const displayLabel = activeDowntimeSensor
+    ? `${formatDowntimePercentage(activeDowntimeSensor.percentage, activeDowntimeSensor.durationMinutes)} DOWN`
+    : 'SENSOR DOWN'
 
   return (
     <div className="analytics-operations-layout">
@@ -143,15 +163,15 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Maintenance and downtime</p>
-            <h2 id="analytics-downtime-title">Cause distribution</h2>
+            <h2 id="analytics-downtime-title">Downtime by sensor</h2>
           </div>
           <span className="section-chip">
             <Clock3 size={16} aria-hidden="true" />
-            {hasObservedDowntime ? `${formatDuration(totalDowntimeMinutes)} recorded` : 'Not observed'}
+            {hasObservedDowntime ? `${formatDuration(totalSensorDowntimeMinutes)} sensor downtime` : 'Not observed'}
           </span>
         </div>
 
-        {causeDistribution.length === 0 ? (
+        {!hasObservedDowntime || totalSensorDowntimeMinutes === 0 ? (
           <div className="analytics-cause-content analytics-cause-content--empty">
             <div className="analytics-cause-chart analytics-chart-empty" aria-hidden="true">
               <svg viewBox="0 0 100 100" className="analytics-empty-donut" focusable="false">
@@ -168,11 +188,11 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 />
               </svg>
             </div>
-            <div className="analytics-cause-empty" role="status" aria-label={hasObservedDowntime ? 'No downtime causes recorded' : 'Downtime not observed'}>
-              <strong>{hasObservedDowntime ? 'No downtime causes recorded' : 'Downtime not observed'}</strong>
+            <div className="analytics-cause-empty" role="status" aria-label={hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}>
+              <strong>{hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}</strong>
               <span>{hasObservedDowntime ? '0 min recorded' : 'Not observed'}</span>
               <p>{hasObservedDowntime
-                ? 'No downtime records fall within the selected date range yet.'
+                ? 'No sensor downtime records fall within the selected date range yet.'
                 : 'This range has no observed downtime period yet.'}</p>
             </div>
           </div>
@@ -184,9 +204,9 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                   <Pie
                     activeIndex={activeIndex}
                     activeShape={renderActiveSector}
-                    data={causeDistribution}
-                    dataKey="durationMinutes"
-                    nameKey="cause"
+                    data={downtimeDistribution}
+                    dataKey="chartDurationMinutes"
+                    nameKey="sensorLabel"
                     cx="50%"
                     cy="50%"
                     innerRadius="52%"
@@ -203,12 +223,12 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     onMouseLeave={() => setActiveIndex(null)}
                     rootTabIndex={-1}
                   >
-                    {causeDistribution.map((cause) => (
-                      <Cell key={cause.cause} fill={cause.color} />
+                    {downtimeDistribution.map((sensor) => (
+                      <Cell key={sensor.sensorCode} fill={sensor.color} />
                     ))}
                   </Pie>
                   <Tooltip
-                    content={<CauseTooltip />}
+                    content={<DowntimeSensorTooltip />}
                     cursor={false}
                     position={{ y: 4 }}
                     allowEscapeViewBox={{ x: true, y: true }}
@@ -235,7 +255,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     y="59%"
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fill={activeCause ? 'var(--c-accent)' : 'var(--c-text-3)'}
+                    fill={activeDowntimeSensor ? 'var(--c-accent)' : 'var(--c-text-3)'}
                     style={{
                       fontSize: '0.68rem',
                       fontWeight: 600,
@@ -250,23 +270,26 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
               </ResponsiveContainer>
             </div>
 
-            <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
-              {causeDistribution.map((cause, index) => (
+            <ul className="analytics-cause-legend" aria-label="Sensor downtime distribution">
+              {downtimeDistribution.map((sensor, index) => (
                 <li
-                  key={cause.cause}
+                  key={sensor.sensorCode}
                   className={`analytics-cause-legend-item ${activeIndex === index ? 'is-hovered' : ''}`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseLeave={() => setActiveIndex(null)}
                 >
                   <span
                     className="analytics-cause-swatch"
-                    style={{ backgroundColor: cause.color }}
+                    style={{ backgroundColor: sensor.color }}
                     aria-hidden="true"
                   />
                   <span className="analytics-cause-copy">
-                    <span className="analytics-cause-name">{cause.cause}</span>
+                    <span className="analytics-cause-name">{sensor.sensorCode} — {sensor.sensorLabel}</span>
                     <span className="analytics-cause-meta">
-                      {formatDuration(cause.durationMinutes)} - {cause.percentage}% of recorded downtime
+                      {sensor.eventCount} maintenance {sensor.eventCount === 1 ? 'event' : 'events'}
+                    </span>
+                    <span className="analytics-cause-meta">
+                      {formatDuration(sensor.durationMinutes)} - {formatDowntimePercentage(sensor.percentage, sensor.durationMinutes)} of sensor downtime
                     </span>
                   </span>
                 </li>
@@ -274,6 +297,31 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
             </ul>
           </div>
         )}
+
+        <div className="analytics-cause-breakdown">
+          <h3>Downtime by cause</h3>
+          {causeDistribution.length ? (
+            <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
+              {causeDistribution.map((cause) => (
+                <li key={cause.cause} className="analytics-cause-legend-item">
+                  <span className="analytics-cause-swatch" style={{ backgroundColor: cause.color }} aria-hidden="true" />
+                  <span className="analytics-cause-copy">
+                    <span className="analytics-cause-name">{cause.cause}</span>
+                    <span className="analytics-cause-meta">
+                      {cause.eventCount} downtime {cause.eventCount === 1 ? 'event' : 'events'}
+                    </span>
+                    <span className="analytics-cause-meta">
+                      {formatDuration(cause.durationMinutes)} - {cause.percentage}% of machine downtime
+                    </span>
+                    <span className="analytics-cause-meta">{cause.estimatedLossPieces} pcs estimated loss</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="analytics-cause-meta">No downtime causes recorded for this range.</p>
+          )}
+        </div>
       </section>
 
       <section className="section-card analytics-detail-card" aria-labelledby="analytics-process-title">
