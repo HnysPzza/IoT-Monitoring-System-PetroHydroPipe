@@ -47,31 +47,19 @@ function createMachineClient() {
 
 function createProductionClient(events, queryLog) {
   return {
+    rpc(functionName, args) {
+      assert.equal(functionName, 'aggregate_analytics_sensor_events')
+      queryLog.push({ functionName, args })
+      return Promise.resolve({ data: events, error: null })
+    },
     from(tableName) {
       if (tableName === 'production_counts') {
         throw new Error('Production comparison must use S-05 pulse events as its single source of truth.')
       }
 
-      const filters = []
-      let selectedColumns = ''
-
       return {
-        select(columns) {
-          selectedColumns = columns
-          return this
-        },
-        eq(column, value) {
-          filters.push({ column, value })
-          return this
-        },
-        gte(column, value) {
-          queryLog.push({ operator: 'gte', tableName, column, value })
-          return this
-        },
-        lt(column, value) {
-          queryLog.push({ operator: 'lt', tableName, column, value })
-          return Promise.resolve({ data: events, error: null })
-        },
+        select() { return this },
+        eq() { return this },
         order() {
           return Promise.resolve({
             data: [
@@ -87,14 +75,6 @@ function createProductionClient(events, queryLog) {
               data: { id: MACHINE_ID, machine_code: 'M-01', name: 'Spiral Mill 01', status: 'Running' },
               error: null,
             })
-          }
-
-          if (tableName === 'sensors' && selectedColumns === 'id') {
-            assert.deepEqual(filters, [
-              { column: 'machine_id', value: MACHINE_ID },
-              { column: 'sensor_code', value: 'S-05' },
-            ])
-            return Promise.resolve({ data: { id: 'sensor-5' }, error: null })
           }
 
           throw new Error(`Unexpected maybeSingle query for ${tableName}`)
@@ -225,8 +205,9 @@ test('overview compares today with yesterday using only S-05 pulse events', asyn
   const atHour = (start, hour) => new Date(start.getTime() + (hour * 60 * 60 * 1000)).toISOString()
   const queryLog = []
   const events = [
-    ...[1, 2, 3].map((hour) => ({ recorded_at: atHour(yesterdayStart, hour) })),
-    ...[1, 2, 3, 4, 5].map((hour) => ({ recorded_at: atHour(todayStart, hour) })),
+    ...[1, 2, 3].map((hour) => ({ bucket_start: atHour(yesterdayStart, hour), sensor_code: 'S-05', event_count: 1 })),
+    ...[1, 2, 3, 4, 5].map((hour) => ({ bucket_start: atHour(todayStart, hour), sensor_code: 'S-05', event_count: 1 })),
+    { bucket_start: atHour(todayStart, 1), sensor_code: 'S-01', event_count: 99 },
   ]
 
   const result = await getOverviewWithProductionEvents(events, queryLog)
@@ -242,15 +223,24 @@ test('overview compares today with yesterday using only S-05 pulse events', asyn
   assert.equal(Object.hasOwn(comparison, 'targetTotal'), false)
   assert.equal(comparison.points.every((point) => !Object.hasOwn(point, 'target')), true)
   assert.match(result.summary[0].value, /5 pipes/)
-  assert.deepEqual(queryLog, [
-    { operator: 'gte', tableName: 'sensor_events', column: 'recorded_at', value: yesterdayStart.toISOString() },
-    { operator: 'lt', tableName: 'sensor_events', column: 'recorded_at', value: tomorrowStart.toISOString() },
-  ])
+  assert.deepEqual(queryLog, [{
+    functionName: 'aggregate_analytics_sensor_events',
+    args: {
+      p_machine_id: MACHINE_ID,
+      p_started_at: yesterdayStart.toISOString(),
+      p_ended_at: tomorrowStart.toISOString(),
+      p_bucket_seconds: 3600,
+    },
+  }])
 })
 
 test('overview returns no percentage when yesterday has no production baseline', async () => {
   const todayStart = startOfBusinessDay(new Date())
-  const events = [{ recorded_at: new Date(todayStart.getTime() + 3600000).toISOString() }]
+  const events = [{
+    bucket_start: new Date(todayStart.getTime() + 3600000).toISOString(),
+    sensor_code: 'S-05',
+    event_count: 1,
+  }]
 
   const result = await getOverviewWithProductionEvents(events)
 
@@ -258,4 +248,18 @@ test('overview returns no percentage when yesterday has no production baseline',
   assert.equal(result.productionAnalytics.day.previousTotal, 0)
   assert.equal(result.productionAnalytics.day.difference, 1)
   assert.equal(result.productionAnalytics.day.differencePercent, null)
+})
+
+test('overview counts more than 1000 output pulses without row truncation', async () => {
+  const todayStart = startOfBusinessDay(new Date())
+  const events = [{
+    bucket_start: new Date(todayStart.getTime() + 3600000).toISOString(),
+    sensor_code: 'S-05',
+    event_count: 1005,
+  }]
+
+  const result = await getOverviewWithProductionEvents(events)
+
+  assert.equal(result.productionAnalytics.day.currentTotal, 1005)
+  assert.match(result.summary[0].value, /1,005 pipes/)
 })

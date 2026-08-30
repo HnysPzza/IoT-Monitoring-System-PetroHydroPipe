@@ -11,6 +11,7 @@ const {
 } = require('../../shared/operationalMetrics')
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
+const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
 
 const DAY_MS = 86400000
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
@@ -349,17 +350,6 @@ async function defaultGetMachineAndSensors() {
   return { ...machine, sensors }
 }
 
-async function defaultAggregateEvents(machineId, window, bucketSeconds) {
-  const { data, error } = await getSupabaseClient().rpc('aggregate_analytics_sensor_events', {
-    p_machine_id: machineId,
-    p_started_at: window.start.toISOString(),
-    p_ended_at: window.end.toISOString(),
-    p_bucket_seconds: bucketSeconds,
-  })
-  if (error) throw createAnalyticsError(500, 'ANALYTICS_EVENT_AGGREGATION_FAILED', 'Unable to aggregate Analytics sensor events.')
-  return data || []
-}
-
 async function defaultGetFirstRecordedAt(machineId) {
   const { data, error } = await getSupabaseClient().rpc('get_analytics_first_recorded_at', {
     p_machine_id: machineId,
@@ -372,7 +362,7 @@ async function getAnalytics(query, suppliedDependencies = {}) {
   const asOf = suppliedDependencies.asOf ? new Date(suppliedDependencies.asOf) : new Date()
   const dependencies = {
     getMachineAndSensors: defaultGetMachineAndSensors,
-    aggregateEvents: defaultAggregateEvents,
+    aggregateEvents: aggregateSensorEvents,
     getFirstRecordedAt: defaultGetFirstRecordedAt,
     getOverlappingDowntime,
     getSettingsHistory,

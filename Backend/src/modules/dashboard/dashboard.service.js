@@ -16,6 +16,7 @@ const {
 } = require('../../shared/operationalMetrics')
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
+const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
 
 const DOWNTIME_THRESHOLD_MINUTES = 30
 
@@ -92,36 +93,8 @@ async function getMachineAndSensors() {
 }
 
 async function getProductionEvents(machineId, range) {
-  const supabase = getSupabaseClient()
-  const { data: outputSensor, error: sensorError } = await supabase
-    .from('sensors')
-    .select('id')
-    .eq('machine_id', machineId)
-    .eq('sensor_code', OUTPUT_SENSOR_CODE)
-    .maybeSingle()
-
-  if (sensorError) {
-    throw createDashboardError(500, 'OUTPUT_SENSOR_QUERY_FAILED', 'Unable to load production output sensor.')
-  }
-
-  if (!outputSensor) {
-    return []
-  }
-
-  const { data: events, error: eventError } = await supabase
-    .from('sensor_events')
-    .select('recorded_at')
-    .eq('machine_id', machineId)
-    .eq('sensor_id', outputSensor.id)
-    .eq('event_type', 'pulse')
-    .gte('recorded_at', range.start.toISOString())
-    .lt('recorded_at', range.end.toISOString())
-
-  if (eventError) {
-    throw createDashboardError(500, 'PRODUCTION_EVENT_QUERY_FAILED', 'Unable to load production event count.')
-  }
-
-  return events || []
+  const rows = await aggregateSensorEvents(machineId, range, 3600)
+  return rows.filter((row) => row.sensor_code === OUTPUT_SENSOR_CODE)
 }
 
 function getProductionTotal(events, window) {
@@ -129,8 +102,8 @@ function getProductionTotal(events, window) {
   const endTime = window.end.getTime()
 
   return events.reduce((count, row) => {
-    const rowTime = new Date(row.recorded_at).getTime()
-    return rowTime >= startTime && rowTime < endTime ? count + 1 : count
+    const rowTime = new Date(row.bucket_start).getTime()
+    return rowTime >= startTime && rowTime < endTime ? count + Number(row.event_count || 0) : count
   }, 0)
 }
 
