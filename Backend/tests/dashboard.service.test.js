@@ -223,7 +223,7 @@ test('overview compares today with the same elapsed portion of yesterday using o
   assert.equal(comparison.previousTotal, 3)
   assert.equal(comparison.difference, 2)
   assert.equal(comparison.differencePercent, 66.67)
-  assert.equal(comparison.unit, 'pipes')
+  assert.equal(comparison.unit, 'pcs')
   assert.equal(Object.hasOwn(comparison, 'targetTotal'), false)
   assert.equal(comparison.points.every((point) => !Object.hasOwn(point, 'target')), true)
   assert.deepEqual(comparison.points.map(({ periodState, current, previous }) => ({ periodState, current, previous })), [
@@ -234,7 +234,7 @@ test('overview compares today with the same elapsed portion of yesterday using o
     { periodState: 'future', current: null, previous: null },
     { periodState: 'future', current: null, previous: null },
   ])
-  assert.match(result.summary[0].value, /5 pipes/)
+  assert.match(result.summary[0].value, /5 pcs/)
   assert.deepEqual(queryLog, [{
     functionName: 'aggregate_analytics_sensor_events',
     args: {
@@ -275,5 +275,5 @@ test('overview counts more than 1000 output pulses without row truncation', asyn
   const result = await getOverviewWithProductionEvents(events)
 
   assert.equal(result.productionAnalytics.day.currentTotal, 1005)
-  assert.match(result.summary[0].value, /1,005 pipes/)
+  assert.match(result.summary[0].value, /1,005 pcs/)
 })

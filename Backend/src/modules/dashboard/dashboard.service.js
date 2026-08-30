@@ -225,7 +225,7 @@ async function buildProductionAnalytics(machineId, anchorDate, asOf) {
       previousTotal,
       difference,
       differencePercent,
-      unit: 'pipes',
+      unit: 'pcs',
       points,
     },
   }
@@ -352,7 +352,7 @@ async function getOverview(filters = {}) {
   return {
     alerts: buildAlerts(machine, sensors, todayDowntimeRows),
     summary: [
-      { id: 'pipes', label: 'Total Pipes Today', value: `${formatNumber(productionToday)} pipes`, tone: 'success', helper: 'From S-05 output cutting events' },
+      { id: 'pipes', label: 'Production Output Today', value: `${formatNumber(productionToday)} pcs`, tone: 'success', helper: 'From S-05 output cutting events' },
       { id: 'events', label: 'Downtime Events', value: String(todayDowntimeRows.length), tone: 'warning', helper: `${openDowntimeCount} unresolved today` },
       { id: 'minutes', label: 'Downtime Today', value: `${todayMetrics.durationMinutes} min`, tone: 'danger', helper: `${todayMetrics.unplannedMinutes} unplanned min` },
       { id: 'availability', label: 'Machine Availability', value: availabilityValue, tone: 'primary', helper: `For ${machine.name}` },

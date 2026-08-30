@@ -23,7 +23,7 @@ function buildAnalytics(overrides = {}) {
       previousTotal: 23,
       difference: 3,
       differencePercent: 13.04,
-      unit: 'pipes',
+      unit: 'pcs',
       points: [
         { label: '6AM', current: 8, previous: 7 },
         { label: '9AM', current: 16, previous: 14 },
@@ -56,7 +56,7 @@ describe('ProductionAnalytics', () => {
     rerender(<ProductionAnalytics analytics={buildAnalytics({ currentTotal: 23, difference: 0, differencePercent: 0 })} />)
 
     expect(screen.getByText('No change')).toBeInTheDocument()
-    expect(screen.getByText('Today so far matches yesterday at same time at 23 pipes.')).toBeInTheDocument()
+    expect(screen.getByText('Today so far matches yesterday at same time at 23 pcs.')).toBeInTheDocument()
   })
 
   it('does not invent a percentage when yesterday has no output', () => {
@@ -65,7 +65,7 @@ describe('ProductionAnalytics', () => {
     )
 
     expect(screen.getByText('No baseline')).toBeInTheDocument()
-    expect(screen.getByText('Today so far recorded 4 pipes; yesterday at same time recorded none.')).toBeInTheDocument()
+    expect(screen.getByText('Today so far recorded 4 pcs; yesterday at same time recorded none.')).toBeInTheDocument()
     expect(screen.queryByText('0.0%')).not.toBeInTheDocument()
   })
 })
