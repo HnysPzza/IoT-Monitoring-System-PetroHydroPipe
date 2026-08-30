@@ -132,6 +132,10 @@ describe('AnalyticsSection recorded-data states', () => {
     const allTimeFixture = {
       ...analyticsTestFixture,
       selectionMode: 'all',
+      comparisonMode: 'none',
+      comparisonClipped: false,
+      comparison: null,
+      trendAlignment: { ...analyticsTestFixture.trendAlignment, comparisonBucketCount: 0 },
       selected: {
         ...analyticsTestFixture.selected,
         range: {
@@ -156,6 +160,7 @@ describe('AnalyticsSection recorded-data states', () => {
       { period: 'all' },
       { signal: expect.any(AbortSignal) },
     ))
+    expect(screen.queryByText('Prior period')).not.toBeInTheDocument()
     expect(screen.queryByText(/All recorded history:/i)).not.toBeInTheDocument()
   })
 })

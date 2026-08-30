@@ -33,6 +33,7 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
   const evaluation = getTrendEvaluation(trend)
   const strokeColor = evaluation.strokeColor
   const hasTrendData = points.some((point) => point.value !== null && point.value !== undefined)
+  const hasComparison = snapshot.comparisonMode !== 'none'
   const selectedRange = snapshot.selected.range
 
   return (
@@ -66,10 +67,12 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           <span aria-hidden="true" style={{ width: 18, borderTop: '3px solid var(--chart-current)' }} />
           Selected period
         </span>
-        <span className="section-chip">
-          <span aria-hidden="true" style={{ width: 18, borderTop: '2px dashed var(--chart-previous)' }} />
-          Prior period
-        </span>
+        {hasComparison ? (
+          <span className="section-chip">
+            <span aria-hidden="true" style={{ width: 18, borderTop: '2px dashed var(--chart-previous)' }} />
+            Prior period
+          </span>
+        ) : null}
       </div>
 
       {isCalendarSegmentComparison ? (
@@ -79,7 +82,7 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
       <div
         className="analytics-trend-chart"
         role="img"
-        aria-label={`${metric.label} trend chart from ${selectedRange.requestedStartDate} to ${selectedRange.requestedEndDate}, compared with the prior period`}
+        aria-label={`${metric.label} trend chart from ${selectedRange.requestedStartDate} to ${selectedRange.requestedEndDate}${hasComparison ? ', compared with the prior period' : ''}`}
       >
         <ResponsiveContainer width="100%" height={320} minWidth={0}>
           <AreaChart data={points} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
@@ -122,19 +125,21 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
               animationEasing="ease-out"
               connectNulls={false}
             />
-            <Area
-              type="monotone"
-              dataKey="comparisonValue"
-              name={`Prior ${metric.label}`}
-              stroke="var(--chart-previous)"
-              strokeWidth={2}
-              strokeDasharray="7 5"
-              fill="transparent"
-              dot={false}
-              activeDot={{ r: 5, strokeWidth: 2, fill: 'var(--chart-previous)', stroke: 'var(--c-surface)' }}
-              isAnimationActive={false}
-              connectNulls={false}
-            />
+            {hasComparison ? (
+              <Area
+                type="monotone"
+                dataKey="comparisonValue"
+                name={`Prior ${metric.label}`}
+                stroke="var(--chart-previous)"
+                strokeWidth={2}
+                strokeDasharray="7 5"
+                fill="transparent"
+                dot={false}
+                activeDot={{ r: 5, strokeWidth: 2, fill: 'var(--chart-previous)', stroke: 'var(--c-surface)' }}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            ) : null}
           </AreaChart>
         </ResponsiveContainer>
         {!hasTrendData ? (

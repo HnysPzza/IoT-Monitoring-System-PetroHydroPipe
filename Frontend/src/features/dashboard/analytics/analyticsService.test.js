@@ -50,9 +50,20 @@ describe('Analytics API service', () => {
   })
 
   it('requests the backend-owned first-record range for all-time Analytics', async () => {
-    apiRequest.mockResolvedValue(analyticsTestResponse)
+    apiRequest.mockResolvedValue({
+      analytics: {
+        ...analyticsTestResponse.analytics,
+        selectionMode: 'all',
+        comparisonMode: 'none',
+        comparisonClipped: false,
+        comparison: null,
+        trendAlignment: { ...analyticsTestResponse.analytics.trendAlignment, comparisonBucketCount: 0 },
+      },
+    })
 
-    await getAnalyticsSnapshot('auth-token', { period: 'all' })
+    await expect(getAnalyticsSnapshot('auth-token', { period: 'all' })).resolves.toMatchObject({
+      selectionMode: 'all', comparisonMode: 'none', comparison: null,
+    })
 
     expect(apiRequest).toHaveBeenCalledWith(
       '/api/analytics?range=all',

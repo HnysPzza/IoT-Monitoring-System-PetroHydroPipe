@@ -368,10 +368,13 @@ async function getAnalytics(query, suppliedDependencies = {}) {
     comparisonAsOf,
     bucketConfig.bucket,
   )
-  const [selected, comparison] = await Promise.all([
-    buildPeriod({ machine, range: selectedRange, bucketConfig, asOf, dependencies }),
-    buildPeriod({ machine, range: comparisonRange, bucketConfig, asOf: comparisonAsOf, dependencies }),
-  ])
+  const selectedPromise = buildPeriod({ machine, range: selectedRange, bucketConfig, asOf, dependencies })
+  const [selected, comparison] = selectionMode === 'all'
+    ? [await selectedPromise, null]
+    : await Promise.all([
+      selectedPromise,
+      buildPeriod({ machine, range: comparisonRange, bucketConfig, asOf: comparisonAsOf, dependencies }),
+    ])
 
   return {
     generatedAt: asOf.toISOString(),
@@ -381,14 +384,14 @@ async function getAnalytics(query, suppliedDependencies = {}) {
       historicalHeartbeatAvailable: false,
       message: 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.',
     },
-    comparisonMode: 'immediately-preceding-matching-elapsed',
-    comparisonClipped: selectedState === 'partial',
+    comparisonMode: selectionMode === 'all' ? 'none' : 'immediately-preceding-matching-elapsed',
+    comparisonClipped: selectionMode !== 'all' && selectedState === 'partial',
     trendAlignment: {
       mode: bucketConfig.bucket === 'monthly'
         ? 'ordinal-calendar-segments'
         : 'ordinal-equal-duration-buckets',
       selectedBucketCount: selected.trends.length,
-      comparisonBucketCount: comparison.trends.length,
+      comparisonBucketCount: comparison?.trends.length || 0,
     },
     selected,
     comparison,

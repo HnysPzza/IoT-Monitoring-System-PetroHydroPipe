@@ -172,6 +172,8 @@ function isPeriod(value) {
 }
 
 function isAnalyticsSnapshot(value) {
+  const hasComparison = value?.comparisonMode === 'immediately-preceding-matching-elapsed'
+  const hasNoComparison = value?.comparisonMode === 'none'
   return Boolean(
     value
     && typeof value.generatedAt === 'string'
@@ -179,16 +181,18 @@ function isAnalyticsSnapshot(value) {
     && value.timeZone === ANALYTICS_TIME_ZONE
     && typeof value.coverage?.historicalHeartbeatAvailable === 'boolean'
     && typeof value.coverage.message === 'string'
-    && value.comparisonMode === 'immediately-preceding-matching-elapsed'
+    && (hasComparison || hasNoComparison)
     && new Set(['all', 'dates']).has(value.selectionMode)
+    && ((value.selectionMode === 'all' && hasNoComparison) || (value.selectionMode === 'dates' && hasComparison))
     && typeof value.comparisonClipped === 'boolean'
+    && (!hasNoComparison || value.comparisonClipped === false)
     && ALIGNMENT_MODES.has(value.trendAlignment?.mode)
     && Number.isInteger(value.trendAlignment.selectedBucketCount)
     && Number.isInteger(value.trendAlignment.comparisonBucketCount)
     && isPeriod(value.selected)
-    && isPeriod(value.comparison)
+    && (hasComparison ? isPeriod(value.comparison) : value.comparison === null)
     && value.trendAlignment.selectedBucketCount === value.selected.trends.length
-    && value.trendAlignment.comparisonBucketCount === value.comparison.trends.length,
+    && value.trendAlignment.comparisonBucketCount === (value.comparison?.trends.length || 0),
   )
 }
 
