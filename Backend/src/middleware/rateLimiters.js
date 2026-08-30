@@ -22,6 +22,18 @@ const loginRateLimiter = rateLimit({
   },
 })
 
+const analyticsRateLimiter = rateLimit({
+  windowMs: env.ANALYTICS_RATE_LIMIT_WINDOW_MS,
+  limit: env.ANALYTICS_RATE_LIMIT,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.authenticatedUser.id,
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many Analytics requests. Please try again later.'))
+  },
+})
+
 // This first layer limits untrusted callers before device lookup and bcrypt work.
 // This is for the sensors to avoid sensor attack and flood with false events.
 const iotIngressRateLimiter = rateLimit({
@@ -51,6 +63,7 @@ const iotVerifiedDeviceRateLimiter = rateLimit({
 })
 
 module.exports = {
+  analyticsRateLimiter,
   iotIngressRateLimiter,
   iotVerifiedDeviceRateLimiter,
   loginRateLimiter,

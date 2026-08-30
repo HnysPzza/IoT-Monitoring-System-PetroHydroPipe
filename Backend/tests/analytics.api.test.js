@@ -55,3 +55,24 @@ test('Analytics API validates dates, enforces roles, and returns the service con
     })).response.status, 400)
   })
 })
+
+test('Analytics API limits repeated authenticated requests by current user', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/analytics/analytics.service.js': {
+      getAnalytics: async () => ({ generatedAt: '2026-08-29T02:00:00.000Z' }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const requests = await Promise.all(Array.from({ length: 31 }, () => requestJson(
+      baseUrl,
+      '/api/analytics?startDate=2026-08-01&endDate=2026-08-07',
+      { headers: authHeader('Admin') },
+    )))
+    const limited = requests.filter(({ response }) => response.status === 429)
+
+    assert.equal(limited.length, 1)
+    assert.equal(limited[0].body.error.code, 'RATE_LIMITED')
+    assert.ok(limited[0].response.headers.get('retry-after'))
+  })
+})

@@ -10,6 +10,8 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url().optional().or(z.literal('')),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional().or(z.literal('')),
   JWT_SECRET: z.string().min(24, 'JWT_SECRET must be at least 24 characters.').optional().or(z.literal('')),
+  ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
+  ANALYTICS_RATE_LIMIT: z.coerce.number().int().positive().default(30),
   IOT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   IOT_INGRESS_RATE_LIMIT: z.coerce.number().int().positive().default(300),
   IOT_DEVICE_RATE_LIMIT: z.coerce.number().int().positive().default(120),
