@@ -104,6 +104,31 @@ describe('Analytics API service', () => {
         ...analyticsTestResponse.analytics,
         trendAlignment: { ...analyticsTestResponse.analytics.trendAlignment, comparisonBucketCount: 99 },
       },
+      {
+        ...analyticsTestResponse.analytics,
+        selected: {
+          ...analyticsTestResponse.analytics.selected,
+          summary: { ...analyticsTestResponse.analytics.selected.summary, availabilityPercent: 101 },
+        },
+      },
+      {
+        ...analyticsTestResponse.analytics,
+        selected: {
+          ...analyticsTestResponse.analytics.selected,
+          processSensors: analyticsTestResponse.analytics.selected.processSensors.map((sensor, index) => (
+            index === 0 ? { ...sensor, eventCount: 1.5 } : sensor
+          )),
+        },
+      },
+      {
+        ...analyticsTestResponse.analytics,
+        selected: {
+          ...analyticsTestResponse.analytics.selected,
+          downtimeSensors: analyticsTestResponse.analytics.selected.downtimeSensors.map((sensor, index) => (
+            index === 0 ? { ...sensor, sensorCode: 'S-99' } : sensor
+          )),
+        },
+      },
     ]
 
     for (const analytics of malformedResponses) {

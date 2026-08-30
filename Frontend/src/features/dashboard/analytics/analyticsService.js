@@ -14,6 +14,8 @@ const SUMMARY_METRICS = [
   'estimatedLossPieces',
 ]
 const TREND_METRICS = SUMMARY_METRICS.filter((metric) => metric !== 'downtimeEventCount')
+const DOWNTIME_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-03', 'S-04', 'S-05'])
+const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
 
 function parseDateInput(value, fieldName = 'date') {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -101,8 +103,13 @@ export function resolveAnalyticsRange({
   }
 }
 
-function isNullableFiniteNumber(value) {
-  return value === null || (typeof value === 'number' && Number.isFinite(value))
+function isMetricValue(metric, value) {
+  if (value === null) return true
+  if (metric === 'availabilityPercent') return Number.isInteger(value) && value >= 0 && value <= 100
+  if (metric === 'downtimeEventCount' || metric === 'outputPieces' || metric === 'processEventCount') {
+    return Number.isInteger(value) && value >= 0
+  }
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
 function isDateTimeOrNull(value) {
@@ -110,7 +117,13 @@ function isDateTimeOrNull(value) {
 }
 
 function isSummary(value, metricNames = SUMMARY_METRICS) {
-  return value && metricNames.every((metric) => isNullableFiniteNumber(value[metric]))
+  return value && metricNames.every((metric) => isMetricValue(metric, value[metric]))
+}
+
+function hasExactSensorCodes(sensors, expectedCodes) {
+  return sensors.length === expectedCodes.size
+    && sensors.every((sensor) => expectedCodes.has(sensor?.sensorCode))
+    && new Set(sensors.map((sensor) => sensor.sensorCode)).size === sensors.length
 }
 
 function isRange(value) {
@@ -148,25 +161,25 @@ function isPeriod(value) {
     && value.trends.every(isTrendPoint)
     && Array.isArray(value.downtimeCauses)
     && value.downtimeCauses.every((cause) => (
-      typeof cause?.cause === 'string'
-      && Number.isFinite(cause.eventCount)
-      && Number.isFinite(cause.durationMinutes)
-      && Number.isFinite(cause.estimatedLossPieces)
+      typeof cause?.cause === 'string' && cause.cause.trim().length > 0
+      && Number.isInteger(cause.eventCount) && cause.eventCount >= 0
+      && Number.isFinite(cause.durationMinutes) && cause.durationMinutes >= 0
+      && Number.isFinite(cause.estimatedLossPieces) && cause.estimatedLossPieces >= 0
     ))
     && Array.isArray(value.downtimeSensors)
-    && value.downtimeSensors.length <= 5
-    && new Set(value.downtimeSensors.map((sensor) => sensor?.sensorCode)).size === value.downtimeSensors.length
+    && (value.range.periodState === 'future'
+      ? value.downtimeSensors.length === 0
+      : hasExactSensorCodes(value.downtimeSensors, DOWNTIME_SENSOR_CODES))
     && value.downtimeSensors.every((sensor) => (
-      typeof sensor?.sensorCode === 'string'
-      && typeof sensor.sensorLabel === 'string'
-      && Number.isFinite(sensor.eventCount)
-      && Number.isFinite(sensor.durationMinutes)
+      typeof sensor.sensorLabel === 'string' && sensor.sensorLabel.trim().length > 0
+      && Number.isInteger(sensor.eventCount) && sensor.eventCount >= 0
+      && Number.isFinite(sensor.durationMinutes) && sensor.durationMinutes >= 0
     ))
     && Array.isArray(value.processSensors)
+    && hasExactSensorCodes(value.processSensors, PROCESS_SENSOR_CODES)
     && value.processSensors.every((sensor) => (
-      typeof sensor?.sensorCode === 'string'
-      && typeof sensor.sensorLabel === 'string'
-      && Number.isFinite(sensor.eventCount)
+      typeof sensor.sensorLabel === 'string' && sensor.sensorLabel.trim().length > 0
+      && Number.isInteger(sensor.eventCount) && sensor.eventCount >= 0
     )),
   )
 }
@@ -189,6 +202,8 @@ function isAnalyticsSnapshot(value) {
     && ALIGNMENT_MODES.has(value.trendAlignment?.mode)
     && Number.isInteger(value.trendAlignment.selectedBucketCount)
     && Number.isInteger(value.trendAlignment.comparisonBucketCount)
+    && value.trendAlignment.selectedBucketCount >= 0
+    && value.trendAlignment.comparisonBucketCount >= 0
     && isPeriod(value.selected)
     && (hasComparison ? isPeriod(value.comparison) : value.comparison === null)
     && value.trendAlignment.selectedBucketCount === value.selected.trends.length

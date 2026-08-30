@@ -1,10 +1,10 @@
 // Deterministic API-shaped Analytics data used only by tests.
 const selectedTrends = [
-  ['2026-08-10', 43, 92.8, 118, 1, 98.9],
-  ['2026-08-11', 18, 95.1, 122, 1, 41.4],
-  ['2026-08-12', 26, 90.2, 111, 1, 59.8],
-  ['2026-08-13', 31, 89.6, 125, 1, 71.3],
-  ['2026-08-14', 12, 91.7, 119, 1, 27.6],
+  ['2026-08-10', 43, 93, 118, 1, 98.9],
+  ['2026-08-11', 18, 95, 122, 1, 41.4],
+  ['2026-08-12', 26, 90, 111, 1, 59.8],
+  ['2026-08-13', 31, 90, 125, 1, 71.3],
+  ['2026-08-14', 12, 92, 119, 1, 27.6],
   ['2026-08-15', 0, null, 0, 0, 0],
   ['2026-08-16', null, null, null, null, null],
 ].map(([date, downtimeMinutes, availabilityPercent, outputPieces, processEventCount, estimatedLossPieces]) => ({
@@ -23,12 +23,26 @@ const comparisonTrends = selectedTrends.map((trend, index) => ({
   label: `Prior ${index + 1}`,
   metrics: {
     downtimeMinutes: index < 5 ? 20 : 0,
-    availabilityPercent: index < 5 ? 93.2 : null,
+    availabilityPercent: index < 5 ? 93 : null,
     outputPieces: index < 5 ? 110 : 0,
     processEventCount: index < 5 ? 1 : 0,
     estimatedLossPieces: index < 5 ? 46 : 0,
   },
 }))
+
+const downtimeSensors = [
+  { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2, durationMinutes: 61 },
+  { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1, durationMinutes: 38 },
+  { sensorCode: 'S-05', sensorLabel: 'Production Output Cutting', eventCount: 2, durationMinutes: 31 },
+  { sensorCode: 'S-03', sensorLabel: 'Machine Main Sensor', eventCount: 0, durationMinutes: 0 },
+  { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 0, durationMinutes: 0 },
+]
+
+const processSensors = [
+  { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2 },
+  { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1 },
+  { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 2 },
+]
 
 export const analyticsTestFixture = {
   generatedAt: '2026-08-15T12:00:00+08:00',
@@ -50,7 +64,7 @@ export const analyticsTestFixture = {
       periodState: 'partial', daysInclusive: 7, bucket: 'daily',
     },
     summary: {
-      downtimeMinutes: 130, downtimeEventCount: 5, availabilityPercent: 91.4,
+      downtimeMinutes: 130, downtimeEventCount: 5, availabilityPercent: 91,
       outputPieces: 595, processEventCount: 5, estimatedLossPieces: 299,
     },
     trends: selectedTrends,
@@ -59,18 +73,8 @@ export const analyticsTestFixture = {
       { cause: 'Consumable Shortage', eventCount: 1, durationMinutes: 38, estimatedLossPieces: 87 },
       { cause: 'Manual Cutting', eventCount: 2, durationMinutes: 31, estimatedLossPieces: 71 },
     ],
-    downtimeSensors: [
-      { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2, durationMinutes: 61 },
-      { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1, durationMinutes: 38 },
-      { sensorCode: 'S-05', sensorLabel: 'Production Output Cutting', eventCount: 2, durationMinutes: 31 },
-      { sensorCode: 'S-03', sensorLabel: 'Machine Main Sensor', eventCount: 0, durationMinutes: 0 },
-      { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 0, durationMinutes: 0 },
-    ],
-    processSensors: [
-      { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2 },
-      { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1 },
-      { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 2 },
-    ],
+    downtimeSensors,
+    processSensors,
   },
   comparison: {
     range: {
@@ -79,11 +83,11 @@ export const analyticsTestFixture = {
       periodState: 'complete', daysInclusive: 7, bucket: 'daily',
     },
     summary: {
-      downtimeMinutes: 100, downtimeEventCount: 5, availabilityPercent: 93.2,
+      downtimeMinutes: 100, downtimeEventCount: 5, availabilityPercent: 93,
       outputPieces: 550, processEventCount: 5, estimatedLossPieces: 230,
     },
     trends: comparisonTrends,
-    downtimeCauses: [], downtimeSensors: [], processSensors: [],
+    downtimeCauses: [], downtimeSensors, processSensors,
   },
 }
 
