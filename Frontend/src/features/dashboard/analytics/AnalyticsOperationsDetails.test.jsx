@@ -20,6 +20,8 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.getByRole('heading', { name: 'Downtime by sensor' })).toBeInTheDocument()
     expect(within(legend).getAllByRole('listitem')).toHaveLength(5)
     expect(within(legend).getByText('S-01 — Raw Material & Coil Joint')).toBeInTheDocument()
+    expect(within(within(legend).getByText('S-01 — Raw Material & Coil Joint').closest('li')).getByText('2 downtime events')).toBeInTheDocument()
+    expect(within(legend).queryByText(/maintenance events/i)).not.toBeInTheDocument()
     expect(within(legend).getByText(/1 hr 1 min - 47% of sensor downtime/i)).toBeInTheDocument()
 
     const causes = screen.getByRole('list', { name: 'Downtime cause distribution' })

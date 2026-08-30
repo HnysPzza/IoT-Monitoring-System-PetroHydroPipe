@@ -60,7 +60,7 @@ function DowntimeSensorTooltip({ active, payload }) {
   return (
     <div className="recharts-tooltip-card industrial-tooltip analytics-cause-tooltip" role="status">
       <strong>{sensor.sensorCode} — {sensor.sensorLabel}</strong>
-      <span>{sensor.eventCount} maintenance {sensor.eventCount === 1 ? 'event' : 'events'}</span>
+      <span>{sensor.eventCount} downtime {sensor.eventCount === 1 ? 'event' : 'events'}</span>
       <span>{formatDuration(sensor.durationMinutes)}</span>
       <span>{formatDowntimePercentage(sensor.percentage, sensor.durationMinutes)} of sensor downtime</span>
     </div>
@@ -286,7 +286,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                   <span className="analytics-cause-copy">
                     <span className="analytics-cause-name">{sensor.sensorCode} — {sensor.sensorLabel}</span>
                     <span className="analytics-cause-meta">
-                      {sensor.eventCount} maintenance {sensor.eventCount === 1 ? 'event' : 'events'}
+                      {sensor.eventCount} downtime {sensor.eventCount === 1 ? 'event' : 'events'}
                     </span>
                     <span className="analytics-cause-meta">
                       {formatDuration(sensor.durationMinutes)} - {formatDowntimePercentage(sensor.percentage, sensor.durationMinutes)} of sensor downtime
