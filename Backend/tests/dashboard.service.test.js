@@ -201,14 +201,15 @@ test('current-day downtime appears only in its interval and future periods remai
   assert.equal(result.points[1].causeReviewPending, true)
 })
 
-test('overview compares today with yesterday using only S-05 pulse events', async () => {
+test('overview compares today with the same elapsed portion of yesterday using only S-05 pulse events', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-25T10:30:00+08:00') })
   const todayStart = startOfBusinessDay(new Date())
   const yesterdayStart = addBusinessDays(todayStart, -1)
-  const tomorrowStart = addBusinessDays(todayStart, 1)
   const atHour = (start, hour) => new Date(start.getTime() + (hour * 60 * 60 * 1000)).toISOString()
   const queryLog = []
   const events = [
     ...[1, 2, 3].map((hour) => ({ bucket_start: atHour(yesterdayStart, hour), sensor_code: 'S-05', event_count: 1 })),
+    { bucket_start: atHour(yesterdayStart, 20), sensor_code: 'S-05', event_count: 40 },
     ...[1, 2, 3, 4, 5].map((hour) => ({ bucket_start: atHour(todayStart, hour), sensor_code: 'S-05', event_count: 1 })),
     { bucket_start: atHour(todayStart, 1), sensor_code: 'S-01', event_count: 99 },
   ]
@@ -217,7 +218,7 @@ test('overview compares today with yesterday using only S-05 pulse events', asyn
   const comparison = result.productionAnalytics.day
 
   assert.deepEqual(Object.keys(result.productionAnalytics), ['day'])
-  assert.equal(comparison.label, 'Today vs Yesterday')
+  assert.equal(comparison.label, 'Today so far vs Yesterday at same time')
   assert.equal(comparison.currentTotal, 5)
   assert.equal(comparison.previousTotal, 3)
   assert.equal(comparison.difference, 2)
@@ -225,19 +226,28 @@ test('overview compares today with yesterday using only S-05 pulse events', asyn
   assert.equal(comparison.unit, 'pipes')
   assert.equal(Object.hasOwn(comparison, 'targetTotal'), false)
   assert.equal(comparison.points.every((point) => !Object.hasOwn(point, 'target')), true)
+  assert.deepEqual(comparison.points.map(({ periodState, current, previous }) => ({ periodState, current, previous })), [
+    { periodState: 'completed', current: 5, previous: 3 },
+    { periodState: 'completed', current: 5, previous: 3 },
+    { periodState: 'current', current: 5, previous: 3 },
+    { periodState: 'future', current: null, previous: null },
+    { periodState: 'future', current: null, previous: null },
+    { periodState: 'future', current: null, previous: null },
+  ])
   assert.match(result.summary[0].value, /5 pipes/)
   assert.deepEqual(queryLog, [{
     functionName: 'aggregate_analytics_sensor_events',
     args: {
       p_machine_id: MACHINE_ID,
       p_started_at: yesterdayStart.toISOString(),
-      p_ended_at: tomorrowStart.toISOString(),
+      p_ended_at: new Date('2026-08-25T10:30:00+08:00').toISOString(),
       p_bucket_seconds: 3600,
     },
   }])
 })
 
-test('overview returns no percentage when yesterday has no production baseline', async () => {
+test('overview returns no percentage when yesterday has no production baseline', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-25T10:30:00+08:00') })
   const todayStart = startOfBusinessDay(new Date())
   const events = [{
     bucket_start: new Date(todayStart.getTime() + 3600000).toISOString(),
@@ -253,7 +263,8 @@ test('overview returns no percentage when yesterday has no production baseline',
   assert.equal(result.productionAnalytics.day.differencePercent, null)
 })
 
-test('overview counts more than 1000 output pulses without row truncation', async () => {
+test('overview counts more than 1000 output pulses without row truncation', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-25T10:30:00+08:00') })
   const todayStart = startOfBusinessDay(new Date())
   const events = [{
     bucket_start: new Date(todayStart.getTime() + 3600000).toISOString(),

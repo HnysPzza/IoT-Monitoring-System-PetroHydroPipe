@@ -16,9 +16,9 @@ vi.mock('recharts', () => ({
 function buildAnalytics(overrides = {}) {
   return {
     day: {
-      label: 'Today vs Yesterday',
-      currentLabel: 'Today',
-      previousLabel: 'Yesterday',
+      label: 'Today so far vs Yesterday at same time',
+      currentLabel: 'Today so far',
+      previousLabel: 'Yesterday at same time',
       currentTotal: 26,
       previousTotal: 23,
       difference: 3,
@@ -38,9 +38,9 @@ describe('ProductionAnalytics', () => {
   it('shows today against yesterday without target controls or target data', () => {
     render(<ProductionAnalytics analytics={buildAnalytics()} />)
 
-    expect(screen.getByRole('heading', { name: 'Today vs Yesterday' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Today so far vs Yesterday at same time' })).toBeInTheDocument()
     expect(screen.getByText('+13.0%')).toBeInTheDocument()
-    expect(screen.getByText('Today is 13.0% above yesterday.')).toBeInTheDocument()
+    expect(screen.getByText('Today so far is 13.0% above yesterday at same time.')).toBeInTheDocument()
     expect(screen.queryByText(/target/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Day' })).not.toBeInTheDocument()
   })
@@ -51,12 +51,12 @@ describe('ProductionAnalytics', () => {
     )
 
     expect(screen.getByText('-13.0%')).toBeInTheDocument()
-    expect(screen.getByText('Today is 13.0% below yesterday.')).toBeInTheDocument()
+    expect(screen.getByText('Today so far is 13.0% below yesterday at same time.')).toBeInTheDocument()
 
     rerender(<ProductionAnalytics analytics={buildAnalytics({ currentTotal: 23, difference: 0, differencePercent: 0 })} />)
 
     expect(screen.getByText('No change')).toBeInTheDocument()
-    expect(screen.getByText('Today matches yesterday at 23 pipes.')).toBeInTheDocument()
+    expect(screen.getByText('Today so far matches yesterday at same time at 23 pipes.')).toBeInTheDocument()
   })
 
   it('does not invent a percentage when yesterday has no output', () => {
@@ -65,7 +65,7 @@ describe('ProductionAnalytics', () => {
     )
 
     expect(screen.getByText('No baseline')).toBeInTheDocument()
-    expect(screen.getByText('Today recorded 4 pipes; yesterday recorded none.')).toBeInTheDocument()
+    expect(screen.getByText('Today so far recorded 4 pipes; yesterday at same time recorded none.')).toBeInTheDocument()
     expect(screen.queryByText('0.0%')).not.toBeInTheDocument()
   })
 })

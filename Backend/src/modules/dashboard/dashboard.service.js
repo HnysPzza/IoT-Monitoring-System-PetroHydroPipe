@@ -167,36 +167,60 @@ function getDailyDowntimeBoundaries(window, asOf) {
   })
 }
 
-async function buildProductionAnalytics(machineId, anchorDate) {
+function getDailyProductionBoundaries(window, previousWindow, asOf) {
+  return [6, 9, 12, 15, 18, 21].map((hour, index, hours) => {
+    const segmentStart = new Date(window.start.getTime() + ((hours[index - 1] || 0) * 60 * 60 * 1000))
+    const checkpointEnd = new Date(window.start.getTime() + (hour * 60 * 60 * 1000))
+    const periodState = asOf <= segmentStart
+      ? 'future'
+      : asOf < checkpointEnd
+        ? 'current'
+        : 'completed'
+    const currentEnd = periodState === 'current' ? new Date(asOf) : checkpointEnd
+
+    return {
+      label: formatBusinessTime(checkpointEnd, { hour: 'numeric', hour12: true }).replace(' ', ''),
+      shift: hour < 15 ? 'Shift A' : 'Shift B',
+      periodState,
+      currentEnd,
+      previousEnd: new Date(previousWindow.start.getTime() + (currentEnd.getTime() - window.start.getTime())),
+    }
+  })
+}
+
+async function buildProductionAnalytics(machineId, anchorDate, asOf) {
   const window = getWindowForMode('today', anchorDate)
   const previousWindow = getPreviousDayWindow(window)
-  const boundaries = getModePointBoundaries('day', window)
-  const previousBoundaries = getModePointBoundaries('day', previousWindow)
+  const observedEnd = new Date(Math.min(Math.max(asOf.getTime(), window.start.getTime()), window.end.getTime()))
+  const previousObservedEnd = new Date(previousWindow.start.getTime() + (observedEnd.getTime() - window.start.getTime()))
+  const boundaries = getDailyProductionBoundaries(window, previousWindow, observedEnd)
   const events = await getProductionEvents(machineId, {
     start: previousWindow.start,
-    end: window.end,
+    end: observedEnd,
   })
-  const currentTotal = getProductionTotal(events, window)
-  const previousTotal = getProductionTotal(events, previousWindow)
+  const currentTotal = getProductionTotal(events, { start: window.start, end: observedEnd })
+  const previousTotal = getProductionTotal(events, { start: previousWindow.start, end: previousObservedEnd })
   const difference = currentTotal - previousTotal
   const differencePercent = previousTotal > 0
     ? Number(((difference / previousTotal) * 100).toFixed(2))
     : null
-  const points = boundaries.map((boundary, index) => ({
+  const points = boundaries.map((boundary) => ({
     label: boundary.label,
     shift: boundary.shift,
-    current: getProductionTotal(events, { start: window.start, end: boundary.end }),
-    previous: getProductionTotal(events, {
-      start: previousWindow.start,
-      end: previousBoundaries[index]?.end || previousWindow.end,
-    }),
+    periodState: boundary.periodState,
+    current: boundary.periodState === 'future'
+      ? null
+      : getProductionTotal(events, { start: window.start, end: boundary.currentEnd }),
+    previous: boundary.periodState === 'future'
+      ? null
+      : getProductionTotal(events, { start: previousWindow.start, end: boundary.previousEnd }),
   }))
 
   return {
     day: {
-      label: 'Today vs Yesterday',
-      currentLabel: 'Today',
-      previousLabel: 'Yesterday',
+      label: 'Today so far vs Yesterday at same time',
+      currentLabel: 'Today so far',
+      previousLabel: 'Yesterday at same time',
       currentTotal,
       previousTotal,
       difference,
@@ -309,7 +333,7 @@ async function getOverview(filters = {}) {
     getOverlappingDowntime(machine.id, trendWindow),
     getSettingsHistory(machine.id, todayWindow),
     getSettingsHistory(machine.id, trendWindow),
-    buildProductionAnalytics(machine.id, todayWindow.start),
+    buildProductionAnalytics(machine.id, todayWindow.start, asOf),
   ])
 
   const productionToday = productionAnalytics.day.currentTotal
