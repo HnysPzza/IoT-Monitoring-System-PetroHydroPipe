@@ -22,6 +22,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/013_fix_heartbeat_digest_schema.sql` repairs heartbeat hashing for Supabase's `extensions.pgcrypto` layout.
 - `migrations/014_add_batched_watchdog_evaluation.sql` adds one service-role-only watchdog cycle RPC with isolated sensor failures and aggregate state counts.
 - `migrations/015_add_live_monitoring_snapshot.sql` adds one service-role-only read snapshot for M-01, its five latest sensor events, and watchdog state.
+- `migrations/021_add_managing_director_role.sql` adds the PRD-required Managing Director role for read-only operational access.
 
 ## Tables
 

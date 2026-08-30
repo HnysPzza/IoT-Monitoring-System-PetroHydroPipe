@@ -31,7 +31,7 @@ test('Analytics API validates dates, enforces roles, and returns the service con
     assert.equal((await requestJson(baseUrl, path)).response.status, 401)
     assert.equal((await requestJson(baseUrl, path, { headers: authHeader('Production Supervisor') })).response.status, 403)
 
-    for (const role of ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']) {
+    for (const role of ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director']) {
       const result = await requestJson(baseUrl, path, { headers: authHeader(role) })
       assert.equal(result.response.status, 200, role)
       assert.deepEqual(result.body, { analytics })

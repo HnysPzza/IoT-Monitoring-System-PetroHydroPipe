@@ -34,7 +34,7 @@ router.post(
 router.get(
   '/live',
   authenticate,
-  authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']),
+  authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor']),
   validateRequest(liveFeedRequestSchema),
   asyncHandler(iotController.getLiveFeed),
 )

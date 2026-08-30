@@ -14,6 +14,7 @@ router.use(authorizeRole([
   'Operation Manager',
   'Asst. Operation Manager',
   'Engineering Supervisor',
+  'Managing Director',
 ]))
 
 router.get('/', validateRequest(analyticsQuerySchema), asyncHandler(analyticsController.getAnalytics))

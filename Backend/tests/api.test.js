@@ -790,6 +790,11 @@ test('dashboard overview route returns backend summary for allowed roles', async
     assert.equal(result.response.status, 200)
     assert.equal(result.body.summary[0].id, 'pipes')
 
+    const directorOverview = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorOverview.response.status, 200)
+
     const chart = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today', {
       headers: authHeader('Production Supervisor'),
     })
@@ -843,6 +848,11 @@ test('downtime routes list and update records', async () => {
     assert.equal(list.response.status, 200)
     assert.equal(list.body.records.length, 1)
 
+    const directorList = await requestJson(baseUrl, '/api/downtime?status=Open', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorList.response.status, 200)
+
     const controller = new AbortController()
     const stream = await fetch(`${baseUrl}/api/downtime/stream`, {
       headers: authHeader('Production Supervisor'),
@@ -884,6 +894,13 @@ test('downtime routes list and update records', async () => {
       body: { notes: 'Unauthorized edit' },
     })
     assert.equal(assistantEdit.response.status, 403)
+
+    const directorEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Managing Director'),
+      body: { notes: 'Unauthorized edit' },
+    })
+    assert.equal(directorEdit.response.status, 403)
   })
 })
 
@@ -912,6 +929,11 @@ test('reports summary is restricted to management roles', async () => {
 
     assert.equal(allowed.response.status, 200)
     assert.equal(allowed.body.report.reportType, 'daily')
+
+    const director = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(director.response.status, 200)
   })
 })
 
@@ -978,6 +1000,17 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
     assert.equal(listed.body.alerts[0].message, 'S-04 Outside Filler Wire has no pulse.')
     assert.equal(listed.body.alerts[0].revision, '1')
     assert.equal(listed.body.snapshotRevision, '1')
+
+    const directorList = await requestJson(baseUrl, '/api/alerts', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorList.response.status, 200)
+
+    const directorAcknowledge = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
+      method: 'PATCH',
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorAcknowledge.response.status, 403)
 
     const acknowledged = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
       method: 'PATCH',

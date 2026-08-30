@@ -105,15 +105,17 @@ export default function App() {
         <Route
           path="reports"
           element={
-            <LazyDashboardRoute>
-              <ReportsSection />
-            </LazyDashboardRoute>
+            <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Managing Director']}>
+              <LazyDashboardRoute>
+                <ReportsSection />
+              </LazyDashboardRoute>
+            </RequireRole>
           }
         />
         <Route
           path="analytics"
           element={
-            <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']}>
+            <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director']}>
               <LazyDashboardRoute>
                 <AnalyticsSection />
               </LazyDashboardRoute>
