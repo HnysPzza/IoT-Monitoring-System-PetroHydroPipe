@@ -3,6 +3,7 @@
   gap: 6px;
   width: 100%;
   min-width: 0;
+  font-family: inherit;
 }
 
 .analytics-custom-date-picker-loading {
@@ -207,7 +208,7 @@
   }
 }
 
-@media (min-width: 760px) {
+@media (min-width: 901px) {
   .analytics-filter-row--custom {
     flex-direction: row;
     flex-wrap: wrap;
@@ -215,8 +216,8 @@
   }
 
   .analytics-filter-row--custom .analytics-range-fieldset {
-    flex: 0 1 260px;
-    width: 260px;
+    flex: 0 0 auto;
+    width: auto;
     min-width: 0;
   }
 
