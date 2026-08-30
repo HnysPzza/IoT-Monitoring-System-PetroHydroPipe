@@ -295,6 +295,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 </li>
               ))}
             </ul>
+            <p className="analytics-cause-meta">Non-zero shares below 1% use a minimum visible slice.</p>
           </div>
         )}
 

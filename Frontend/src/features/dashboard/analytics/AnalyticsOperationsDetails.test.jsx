@@ -74,6 +74,7 @@ describe('AnalyticsOperationsDetails', () => {
 
     const legend = screen.getByRole('list', { name: 'Sensor downtime distribution' })
     expect(within(legend).getByText(/1 min - <1% of sensor downtime/i)).toBeInTheDocument()
+    expect(screen.getByText('Non-zero shares below 1% use a minimum visible slice.')).toBeInTheDocument()
     expect(getDonutDisplayMinutes(1, 1000)).toBe(10)
     expect(getDonutDisplayMinutes(0, 1000)).toBe(0)
   })
