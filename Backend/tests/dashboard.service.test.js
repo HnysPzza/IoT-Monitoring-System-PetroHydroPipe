@@ -236,6 +236,7 @@ test('overview compares today with the same elapsed portion of yesterday using o
   const comparison = result.productionAnalytics.day
 
   assert.deepEqual(Object.keys(result.productionAnalytics), ['day'])
+  assert.equal(Object.hasOwn(result, 'availability'), false)
   assert.equal(comparison.label, 'Today so far vs Yesterday at same time')
   assert.equal(comparison.currentTotal, 5)
   assert.equal(comparison.previousTotal, 3)

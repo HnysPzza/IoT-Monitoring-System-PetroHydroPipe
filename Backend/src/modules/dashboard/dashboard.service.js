@@ -59,10 +59,6 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString('en-PH')
 }
 
-function formatSensorName(sensorCode) {
-  return `${sensorCode} ${getSensorLabel(sensorCode)}`
-}
-
 async function getMachineAndSensors() {
   const supabase = getSupabaseClient()
   const { data: machine, error: machineError } = await supabase
@@ -311,16 +307,6 @@ function buildAlerts(machine, sensors, downtimeRows) {
   return alerts
 }
 
-function buildAvailability(machine, sensors, machineAvailability) {
-  return [
-    { machineId: machine.name, percent: machineAvailability },
-    ...sensors.map((sensor) => ({
-      machineId: formatSensorName(sensor.sensor_code),
-      percent: sensor.status === 'Fault' ? 75 : sensor.status === 'Inactive' ? 90 : 98,
-    })),
-  ]
-}
-
 async function getOverview(filters = {}) {
   const asOf = new Date()
   const mode = filters.trendMode || 'week'
@@ -348,7 +334,6 @@ async function getOverview(filters = {}) {
     asOf,
   })
   const openDowntimeCount = todayDowntimeRows.filter((row) => row.status === 'Open').length
-  const availability = buildAvailability(machine, sensors, todayMetrics.availabilityPercent)
   const availabilityValue = todayMetrics.availabilityPercent === null
     ? 'N/A'
     : `${todayMetrics.availabilityPercent}%`
@@ -363,7 +348,6 @@ async function getOverview(filters = {}) {
     ],
     productionAnalytics,
     downtimeImpact: buildDowntimeImpact(trendDowntimeRows, mode, anchorDate, trendSettingsHistory, asOf),
-    availability,
     unreadAlerts: buildAlerts(machine, sensors, todayDowntimeRows).length,
   }
 }
