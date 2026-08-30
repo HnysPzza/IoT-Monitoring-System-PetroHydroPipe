@@ -16,6 +16,7 @@ const {
 } = require('../../shared/operationalMetrics')
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
+const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
 
 function createReportError(status, code, message) {
   const error = new Error(message)
@@ -64,53 +65,12 @@ async function getMachine() {
 }
 
 async function getProductionTotal(machineId, window) {
-  const supabase = getSupabaseClient()
-  const { data: counts, error: countError } = await supabase
-    .from('production_counts')
-    .select('count_value')
-    .eq('machine_id', machineId)
-    .gte('window_start', window.start.toISOString())
-    .lt('window_start', window.end.toISOString())
+  const bucketSeconds = Math.floor((window.end.getTime() - window.start.getTime()) / 1000)
+  const rows = await aggregateSensorEvents(machineId, window, bucketSeconds)
 
-  if (countError) {
-    throw createReportError(500, 'REPORT_PRODUCTION_QUERY_FAILED', 'Unable to load report production counts.')
-  }
-
-  const countTotal = (counts || []).reduce((sum, row) => sum + Number(row.count_value || 0), 0)
-
-  if (countTotal > 0) {
-    return countTotal
-  }
-
-  const { data: outputSensor, error: sensorError } = await supabase
-    .from('sensors')
-    .select('id')
-    .eq('machine_id', machineId)
-    .eq('sensor_code', OUTPUT_SENSOR_CODE)
-    .maybeSingle()
-
-  if (sensorError) {
-    throw createReportError(500, 'REPORT_OUTPUT_SENSOR_QUERY_FAILED', 'Unable to load the production output sensor.')
-  }
-
-  if (!outputSensor) {
-    throw createReportError(500, 'REPORT_OUTPUT_SENSOR_NOT_FOUND', 'Production output sensor S-05 is not configured.')
-  }
-
-  const { count, error: eventError } = await supabase
-    .from('sensor_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('machine_id', machineId)
-    .eq('sensor_id', outputSensor.id)
-    .eq('event_type', 'pulse')
-    .gte('recorded_at', window.start.toISOString())
-    .lt('recorded_at', window.end.toISOString())
-
-  if (eventError) {
-    throw createReportError(500, 'REPORT_PRODUCTION_EVENT_QUERY_FAILED', 'Unable to load report production events.')
-  }
-
-  return count || 0
+  return rows
+    .filter((row) => row.sensor_code === OUTPUT_SENSOR_CODE)
+    .reduce((sum, row) => sum + Number(row.event_count || 0), 0)
 }
 
 async function getSummary({ type = 'daily', date } = {}) {
