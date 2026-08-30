@@ -26,7 +26,7 @@ function createDeferred() {
 }
 
 describe('AnalyticsSection recorded-data states', () => {
-  it('shows loading and omits redundant analytics notices', async () => {
+  it('shows loading and the backend data-coverage warning', async () => {
     const deferred = createDeferred()
     const loadAnalytics = vi.fn(() => deferred.promise)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
@@ -36,7 +36,7 @@ describe('AnalyticsSection recorded-data states', () => {
 
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
     expect(screen.queryByText('Recorded system data')).not.toBeInTheDocument()
-    expect(screen.queryByText(/Historical sensor heartbeat coverage is not stored/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
     expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
     expect(loadAnalytics).toHaveBeenCalledWith('test-token', { period: 'this-week' })
   }, 15000)

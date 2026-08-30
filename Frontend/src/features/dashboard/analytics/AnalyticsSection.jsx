@@ -235,6 +235,13 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
       {snapshot && range && loadState !== 'error' && loadState !== 'validation' ? (
         <>
+          {!snapshot.coverage.historicalHeartbeatAvailable ? (
+            <div className="notice notice-error dashboard-alert" role="status" aria-live="polite">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>{snapshot.coverage.message}</span>
+            </div>
+          ) : null}
+
           <section className="analytics-kpi-grid" aria-label="Analytics summary">
             {kpis.map((kpi) => {
               const Icon = kpiIcons[kpi.id]
