@@ -229,6 +229,38 @@ export default function ReportsSection() {
       ) : null}
 
       {loadState !== 'error' ? (
+        <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
+          <div className="section-heading">
+            <div>
+              <p className="section-eyebrow">Process activity</p>
+              <h2 id="reports-process-title">Events by process sensor</h2>
+            </div>
+          </div>
+
+          <div className="account-table-wrap">
+            <table className="account-table reports-table">
+              <thead>
+                <tr>
+                  <th scope="col">Sensor</th>
+                  <th scope="col">Recorded events</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
+                  <tr key={sensor.sensorCode}>
+                    <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
+                    <td data-label="Recorded events">{sensor.eventCount}</td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan="2">{hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {loadState !== 'error' ? (
         <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
           <div className="section-heading">
             <div>

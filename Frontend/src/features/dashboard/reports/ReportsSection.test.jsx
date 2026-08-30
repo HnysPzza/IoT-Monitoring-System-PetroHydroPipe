@@ -15,10 +15,11 @@ vi.mock('./reportsService.js', async () => {
   }
 })
 
-function reportPayload({ rows = [], summaryValue = '0 min' } = {}) {
+function reportPayload({ rows = [], summaryValue = '0 min', processSensors = [] } = {}) {
   return {
     report: {
       summary: [{ id: 'downtime', label: 'Downtime', value: summaryValue, helper: 'Selected period' }],
+      processSensors,
       rows,
     },
   }
@@ -47,6 +48,17 @@ function deferred() {
 describe('ReportsSection request states', () => {
   beforeEach(() => {
     getReportSummary.mockReset()
+  })
+
+  it('shows the process-event breakdown returned by the report API', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({
+      processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText('S-01 - Raw Material & Coil Joint')).toBeInTheDocument()
+    expect(screen.getByText('7')).toBeInTheDocument()
   })
 
   it('shows an unavailable state on initial failure and retries the same query', async () => {

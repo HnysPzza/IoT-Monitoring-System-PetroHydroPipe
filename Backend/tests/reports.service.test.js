@@ -159,6 +159,12 @@ test('report ignores process-sensor rows in the shared aggregation', async () =>
   const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-09' })
 
   assert.equal(getProductionSummary(report).value, '2 pcs')
+  assert.equal(report.summary.find((item) => item.id === 'process-events').value, '60')
+  assert.deepEqual(report.processSensors, [
+    { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 10 },
+    { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 20 },
+    { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 30 },
+  ])
 })
 
 test('report returns a controlled error when shared event aggregation fails', async () => {

@@ -8,7 +8,7 @@ const {
   startOfBusinessMonth,
   startOfBusinessWeek,
 } = require('../../shared/businessTime')
-const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
+const { getSensorLabel, OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 const {
   attributeMachineDowntime,
   calculateMachineMetrics,
@@ -17,6 +17,8 @@ const {
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
+
+const PROCESS_SENSOR_CODES = ['S-01', 'S-02', 'S-04']
 
 function createReportError(status, code, message) {
   const error = new Error(message)
@@ -64,33 +66,44 @@ async function getMachine() {
   return data
 }
 
-async function getProductionTotal(machineId, window) {
+async function getEventSummary(machineId, window) {
   const bucketSeconds = Math.floor((window.end.getTime() - window.start.getTime()) / 1000)
   const rows = await aggregateSensorEvents(machineId, window, bucketSeconds)
+  const totals = rows.reduce((result, row) => {
+    result[row.sensor_code] = (result[row.sensor_code] || 0) + Number(row.event_count || 0)
+    return result
+  }, {})
 
-  return rows
-    .filter((row) => row.sensor_code === OUTPUT_SENSOR_CODE)
-    .reduce((sum, row) => sum + Number(row.event_count || 0), 0)
+  return {
+    productionTotal: totals[OUTPUT_SENSOR_CODE] || 0,
+    processSensors: PROCESS_SENSOR_CODES.map((sensorCode) => ({
+      sensorCode,
+      sensorLabel: getSensorLabel(sensorCode),
+      eventCount: totals[sensorCode] || 0,
+    })),
+  }
 }
 
 async function getSummary({ type = 'daily', date } = {}) {
   const asOf = new Date()
   const machine = await getMachine()
   const window = getWindow(type, date)
-  const [productionTotal, downtimeRows, settingsHistory] = await Promise.all([
-    getProductionTotal(machine.id, window),
+  const [eventSummary, downtimeRows, settingsHistory] = await Promise.all([
+    getEventSummary(machine.id, window),
     getOverlappingDowntime(machine.id, window),
     getSettingsHistory(machine.id, window),
   ])
   const metrics = calculateMachineMetrics({ records: downtimeRows, window, settingsHistory, asOf })
   const rows = attributeMachineDowntime({ records: downtimeRows, window, settingsHistory, asOf })
   const availabilityValue = metrics.availabilityPercent === null ? 'N/A' : `${metrics.availabilityPercent}%`
+  const processEventTotal = eventSummary.processSensors.reduce((sum, sensor) => sum + sensor.eventCount, 0)
 
   return {
     reportType: type,
     selectedDate: date || formatBusinessDate(),
     summary: [
-      { id: 'production', label: 'Production Count', value: `${formatNumber(productionTotal)} pcs`, helper: `From ${machine.name}` },
+      { id: 'production', label: 'Production Count', value: `${formatNumber(eventSummary.productionTotal)} pcs`, helper: `From ${machine.name}` },
+      { id: 'process-events', label: 'Process Events', value: formatNumber(processEventTotal), helper: 'From S-01, S-02, and S-04 pulses' },
       { id: 'events', label: 'Downtime Events', value: String(downtimeRows.length), helper: 'Open and resolved events' },
       { id: 'duration', label: 'Downtime Duration', value: `${metrics.durationMinutes} min`, helper: `${metrics.unplannedMinutes} unplanned min` },
       { id: 'availability', label: 'Availability', value: availabilityValue, helper: 'Based on eligible production time' },
@@ -104,6 +117,7 @@ async function getSummary({ type = 'daily', date } = {}) {
       availabilityPercent: metrics.availabilityPercent,
       estimatedLoss: metrics.estimatedLoss,
     },
+    processSensors: eventSummary.processSensors,
     rows,
   }
 }
