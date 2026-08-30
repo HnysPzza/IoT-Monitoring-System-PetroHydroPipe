@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { analyticsTestFixture } from './analyticsTestFixtures.js'
 import {
   buildAnalyticsTrend,
+  formatAnalyticsTrendValue,
   formatCompactDuration,
   getAnalyticsKpis,
   getAnalyticsTrendSummary,
@@ -15,11 +16,12 @@ describe('Analytics presentation helpers', () => {
   it('formats backend-provided summaries without recomputing operational metrics', () => {
     expect(getAnalyticsKpis(analyticsTestFixture)).toEqual([
       expect.objectContaining({ id: 'downtime', value: '130 min', helper: '5 recorded events' }),
-      expect.objectContaining({ id: 'availability', value: '91.4%' }),
+      expect.objectContaining({ id: 'availability', value: '91%' }),
       expect.objectContaining({ id: 'production', value: '595 pcs' }),
       expect.objectContaining({ id: 'process-events', value: '5' }),
       expect.objectContaining({ id: 'estimated-loss', value: '299 pcs' }),
     ])
+    expect(formatAnalyticsTrendValue(91, { unit: 'percent' })).toBe('91%')
   })
 
   it('distinguishes unobserved null values from measured zeroes', () => {

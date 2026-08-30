@@ -14,7 +14,7 @@ export function getAnalyticsTrendMetric(metricId) {
 
 function formatMetricValue(value, unit) {
   if (value === null || value === undefined) return '—'
-  if (unit === 'percent') return `${Number(value).toFixed(1)}%`
+  if (unit === 'percent') return `${Math.round(Number(value))}%`
   return `${formatNumber(value)}${unit ? ` ${unit}` : ''}`
 }
 
@@ -68,7 +68,7 @@ export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {
 
 export function formatAnalyticsTrendValue(value, metric) {
   if (value === null || value === undefined) return 'Not observed'
-  if (metric.unit === 'percent') return `${Number(value).toFixed(1)}%`
+  if (metric.unit === 'percent') return `${Math.round(Number(value))}%`
   return `${formatNumber(value)} ${metric.shortUnit}`
 }
 
