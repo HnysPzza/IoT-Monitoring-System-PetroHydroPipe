@@ -104,7 +104,13 @@ function ChartTooltip({ active, payload, label }) {
       {point.periodState !== 'future' ? (
         <>
           <span>Estimated loss: {point.estimatedLoss} pcs</span>
-          <span>Likely cause: {point.cause}</span>
+          <span>
+            {point.cause
+              ? `Likely cause: ${point.cause}`
+              : point.causeReviewPending
+                ? 'Cause awaiting review'
+                : 'No reviewed cause recorded'}
+          </span>
         </>
       ) : null}
     </div>

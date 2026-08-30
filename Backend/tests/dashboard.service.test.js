@@ -150,6 +150,7 @@ test('dashboard downtime impact includes pre-window events and uses break-aware 
     plannedExcludedMinutes: 120,
     estimatedLoss: 69,
     cause: 'Flux Refill',
+    causeReviewPending: false,
   })
 })
 
@@ -173,7 +174,7 @@ test('current-day downtime appears only in its interval and future periods remai
       machine_id: MACHINE_ID,
       started_at: '2026-08-24T23:23:00.000Z',
       ended_at: '2026-08-24T23:31:00.000Z',
-      cause: 'Other',
+      cause: 'Pending Cause Review',
       status: 'Resolved',
       sensors: { sensor_code: 'S-03' },
     }],
@@ -196,6 +197,8 @@ test('current-day downtime appears only in its interval and future periods remai
       { label: '6-9PM', periodState: 'future', minutes: null },
     ],
   )
+  assert.equal(result.points[1].cause, null)
+  assert.equal(result.points[1].causeReviewPending, true)
 })
 
 test('overview compares today with yesterday using only S-05 pulse events', async () => {

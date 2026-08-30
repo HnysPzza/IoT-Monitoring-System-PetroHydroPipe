@@ -234,8 +234,16 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
         settingsHistory,
         asOf,
       })
+      const reviewedRows = rows.filter((row) => row.cause && row.cause !== 'Pending Cause Review')
+      const pendingReviewRows = rows.filter((row) => !row.cause || row.cause === 'Pending Cause Review')
       const attributed = attributeMachineDowntime({
-        records: rows,
+        records: reviewedRows,
+        window: boundary,
+        settingsHistory,
+        asOf,
+      })
+      const pendingReview = attributeMachineDowntime({
+        records: pendingReviewRows,
         window: boundary,
         settingsHistory,
         asOf,
@@ -248,7 +256,8 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
         unplannedMinutes: metrics.unplannedMinutes,
         plannedExcludedMinutes: metrics.plannedExcludedMinutes,
         estimatedLoss: metrics.estimatedLoss,
-        cause: attributed[0]?.cause || 'No downtime recorded',
+        cause: attributed[0]?.cause || null,
+        causeReviewPending: pendingReview.length > 0,
       }
     }),
   }
