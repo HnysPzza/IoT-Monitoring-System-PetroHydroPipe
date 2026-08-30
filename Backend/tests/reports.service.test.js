@@ -221,3 +221,45 @@ test('report includes pre-window overlap, unions concurrent downtime, and exclud
   assert.equal(overlapQuery.filters.some((filter) => filter.operator === 'gte' && filter.column === 'started_at'), false)
   assert.equal(overlapQuery.filters.some((filter) => filter.operator === 'or' && /ended_at\.gt\./.test(filter.expression)), true)
 })
+
+test('current report clips events and availability to elapsed eligible time', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-31T12:00:00+08:00') })
+  const fakeSupabase = createFakeSupabase({
+    downtimeEvents: [{
+      id: 'down-current',
+      machine_id: MACHINE_ID,
+      sensor_id: 'sensor-1',
+      started_at: '2026-08-31T00:00:00.000Z',
+      ended_at: '2026-08-31T01:00:00.000Z',
+      cause: 'Flux Refill',
+      status: 'Resolved',
+      sensors: { sensor_code: 'S-01' },
+    }],
+  })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-31' })
+
+  assert.equal(report.periodState, 'partial')
+  assert.equal(report.observedEndAt, '2026-08-31T04:00:00.000Z')
+  assert.equal(report.metrics.scheduledEligibleMinutes, 240)
+  assert.equal(report.metrics.availabilityPercent, 75)
+  assert.equal(fakeSupabase.rpcCalls[0].args.p_ended_at, report.observedEndAt)
+})
+
+test('future report returns unobserved values without querying operational records', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-31T12:00:00+08:00') })
+  const fakeSupabase = createFakeSupabase()
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ type: 'daily', date: '2026-09-01' })
+
+  assert.equal(report.periodState, 'future')
+  assert.equal(report.observedStartAt, null)
+  assert.equal(report.observedEndAt, null)
+  assert.equal(report.summary.every((item) => item.value === 'N/A'), true)
+  assert.equal(report.processSensors.every((sensor) => sensor.eventCount === null), true)
+  assert.equal(report.metrics.availabilityPercent, null)
+  assert.equal(fakeSupabase.rpcCalls.length, 0)
+  assert.equal(fakeSupabase.queries.some((query) => query.tableName === 'downtime_events'), false)
+})

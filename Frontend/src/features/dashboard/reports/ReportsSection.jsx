@@ -64,6 +64,7 @@ export default function ReportsSection() {
   const requestIdRef = useRef(0)
   const successfulReportRef = useRef(null)
   const selectedReportLabel = reportTypes.find((type) => type.id === reportType)?.label || 'Report'
+  const currentDate = getManilaDateInputValue()
   const queryKey = getQueryKey(reportType, selectedDate)
   const requestKey = `${token || 'anonymous'}:${queryKey}`
   const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
@@ -175,6 +176,7 @@ export default function ReportsSection() {
               name="reportDate"
               type={reportType === 'monthly' ? 'month' : 'date'}
               value={reportType === 'monthly' ? selectedDate.slice(0, 7) : selectedDate}
+              max={reportType === 'monthly' ? currentDate.slice(0, 7) : currentDate}
               onChange={(event) => setSelectedDate(event.target.value)}
               autoComplete="off"
             />
@@ -192,7 +194,7 @@ export default function ReportsSection() {
           <button
             className="btn btn-primary reports-action"
             type="button"
-            disabled={!isCurrentSuccess}
+            disabled={!isCurrentSuccess || report?.periodState === 'future'}
             onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report.rows)}
           >
             <Download size={17} aria-hidden="true" />
@@ -200,6 +202,18 @@ export default function ReportsSection() {
           </button>
         </div>
       </section>
+
+      {hasCurrentReport && report.periodState === 'partial' ? (
+        <div className="notice dashboard-alert" role="status">
+          <span>Partial report. Values cover recorded time so far.</span>
+        </div>
+      ) : null}
+
+      {hasCurrentReport && report.periodState === 'future' ? (
+        <div className="notice dashboard-alert" role="status">
+          <span>Period not reached yet. No values have been observed.</span>
+        </div>
+      ) : null}
 
       {loadState === 'error' ? (
         <section className="section-card section-placeholder" aria-labelledby="reports-error-title">
@@ -249,10 +263,10 @@ export default function ReportsSection() {
                 {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
                   <tr key={sensor.sensorCode}>
                     <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
-                    <td data-label="Recorded events">{sensor.eventCount}</td>
+                    <td data-label="Recorded events">{sensor.eventCount ?? 'Not observed'}</td>
                   </tr>
                 )) : (
-                  <tr><td colSpan="2">{hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
+                  <tr><td colSpan="2">{hasCurrentReport && report.periodState === 'future' ? 'Process events not observed yet.' : hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -287,7 +301,7 @@ export default function ReportsSection() {
                   </tr>
                 ) : hasCurrentReport && report.rows.length === 0 ? (
                   <tr>
-                    <td colSpan="5">No downtime rows found for this report range.</td>
+                    <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
                   </tr>
                 ) : hasCurrentReport ? (
                   report.rows.map((row) => (

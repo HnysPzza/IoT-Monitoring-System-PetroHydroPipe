@@ -48,6 +48,46 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString('en-PH')
 }
 
+function getObservedWindow(window, asOf) {
+  if (asOf <= window.start) return { periodState: 'future', window: null }
+  if (asOf < window.end) {
+    return { periodState: 'partial', window: { start: window.start, end: asOf } }
+  }
+  return { periodState: 'complete', window }
+}
+
+function getUnobservedReport(type, date) {
+  return {
+    reportType: type,
+    selectedDate: date,
+    periodState: 'future',
+    observedStartAt: null,
+    observedEndAt: null,
+    summary: [
+      { id: 'production', label: 'Production Count', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'process-events', label: 'Process Events', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'events', label: 'Downtime Events', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'duration', label: 'Downtime Duration', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'availability', label: 'Availability', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'loss', label: 'Estimated Loss', value: 'N/A', helper: 'Period not reached yet' },
+    ],
+    metrics: {
+      durationMinutes: null,
+      unplannedMinutes: null,
+      plannedExcludedMinutes: null,
+      scheduledEligibleMinutes: null,
+      availabilityPercent: null,
+      estimatedLoss: null,
+    },
+    processSensors: PROCESS_SENSOR_CODES.map((sensorCode) => ({
+      sensorCode,
+      sensorLabel: getSensorLabel(sensorCode),
+      eventCount: null,
+    })),
+    rows: [],
+  }
+}
+
 async function getMachine() {
   const { data, error } = await getSupabaseClient()
     .from('machines')
@@ -87,7 +127,11 @@ async function getEventSummary(machineId, window) {
 async function getSummary({ type = 'daily', date } = {}) {
   const asOf = new Date()
   const machine = await getMachine()
-  const window = getWindow(type, date)
+  const requestedWindow = getWindow(type, date)
+  const observed = getObservedWindow(requestedWindow, asOf)
+  const selectedDate = date || formatBusinessDate()
+  if (!observed.window) return getUnobservedReport(type, selectedDate)
+  const window = observed.window
   const [eventSummary, downtimeRows, settingsHistory] = await Promise.all([
     getEventSummary(machine.id, window),
     getOverlappingDowntime(machine.id, window),
@@ -100,7 +144,10 @@ async function getSummary({ type = 'daily', date } = {}) {
 
   return {
     reportType: type,
-    selectedDate: date || formatBusinessDate(),
+    selectedDate,
+    periodState: observed.periodState,
+    observedStartAt: window.start.toISOString(),
+    observedEndAt: window.end.toISOString(),
     summary: [
       { id: 'production', label: 'Production Count', value: `${formatNumber(eventSummary.productionTotal)} pcs`, helper: `From ${machine.name}` },
       { id: 'process-events', label: 'Process Events', value: formatNumber(processEventTotal), helper: 'From S-01, S-02, and S-04 pulses' },

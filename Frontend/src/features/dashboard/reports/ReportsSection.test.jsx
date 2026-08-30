@@ -15,10 +15,11 @@ vi.mock('./reportsService.js', async () => {
   }
 })
 
-function reportPayload({ rows = [], summaryValue = '0 min', processSensors = [] } = {}) {
+function reportPayload({ rows = [], summaryValue = '0 min', processSensors = [], periodState = 'complete' } = {}) {
   return {
     report: {
       summary: [{ id: 'downtime', label: 'Downtime', value: summaryValue, helper: 'Selected period' }],
+      periodState,
       processSensors,
       rows,
     },
@@ -59,6 +60,30 @@ describe('ReportsSection request states', () => {
 
     expect(await screen.findByText('S-01 - Raw Material & Coil Joint')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
+  })
+
+  it('labels partial reports and prevents choosing a future date', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({ periodState: 'partial' }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText(/Partial report/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Date')).toHaveAttribute('max')
+  })
+
+  it('renders future report values as unobserved and blocks export', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({
+      periodState: 'future',
+      summaryValue: 'N/A',
+      processSensors: [{ sensorCode: 'S-01', eventCount: null }],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText(/Period not reached yet/i)).toBeInTheDocument()
+    expect(screen.getByText('Not observed')).toBeInTheDocument()
+    expect(screen.getByText('Downtime not observed yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
   })
 
   it('shows an unavailable state on initial failure and retries the same query', async () => {
