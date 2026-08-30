@@ -192,13 +192,14 @@ function isAnalyticsSnapshot(value) {
   )
 }
 
-export async function getAnalyticsSnapshot(token, options = {}) {
+export async function getAnalyticsSnapshot(token, options = {}, { signal } = {}) {
   const range = resolveAnalyticsRange(options)
   const query = range.range === 'all'
     ? new URLSearchParams({ range: 'all' })
     : new URLSearchParams({ startDate: range.startDate, endDate: range.endDate })
   const payload = await apiRequest(`/api/analytics?${query.toString()}`, {
     token,
+    ...(signal ? { signal } : {}),
     fallbackError: 'Unable to load Analytics.',
   })
 

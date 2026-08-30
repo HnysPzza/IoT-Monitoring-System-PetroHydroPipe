@@ -52,6 +52,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const [loadState, setLoadState] = useState('loading')
   const [errorMessage, setErrorMessage] = useState('')
   const requestIdRef = useRef(0)
+  const requestControllerRef = useRef(null)
   const successfulSnapshotRef = useRef(null)
 
   const requestOptions = useMemo(() => (
@@ -72,6 +73,9 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
+    requestControllerRef.current?.abort()
+    const requestController = new AbortController()
+    requestControllerRef.current = requestController
     const previousResult = successfulSnapshotRef.current
     const hasMatchingSnapshot = previousResult?.requestKey === requestKey
 
@@ -80,7 +84,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     setErrorMessage('')
 
     try {
-      const nextSnapshot = await loadAnalytics(token, requestOptions)
+      const nextSnapshot = await loadAnalytics(token, requestOptions, { signal: requestController.signal })
       if (requestId !== requestIdRef.current) return
 
       successfulSnapshotRef.current = { requestKey, snapshot: nextSnapshot }
@@ -99,6 +103,8 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
         setSnapshot(null)
         setLoadState('error')
       }
+    } finally {
+      if (requestId === requestIdRef.current) requestControllerRef.current = null
     }
   }, [loadAnalytics, range, requestKey, requestOptions, token])
 
@@ -112,6 +118,8 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       // A delayed API response must not overwrite validation after
       // a user has made the custom range invalid.
       requestIdRef.current += 1
+      requestControllerRef.current?.abort()
+      requestControllerRef.current = null
       setSnapshot(null)
       setErrorMessage('')
       setLoadState('validation')
@@ -120,6 +128,11 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
     loadSnapshot()
   }, [loadSnapshot, range])
+
+  useEffect(() => () => {
+    requestIdRef.current += 1
+    requestControllerRef.current?.abort()
+  }, [])
 
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []

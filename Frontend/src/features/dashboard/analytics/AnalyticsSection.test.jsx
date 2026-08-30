@@ -38,7 +38,11 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.queryByText('Recorded system data')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
     expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
-    expect(loadAnalytics).toHaveBeenCalledWith('test-token', { period: 'this-week' })
+    expect(loadAnalytics).toHaveBeenCalledWith(
+      'test-token',
+      { period: 'this-week' },
+      { signal: expect.any(AbortSignal) },
+    )
   }, 15000)
 
   it('does not show the redundant comparison notice', async () => {
@@ -107,7 +111,7 @@ describe('AnalyticsSection recorded-data states', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose complete range' }))
     await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith('test-token', {
       period: 'custom', startDate: '2026-08-15', endDate: '2026-08-17',
-    }))
+    }, { signal: expect.any(AbortSignal) }))
   })
 
   it('switches the trend explorer metric from an interactive KPI card', async () => {
@@ -147,7 +151,11 @@ describe('AnalyticsSection recorded-data states', () => {
 
     await user.click(screen.getByRole('button', { name: 'All time' }))
 
-    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith('test-token', { period: 'all' }))
+    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
+      'test-token',
+      { period: 'all' },
+      { signal: expect.any(AbortSignal) },
+    ))
     expect(screen.queryByText(/All recorded history:/i)).not.toBeInTheDocument()
   })
 })
