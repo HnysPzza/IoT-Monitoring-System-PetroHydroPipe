@@ -41,7 +41,7 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')).toHaveClass('analytics-cause-detail-card')
     const maintenanceCause = within(causes).getByText('Corrective Maintenance').closest('li')
     expect(maintenanceCause).toHaveTextContent(/2 downtime events/i)
-    expect(maintenanceCause).toHaveTextContent(/140 pcs estimated loss/i)
+    expect(maintenanceCause).toHaveTextContent(/3\.05 pcs estimated loss/i)
   })
 
   it('applies legend hover and focus state to the matching donut sector', async () => {

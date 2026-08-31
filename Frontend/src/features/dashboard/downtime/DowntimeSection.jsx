@@ -26,6 +26,16 @@ const historicalDowntimeCauses = [
 ]
 const downtimeEditRoles = new Set(['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor'])
 
+function formatLossBasis(basis) {
+  if (!basis) return 'Rate unavailable'
+  const label = basis.source === 'trailing-7-days'
+    ? 'Last 7 completed days'
+    : basis.source === 'trailing-30-days'
+      ? 'Last 30 completed days'
+      : 'Configured fallback'
+  return `${label}: ${basis.ratePiecesPerMinute} pcs/min`
+}
+
 function getSensorName(record) {
   if (!record.sensor) return record.sensorLabel || 'selected sensor'
 
@@ -61,6 +71,7 @@ export default function DowntimeSection() {
   const canEditDowntime = downtimeEditRoles.has(user?.role)
   const [records, setRecords] = useState([])
   const [summary, setSummary] = useState({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+  const [lossEstimateBasis, setLossEstimateBasis] = useState(null)
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('All')
@@ -88,6 +99,7 @@ export default function DowntimeSection() {
       })
       setRecords(payload.records || [])
       setSummary(payload.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 })
+      setLossEstimateBasis(payload.lossEstimateBasis || null)
       setPagination(payload.pagination || { page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       if (!silent) {
         setExpandedRecordId('')
@@ -98,6 +110,7 @@ export default function DowntimeSection() {
         setNotice({ type: 'error', message: error.message || 'Unable to load downtime records.' })
         setRecords([])
         setSummary({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+        setLossEstimateBasis(null)
         setPagination({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       }
     } finally {
@@ -232,7 +245,7 @@ export default function DowntimeSection() {
         <article className="section-card stat-card">
           <p className="stat-label">Estimated Loss</p>
           <p className="stat-value">{summary.loss} pcs</p>
-          <p className="stat-helper">Based on downtime duration</p>
+          <p className="stat-helper">{formatLossBasis(lossEstimateBasis)}</p>
         </article>
       </div>
 

@@ -12,6 +12,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(24, 'JWT_SECRET must be at least 24 characters.').optional().or(z.literal('')),
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   ANALYTICS_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+  OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE: z.coerce.number().positive().max(100).default(0.05),
   IOT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   IOT_INGRESS_RATE_LIMIT: z.coerce.number().int().positive().default(300),
   IOT_DEVICE_RATE_LIMIT: z.coerce.number().int().positive().default(120),

@@ -5,7 +5,7 @@ export const analyticsTrendMetrics = [
   { id: 'production', label: 'Output', unit: 'pieces', shortUnit: 'pcs', metricKey: 'outputPieces', description: 'Production output pulses in each server-generated time bucket.' },
   { id: 'availability', label: 'Availability', unit: 'percent', shortUnit: '%', metricKey: 'availabilityPercent', description: 'Availability from the operational schedule and recorded downtime.' },
   { id: 'process-events', label: 'Process events', unit: 'events', shortUnit: 'events', metricKey: 'processEventCount', description: 'S-01, S-02, and S-04 pulse events in each server-generated time bucket.' },
-  { id: 'estimated-loss', label: 'Estimated loss', unit: 'pieces', shortUnit: 'pcs', metricKey: 'estimatedLossPieces', description: 'Estimated loss at the configured basis of 2.3 pcs per downtime minute.' },
+  { id: 'estimated-loss', label: 'Estimated loss', unit: 'pieces', shortUnit: 'pcs', metricKey: 'estimatedLossPieces', description: 'Estimated output during unplanned downtime using the current server-calculated production rate.' },
 ]
 
 export function getAnalyticsTrendMetric(metricId) {
@@ -24,13 +24,24 @@ export function getAnalyticsKpis(snapshot) {
   const downtimeEventHelper = eventCount === null || eventCount === undefined
     ? 'Event count not observed'
     : `${formatNumber(eventCount)} recorded event${eventCount === 1 ? '' : 's'}`
+  const lossBasis = snapshot.lossEstimateBasis
+  const lossBasisLabel = lossBasis.source === 'trailing-7-days'
+    ? 'Last 7 completed days'
+    : lossBasis.source === 'trailing-30-days'
+      ? 'Last 30 completed days'
+      : 'Configured fallback'
 
   return [
     { id: 'downtime', label: 'Downtime', value: formatMetricValue(summary.downtimeMinutes, 'min'), helper: downtimeEventHelper },
     { id: 'availability', label: 'Availability', value: formatMetricValue(summary.availabilityPercent, 'percent'), helper: 'Server-calculated operational availability' },
     { id: 'production', label: 'Output', value: formatMetricValue(summary.outputPieces, 'pcs'), helper: 'Recorded S-05 output pulses' },
     { id: 'process-events', label: 'Process events', value: formatMetricValue(summary.processEventCount, ''), helper: 'Recorded S-01, S-02, and S-04 pulses' },
-    { id: 'estimated-loss', label: 'Estimated loss', value: formatMetricValue(summary.estimatedLossPieces, 'pcs'), helper: 'Estimate based on 2.3 pcs per downtime minute' },
+    {
+      id: 'estimated-loss',
+      label: 'Estimated loss',
+      value: formatMetricValue(summary.estimatedLossPieces, 'pcs'),
+      helper: `${lossBasisLabel}: ${formatNumber(lossBasis.ratePiecesPerMinute)} pcs/min`,
+    },
   ]
 }
 

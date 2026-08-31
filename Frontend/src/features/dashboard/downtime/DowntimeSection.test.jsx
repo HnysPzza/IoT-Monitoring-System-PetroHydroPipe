@@ -89,6 +89,7 @@ describe('DowntimeSection', () => {
     getDowntimeRecords.mockResolvedValue({
       records: [downtimeRecord()],
       summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+      lossEstimateBasis: { source: 'trailing-30-days', ratePiecesPerMinute: 0.075 },
     })
 
     renderWithAuth(<DowntimeSection />)
@@ -103,6 +104,7 @@ describe('DowntimeSection', () => {
     expect(screen.getByText('Downtime review')).toBeInTheDocument()
     expect(screen.getByText('Estimated loss')).toBeInTheDocument()
     expect(screen.getAllByText('28 pcs').length).toBeGreaterThan(0)
+    expect(screen.getByText('Last 30 completed days: 0.075 pcs/min')).toBeInTheDocument()
     const causeSelect = screen.getByLabelText('Cause for S-03 08:42 AM')
     expect(causeSelect).toHaveValue('Pending Cause Review')
     expect(within(causeSelect).getByRole('option', { name: 'Misalignment' })).toBeInTheDocument()

@@ -5,14 +5,18 @@ const {
   intersectIntervals,
 } = require('./operationalTime')
 
-const DEFAULT_LOSS_PER_MINUTE = 2.3
-
 function toMinutes(seconds) {
   return Math.round(seconds / 60)
 }
 
-function calculateEstimatedLoss(unplannedSeconds, lossPerMinute = DEFAULT_LOSS_PER_MINUTE) {
-  return Math.round((unplannedSeconds / 60) * lossPerMinute)
+function calculateEstimatedLoss(unplannedSeconds, lossRatePiecesPerMinute) {
+  if (!Number.isFinite(lossRatePiecesPerMinute) || lossRatePiecesPerMinute <= 0) {
+    const error = new Error('Output loss rate must be a positive number.')
+    error.code = 'INVALID_OUTPUT_LOSS_RATE'
+    throw error
+  }
+
+  return Number(((unplannedSeconds / 60) * lossRatePiecesPerMinute).toFixed(2))
 }
 
 function toRecordInterval(record, asOf) {
@@ -23,7 +27,7 @@ function toRecordInterval(record, asOf) {
   return { start, end }
 }
 
-function calculateRecordMetrics({ record, window, settingsHistory, asOf }) {
+function calculateRecordMetrics({ record, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
   const breakdown = calculateDowntimeBreakdown({
     record,
     windowStart: window.start,
@@ -39,11 +43,11 @@ function calculateRecordMetrics({ record, window, settingsHistory, asOf }) {
     durationMinutes: toMinutes(breakdown.durationSeconds),
     unplannedMinutes: toMinutes(breakdown.unplannedSeconds),
     plannedExcludedMinutes: toMinutes(breakdown.plannedExcludedSeconds),
-    estimatedLoss: calculateEstimatedLoss(breakdown.unplannedSeconds),
+    estimatedLoss: calculateEstimatedLoss(breakdown.unplannedSeconds, lossRatePiecesPerMinute),
   }
 }
 
-function calculateMachineMetrics({ records, window, settingsHistory, asOf }) {
+function calculateMachineMetrics({ records, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
   const scheduledEligibleSeconds = getEligibleSeconds({
     start: window.start,
     end: window.end,
@@ -71,7 +75,7 @@ function calculateMachineMetrics({ records, window, settingsHistory, asOf }) {
     unplannedMinutes: toMinutes(downtime.unplannedSeconds),
     plannedExcludedMinutes: toMinutes(downtime.plannedExcludedSeconds),
     availabilityPercent,
-    estimatedLoss: calculateEstimatedLoss(downtime.unplannedSeconds),
+    estimatedLoss: calculateEstimatedLoss(downtime.unplannedSeconds, lossRatePiecesPerMinute),
   }
 }
 
@@ -87,7 +91,7 @@ function getAttribution(record) {
   }
 }
 
-function attributeMachineDowntime({ records, window, settingsHistory, asOf }) {
+function attributeMachineDowntime({ records, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
   const clipped = records.map((record) => {
     const interval = toRecordInterval(record, asOf)
     const overlap = interval && intersectIntervals(interval, window)
@@ -136,7 +140,7 @@ function attributeMachineDowntime({ records, window, settingsHistory, asOf }) {
     durationMinutes: toMinutes(row.durationSeconds),
     unplannedMinutes: toMinutes(row.unplannedSeconds),
     plannedExcludedMinutes: toMinutes(row.plannedExcludedSeconds),
-    estimatedLoss: calculateEstimatedLoss(row.unplannedSeconds),
+    estimatedLoss: calculateEstimatedLoss(row.unplannedSeconds, lossRatePiecesPerMinute),
   })).sort((left, right) => right.durationMinutes - left.durationMinutes)
 }
 

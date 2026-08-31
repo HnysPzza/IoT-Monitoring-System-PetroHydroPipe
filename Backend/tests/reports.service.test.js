@@ -4,6 +4,15 @@ const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const LOSS_BASIS = {
+  source: 'configured-fallback',
+  ratePiecesPerMinute: 0.05,
+  windowStartAt: '2026-07-10T16:00:00.000Z',
+  windowEndAt: '2026-08-09T16:00:00.000Z',
+  qualifiedProductionDays: 0,
+  productiveMinutes: 0,
+  outputPieces: 0,
+}
 const DEFAULT_HISTORY = [{
   machine_id: MACHINE_ID,
   version: '1',
@@ -116,6 +125,9 @@ function loadReportsService(fakeSupabase) {
   mockModule('src/database/client.js', {
     getSupabaseClient: () => fakeSupabase,
   })
+  mockModule('src/shared/outputLossBasis.js', {
+    getOutputLossBasis: async () => LOSS_BASIS,
+  })
   return require(path.join(backendRoot, 'src', 'modules', 'reports', 'reports.service.js'))
 }
 
@@ -214,8 +226,9 @@ test('report includes pre-window overlap, unions concurrent downtime, and exclud
     plannedExcludedMinutes: 480,
     scheduledEligibleMinutes: 540,
     availabilityPercent: 89,
-    estimatedLoss: 138,
+    estimatedLoss: 3,
   })
+  assert.deepEqual(report.lossEstimateBasis, LOSS_BASIS)
   assert.equal(report.rows.some((row) => row.cause === 'Concurrent causes'), true)
   const overlapQuery = fakeSupabase.queries.find((query) => query.tableName === 'downtime_events')
   assert.equal(overlapQuery.filters.some((filter) => filter.operator === 'gte' && filter.column === 'started_at'), false)
@@ -241,6 +254,7 @@ test('current report clips events and availability to elapsed eligible time', as
   const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-31' })
 
   assert.equal(report.periodState, 'partial')
+  assert.equal(report.generatedAt, '2026-08-31T04:00:00.000Z')
   assert.equal(report.observedEndAt, '2026-08-31T04:00:00.000Z')
   assert.equal(report.metrics.scheduledEligibleMinutes, 240)
   assert.equal(report.metrics.availabilityPercent, 75)

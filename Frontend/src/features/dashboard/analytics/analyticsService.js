@@ -5,6 +5,7 @@ const ANALYTICS_TIME_ZONE = 'Asia/Manila'
 const BUCKETS = new Set(['four-hour', 'daily', 'weekly', 'monthly'])
 const PERIOD_STATES = new Set(['future', 'partial', 'complete'])
 const ALIGNMENT_MODES = new Set(['ordinal-equal-duration-buckets', 'ordinal-calendar-segments'])
+const LOSS_BASIS_SOURCES = new Set(['trailing-7-days', 'trailing-30-days', 'configured-fallback'])
 const SUMMARY_METRICS = [
   'downtimeMinutes',
   'downtimeEventCount',
@@ -116,6 +117,26 @@ function isDateTimeOrNull(value) {
   return value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))
 }
 
+function isLossEstimateBasis(value) {
+  return Boolean(
+    value
+    && LOSS_BASIS_SOURCES.has(value.source)
+    && Number.isFinite(value.ratePiecesPerMinute)
+    && value.ratePiecesPerMinute > 0
+    && typeof value.windowStartAt === 'string'
+    && Number.isFinite(Date.parse(value.windowStartAt))
+    && typeof value.windowEndAt === 'string'
+    && Number.isFinite(Date.parse(value.windowEndAt))
+    && Date.parse(value.windowStartAt) < Date.parse(value.windowEndAt)
+    && Number.isInteger(value.qualifiedProductionDays)
+    && value.qualifiedProductionDays >= 0
+    && Number.isFinite(value.productiveMinutes)
+    && value.productiveMinutes >= 0
+    && Number.isInteger(value.outputPieces)
+    && value.outputPieces >= 0,
+  )
+}
+
 function isSummary(value, metricNames = SUMMARY_METRICS) {
   return value && metricNames.every((metric) => isMetricValue(metric, value[metric]))
 }
@@ -206,6 +227,7 @@ function isAnalyticsSnapshot(value) {
     && typeof value.generatedAt === 'string'
     && Number.isFinite(Date.parse(value.generatedAt))
     && value.timeZone === ANALYTICS_TIME_ZONE
+    && isLossEstimateBasis(value.lossEstimateBasis)
     && typeof value.coverage?.historicalHeartbeatAvailable === 'boolean'
     && typeof value.coverage.message === 'string'
     && (hasComparison || hasNoComparison)

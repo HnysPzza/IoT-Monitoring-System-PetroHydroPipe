@@ -568,7 +568,11 @@ export default function DashboardSection() {
           ) : chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
             <DowntimeChartSkeleton />
           ) : trendData.length > 0 ? (
-            <DowntimeTrendChart data={trendData} thresholdMinutes={downtimeImpact?.thresholdMinutes || 30} />
+            <DowntimeTrendChart
+              data={trendData}
+              thresholdMinutes={downtimeImpact?.thresholdMinutes || 30}
+              lossEstimateBasis={downtimeImpact?.lossEstimateBasis || null}
+            />
           ) : hasCurrentDowntimeChart ? (
             <p className="table-muted">No downtime data is available for this range.</p>
           ) : null}

@@ -117,7 +117,7 @@ function ChartTooltip({ active, payload, label }) {
   )
 }
 
-export default function DowntimeTrendChart({ data, thresholdMinutes = 30 }) {
+export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEstimateBasis = null }) {
   const observedPeriods = data.filter((item) => item.periodState !== 'future')
   const futurePeriodCount = data.length - observedPeriods.length
 
@@ -153,6 +153,17 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30 }) {
           <span role="listitem">{futurePeriodCount} future {futurePeriodCount === 1 ? 'period' : 'periods'} not reached</span>
         ) : null}
       </div>
+      {lossEstimateBasis ? (
+        <div className="downtime-threshold-note">
+          <span>
+            Estimated loss uses {lossEstimateBasis.source === 'trailing-7-days'
+              ? 'last 7 completed days'
+              : lossEstimateBasis.source === 'trailing-30-days'
+                ? 'last 30 completed days'
+                : 'configured fallback'}: {lossEstimateBasis.ratePiecesPerMinute} pcs/min.
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../../database/client')
+const env = require('../../config/env')
 const {
   addBusinessDays,
   addBusinessMonths,
@@ -17,6 +18,7 @@ const {
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
+const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
 const PROCESS_SENSOR_CODES = ['S-01', 'S-02', 'S-04']
 
@@ -56,8 +58,9 @@ function getObservedWindow(window, asOf) {
   return { periodState: 'complete', window }
 }
 
-function getUnobservedReport(type, date) {
+function getUnobservedReport(type, date, asOf) {
   return {
+    generatedAt: asOf.toISOString(),
     reportType: type,
     selectedDate: date,
     periodState: 'future',
@@ -130,31 +133,51 @@ async function getSummary({ type = 'daily', date } = {}) {
   const requestedWindow = getWindow(type, date)
   const observed = getObservedWindow(requestedWindow, asOf)
   const selectedDate = date || formatBusinessDate()
-  if (!observed.window) return getUnobservedReport(type, selectedDate)
+  if (!observed.window) return getUnobservedReport(type, selectedDate, asOf)
   const window = observed.window
-  const [eventSummary, downtimeRows, settingsHistory] = await Promise.all([
+  const [eventSummary, downtimeRows, settingsHistory, lossEstimateBasis] = await Promise.all([
     getEventSummary(machine.id, window),
     getOverlappingDowntime(machine.id, window),
     getSettingsHistory(machine.id, window),
+    getOutputLossBasis({
+      machineId: machine.id,
+      asOf,
+      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+    }),
   ])
-  const metrics = calculateMachineMetrics({ records: downtimeRows, window, settingsHistory, asOf })
-  const rows = attributeMachineDowntime({ records: downtimeRows, window, settingsHistory, asOf })
+  const lossRatePiecesPerMinute = lossEstimateBasis.ratePiecesPerMinute
+  const metrics = calculateMachineMetrics({
+    records: downtimeRows,
+    window,
+    settingsHistory,
+    asOf,
+    lossRatePiecesPerMinute,
+  })
+  const rows = attributeMachineDowntime({
+    records: downtimeRows,
+    window,
+    settingsHistory,
+    asOf,
+    lossRatePiecesPerMinute,
+  })
   const availabilityValue = metrics.availabilityPercent === null ? 'N/A' : `${metrics.availabilityPercent}%`
   const processEventTotal = eventSummary.processSensors.reduce((sum, sensor) => sum + sensor.eventCount, 0)
 
   return {
+    generatedAt: asOf.toISOString(),
     reportType: type,
     selectedDate,
     periodState: observed.periodState,
     observedStartAt: window.start.toISOString(),
     observedEndAt: window.end.toISOString(),
+    lossEstimateBasis,
     summary: [
       { id: 'production', label: 'Production Count', value: `${formatNumber(eventSummary.productionTotal)} pcs`, helper: `From ${machine.name}` },
       { id: 'process-events', label: 'Process Events', value: formatNumber(processEventTotal), helper: 'From S-01, S-02, and S-04 pulses' },
       { id: 'events', label: 'Downtime Events', value: String(downtimeRows.length), helper: 'Open and resolved events' },
       { id: 'duration', label: 'Downtime Duration', value: `${metrics.durationMinutes} min`, helper: `${metrics.unplannedMinutes} unplanned min` },
       { id: 'availability', label: 'Availability', value: availabilityValue, helper: 'Based on eligible production time' },
-      { id: 'loss', label: 'Estimated Loss', value: `${metrics.estimatedLoss} pcs`, helper: 'Based on unplanned downtime' },
+      { id: 'loss', label: 'Estimated Loss', value: `${metrics.estimatedLoss} pcs`, helper: `Using ${lossRatePiecesPerMinute} pcs per downtime minute` },
     ],
     metrics: {
       durationMinutes: metrics.durationMinutes,

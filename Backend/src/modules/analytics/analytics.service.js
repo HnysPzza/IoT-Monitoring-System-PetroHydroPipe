@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../../database/client')
+const env = require('../../config/env')
 const {
   BUSINESS_TIME_ZONE,
   addBusinessDays,
@@ -12,6 +13,7 @@ const {
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
+const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
 const DAY_MS = 86400000
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
@@ -182,12 +184,18 @@ function overlapsWindow(record, window, asOf) {
   return start < window.end && end > window.start
 }
 
-function buildDowntimeSensors(records, configuredSensors, window, settingsHistory, asOf) {
+function buildDowntimeSensors(records, configuredSensors, window, settingsHistory, asOf, lossRatePiecesPerMinute) {
   return configuredSensors.map((sensor) => {
     const sensorRecords = records.filter((record) => (
       getRecordSensorCode(record) === sensor.sensor_code && overlapsWindow(record, window, asOf)
     ))
-    const metrics = calculateMachineMetrics({ records: sensorRecords, window, settingsHistory, asOf })
+    const metrics = calculateMachineMetrics({
+      records: sensorRecords,
+      window,
+      settingsHistory,
+      asOf,
+      lossRatePiecesPerMinute,
+    })
     return {
       sensorCode: sensor.sensor_code,
       sensorLabel: sensor.label,
@@ -199,8 +207,22 @@ function buildDowntimeSensors(records, configuredSensors, window, settingsHistor
   ))
 }
 
-function buildMetrics(records, window, settingsHistory, asOf, eventRows, suppliedMetrics) {
-  const metrics = suppliedMetrics || calculateMachineMetrics({ records, window, settingsHistory, asOf })
+function buildMetrics(
+  records,
+  window,
+  settingsHistory,
+  asOf,
+  eventRows,
+  lossRatePiecesPerMinute,
+  suppliedMetrics,
+) {
+  const metrics = suppliedMetrics || calculateMachineMetrics({
+    records,
+    window,
+    settingsHistory,
+    asOf,
+    lossRatePiecesPerMinute,
+  })
   const counts = countEvents(eventRows)
   return {
     downtimeMinutes: metrics.durationMinutes,
@@ -212,7 +234,7 @@ function buildMetrics(records, window, settingsHistory, asOf, eventRows, supplie
   }
 }
 
-async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies }) {
+async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, lossRatePiecesPerMinute }) {
   if (range.api.periodState === 'future') {
     return {
       range: range.api,
@@ -243,8 +265,17 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     window: observedWindow,
     settingsHistory,
     asOf,
+    lossRatePiecesPerMinute,
   })
-  const summary = buildMetrics(downtimeRows, observedWindow, settingsHistory, asOf, eventRows, totalMetrics)
+  const summary = buildMetrics(
+    downtimeRows,
+    observedWindow,
+    settingsHistory,
+    asOf,
+    eventRows,
+    lossRatePiecesPerMinute,
+    totalMetrics,
+  )
   const reviewedDowntimeRows = downtimeRows.filter((record) => (
     record.cause && record.cause !== 'Pending Cause Review'
   ))
@@ -256,12 +287,14 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     window: observedWindow,
     settingsHistory,
     asOf,
+    lossRatePiecesPerMinute,
   })
   const pendingReviewMetrics = calculateMachineMetrics({
     records: pendingReviewRows,
     window: observedWindow,
     settingsHistory,
     asOf,
+    lossRatePiecesPerMinute,
   })
   const causeCoverage = {
     reviewedDurationMinutes: reviewedMetrics.durationMinutes,
@@ -276,6 +309,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     window: observedWindow,
     settingsHistory,
     asOf,
+    lossRatePiecesPerMinute,
   }).map((row) => ({
     cause: row.cause,
     eventCount: row.events,
@@ -288,6 +322,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
     observedWindow,
     settingsHistory,
     asOf,
+    lossRatePiecesPerMinute,
   )
   const trends = buildBuckets(range, bucketConfig, asOf).map((bucket) => {
     if (bucket.periodState === 'future') {
@@ -313,6 +348,7 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies })
         settingsHistory,
         asOf,
         rowsForBucket(eventRows, bucket, bucketConfig.bucket),
+        lossRatePiecesPerMinute,
       ),
     }
   })
@@ -366,9 +402,15 @@ async function getAnalytics(query, suppliedDependencies = {}) {
     getFirstRecordedAt: defaultGetFirstRecordedAt,
     getOverlappingDowntime,
     getSettingsHistory,
+    getOutputLossBasis,
     ...suppliedDependencies,
   }
   const machine = await dependencies.getMachineAndSensors()
+  const lossEstimateBasis = await dependencies.getOutputLossBasis({
+    machineId: machine.id,
+    asOf,
+    fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+  })
   const selectionMode = query.range === 'all' ? 'all' : 'dates'
   const today = formatBusinessDate(asOf)
   const firstRecordedAt = selectionMode === 'all'
@@ -401,17 +443,32 @@ async function getAnalytics(query, suppliedDependencies = {}) {
     comparisonAsOf,
     bucketConfig.bucket,
   )
-  const selectedPromise = buildPeriod({ machine, range: selectedRange, bucketConfig, asOf, dependencies })
+  const selectedPromise = buildPeriod({
+    machine,
+    range: selectedRange,
+    bucketConfig,
+    asOf,
+    dependencies,
+    lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+  })
   const [selected, comparison] = selectionMode === 'all'
     ? [await selectedPromise, null]
     : await Promise.all([
       selectedPromise,
-      buildPeriod({ machine, range: comparisonRange, bucketConfig, asOf: comparisonAsOf, dependencies }),
+      buildPeriod({
+        machine,
+        range: comparisonRange,
+        bucketConfig,
+        asOf: comparisonAsOf,
+        dependencies,
+        lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+      }),
     ])
 
   return {
     generatedAt: asOf.toISOString(),
     timeZone: BUSINESS_TIME_ZONE,
+    lossEstimateBasis,
     selectionMode,
     coverage: {
       historicalHeartbeatAvailable: false,

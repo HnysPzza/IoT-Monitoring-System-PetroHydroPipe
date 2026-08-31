@@ -4,6 +4,15 @@ const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const LOSS_BASIS = {
+  source: 'configured-fallback',
+  ratePiecesPerMinute: 0.05,
+  windowStartAt: '2026-06-13T16:00:00.000Z',
+  windowEndAt: '2026-07-13T16:00:00.000Z',
+  qualifiedProductionDays: 0,
+  productiveMinutes: 0,
+  outputPieces: 0,
+}
 const SETTINGS_HISTORY = [{
   machine_id: MACHINE_ID,
   version: '1',
@@ -122,6 +131,9 @@ function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = 
   clearSourceCache()
   const fakeSupabase = createFakeSupabase(records, calls)
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
+  mockModule('src/shared/outputLossBasis.js', {
+    getOutputLossBasis: async () => LOSS_BASIS,
+  })
   mockModule('src/modules/audit/audit.service.js', {
     recordAuditLog: async (entry) => auditLogs.push(entry),
   })
@@ -183,6 +195,8 @@ test('downtime list uses Manila day boundaries and returns pagination', async ()
     hasPreviousPage: true,
   })
   assert.equal(result.summary.open, 30)
+  assert.equal(result.summary.loss, 27)
+  assert.deepEqual(result.lossEstimateBasis, LOSS_BASIS)
   assert.equal(calls.find((call) => call.operation === 'lt').value, '2026-07-13T16:00:00.000Z')
   assert.match(calls.find((call) => call.operation === 'or').value, /ended_at\.gt\.2026-07-12T16:00:00\.000Z/)
   assert.match(result.records[0].displayLabel, /^S-04 12:00 AM$/)

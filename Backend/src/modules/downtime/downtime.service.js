@@ -1,10 +1,12 @@
 const { EventEmitter } = require('node:events')
 const { getSupabaseClient } = require('../../database/client')
+const env = require('../../config/env')
 const { formatBusinessTime, getBusinessDayRange } = require('../../shared/businessTime')
 const { calculateMachineMetrics, calculateRecordMetrics } = require('../../shared/operationalMetrics')
 const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
+const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
 const METRIC_PAGE_SIZE = 500
 const MANUAL_CAUSE_REVIEW_SENSOR_CODE = 'S-03'
@@ -95,7 +97,7 @@ function toDowntimeRecord(record, operationalMetrics) {
     isCauseEditable,
     needsCauseReview: isCauseEditable && cause === 'Pending Cause Review',
     notes: record.notes || '',
-    estimatedLoss: operationalMetrics?.estimatedLoss ?? Math.round(durationMinutes * 2.3),
+    estimatedLoss: operationalMetrics?.estimatedLoss ?? null,
   }
 }
 
@@ -167,7 +169,7 @@ function getRecordWindow(records, asOf) {
   return { start, end }
 }
 
-async function calculateListMetrics(records, dateRange, asOf) {
+async function calculateListMetrics(records, dateRange, asOf, lossEstimateBasis) {
   const recordMetrics = new Map()
   const machineTotals = []
   const recordsByMachine = new Map()
@@ -203,6 +205,7 @@ async function calculateListMetrics(records, dateRange, asOf) {
           window: recordWindow,
           settingsHistory,
           asOf,
+          lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
         }))
       }
     })
@@ -211,6 +214,7 @@ async function calculateListMetrics(records, dateRange, asOf) {
       window: dateRange || recordWindow,
       settingsHistory,
       asOf,
+      lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
     }))
   }
 
@@ -230,9 +234,16 @@ async function listDowntime(filters = {}) {
   const from = (page - 1) * limit
   const dateRange = filters.date ? getBusinessDayRange(filters.date) : null
   const allRecords = await getAllFilteredRecords(filters, dateRange)
+  const lossEstimateBasis = allRecords.length === 0
+    ? null
+    : await getOutputLossBasis({
+      machineId: allRecords[0].machine_id,
+      asOf,
+      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+    })
   const metrics = allRecords.length === 0
     ? { recordMetrics: new Map(), durationMinutes: 0, unplannedMinutes: 0, plannedExcludedMinutes: 0, estimatedLoss: 0 }
-    : await calculateListMetrics(allRecords, dateRange, asOf)
+    : await calculateListMetrics(allRecords, dateRange, asOf, lossEstimateBasis)
   const ordered = [...allRecords].sort((left, right) => (
     new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
   ))
@@ -244,6 +255,7 @@ async function listDowntime(filters = {}) {
 
   return {
     records,
+    lossEstimateBasis,
     summary: {
       open: allRecords.filter((record) => record.status === 'Open').length,
       resolved: allRecords.filter((record) => record.status === 'Resolved').length,

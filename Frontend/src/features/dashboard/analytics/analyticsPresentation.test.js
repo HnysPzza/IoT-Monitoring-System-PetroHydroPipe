@@ -20,7 +20,11 @@ describe('Analytics presentation helpers', () => {
       expect.objectContaining({ id: 'availability', value: '91%' }),
       expect.objectContaining({ id: 'production', value: '595 pcs' }),
       expect.objectContaining({ id: 'process-events', value: '5' }),
-      expect.objectContaining({ id: 'estimated-loss', value: '299 pcs' }),
+      expect.objectContaining({
+        id: 'estimated-loss',
+        value: '6.5 pcs',
+        helper: 'Configured fallback: 0.05 pcs/min',
+      }),
     ])
     expect(formatAnalyticsTrendValue(91, { unit: 'percent' })).toBe('91%')
   })

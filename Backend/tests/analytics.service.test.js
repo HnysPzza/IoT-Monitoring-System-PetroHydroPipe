@@ -2,6 +2,15 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const LOSS_BASIS = {
+  source: 'configured-fallback',
+  ratePiecesPerMinute: 0.05,
+  windowStartAt: '2026-07-04T16:00:00.000Z',
+  windowEndAt: '2026-08-03T16:00:00.000Z',
+  qualifiedProductionDays: 0,
+  productiveMinutes: 0,
+  outputPieces: 0,
+}
 const settingsHistory = [{
   machine_id: MACHINE_ID,
   version: '1',
@@ -28,6 +37,7 @@ function createDependencies({ eventRows = [], downtimeRows = [] } = {}) {
         ],
       }),
       getFirstRecordedAt: async () => new Date('2024-01-15T03:00:00.000Z'),
+      getOutputLossBasis: async () => LOSS_BASIS,
       aggregateEvents: async (machineId, window, bucketSeconds) => {
         aggregationCalls.push({ machineId, window, bucketSeconds })
         return eventRows.filter((row) => {
@@ -76,6 +86,7 @@ test('Analytics compares a partial Manila range with the matching elapsed preced
   assert.equal(result.selected.trends.at(-1).metrics.availabilityPercent, null)
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 86400), true)
   assert.equal(result.coverage.historicalHeartbeatAvailable, false)
+  assert.deepEqual(result.lossEstimateBasis, LOSS_BASIS)
 })
 
 test('Analytics preserves measured zero but returns null for a future-only selected range', async () => {
@@ -110,7 +121,7 @@ test('Analytics unions concurrent downtime and keeps zero-eligible availability 
 
   const result = await getAnalytics({ startDate: '2026-08-02', endDate: '2026-08-03' }, dependencies)
   assert.equal(result.selected.summary.downtimeMinutes, 90)
-  assert.equal(result.selected.summary.estimatedLossPieces, 207)
+  assert.equal(result.selected.summary.estimatedLossPieces, 4.5)
   assert.equal(result.selected.trends[0].metrics.availabilityPercent, null)
   assert.equal(result.selected.downtimeCauses.some((row) => row.cause === 'Concurrent causes'), true)
   assert.deepEqual(result.selected.downtimeSensors.slice(0, 2).map(({ sensorCode, durationMinutes }) => ({ sensorCode, durationMinutes })), [

@@ -3,6 +3,7 @@ const test = require('node:test')
 
 const {
   attributeMachineDowntime,
+  calculateEstimatedLoss,
   calculateMachineMetrics,
   calculateRecordMetrics,
 } = require('../src/shared/operationalMetrics')
@@ -32,6 +33,7 @@ test('record metrics preserve raw time while excluding breaks and grace from los
     window,
     settingsHistory,
     asOf: window.end,
+    lossRatePiecesPerMinute: 0.05,
   })
 
   assert.deepEqual(result, {
@@ -41,7 +43,7 @@ test('record metrics preserve raw time while excluding breaks and grace from los
     durationMinutes: 120,
     unplannedMinutes: 50,
     plannedExcludedMinutes: 70,
-    estimatedLoss: 115,
+    estimatedLoss: 2.5,
   })
 })
 
@@ -54,13 +56,14 @@ test('machine metrics union overlapping sensors and use eligible schedule as den
     window,
     settingsHistory,
     asOf: window.end,
+    lossRatePiecesPerMinute: 0.05,
   })
 
   assert.equal(result.durationMinutes, 180)
   assert.equal(result.unplannedMinutes, 180)
   assert.equal(result.scheduledEligibleSeconds, 8 * 60 * 60 + 50 * 60)
   assert.equal(result.availabilityPercent, 66)
-  assert.equal(result.estimatedLoss, 414)
+  assert.equal(result.estimatedLoss, 9)
 })
 
 test('zero eligible schedule returns null availability instead of a false 100 percent', () => {
@@ -73,6 +76,7 @@ test('zero eligible schedule returns null availability instead of a false 100 pe
     window: offShiftWindow,
     settingsHistory,
     asOf: offShiftWindow.end,
+    lossRatePiecesPerMinute: 0.05,
   })
 
   assert.equal(result.scheduledEligibleSeconds, 0)
@@ -100,6 +104,7 @@ test('overlap attribution creates a concurrent row without double-counting the m
     window,
     settingsHistory,
     asOf: window.end,
+    lossRatePiecesPerMinute: 0.05,
   })
 
   assert.deepEqual(rows.map(({ cause, sensor, durationMinutes }) => ({ cause, sensor, durationMinutes })), [
@@ -108,4 +113,12 @@ test('overlap attribution creates a concurrent row without double-counting the m
     { cause: 'ID Filler Refill', sensor: 'S-02', durationMinutes: 60 },
   ])
   assert.equal(rows.reduce((sum, row) => sum + row.durationMinutes, 0), 180)
+})
+
+test('estimated loss preserves fractional pieces and rejects an invalid rate', () => {
+  assert.equal(calculateEstimatedLoss(9 * 60, 0.05), 0.45)
+  assert.throws(
+    () => calculateEstimatedLoss(60, Number.NaN),
+    { code: 'INVALID_OUTPUT_LOSS_RATE' },
+  )
 })

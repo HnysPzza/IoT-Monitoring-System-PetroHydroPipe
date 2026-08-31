@@ -85,3 +85,19 @@ test('watchdog timing relationships fail fast at startup', () => {
     }, (loadEnv) => assert.throws(loadEnv, pattern))
   }
 })
+
+test('output loss fallback rate accepts positive decimals and rejects zero', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE: '0.05',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE, 0.05)
+  })
+
+  withEnvironment({
+    NODE_ENV: 'test',
+    OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE: '0',
+  }, (loadEnv) => {
+    assert.throws(loadEnv, /OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE/)
+  })
+})

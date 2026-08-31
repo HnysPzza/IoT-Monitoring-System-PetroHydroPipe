@@ -5,10 +5,22 @@ const { addBusinessDays, startOfBusinessDay } = require('../src/shared/businessT
 
 const backendRoot = path.resolve(__dirname, '..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const LOSS_BASIS = {
+  source: 'configured-fallback',
+  ratePiecesPerMinute: 0.05,
+  windowStartAt: '2026-08-01T16:00:00.000Z',
+  windowEndAt: '2026-08-31T16:00:00.000Z',
+  qualifiedProductionDays: 0,
+  productiveMinutes: 0,
+  outputPieces: 0,
+}
 
 function clearSourceCache() {
   Object.keys(require.cache).forEach((cacheKey) => {
     if (cacheKey.startsWith(path.join(backendRoot, 'src'))) delete require.cache[cacheKey]
+  })
+  mockModule('src/shared/outputLossBasis.js', {
+    getOutputLossBasis: async () => LOSS_BASIS,
   })
 }
 
@@ -166,10 +178,11 @@ test('dashboard downtime impact includes pre-window events and uses break-aware 
     minutes: 150,
     unplannedMinutes: 30,
     plannedExcludedMinutes: 120,
-    estimatedLoss: 69,
+    estimatedLoss: 1.5,
     cause: 'Flux Refill',
     causeReviewPending: false,
   })
+  assert.deepEqual(result.lossEstimateBasis, LOSS_BASIS)
 })
 
 test('current-day downtime appears only in its interval and future periods remain unobserved', async (t) => {

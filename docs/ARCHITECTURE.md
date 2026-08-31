@@ -282,6 +282,16 @@ The backend uses S-05 Output Cutting pulse events as the single source for both 
 
 When yesterday is zero, the API returns a null percentage so the frontend displays a no-baseline state instead of a misleading zero-percent change. Day, week, and month selectors remain available for downtime analysis only.
 
+### Estimated Output Loss
+
+Estimated output loss is a counterfactual calculation, not a directly measured sensor value. The backend resolves one current production-rate basis per request and applies it to unplanned downtime across Analytics, Overview, Reports, and Downtime.
+
+The rate uses recorded S-05 output divided by productive minutes. Productive minutes are scheduled eligible minutes minus unioned unplanned downtime, so breaks, grace periods, and overlapping downtime are not double-counted. Only fully completed Manila days with recorded S-05 output qualify.
+
+The backend uses the previous seven completed days when the sample contains at least three qualified production days, 360 productive minutes, and 10 output pieces. It expands to 30 completed days when the seven-day sample is insufficient. If both samples are insufficient, it uses `OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE`, which defaults to `0.05` pieces per minute (one piece per 20 minutes).
+
+API responses include the source, rate, window, qualified day count, productive minutes, and recorded output used for the estimate. Existing sensor and downtime history is never rewritten. Historical heartbeat completeness remains unavailable, so zero-output days are not treated as proven production observations, and S-05 absence detection remains prohibited.
+
 ### Manual Sensor Recovery Override
 
 Physical `pulse` and `recovered` events remain the normal authority for sensor recovery. Production administrators may use a separate manual recovery override when the physical issue has been verified but the recovery event is unavailable.

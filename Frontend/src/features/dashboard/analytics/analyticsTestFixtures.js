@@ -1,10 +1,10 @@
 // Deterministic API-shaped Analytics data used only by tests.
 const selectedTrends = [
-  ['2026-08-10', 43, 93, 118, 1, 98.9],
-  ['2026-08-11', 18, 95, 122, 1, 41.4],
-  ['2026-08-12', 26, 90, 111, 1, 59.8],
-  ['2026-08-13', 31, 90, 125, 1, 71.3],
-  ['2026-08-14', 12, 92, 119, 1, 27.6],
+  ['2026-08-10', 43, 93, 118, 1, 2.15],
+  ['2026-08-11', 18, 95, 122, 1, 0.9],
+  ['2026-08-12', 26, 90, 111, 1, 1.3],
+  ['2026-08-13', 31, 90, 125, 1, 1.55],
+  ['2026-08-14', 12, 92, 119, 1, 0.6],
   ['2026-08-15', 0, null, 0, 0, 0],
   ['2026-08-16', null, null, null, null, null],
 ].map(([date, downtimeMinutes, availabilityPercent, outputPieces, processEventCount, estimatedLossPieces]) => ({
@@ -26,7 +26,7 @@ const comparisonTrends = selectedTrends.map((trend, index) => ({
     availabilityPercent: index < 5 ? 93 : null,
     outputPieces: index < 5 ? 110 : 0,
     processEventCount: index < 5 ? 1 : 0,
-    estimatedLossPieces: index < 5 ? 46 : 0,
+    estimatedLossPieces: index < 5 ? 1 : 0,
   },
 }))
 
@@ -47,6 +47,15 @@ const processSensors = [
 export const analyticsTestFixture = {
   generatedAt: '2026-08-15T12:00:00+08:00',
   timeZone: 'Asia/Manila',
+  lossEstimateBasis: {
+    source: 'configured-fallback',
+    ratePiecesPerMinute: 0.05,
+    windowStartAt: '2026-07-16T16:00:00.000Z',
+    windowEndAt: '2026-08-15T16:00:00.000Z',
+    qualifiedProductionDays: 2,
+    productiveMinutes: 240,
+    outputPieces: 8,
+  },
   selectionMode: 'dates',
   coverage: {
     historicalHeartbeatAvailable: false,
@@ -65,7 +74,7 @@ export const analyticsTestFixture = {
     },
     summary: {
       downtimeMinutes: 130, downtimeEventCount: 5, availabilityPercent: 91,
-      outputPieces: 595, processEventCount: 5, estimatedLossPieces: 299,
+      outputPieces: 595, processEventCount: 5, estimatedLossPieces: 6.5,
     },
     causeCoverage: {
       reviewedDurationMinutes: 130, pendingReviewDurationMinutes: 0,
@@ -73,9 +82,9 @@ export const analyticsTestFixture = {
     },
     trends: selectedTrends,
     downtimeCauses: [
-      { cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 61, estimatedLossPieces: 140 },
-      { cause: 'Consumable Shortage', eventCount: 1, durationMinutes: 38, estimatedLossPieces: 87 },
-      { cause: 'Manual Cutting', eventCount: 2, durationMinutes: 31, estimatedLossPieces: 71 },
+      { cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 61, estimatedLossPieces: 3.05 },
+      { cause: 'Consumable Shortage', eventCount: 1, durationMinutes: 38, estimatedLossPieces: 1.9 },
+      { cause: 'Manual Cutting', eventCount: 2, durationMinutes: 31, estimatedLossPieces: 1.55 },
     ],
     downtimeSensors,
     processSensors,
@@ -88,7 +97,7 @@ export const analyticsTestFixture = {
     },
     summary: {
       downtimeMinutes: 100, downtimeEventCount: 5, availabilityPercent: 93,
-      outputPieces: 550, processEventCount: 5, estimatedLossPieces: 230,
+      outputPieces: 550, processEventCount: 5, estimatedLossPieces: 5,
     },
     causeCoverage: {
       reviewedDurationMinutes: 100, pendingReviewDurationMinutes: 0,

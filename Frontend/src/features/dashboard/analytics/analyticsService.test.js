@@ -138,6 +138,13 @@ describe('Analytics API service', () => {
           )),
         },
       },
+      {
+        ...analyticsTestResponse.analytics,
+        lossEstimateBasis: {
+          ...analyticsTestResponse.analytics.lossEstimateBasis,
+          ratePiecesPerMinute: '0.05',
+        },
+      },
     ]
 
     for (const analytics of malformedResponses) {

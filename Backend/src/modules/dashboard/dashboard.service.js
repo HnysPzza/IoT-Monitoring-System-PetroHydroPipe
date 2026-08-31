@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../../database/client')
+const env = require('../../config/env')
 const {
   addBusinessDays,
   addBusinessMonths,
@@ -17,6 +18,7 @@ const {
 const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
+const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
 const DOWNTIME_THRESHOLD_MINUTES = 30
 
@@ -241,7 +243,7 @@ async function buildProductionAnalytics(machineId, anchorDate, asOf) {
   }
 }
 
-function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
+function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf, lossEstimateBasis) {
   const window = getWindowForMode(mode, anchorDate)
   const boundaries = mode === 'today'
     ? getDailyDowntimeBoundaries(window, asOf)
@@ -249,6 +251,7 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
 
   return {
     thresholdMinutes: DOWNTIME_THRESHOLD_MINUTES,
+    lossEstimateBasis,
     points: boundaries.map((boundary) => {
       if (boundary.periodState === 'future') {
         return {
@@ -267,6 +270,7 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
         window: boundary,
         settingsHistory,
         asOf,
+        lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
       })
       const reviewedRows = rows.filter((row) => row.cause && row.cause !== 'Pending Cause Review')
       const pendingReviewRows = rows.filter((row) => !row.cause || row.cause === 'Pending Cause Review')
@@ -275,12 +279,14 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
         window: boundary,
         settingsHistory,
         asOf,
+        lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
       })
       const pendingReview = attributeMachineDowntime({
         records: pendingReviewRows,
         window: boundary,
         settingsHistory,
         asOf,
+        lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
       })
 
       return {
@@ -328,12 +334,24 @@ async function getOverview(filters = {}) {
   const { machine, sensors } = await getMachineAndSensors()
   const todayWindow = getWindowForMode('today', startOfBusinessDay())
   const trendWindow = getWindowForMode(mode, anchorDate)
-  const [todayDowntimeRows, trendDowntimeRows, todaySettingsHistory, trendSettingsHistory, productionAnalytics] = await Promise.all([
+  const [
+    todayDowntimeRows,
+    trendDowntimeRows,
+    todaySettingsHistory,
+    trendSettingsHistory,
+    productionAnalytics,
+    lossEstimateBasis,
+  ] = await Promise.all([
     getOverlappingDowntime(machine.id, todayWindow),
     getOverlappingDowntime(machine.id, trendWindow),
     getSettingsHistory(machine.id, todayWindow),
     getSettingsHistory(machine.id, trendWindow),
     buildProductionAnalytics(machine.id, todayWindow.start, asOf),
+    getOutputLossBasis({
+      machineId: machine.id,
+      asOf,
+      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+    }),
   ])
 
   const productionToday = productionAnalytics.day.currentTotal
@@ -346,6 +364,7 @@ async function getOverview(filters = {}) {
     window: observedTodayWindow,
     settingsHistory: todaySettingsHistory,
     asOf,
+    lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
   })
   const openDowntimeCount = todayDowntimeRows.filter((row) => row.status === 'Open').length
   const availabilityValue = todayMetrics.availabilityPercent === null
@@ -361,7 +380,14 @@ async function getOverview(filters = {}) {
       { id: 'availability', label: 'Machine Availability', value: availabilityValue, tone: 'primary', helper: `For ${machine.name}` },
     ],
     productionAnalytics,
-    downtimeImpact: buildDowntimeImpact(trendDowntimeRows, mode, anchorDate, trendSettingsHistory, asOf),
+    downtimeImpact: buildDowntimeImpact(
+      trendDowntimeRows,
+      mode,
+      anchorDate,
+      trendSettingsHistory,
+      asOf,
+      lossEstimateBasis,
+    ),
     unreadAlerts: buildAlerts(machine, sensors, todayDowntimeRows).length,
   }
 }
@@ -372,12 +398,24 @@ async function getDowntimeImpact(filters = {}) {
   const anchorDate = parseAnchorDate(filters.date)
   const { machine } = await getMachineAndSensors()
   const trendWindow = getWindowForMode(mode, anchorDate)
-  const [trendDowntimeRows, settingsHistory] = await Promise.all([
+  const [trendDowntimeRows, settingsHistory, lossEstimateBasis] = await Promise.all([
     getOverlappingDowntime(machine.id, trendWindow),
     getSettingsHistory(machine.id, trendWindow),
+    getOutputLossBasis({
+      machineId: machine.id,
+      asOf,
+      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+    }),
   ])
 
-  return buildDowntimeImpact(trendDowntimeRows, mode, anchorDate, settingsHistory, asOf)
+  return buildDowntimeImpact(
+    trendDowntimeRows,
+    mode,
+    anchorDate,
+    settingsHistory,
+    asOf,
+    lossEstimateBasis,
+  )
 }
 
 module.exports = {

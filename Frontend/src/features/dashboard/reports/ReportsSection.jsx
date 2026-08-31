@@ -4,10 +4,10 @@ import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { getReportSummary, reportTypes } from './reportsService.js'
 
-function toCsv(rows) {
+function toCsv(report) {
   // Escapes quote characters so exported CSV stays valid.
   const headers = ['Cause', 'Sensor', 'Events', 'Duration Minutes', 'Estimated Loss']
-  const body = rows.map((row) => [
+  const body = report.rows.map((row) => [
     row.cause,
     row.sensor,
     row.events,
@@ -15,13 +15,21 @@ function toCsv(rows) {
     row.estimatedLoss,
   ])
 
-  return [headers, ...body]
+  const metadata = [
+    `Generated At,${report.generatedAt || 'Not recorded'}`,
+    `Loss Rate Source,${report.lossEstimateBasis?.source || 'Not available'}`,
+    `Loss Rate Pieces Per Minute,${report.lossEstimateBasis?.ratePiecesPerMinute ?? 'Not available'}`,
+    '',
+  ]
+  const table = [headers, ...body]
     .map((cells) => cells.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
     .join('\n')
+
+  return [...metadata, table].join('\n')
 }
 
-function downloadCsv(filename, rows) {
-  const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' })
+function downloadCsv(filename, report) {
+  const blob = new Blob([toCsv(report)], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -195,7 +203,7 @@ export default function ReportsSection() {
             className="btn btn-primary reports-action"
             type="button"
             disabled={!isCurrentSuccess || report?.periodState === 'future'}
-            onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report.rows)}
+            onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report)}
           >
             <Download size={17} aria-hidden="true" />
             Export CSV
