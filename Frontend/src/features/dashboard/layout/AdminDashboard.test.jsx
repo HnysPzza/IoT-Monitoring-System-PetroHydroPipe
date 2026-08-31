@@ -829,10 +829,12 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('ignores stream callbacks from the previous token session', async () => {
+    const firstRequest = deferred()
+    const secondRequest = deferred()
     const handlersByToken = new Map()
     getAlerts
-      .mockResolvedValueOnce(alertSnapshot([activeAlert()]))
-      .mockResolvedValueOnce(alertSnapshot([], '1'))
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
     subscribeToAlerts.mockImplementation((streamToken, handlers) => {
       handlersByToken.set(streamToken, handlers)
       return vi.fn()
@@ -852,10 +854,18 @@ describe('AdminDashboard alerts', () => {
     }
 
     const view = render(renderTree('first-token'))
-    expect(await screen.findByRole('button', { name: /open alerts, 1 active/i })).toBeInTheDocument()
+    await act(async () => {
+      firstRequest.resolve(alertSnapshot([activeAlert()]))
+      await firstRequest.promise
+    })
+    expect(screen.getByRole('button', { name: /open alerts, 1 active/i })).toBeInTheDocument()
 
     view.rerender(renderTree('second-token'))
-    expect(await screen.findByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
+    await act(async () => {
+      secondRequest.resolve(alertSnapshot([], '1'))
+      await secondRequest.promise
+    })
+    expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
 
     act(() => {
       handlersByToken.get('first-token').onEvent({
@@ -1035,4 +1045,3 @@ describe('AdminDashboard alerts', () => {
     expect(toggleButton.querySelector('.theme-toggle-icon.is-moon')).toBeInTheDocument()
   })
 })
-
