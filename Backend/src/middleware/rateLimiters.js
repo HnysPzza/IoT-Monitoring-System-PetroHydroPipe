@@ -49,7 +49,7 @@ const iotIngressRateLimiter = rateLimit({
 })
 
 // This second layer can trust the database-backed sensor id established by authentication.
-// Esp base checking 
+// Esp base checking
 const iotVerifiedDeviceRateLimiter = rateLimit({
   windowMs: env.IOT_RATE_LIMIT_WINDOW_MS,
   limit: env.IOT_DEVICE_RATE_LIMIT,

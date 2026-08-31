@@ -39,7 +39,7 @@ import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
 const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
 const SIDEBAR_SCROLL_ACTIVE_MS = 500 // transition duration active window for sidebar scroll animations
-const ALERT_STREAM_EVENT_TYPES = new Set([ //event filtering SSE 
+const ALERT_STREAM_EVENT_TYPES = new Set([ //event filtering SSE
   'alert.acknowledged',
   'alert.created',
   'alert.resolved',

@@ -73,7 +73,7 @@ function admitSseConnection(req, res, next) {
     removePreStreamListeners()
     req.sseConnectionHandoff = null
   }
-  //check the socket state if flag run immediate health check 
+  //check the socket state if flag run immediate health check
   //if not run next() downstream controller takes over
   req.once('aborted', releaseBeforeStreamSetup)
   res.once('close', releaseBeforeStreamSetup)
