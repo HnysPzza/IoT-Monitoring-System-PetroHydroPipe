@@ -183,7 +183,7 @@ Regression evidence covers disabled S-01 during production and a planned break, 
 | Frontend production dependency audit | 0 vulnerabilities |
 | `git diff --check` | Passed |
 | Token-session stream regression | 34/34 passed in five consecutive focused runs after deterministic synchronization |
-| Branch integration check | No textual conflict with current `origin/main`; branch synchronization and final post-merge gates still required |
+| Branch integration check | Synchronized with `origin/main` without conflicts; backend 291/291, frontend 250/250, and production build passed afterward |
 
 Heavy frontend and PGlite suites were run sequentially to avoid Windows worker starvation. All final gates passed. Hosted migration `023` application and live device traffic remain deployment checks because no physical ESP32 nodes are integrated.
 
