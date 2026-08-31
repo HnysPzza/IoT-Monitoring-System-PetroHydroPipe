@@ -125,6 +125,27 @@ test('Phase 3 operations docs preserve the safe activation boundary', () => {
   assert.match(docs.plan, /Backend full suite: `node --test --test-concurrency=2 tests\/\*\.test\.js tests\/contracts\/\*\.test\.js` - 224 passed, 0 failed/i)
 })
 
+test('device docs keep schedules server-owned and heartbeats independent from production', () => {
+  const root = path.resolve(__dirname, '../../..')
+  const architecture = fs.readFileSync(path.join(root, 'docs/ARCHITECTURE.md'), 'utf8')
+  const tdd = fs.readFileSync(path.join(root, 'docs/TDD.md'), 'utf8')
+
+  for (const content of [architecture, tdd]) {
+    assert.match(content, /No physical ESP32.*integrated/i)
+    assert.match(content, /backend.*authoritative.*shift.*break/i)
+    assert.match(content, /heartbeats.*independent.*production pulses/i)
+    assert.match(content, /must not.*store.*schedule/i)
+    assert.match(content, /must not.*downtime.*merely because.*pulse/i)
+    assert.match(content, /explicit.*fault.*during.*break.*record/i)
+    assert.match(content, /S-05.*absence detection.*prohibited/i)
+  }
+
+  assert.match(tdd, /Normal production sequence/i)
+  assert.match(tdd, /Planned break sequence/i)
+  assert.match(tdd, /Genuine fault sequence/i)
+  assert.match(tdd, /POST `?\/api\/iot\/heartbeats`?/i)
+})
+
 test('Phase 2 documents preserve the approved machine-settings boundary', () => {
   const phaseTwoPlanPath = path.resolve(
     __dirname,

@@ -47,6 +47,30 @@ test('record metrics preserve raw time while excluding breaks and grace from los
   })
 })
 
+test('explicit break-time fault remains raw history but contributes no unplanned loss', () => {
+  const result = calculateRecordMetrics({
+    record: {
+      detection_source: 'sensor_event',
+      started_at: '2026-08-24T04:05:00.000Z',
+      ended_at: '2026-08-24T04:55:00.000Z',
+    },
+    window,
+    settingsHistory,
+    asOf: window.end,
+    lossRatePiecesPerMinute: 0.05,
+  })
+
+  assert.deepEqual(result, {
+    durationSeconds: 3000,
+    unplannedSeconds: 0,
+    plannedExcludedSeconds: 3000,
+    durationMinutes: 50,
+    unplannedMinutes: 0,
+    plannedExcludedMinutes: 50,
+    estimatedLoss: 0,
+  })
+})
+
 test('machine metrics union overlapping sensors and use eligible schedule as denominator', () => {
   const result = calculateMachineMetrics({
     records: [

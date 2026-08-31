@@ -10,6 +10,10 @@ const migrationSql = fs.readFileSync(
   path.join(backendRoot, 'database', 'migrations', '012_add_atomic_watchdog_transitions.sql'),
   'utf8',
 )
+const noPulseFixMigrationSql = fs.readFileSync(
+  path.join(backendRoot, 'database', 'migrations', '023_route_no_pulse_through_watchdog.sql'),
+  'utf8',
+)
 
 const actorId = '20000000-0000-4000-8000-000000000099'
 
@@ -225,6 +229,13 @@ test('break and post-break grace reset pre-trigger accumulation', async (t) => {
     baseline: '2026-08-21T01:59:00Z',
   })
 
+  const noPulse = await db.query(`select * from public.ingest_iot_sensor_event(
+    gen_random_uuid(), $1, $2, 'downtime', '{"signal":"no_pulse"}', '2026-08-21T02:10:00Z'
+  )`, [ids.sensor_id, ids.machine_id])
+  assert.equal(noPulse.rows[0].downtime_action, null)
+  let count = await db.query('select count(*)::integer as count from public.downtime_events')
+  assert.equal(count.rows[0].count, 0)
+
   const duringGrace = await evaluate(db, ids.sensor_id, '2026-08-21T02:20:00Z')
   assert.equal(duringGrace.rows[0].detection_state, 'suspended')
   await setRuntime(db, ids.sensor_id, {
@@ -234,8 +245,28 @@ test('break and post-break grace reset pre-trigger accumulation', async (t) => {
   })
   const afterGrace = await evaluate(db, ids.sensor_id, '2026-08-21T02:26:00Z')
   assert.equal(afterGrace.rows[0].detection_state, 'grace')
-  const count = await db.query('select count(*)::integer as count from public.downtime_events')
+  count = await db.query('select count(*)::integer as count from public.downtime_events')
   assert.equal(count.rows[0].count, 0)
+})
+
+test('explicit physical fault during a planned break remains recorded', async (t) => {
+  const db = await createDatabase()
+  t.after(() => db.close())
+  await db.exec(migrationSql)
+  const ids = await enableSensor(db, 'S-01', 120, 30)
+
+  const fault = await db.query(`select * from public.ingest_iot_sensor_event(
+    gen_random_uuid(), $1, $2, 'fault', '{"signal":"fault"}', '2026-08-21T02:05:00Z'
+  )`, [ids.sensor_id, ids.machine_id])
+
+  assert.equal(fault.rows[0].downtime_action, 'created')
+  const { rows } = await db.query(`
+    select started_at, detection_source, status from public.downtime_events
+  `)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].started_at.toISOString(), '2026-08-21T02:05:00.000Z')
+  assert.equal(rows[0].detection_source, 'sensor_event')
+  assert.equal(rows[0].status, 'Open')
 })
 
 test('enabled no-pulse observation cannot bypass threshold while explicit fault remains immediate', async (t) => {
@@ -258,6 +289,79 @@ test('enabled no-pulse observation cannot bypass threshold while explicit fault 
   assert.equal(fault.rows[0].downtime_action, 'created')
   const { rows } = await db.query('select detection_source from public.downtime_events')
   assert.deepEqual(rows, [{ detection_source: 'sensor_event' }])
+})
+
+test('disabled no-pulse ingestion remains observational during production and a planned break', async (t) => {
+  const db = await createDatabase()
+  t.after(() => db.close())
+  await db.exec(migrationSql)
+  await db.exec(noPulseFixMigrationSql)
+  await db.exec(noPulseFixMigrationSql)
+  const ids = await getIds(db, 'S-01')
+
+  const observations = [
+    ['50000000-0000-4000-8000-000000000021', '2026-08-21T01:00:00Z'],
+    ['50000000-0000-4000-8000-000000000022', '2026-08-21T02:05:00Z'],
+  ]
+  for (const [eventId, recordedAt] of observations) {
+    const result = await db.query(`select * from public.ingest_iot_sensor_event(
+      $1, $2, $3, 'downtime', '{"signal":"no_pulse"}', $4
+    )`, [eventId, ids.sensor_id, ids.machine_id, recordedAt])
+    assert.equal(result.rows[0].state_applied, true)
+    assert.equal(result.rows[0].downtime_action, null)
+    assert.equal(result.rows[0].alert_action, null)
+  }
+
+  const duplicate = await db.query(`select * from public.ingest_iot_sensor_event(
+    $1, $2, $3, 'downtime', '{"signal":"no_pulse"}', $4
+  )`, [observations[0][0], ids.sensor_id, ids.machine_id, observations[0][1]])
+  assert.equal(duplicate.rows[0].duplicate, true)
+  assert.equal(duplicate.rows[0].state_applied, false)
+
+  const stale = await db.query(`select * from public.ingest_iot_sensor_event(
+    '50000000-0000-4000-8000-000000000023', $1, $2,
+    'downtime', '{"signal":"no_pulse"}', '2026-08-21T00:59:00Z'
+  )`, [ids.sensor_id, ids.machine_id])
+  assert.equal(stale.rows[0].stale, true)
+  assert.equal(stale.rows[0].state_applied, false)
+
+  const { rows } = await db.query(`
+    select
+      (select count(*) from public.sensor_events)::integer as event_count,
+      (select count(*) from public.downtime_events)::integer as downtime_count,
+      (select count(*) from public.alerts)::integer as alert_count
+  `)
+  assert.deepEqual(rows[0], { event_count: 3, downtime_count: 0, alert_count: 0 })
+
+  await db.exec('set role authenticated;')
+  await assert.rejects(
+    db.query(`select * from public.ingest_iot_sensor_event(
+      gen_random_uuid(), $1, $2, 'downtime', '{"signal":"no_pulse"}', '2026-08-21T03:00:00Z'
+    )`, [ids.sensor_id, ids.machine_id]),
+    /permission denied/,
+  )
+  await db.exec('reset role;')
+})
+
+test('S-05 no-pulse ingestion remains raw history without downtime or alerts', async (t) => {
+  const db = await createDatabase()
+  t.after(() => db.close())
+  const ids = await getIds(db, 'S-05')
+
+  const result = await db.query(`select * from public.ingest_iot_sensor_event(
+    gen_random_uuid(), $1, $2, 'downtime', '{"signal":"no_pulse"}', '2026-08-21T01:00:00Z'
+  )`, [ids.sensor_id, ids.machine_id])
+  assert.equal(result.rows[0].state_applied, true)
+  assert.equal(result.rows[0].downtime_action, null)
+  assert.equal(result.rows[0].alert_action, null)
+
+  const { rows } = await db.query(`
+    select
+      (select count(*) from public.sensor_events)::integer as event_count,
+      (select count(*) from public.downtime_events)::integer as downtime_count,
+      (select count(*) from public.alerts)::integer as alert_count
+  `)
+  assert.deepEqual(rows[0], { event_count: 1, downtime_count: 0, alert_count: 0 })
 })
 
 test('one recovered event cannot resolve watchdog-created downtime and sustained recovery resolves once', async (t) => {

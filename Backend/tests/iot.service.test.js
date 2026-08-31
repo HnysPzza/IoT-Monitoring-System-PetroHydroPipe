@@ -44,12 +44,12 @@ function createSensorRecord() {
 }
 
 function createProcessingResult(eventType, signal, overrides = {}) {
-  const downtimeAction = eventType === 'downtime' || eventType === 'fault'
+  const downtimeAction = eventType === 'fault'
     ? 'created'
     : eventType === 'recovered'
       ? 'resolved'
       : null
-  const alertAction = eventType === 'downtime' || eventType === 'fault'
+  const alertAction = eventType === 'fault'
     ? 'created'
     : eventType === 'recovered'
       ? 'resolved'
@@ -65,7 +65,7 @@ function createProcessingResult(eventType, signal, overrides = {}) {
     stale: false,
     state_applied: true,
     previous_machine_status: 'Running',
-    new_machine_status: eventType === 'downtime' || eventType === 'fault' ? 'Downtime' : 'Running',
+    new_machine_status: eventType === 'fault' ? 'Downtime' : 'Running',
     downtime_action: downtimeAction,
     downtime_id: downtimeAction ? 'downtime-1' : null,
     downtime_started_at: downtimeAction ? '2026-06-11T00:00:00.000Z' : null,
@@ -205,8 +205,8 @@ test('pulse and idle events rely on the atomic RPC without secondary writes', as
   assert.equal(pulse.rpcCalls[0].args.p_device_event_id, EVENT_ID)
 })
 
-test('important events publish committed downtime and alert transitions from one RPC result', async () => {
-  const result = await createTestEvent('downtime', 'no_pulse')
+test('explicit faults publish committed downtime and alert transitions from one RPC result', async () => {
+  const result = await createTestEvent('fault', 'fault')
 
   assert.equal(result.auditLogs.length, 0)
   assert.deepEqual(result.alertEvents, [{
@@ -227,6 +227,14 @@ test('important events publish committed downtime and alert transitions from one
     },
   }])
   assert.equal(result.event.eventId, EVENT_ID)
+})
+
+test('no-pulse observations never publish downtime or alert transitions', async () => {
+  const result = await createTestEvent('downtime', 'no_pulse')
+
+  assert.equal(result.event.stateApplied, true)
+  assert.equal(result.alertEvents.length, 0)
+  assert.equal(result.downtimeEvents.length, 0)
 })
 
 test('duplicate and stale events never replay state transitions', async () => {
@@ -346,14 +354,14 @@ test('device authentication rejects missing keys, wrong keys, and missing machin
 })
 
 test('post-commit downtime and alert publication failures are isolated in both directions', async () => {
-  const downtimeFailure = await createTestEvent('downtime', 'no_pulse', {
+  const downtimeFailure = await createTestEvent('fault', 'fault', {
     downtimePublishError: new Error('downtime listener unavailable'),
   })
   assert.equal(downtimeFailure.event.stateApplied, true)
   assert.equal(downtimeFailure.alertEvents.length, 1)
   assert.equal(downtimeFailure.logs[0].code, 'DOWNTIME_SSE_PUBLISH_FAILED')
 
-  const alertFailure = await createTestEvent('downtime', 'no_pulse', {
+  const alertFailure = await createTestEvent('fault', 'fault', {
     alertPublishError: new Error('alert listener unavailable'),
   })
   assert.equal(alertFailure.event.stateApplied, true)

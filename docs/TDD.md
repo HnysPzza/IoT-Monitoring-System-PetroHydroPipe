@@ -27,9 +27,11 @@
 
 ## 2. Firmware Design (ESP32, all 5 nodes)
 
-### 2.1 The bug this section fixes
+No physical ESP32 nodes are integrated yet. This section defines the contract future firmware must satisfy.
 
-Nodes currently transmit on **every raw sensor pulse**, not on confirmed state transitions. Concretely: if a proximity sensor chatters (mechanical bounce, partial detection, vibration from the welder), the node fires an HTTP request for every blip instead of once per real event. Two consequences:
+### 2.1 Risk this design prevents
+
+If future nodes transmit on **every raw sensor pulse** instead of confirmed state transitions, proximity-sensor chatter could create one HTTP request per blip rather than one per real event. Two consequences:
 - UC018's threshold logic can't work — "duration of absence" is meaningless if you're also getting spurious presence pulses.
 - The core downtime detection (Sensor 3) is unreliable — the whole `downtime_events` table depends on this being fixed first.
 
@@ -50,10 +52,11 @@ Nodes currently transmit on **every raw sensor pulse**, not on confirmed state t
 - Do not transmit on the falling edge — only the confirmed rising edge (or whichever edge represents "event occurred," confirm physically during lab testing).
 
 ### 2.4 Type B firmware logic (continuous activity node: 3, and possibly 2/4)
-- Track state locally: `RUNNING` or `DOWN`.
-- On sustained absence of signal past the **trigger threshold** (UC018, currently the only defined value) → transition to `DOWN`, transmit one `downtime_start` event.
-- On sustained presence of signal past the **clear threshold** (not yet defined — see PRD §8 and §6 below) → transition to `RUNNING`, transmit one `downtime_end` event.
-- Do **not** transmit on every signal blip in between — only on the two state transitions.
+- Send debounced activity observations and independent heartbeats. Backend is authoritative for shift and break classification in the `Asia/Manila` timezone.
+- Firmware must not store or independently interpret the plant schedule.
+- Firmware must not emit downtime merely because a pulse did not arrive. The backend applies the effective schedule, planned breaks, post-break grace, and configured threshold before creating absence-based downtime.
+- Send `fault` only when the device can positively identify a physical sensor or machine fault. Send `recovered` only after that physical condition clears.
+- S-05 absence detection remains prohibited because missing output pulses do not prove production downtime.
 
 ### 2.5 Required firmware additions
 - NTP time sync on boot and after every reconnect — without this, timestamps across 5 nodes will drift relative to each other and to the server, corrupting the "duration" fields everywhere.
@@ -63,6 +66,42 @@ Nodes currently transmit on **every raw sensor pulse**, not on confirmed state t
 - An NTP-synchronized `recordedAt` value for the current interim ordering guard.
 - A future per-sensor monotonic counter persisted across reboot in ESP32 NVS. This ordering counter is separate from the random UUID `eventId` used for retry deduplication. Pair it with a persisted boot/session ID only if a reset-capable counter is unavoidable.
 
+Heartbeats are independent from production pulses and continue during production, planned breaks, off-shift periods, and production silence. A heartbeat proves device connectivity; it does not claim production activity.
+
+### 2.6 Device event contract and expected sequences
+
+| Event | Signal | Meaning and break behavior |
+|---|---|---|
+| `pulse` | `active` | Confirmed activity; stored as a raw observation. |
+| `idle` | `idle` | Observed idle state; updates live state without creating downtime. |
+| `downtime` | `no_pulse` | Raw absence observation. Ingestion cannot directly create downtime or an alert; only backend watchdog evaluation may do so after schedule, break, grace, threshold, and sensor-enablement checks. Device must not infer this from its local break clock. |
+| `fault` | `fault` | Positively identified physical fault. An explicit fault during a break remains recorded; planned overlap is excluded from unplanned loss. |
+| `recovered` | `active` | Physical fault or activity state recovered. |
+
+Normal production sequence:
+
+```text
+heartbeat -> pulse -> heartbeat -> pulse
+```
+
+Planned break sequence:
+
+```text
+heartbeat -> heartbeat -> heartbeat
+```
+
+No downtime event is required during the break. Backend schedule pauses absence detection and resumes it after configured grace.
+
+Genuine fault sequence:
+
+```text
+heartbeat -> fault -> heartbeat -> recovered -> pulse
+```
+
+Future ESP32 firmware does not fetch shift settings and does not need a schedule-sync endpoint. Existing authenticated `POST /api/iot/events` and `POST /api/iot/heartbeats` endpoints provide the required boundary.
+
+S-05 never participates in absence detection. Any S-05 `no_pulse` input is retained only as raw history and cannot mutate machine state, create downtime, or emit an alert.
+
 ## 3. Backend Design (Node.js + Express)
 
 ### 3.1 Endpoints (representative, not exhaustive)
@@ -70,6 +109,7 @@ Nodes currently transmit on **every raw sensor pulse**, not on confirmed state t
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `POST /api/iot/events` | `x-device-id` + `x-device-key` | Atomically ingest a sensor event or state transition |
+| `POST /api/iot/heartbeats` | `x-device-id` + `x-device-key` | Record connectivity independently from production activity |
 | `GET /api/iot/live` | JWT | Current machine state + latest event per sensor |
 | `GET /api/downtime` | JWT | Paginated downtime history with supported status, cause, and date filters |
 | `GET /api/alerts` | JWT | One alert snapshot with `{alerts, snapshotRevision}` |

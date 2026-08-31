@@ -1739,14 +1739,11 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_sensor_code text;
-  v_enabled boolean := false;
   v_watchdog_open boolean := false;
 begin
-  select sensor.sensor_code,
-    coalesce((settings.sensor_thresholds->sensor.sensor_code->>'absenceDetectionEnabled')::boolean, false)
-  into v_sensor_code, v_enabled
+  select sensor.sensor_code
+  into v_sensor_code
   from public.sensors sensor
-  left join public.machine_operational_settings settings on settings.machine_id = sensor.machine_id
   where sensor.id = p_sensor_id and sensor.machine_id = p_machine_id;
 
   select exists (
@@ -1755,8 +1752,7 @@ begin
       and downtime.status = 'Open' and downtime.detection_source = 'absence_watchdog'
   ) into v_watchdog_open;
 
-  if (v_enabled and v_sensor_code <> 'S-05' and p_event_type = 'downtime'
-      and p_event_value->>'signal' = 'no_pulse')
+  if (p_event_type = 'downtime' and p_event_value->>'signal' = 'no_pulse')
     or (v_watchdog_open and p_event_type in ('pulse', 'recovered')
       and p_event_value->>'signal' = 'active') then
     return query select * from public.ingest_iot_watchdog_observation(

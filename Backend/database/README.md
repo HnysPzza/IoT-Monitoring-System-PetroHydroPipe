@@ -22,7 +22,14 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/013_fix_heartbeat_digest_schema.sql` repairs heartbeat hashing for Supabase's `extensions.pgcrypto` layout.
 - `migrations/014_add_batched_watchdog_evaluation.sql` adds one service-role-only watchdog cycle RPC with isolated sensor failures and aggregate state counts.
 - `migrations/015_add_live_monitoring_snapshot.sql` adds one service-role-only read snapshot for M-01, its five latest sensor events, and watchdog state.
+- `migrations/016_protect_base_tables.sql` denies browser roles direct access to backend-owned base tables.
+- `migrations/017_secure_downtime_update_rpc.sql` restores controlled downtime updates through a service-role-only RPC.
+- `migrations/018_add_manual_sensor_recovery_override.sql` adds atomic, audited manual recovery without imitating an IoT event.
+- `migrations/019_add_analytics_event_aggregation.sql` adds secured event aggregation for backend Analytics.
+- `migrations/020_add_analytics_all_time_range.sql` adds the first contributing-record lookup for all-time Analytics.
 - `migrations/021_add_managing_director_role.sql` adds the PRD-required Managing Director role for read-only operational access.
+- `migrations/022_require_reviewed_cause_before_resolve.sql` prevents unresolved S-03 causes from being silently finalized.
+- `migrations/023_route_no_pulse_through_watchdog.sql` prevents `no_pulse` observations from bypassing schedule-aware watchdog evaluation.
 
 ## Tables
 
@@ -216,6 +223,37 @@ Run the focused regression from `Backend`:
 
 ```bash
 node --test tests/base-table-security.migration.pglite.test.js tests/downtime-update-security.migration.pglite.test.js tests/manual-recovery-override.migration.pglite.test.js tests/database.contract.test.js
+```
+
+### Migration 023
+
+Apply migration `023` after migration `022` and before accepting future ESP32 traffic. It replaces only the public `ingest_iot_sensor_event` wrapper. Every `downtime/no_pulse` input is routed to observational ingestion, so it can be retained and deduplicated but cannot directly create downtime or an alert. Only `evaluate_sensor_watchdog` may create absence-owned downtime after checking schedule, planned breaks, grace, thresholds, sensor enablement, and the permanent S-05 exclusion.
+
+The migration is forward-only, safe to reapply, does not rewrite historical events or downtime, and preserves immediate `fault/fault` processing. Existing suspicious downtime must be reviewed separately; do not delete operational history automatically.
+
+Use this read-only query to identify records that may require administrator review:
+
+```sql
+select downtime.id, sensor.sensor_code, downtime.started_at, downtime.status, downtime.cause
+from public.downtime_events downtime
+join public.sensors sensor on sensor.id = downtime.sensor_id
+where downtime.detection_source = 'sensor_event'
+  and exists (
+    select 1
+    from public.sensor_events event
+    where event.sensor_id = downtime.sensor_id
+      and event.machine_id = downtime.machine_id
+      and event.recorded_at = downtime.started_at
+      and event.event_type = 'downtime'
+      and event.event_value ->> 'signal' = 'no_pulse'
+  )
+order by downtime.started_at, downtime.id;
+```
+
+Run the focused regression from `Backend`:
+
+```bash
+node --test tests/watchdog-transition.migration.pglite.test.js
 ```
 
 ## ESP32 Device Keys

@@ -393,9 +393,9 @@ test('fresh alert transitions use contiguous revisions and preserve lifecycle or
     await assert.rejects(
       () => ingest(db, {
         eventId: 'a0000000-0000-4000-8000-000000000001',
-        eventType: 'downtime',
-        signal: 'no_pulse',
-        recordedAt: at(0),
+        eventType: 'fault',
+        signal: 'fault',
+        recordedAt: at(1),
       }),
       /Device event ID was reused with different event data/,
     )

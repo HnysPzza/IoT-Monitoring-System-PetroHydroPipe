@@ -180,6 +180,8 @@ Five ESP32-backed inductive proximity sensors are assigned to that machine:
 - `S-04` - Outside Filler Wire
 - `S-05` - Production Output Cutting
 
+No physical ESP32 nodes are integrated yet. Device flows in this document define the backend contract and future hardware behavior; they are not evidence of a deployed sensor network.
+
 The monitoring UI should describe these sensor states and events. It should not introduce unsupported machine telemetry such as speed, pressure, temperature, RPM, bar, or degrees Celsius.
 
 Production targets currently come from fixed backend values for day, week, and month. The dashboard can display those values, but there is no current admin workflow or persistent configuration API for adding or editing targets.
@@ -191,6 +193,22 @@ Phase 2 adds one `machine_operational_settings` row per explicitly provisioned m
 The event-ingestion RPC still cannot detect an event that never arrives. Phase 3 therefore adds authenticated device heartbeats, persisted watchdog runtime, and idempotent atomic evaluation. Migration `014` evaluates the configured sensor set through one service-role-only database request while isolating each sensor's work. `WATCHDOG_MODE` defaults to `disabled`, which keeps heartbeat ingestion active without starting periodic evaluation cycles; `observe` records candidates without operational mutations, while `enforce` may create or resolve watchdog-owned downtime only for sensors whose absence detection is explicitly enabled. Connectivity loss creates a separate connectivity condition and cannot create production downtime. S-05 absence detection is permanently prohibited.
 
 Settings updates now also maintain `machine_operational_settings_history` in the same transaction. Downtime, dashboard, and report metrics use the schedule version effective at the requested time, exclude breaks and post-break grace, include records that overlap a window even if they started earlier, and return not-applicable availability when scheduled eligible time is zero.
+
+### Device and Schedule Responsibility
+
+Backend is authoritative for shift and break classification in the `Asia/Manila` timezone. Future ESP32 firmware must not store or independently interpret the plant schedule. This prevents device clock drift or a missed settings update from turning a planned break into false downtime.
+
+Device heartbeats remain independent from production pulses. A node must continue sending authenticated heartbeats during production, planned breaks, off-shift periods, and other intervals without pulses. Heartbeats prove connectivity; pulses prove observed activity.
+
+Future device events use these meanings:
+
+- `pulse` with `active`: confirmed sensor activity.
+- `idle` with `idle`: observed idle state; updates live state without creating downtime.
+- `downtime` with `no_pulse`: an absence observation only. Ingestion stores it without directly creating downtime or an alert; the watchdog evaluator alone applies the effective schedule, planned breaks, grace, threshold, and sensor enablement before any absence-based transition. Firmware must not emit downtime merely because a pulse did not arrive.
+- `fault` with `fault`: explicit physical sensor or machine fault. An explicit fault during a break remains recorded because it may prevent restart; planned break overlap remains excluded from unplanned minutes and estimated loss.
+- `recovered` with `active`: explicit recovery observation.
+
+S-05 absence detection remains prohibited because silence from the output counter does not prove downtime. If S-05 submits a `no_pulse` observation, it remains raw history and cannot create operational downtime or an alert. No device-facing settings or schedule-sync endpoint is planned before hardware exists. Existing `POST /api/iot/events` and `POST /api/iot/heartbeats` contracts are sufficient for future nodes.
 
 Phase 3 operational flow:
 
