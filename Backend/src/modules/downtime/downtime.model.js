@@ -3,10 +3,12 @@ const { z } = require('zod')
 const downtimeCauseSchema = z.enum([
   'Corrective Maintenance',
   'Manual Cutting',
-  'Coil Joint',
-  'Weld Wire Refill',
-  'Flux Refill',
-  'Pending Cause Review',
+  'Misalignment',
+  'Consumable Shortage',
+  'Hydraulic Failure',
+  'Electrical Failure',
+  'Crane Failure',
+  'Other',
 ])
 
 const listDowntimeSchema = z.object({

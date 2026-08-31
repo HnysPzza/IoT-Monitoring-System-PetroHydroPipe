@@ -16,9 +16,9 @@ function EmptyMachinesState({ isRefreshing = false, onRefresh }) {
         <p className="section-eyebrow">No records</p>
         <h2 id="machines-empty-title">No machines found</h2>
         <p>Add Spiral Mill 01 and its five sensors to manage machine setup here.</p>
-        <button className="btn btn-secondary" type="button" disabled={isRefreshing} onClick={onRefresh}>
+        <button className="btn btn-success" type="button" aria-label="Refresh machines" disabled={isRefreshing} onClick={onRefresh}>
           <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-          Refresh machines
+          Refresh
         </button>
       </div>
     </section>
@@ -64,6 +64,8 @@ export default function MachinesSection() {
   const sensorsRequestIdRef = useRef(0)
   const successfulSensorsRef = useRef(null)
   const [pendingOperations, setPendingOperations] = useState({})
+  const [recoveryOverrideSensor, setRecoveryOverrideSensor] = useState(null)
+  const [recoveryOverrideReason, setRecoveryOverrideReason] = useState('')
   const mutationIdRef = useRef(0)
   const latestMutationByEntityRef = useRef(new Map())
 
@@ -100,6 +102,8 @@ export default function MachinesSection() {
   useEffect(() => {
     setPendingOperations({})
     setNotice(null)
+    setRecoveryOverrideSensor(null)
+    setRecoveryOverrideReason('')
   }, [token])
 
   useEffect(() => {
@@ -252,7 +256,7 @@ export default function MachinesSection() {
     }
   }
 
-  async function handleSensorStatusChange(sensor, status) {
+  async function handleSensorStatusChange(sensor, status, overrideReason) {
     const entityId = sensor.id
     const operationKey = `sensor-${entityId}`
     const operationId = mutationIdRef.current + 1
@@ -273,8 +277,8 @@ export default function MachinesSection() {
     }
 
     try {
-      const payload = await updateSensorStatus(token, entityId, status)
-      if (!isCurrentOperation()) return
+      const payload = await updateSensorStatus(token, entityId, status, overrideReason)
+      if (!isCurrentOperation()) return false
 
       setSensors((current) => {
         const nextSensors = current.map((item) => (item.id === payload.sensor.id ? payload.sensor : item))
@@ -283,13 +287,34 @@ export default function MachinesSection() {
         }
         return nextSensors
       })
-      if (isCurrentOperation()) {
-        setNotice({ type: 'success', message: `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} is now ${payload.sensor.status}.` })
+      if (payload.machine) {
+        setMachines((current) => {
+          const nextMachines = current.map((machine) => (machine.id === payload.machine.id ? payload.machine : machine))
+          if (successfulMachinesRef.current?.requestKey === machinesKey) {
+            successfulMachinesRef.current.data = nextMachines
+          }
+          return nextMachines
+        })
       }
+      if (isCurrentOperation()) {
+        const recoveryMessage = payload.recoveryOverride?.alertAction === 'updated'
+          ? `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} recovery override applied. The alert is waiting for acknowledgement.`
+          : payload.recoveryOverride?.alertAction === 'resolved'
+            ? `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} recovery override applied. The acknowledged alert is now resolved.`
+            : `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} recovery override applied.`
+        setNotice({
+          type: 'success',
+          message: payload.recoveryOverride
+            ? recoveryMessage
+            : `${getSensorLabel(payload.sensor.sensorCode, payload.sensor.label)} is now ${payload.sensor.status}.`,
+        })
+      }
+      return true
     } catch (error) {
       if (isCurrentOperation()) {
         setNotice({ type: 'error', message: error.message || 'Unable to update sensor status.' })
       }
+      return false
     } finally {
       if (latestMutationByEntityRef.current.get(operationKey) === operationId) {
         latestMutationByEntityRef.current.delete(operationKey)
@@ -300,6 +325,21 @@ export default function MachinesSection() {
           return next
         })
       }
+    }
+  }
+
+  async function submitRecoveryOverride(event) {
+    event.preventDefault()
+    if (!recoveryOverrideSensor || !recoveryOverrideReason.trim()) return
+
+    const succeeded = await handleSensorStatusChange(
+      recoveryOverrideSensor,
+      'Active',
+      recoveryOverrideReason.trim(),
+    )
+    if (succeeded) {
+      setRecoveryOverrideSensor(null)
+      setRecoveryOverrideReason('')
     }
   }
 
@@ -399,13 +439,14 @@ export default function MachinesSection() {
             <h2 id="machine-admin-title">{selectedMachine.name}</h2>
           </div>
           <button
-            className="btn btn-secondary table-action-button"
+            className="btn btn-success table-action-button machines-refresh-button"
             type="button"
+            aria-label="Refresh machines"
             disabled={machinesState === 'loading'}
             onClick={() => setMachinesRefresh((current) => current + 1)}
           >
             <RotateCw className={machinesState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            Refresh machines
+            Refresh
           </button>
         </div>
 
@@ -467,16 +508,57 @@ export default function MachinesSection() {
               {hasCurrentSensors ? sensors.length : 0} shown
             </span>
             <button
-              className="btn btn-secondary table-action-button"
+              className="btn btn-success table-action-button sensors-refresh-button"
               type="button"
+              aria-label="Refresh sensors"
               disabled={sensorsState === 'loading'}
               onClick={() => setSensorsRefresh((current) => current + 1)}
             >
               <RotateCw className={sensorsState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-              Refresh sensors
+              Refresh
             </button>
           </div>
         </div>
+
+        {recoveryOverrideSensor ? (
+          <form className="sensor-recovery-override" aria-labelledby="sensor-recovery-override-title" onSubmit={submitRecoveryOverride}>
+            <div>
+              <p className="section-eyebrow">Manual recovery override</p>
+              <h3 id="sensor-recovery-override-title">
+                Confirm {recoveryOverrideSensor.sensorCode} recovery
+              </h3>
+              <p>
+                This records a production override, closes open downtime, recalculates the machine, and marks the alert recovered. It does not create or replace a physical sensor event.
+              </p>
+            </div>
+            <label className="filter-field" htmlFor="sensor-recovery-override-reason">
+              <span>Override reason</span>
+              <textarea
+                id="sensor-recovery-override-reason"
+                value={recoveryOverrideReason}
+                maxLength={500}
+                required
+                autoFocus
+                onChange={(event) => setRecoveryOverrideReason(event.target.value)}
+              />
+            </label>
+            <div className="table-actions">
+              <button className="btn btn-success" type="submit" disabled={!recoveryOverrideReason.trim()}>
+                Confirm recovery
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  setRecoveryOverrideSensor(null)
+                  setRecoveryOverrideReason('')
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
 
         {sensorsState === 'loading' && hasCurrentSensors ? (
           <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing sensors...</div>
@@ -553,7 +635,16 @@ export default function MachinesSection() {
                       sensorsState !== 'success'
                       || pendingOperations[`sensor-${sensor.id}`]?.contextKey === sensorsKey
                     }
-                    onChange={(event) => handleSensorStatusChange(sensor, event.target.value)}
+                    onChange={(event) => {
+                      const nextStatus = event.target.value
+                      if (nextStatus === 'Active' && sensor.status !== 'Active') {
+                        setRecoveryOverrideSensor(sensor)
+                        setRecoveryOverrideReason('')
+                        setNotice(null)
+                        return
+                      }
+                      void handleSensorStatusChange(sensor, nextStatus)
+                    }}
                     autoComplete="off"
                   >
                     {sensorStatuses.map((status) => (
@@ -561,6 +652,19 @@ export default function MachinesSection() {
                     ))}
                   </select>
                 </label>
+                {sensor.status === 'Active' && selectedMachine.status === 'Downtime' ? (
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      setRecoveryOverrideSensor(sensor)
+                      setRecoveryOverrideReason('')
+                      setNotice(null)
+                    }}
+                  >
+                    Reconcile recovery
+                  </button>
+                ) : null}
               </article>
             ))}
           </div>

@@ -16,10 +16,10 @@ export function updateMachineStatus(token, machineId, status) {
   })
 }
 
-export function updateSensorStatus(token, sensorId, status) {
+export function updateSensorStatus(token, sensorId, status, overrideReason) {
   return apiRequest(`/api/machines/sensors/${sensorId}/status`, {
     token,
     method: 'PATCH',
-    body: { status },
+    body: overrideReason ? { status, overrideReason } : { status },
   })
 }

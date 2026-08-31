@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
@@ -7,9 +7,18 @@ import { getDowntimeStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getDowntimeRecords, subscribeToDowntime, updateDowntimeRecord } from './downtimeService.js'
 
 const statusFilters = ['All', 'Open', 'Resolved']
-const downtimeCauses = [
+const editableDowntimeCauses = [
   'Corrective Maintenance',
   'Manual Cutting',
+  'Misalignment',
+  'Consumable Shortage',
+  'Hydraulic Failure',
+  'Electrical Failure',
+  'Crane Failure',
+  'Other',
+]
+const historicalDowntimeCauses = [
+  ...editableDowntimeCauses,
   'Coil Joint',
   'Weld Wire Refill',
   'Flux Refill',
@@ -17,8 +26,29 @@ const downtimeCauses = [
 ]
 const downtimeEditRoles = new Set(['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor'])
 
+function formatLossBasis(basis) {
+  if (!basis) return 'Rate unavailable'
+  const label = basis.source === 'trailing-7-days'
+    ? 'Last 7 completed days'
+    : basis.source === 'trailing-30-days'
+      ? 'Last 30 completed days'
+      : 'Configured fallback'
+  return `${label}: ${basis.ratePiecesPerMinute} pcs/min`
+}
+
+function getSensorName(record) {
+  if (!record.sensor) return record.sensorLabel || 'selected sensor'
+
+  const canonicalName = formatSensorName(record.sensor)
+  if (canonicalName !== record.sensor) return canonicalName
+  if (!record.sensorLabel) return record.sensor
+  return record.sensorLabel.startsWith(`${record.sensor} - `)
+    ? record.sensorLabel
+    : `${record.sensor} - ${record.sensorLabel}`
+}
+
 function getRecordLabel(record) {
-  const sensorName = record.sensorLabel || (record.sensor ? formatSensorName(record.sensor) : 'selected sensor')
+  const sensorName = getSensorName(record)
   return `${record.machine || 'Machine'} / ${sensorName}`
 }
 
@@ -41,6 +71,7 @@ export default function DowntimeSection() {
   const canEditDowntime = downtimeEditRoles.has(user?.role)
   const [records, setRecords] = useState([])
   const [summary, setSummary] = useState({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+  const [lossEstimateBasis, setLossEstimateBasis] = useState(null)
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('All')
@@ -68,6 +99,7 @@ export default function DowntimeSection() {
       })
       setRecords(payload.records || [])
       setSummary(payload.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 })
+      setLossEstimateBasis(payload.lossEstimateBasis || null)
       setPagination(payload.pagination || { page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       if (!silent) {
         setExpandedRecordId('')
@@ -78,12 +110,15 @@ export default function DowntimeSection() {
         setNotice({ type: 'error', message: error.message || 'Unable to load downtime records.' })
         setRecords([])
         setSummary({ open: 0, resolved: 0, minutes: 0, loss: 0 })
+        setLossEstimateBasis(null)
         setPagination({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       }
     } finally {
       if (!silent) setIsLoading(false)
     }
   }, [causeFilter, dateFilter, page, statusFilter, token])
+  const loadDowntimeRecordsRef = useRef(loadDowntimeRecords)
+  loadDowntimeRecordsRef.current = loadDowntimeRecords
 
   useEffect(() => {
     loadDowntimeRecords()
@@ -95,23 +130,32 @@ export default function DowntimeSection() {
     let pollingId = null
 
     function startFallbackPolling() {
-      if (pollingId) return
-      pollingId = window.setInterval(() => loadDowntimeRecords({ silent: true }), 10000)
+      if (pollingId !== null) return
+      pollingId = window.setInterval(() => {
+        void loadDowntimeRecordsRef.current({ silent: true })
+      }, 10000)
+    }
+
+    function stopFallbackPolling() {
+      if (pollingId === null) return
+      window.clearInterval(pollingId)
+      pollingId = null
     }
 
     const unsubscribe = subscribeToDowntime(token, {
       onEvent: (event) => {
         if (!event?.payload?.downtime) return
-        loadDowntimeRecords({ silent: true })
+        void loadDowntimeRecordsRef.current({ silent: true })
       },
       onFallback: startFallbackPolling,
+      onRecovery: stopFallbackPolling,
     })
 
     return () => {
       unsubscribe()
-      if (pollingId) window.clearInterval(pollingId)
+      stopFallbackPolling()
     }
-  }, [loadDowntimeRecords, token])
+  }, [token])
 
   async function updateCause(recordId, cause) {
     setUpdatingRecordId(recordId)
@@ -201,7 +245,7 @@ export default function DowntimeSection() {
         <article className="section-card stat-card">
           <p className="stat-label">Estimated Loss</p>
           <p className="stat-value">{summary.loss} pcs</p>
-          <p className="stat-helper">Based on downtime duration</p>
+          <p className="stat-helper">{formatLossBasis(lossEstimateBasis)}</p>
         </article>
       </div>
 
@@ -235,7 +279,7 @@ export default function DowntimeSection() {
             autoComplete="off"
           >
             <option value="All">All causes</option>
-            {downtimeCauses.map((cause) => (
+            {historicalDowntimeCauses.map((cause) => (
               <option key={cause} value={cause}>{cause}</option>
             ))}
           </select>
@@ -297,23 +341,32 @@ export default function DowntimeSection() {
                         <span className="audit-action-label">{getDisplayLabel(record)}</span>
                         {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
                       </td>
-                      <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{record.sensorLabel || formatSensorName(record.sensor)}</span></td>
+                      <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{getSensorName(record)}</span></td>
                       <td data-label="Cause">
-                        <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
-                        <select
-                          id={`downtime-cause-${record.id}`}
-                          name={`downtimeCause-${record.id}`}
-                          className="inline-select"
-                          value={record.cause}
-                          disabled={!canEditDowntime || !record.isCauseEditable || updatingRecordId === record.id}
-                          onChange={(event) => updateCause(record.id, event.target.value)}
-                          autoComplete="off"
-                          title={record.isCauseEditable ? 'Select downtime cause' : 'Cause is assigned automatically by the sensor'}
-                        >
-                          {downtimeCauses.map((cause) => (
-                            <option key={cause} value={cause}>{cause}</option>
-                          ))}
-                        </select>
+                        {record.isCauseEditable ? (
+                          <>
+                            <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
+                            <select
+                              id={`downtime-cause-${record.id}`}
+                              name={`downtimeCause-${record.id}`}
+                              className="inline-select"
+                              value={record.cause}
+                              disabled={!canEditDowntime || updatingRecordId === record.id}
+                              onChange={(event) => updateCause(record.id, event.target.value)}
+                              autoComplete="off"
+                              title="Select downtime cause"
+                            >
+                              {!editableDowntimeCauses.includes(record.cause) ? (
+                                <option value={record.cause} disabled>{record.cause}</option>
+                              ) : null}
+                              {editableDowntimeCauses.map((cause) => (
+                                <option key={cause} value={cause}>{cause}</option>
+                              ))}
+                            </select>
+                          </>
+                        ) : (
+                          <span className="table-muted">{record.cause}</span>
+                        )}
                       </td>
                       <td data-label="Duration">{record.durationMinutes} min</td>
                       <td data-label="Status"><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>
@@ -333,7 +386,8 @@ export default function DowntimeSection() {
                           <button
                             className="btn btn-secondary table-action-button table-action-activate"
                             type="button"
-                            disabled={record.status === 'Resolved' || updatingRecordId === record.id}
+                            disabled={record.status === 'Resolved' || record.needsCauseReview || updatingRecordId === record.id}
+                            title={record.needsCauseReview ? 'Choose a downtime cause before resolving.' : undefined}
                             onClick={() => resolveRecord(record.id)}
                           >
                             <CheckCircle2 size={16} aria-hidden="true" />
@@ -359,7 +413,7 @@ export default function DowntimeSection() {
                                 </div>
                                 <div>
                                   <dt>Sensor</dt>
-                                  <dd>{record.sensorLabel || formatSensorName(record.sensor)}</dd>
+                                  <dd>{getSensorName(record)}</dd>
                                 </div>
                                 <div>
                                   <dt>Started</dt>

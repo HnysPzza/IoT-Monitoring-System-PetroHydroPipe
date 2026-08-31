@@ -8,11 +8,21 @@ const {
 } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const iotController = require('./iot.controller')
+const heartbeatController = require('./heartbeat.controller')
 const authenticateIotDevice = require('./iotDevice.middleware')
-const { sensorEventSchema } = require('./iot.model')
+const { liveFeedRequestSchema, sensorEventSchema } = require('./iot.model')
+const { heartbeatSchema } = require('./heartbeat.model')
 
 const router = express.Router()
 
+router.post(
+  '/heartbeats',
+  iotIngressRateLimiter,
+  validateRequest(heartbeatSchema),
+  asyncHandler(authenticateIotDevice),
+  iotVerifiedDeviceRateLimiter,
+  asyncHandler(heartbeatController.createHeartbeat),
+)
 router.post(
   '/events',
   iotIngressRateLimiter,
@@ -24,7 +34,8 @@ router.post(
 router.get(
   '/live',
   authenticate,
-  authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']),
+  authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor']),
+  validateRequest(liveFeedRequestSchema),
   asyncHandler(iotController.getLiveFeed),
 )
 

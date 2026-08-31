@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -17,7 +17,7 @@ function downtimeRecord(overrides = {}) {
     displayLabel: 'S-03 08:42 AM',
     machine: 'Spiral Mill 01',
     sensor: 'S-03',
-    sensorLabel: 'S-03 - Coil Joint',
+    sensorLabel: 'Machine Main Sensor',
     cause: 'Pending Cause Review',
     startedAt: '2026-06-11T00:42:00.000Z',
     endedAt: null,
@@ -46,8 +46,8 @@ describe('DowntimeSection', () => {
       id: '66666666-6666-4666-8666-666666666666',
       displayLabel: 'S-04 09:15 AM',
       sensor: 'S-04',
-      sensorLabel: 'S-04 - Inside Filler',
-      cause: 'Flux Refill',
+      sensorLabel: 'Outside Filler Wire',
+      cause: 'Consumable Shortage',
       isCauseEditable: false,
       needsCauseReview: false,
     })
@@ -79,6 +79,7 @@ describe('DowntimeSection', () => {
     })
 
     expect(await screen.findByText('S-04 09:15 AM')).toBeInTheDocument()
+    expect(screen.getAllByText('Consumable Shortage').length).toBeGreaterThan(1)
     expect(screen.getByText('1')).toBeInTheDocument()
     expect(getDowntimeRecords).toHaveBeenCalledTimes(2)
   })
@@ -88,18 +89,27 @@ describe('DowntimeSection', () => {
     getDowntimeRecords.mockResolvedValue({
       records: [downtimeRecord()],
       summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+      lossEstimateBasis: { source: 'trailing-30-days', ratePiecesPerMinute: 0.075 },
     })
 
     renderWithAuth(<DowntimeSection />)
 
     expect(await screen.findByText('S-03 08:42 AM')).toBeInTheDocument()
+    expect(screen.getByText('S-03 - Machine Main Sensor')).toBeInTheDocument()
     expect(screen.getByText('Needs cause review')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Resolve$/i })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: /view details/i }))
 
     expect(screen.getByText('Downtime review')).toBeInTheDocument()
     expect(screen.getByText('Estimated loss')).toBeInTheDocument()
     expect(screen.getAllByText('28 pcs').length).toBeGreaterThan(0)
+    expect(screen.getByText('Last 30 completed days: 0.075 pcs/min')).toBeInTheDocument()
+    const causeSelect = screen.getByLabelText('Cause for S-03 08:42 AM')
+    expect(causeSelect).toHaveValue('Pending Cause Review')
+    expect(within(causeSelect).getByRole('option', { name: 'Misalignment' })).toBeInTheDocument()
+    expect(within(causeSelect).getByRole('option', { name: 'Consumable Shortage' })).toBeInTheDocument()
+    expect(within(causeSelect).queryByRole('option', { name: 'Flux Refill' })).not.toBeInTheDocument()
   })
 
   it('renders downtime records read-only for assistant operation managers', async () => {
@@ -130,6 +140,8 @@ describe('DowntimeSection', () => {
 
   it('loads additional downtime pages through backend pagination', async () => {
     const user = userEvent.setup()
+    const unsubscribe = vi.fn()
+    subscribeToDowntime.mockReturnValue(unsubscribe)
     getDowntimeRecords
       .mockResolvedValueOnce({
         records: [downtimeRecord({ id: 'page-1' })],
@@ -147,6 +159,83 @@ describe('DowntimeSection', () => {
 
     expect(await screen.findByText('S-03 09:42 AM')).toBeInTheDocument()
     expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }))
+    expect(subscribeToDowntime).toHaveBeenCalledTimes(1)
+    expect(unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it('keeps one stream subscription and reloads the latest filter state after an event', async () => {
+    const user = userEvent.setup()
+    let streamHandlers
+    const unsubscribe = vi.fn()
+    subscribeToDowntime.mockImplementation((token, handlers) => {
+      streamHandlers = handlers
+      return unsubscribe
+    })
+    getDowntimeRecords
+      .mockResolvedValueOnce({
+        records: [downtimeRecord({ id: 'page-1' })],
+        summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+        pagination: { page: 1, totalPages: 2, hasNextPage: true, hasPreviousPage: false },
+      })
+      .mockResolvedValueOnce({
+        records: [downtimeRecord({ id: 'page-2', displayLabel: 'S-03 09:42 AM' })],
+        summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+        pagination: { page: 2, totalPages: 2, hasNextPage: false, hasPreviousPage: true },
+      })
+      .mockResolvedValueOnce({
+        records: [downtimeRecord({ id: 'page-2', displayLabel: 'S-03 09:42 AM' })],
+        summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+        pagination: { page: 2, totalPages: 2, hasNextPage: false, hasPreviousPage: true },
+      })
+
+    renderWithAuth(<DowntimeSection />)
+    await user.click(await screen.findByRole('button', { name: 'Next downtime page' }))
+    await screen.findByText('S-03 09:42 AM')
+
+    await act(async () => {
+      streamHandlers.onEvent({
+        type: 'downtime.updated',
+        payload: { downtime: { id: 'page-2', status: 'Open' } },
+      })
+    })
+
+    await waitFor(() => {
+      expect(getDowntimeRecords).toHaveBeenCalledTimes(3)
+      expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }))
+    })
+    expect(subscribeToDowntime).toHaveBeenCalledTimes(1)
+    expect(unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it('stops downtime fallback polling when the event stream recovers', async () => {
+    let streamHandlers
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+    subscribeToDowntime.mockImplementation((token, handlers) => {
+      streamHandlers = handlers
+      return () => {}
+    })
+    getDowntimeRecords.mockResolvedValue({
+      records: [],
+      summary: { open: 0, resolved: 0, minutes: 0, loss: 0 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+    await screen.findByText('No downtime records match the selected filters.')
+
+    await act(async () => {
+      streamHandlers.onFallback()
+    })
+    const pollingId = setIntervalSpy.mock.results[0].value
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 10000)
+
+    await act(async () => {
+      streamHandlers.onRecovery()
+    })
+    expect(clearIntervalSpy).toHaveBeenCalledWith(pollingId)
+
+    setIntervalSpy.mockRestore()
+    clearIntervalSpy.mockRestore()
   })
 
   it('saves inline notes and updates the downtime row', async () => {
@@ -181,13 +270,15 @@ describe('DowntimeSection', () => {
   it('reloads records when filters change and resolves a downtime record', async () => {
     const user = userEvent.setup()
     const resolvedRecord = downtimeRecord({
+      cause: 'Misalignment',
+      needsCauseReview: false,
       status: 'Resolved',
       isOpen: false,
       endedAt: '2026-06-11T00:54:00.000Z',
     })
 
     getDowntimeRecords.mockResolvedValue({
-      records: [downtimeRecord()],
+      records: [downtimeRecord({ cause: 'Misalignment', needsCauseReview: false })],
       summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
     })
     updateDowntimeRecord.mockResolvedValue({ record: resolvedRecord })
@@ -219,8 +310,8 @@ describe('DowntimeSection', () => {
         downtimeRecord({
           displayLabel: 'S-04 08:42 AM',
           sensor: 'S-04',
-          sensorLabel: 'S-04 - Inside Filler',
-          cause: 'Flux Refill',
+          sensorLabel: 'Outside Filler Wire',
+          cause: 'Consumable Shortage',
           isCauseEditable: false,
           needsCauseReview: false,
         }),
@@ -231,7 +322,9 @@ describe('DowntimeSection', () => {
     renderWithAuth(<DowntimeSection />)
 
     expect(await screen.findByText('S-04 08:42 AM')).toBeInTheDocument()
+    expect(screen.getByText('S-04 - Outside Filler Wire')).toBeInTheDocument()
     expect(screen.queryByText('Needs cause review')).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/cause for s-04/i)).toBeDisabled()
+    expect(screen.getAllByText('Consumable Shortage').length).toBeGreaterThan(1)
+    expect(screen.queryByLabelText(/cause for s-04/i)).not.toBeInTheDocument()
   })
 })

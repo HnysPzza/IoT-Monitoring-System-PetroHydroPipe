@@ -31,11 +31,11 @@ async function authenticate(req, res, next) {
       sub: currentUser.id,
     }
     return next()
-  } catch (error) {
+  } catch (error) { //catch any 403 or 401 errors
     if (error.status) {
       return next(error)
     }
-
+    //if catch error respond with http 401 status or invalid/expired token
     return res.status(401).json({
       error: {
         code: 'UNAUTHENTICATED',

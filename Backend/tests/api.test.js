@@ -13,6 +13,16 @@ const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const userId = '11111111-1111-4111-8111-111111111111'
 const machineId = '22222222-2222-4222-8222-222222222222'
 const sensorId = '33333333-3333-4333-8333-333333333333'
+const settingsConstraints = {
+  sensorCodes: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'],
+  outputSensorCode: 'S-05',
+  triggerSeconds: { minimum: 1, maximum: 3600, minimumWhenEnabled: 10 },
+  recoverySeconds: { minimum: 1, maximum: 300, minimumWhenEnabled: 20 },
+  breaks: { maximum: 10 },
+  rampUpGraceMinutes: { minimum: 0, maximum: 30 },
+  sameDayShiftOnly: true,
+  timeZone: 'Asia/Manila',
+}
 
 function createToken(role = 'Admin') {
   return jwt.sign(
@@ -83,6 +93,109 @@ test('GET /api/health returns backend health', async () => {
       service: 'iot-monitoring-backend',
     })
   })
+})
+
+test('GET /api/operations/sse exposes aggregate diagnostics only to admins', async () => {
+  const app = loadAppWithMocks()
+
+  await withTestServer(app, async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, '/api/operations/sse')
+    assert.equal(unauthenticated.response.status, 401)
+
+    const forbidden = await requestJson(baseUrl, '/api/operations/sse', {
+      headers: authHeader('Production Supervisor'),
+    })
+    assert.equal(forbidden.response.status, 403)
+
+    const allowed = await requestJson(baseUrl, '/api/operations/sse', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(allowed.response.status, 200)
+    assert.equal(typeof allowed.body.sse.activeConnections, 'number')
+    assert.equal(typeof allowed.body.sse.activeUsers, 'number')
+    assert.equal(typeof allowed.body.sse.activeIps, 'number')
+    assert.equal(typeof allowed.body.sse.counters.connectionLimited, 'number')
+    assert.equal(Object.hasOwn(allowed.body.sse, 'users'), false)
+    assert.equal(Object.hasOwn(allowed.body.sse, 'ips'), false)
+
+    const watchdogUnauthenticated = await requestJson(baseUrl, '/api/operations/watchdog')
+    assert.equal(watchdogUnauthenticated.response.status, 401)
+    const watchdogForbidden = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: authHeader('Production Supervisor'),
+    })
+    assert.equal(watchdogForbidden.response.status, 403)
+    const watchdogAllowed = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(watchdogAllowed.response.status, 200)
+    assert.equal(watchdogAllowed.response.headers.get('cache-control'), 'no-store')
+    assert.equal(watchdogAllowed.body.watchdog.mode, 'disabled')
+    assert.equal(watchdogAllowed.body.watchdog.running, false)
+    assert.equal(watchdogAllowed.body.watchdog.lastOutcome, 'idle')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycles, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycleSuccesses, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cyclePartialFailures, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycleFailures, 'number')
+    assert.equal(typeof watchdogAllowed.body.watchdog.counters.cycleCancellations, 'number')
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'cycles'), false)
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'sensorIds'), false)
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'token'), false)
+    assert.equal(Object.hasOwn(watchdogAllowed.body.watchdog, 'errorMessage'), false)
+
+    const unexpectedQuery = await requestJson(baseUrl, '/api/operations/watchdog?admin=true', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+
+    for (const pathName of ['/api/operations/watchdog.json', '/api/operations/watchdog%20']) {
+      const suffix = await requestJson(baseUrl, pathName, { headers: authHeader('Admin') })
+      assert.equal(suffix.response.status, 404)
+    }
+    const wrongMethod = await requestJson(baseUrl, '/api/operations/watchdog', {
+      method: 'POST', headers: authHeader('Admin'), body: {},
+    })
+    assert.equal(wrongMethod.response.status, 404)
+  })
+})
+
+test('watchdog diagnostics reject invalid, expired, inactive, and archived authentication', async () => {
+  const invalidApp = loadAppWithMocks()
+  await withTestServer(invalidApp, async (baseUrl) => {
+    const invalid = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: { Authorization: 'Bearer not-a-jwt' },
+    })
+    assert.equal(invalid.response.status, 401)
+    assertError(invalid.body, 'UNAUTHENTICATED')
+
+    const expiredToken = jwt.sign(
+      { username: 'admin', role: 'Admin' },
+      JWT_SECRET,
+      { subject: userId, expiresIn: -1 },
+    )
+    const expired = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: { Authorization: `Bearer ${expiredToken}` },
+    })
+    assert.equal(expired.response.status, 401)
+    assertError(expired.body, 'UNAUTHENTICATED')
+  })
+
+  for (const [status, code] of [['Inactive', 'ACCOUNT_INACTIVE'], ['Archived', 'ACCOUNT_ARCHIVED']]) {
+    const error = createHttpError(403, code, `Account is ${status.toLowerCase()}.`)
+    const app = loadAppWithMocks({
+      'src/modules/auth/auth.service.js': {
+        login: async () => ({}),
+        getAuthenticatedUser: async () => { throw error },
+      },
+    })
+    await withTestServer(app, async (baseUrl) => {
+      const result = await requestJson(baseUrl, '/api/operations/watchdog', {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(result.response.status, 403)
+      assertError(result.body, code)
+    })
+  }
 })
 
 test('POST /api/auth/login succeeds with valid credentials', async () => {
@@ -280,6 +393,7 @@ test('app middleware applies JSON body limit and CORS allowlist behavior', async
     })
 
     assert.equal(allowedOrigin.response.headers.get('access-control-allow-origin'), 'http://localhost:5173')
+    assert.equal(allowedOrigin.response.headers.get('access-control-expose-headers'), 'Retry-After')
 
     const blockedOrigin = await requestJson(baseUrl, '/api/health', {
       headers: { Origin: 'https://not-allowed.example.com' },
@@ -340,12 +454,20 @@ test('admin can list, create, and archive users through mocked service', async (
 })
 
 test('machine routes allow admin status update and block production supervisor', async () => {
+  const sensorUpdateCalls = []
   const app = loadAppWithMocks({
     'src/modules/machines/machines.service.js': {
       listMachines: async () => [{ id: machineId, machineCode: 'M-01', name: 'Spiral Mill 01', status: 'Idle' }],
       listSensorsByMachine: async () => [{ id: sensorId, sensorCode: 'S-01', status: 'Active' }],
       updateMachineStatus: async ({ machineId: targetMachineId, status }) => ({ id: targetMachineId, status }),
-      updateSensorStatus: async ({ sensorId: targetSensorId, status }) => ({ id: targetSensorId, status }),
+      updateSensorStatus: async (values) => {
+        sensorUpdateCalls.push(values)
+        return {
+          sensor: { id: values.sensorId, status: values.status },
+          machine: { id: machineId, status: 'Running' },
+          recoveryOverride: { source: 'manual_override' },
+        }
+      },
     },
   })
 
@@ -365,6 +487,276 @@ test('machine routes allow admin status update and block production supervisor',
 
     assert.equal(updated.response.status, 200)
     assert.equal(updated.body.machine.status, 'Running')
+
+    const missingReason = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: { status: 'Active' },
+    })
+    assert.equal(missingReason.response.status, 400)
+    assertError(missingReason.body, 'VALIDATION_ERROR')
+
+    const recovered = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: { status: 'Active', overrideReason: 'Maintenance confirmed normal operation' },
+    })
+    assert.equal(recovered.response.status, 200)
+    assert.equal(recovered.body.sensor.status, 'Active')
+    assert.equal(recovered.body.machine.status, 'Running')
+    assert.equal(sensorUpdateCalls[0].overrideReason, 'Maintenance confirmed normal operation')
+  })
+})
+
+test('machine settings GET supports all dashboard roles and validates machine ids', async () => {
+  const settings = {
+    machineId,
+    timeZone: 'Asia/Manila',
+    sensorThresholds: {},
+    shiftSchedule: {},
+    version: '1',
+    updatedAt: '2026-08-22T00:00:00.000Z',
+    updatedBy: null,
+  }
+  const app = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
+      getMachineSettings: async (targetMachineId) => {
+        assert.equal(targetMachineId, machineId)
+        return settings
+      },
+      updateMachineSettings: async () => settings,
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const roles = [
+      'Admin',
+      'Operation Manager',
+      'Asst. Operation Manager',
+      'Engineering Supervisor',
+      'Production Supervisor',
+    ]
+
+    for (const role of roles) {
+      const result = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+        headers: authHeader(role),
+      })
+      assert.equal(result.response.status, 200, role)
+      assert.deepEqual(result.body, { settings, constraints: settingsConstraints })
+      assert.equal(result.response.headers.get('cache-control'), 'no-store')
+    }
+
+    const unauthenticated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`)
+    assert.equal(unauthenticated.response.status, 401)
+    assertError(unauthenticated.body, 'UNAUTHENTICATED')
+
+    const invalid = await requestJson(baseUrl, '/api/machines/not-a-uuid/settings', {
+      headers: authHeader(),
+    })
+    assert.equal(invalid.response.status, 400)
+    assertError(invalid.body, 'VALIDATION_ERROR')
+
+    const unexpectedQuery = await requestJson(baseUrl, `/api/machines/${machineId}/settings?mode=enforce`, {
+      headers: authHeader(),
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+  })
+})
+
+test('machine settings PATCH is Admin-only and forwards validated partial updates', async () => {
+  const calls = []
+  const settings = {
+    machineId,
+    timeZone: 'Asia/Manila',
+    sensorThresholds: {},
+    shiftSchedule: {},
+    version: '2',
+    updatedAt: '2026-08-22T00:01:00.000Z',
+    updatedBy: userId,
+  }
+  const app = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
+      getMachineSettings: async () => settings,
+      updateMachineSettings: async (values) => {
+        calls.push(values)
+        return settings
+      },
+    },
+  })
+  const sensorThreshold = {
+    absenceDetectionEnabled: false,
+    triggerSeconds: 60,
+    recoverySeconds: null,
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    const forbidden = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader('Engineering Supervisor'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+    })
+    assert.equal(forbidden.response.status, 403)
+    assertError(forbidden.body, 'FORBIDDEN')
+
+    const updated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+    })
+    assert.equal(updated.response.status, 200)
+    assert.deepEqual(updated.body, { settings })
+    assert.equal(updated.response.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(calls, [{
+      machineId,
+      expectedVersion: '1',
+      sensorThresholds: { 'S-03': sensorThreshold },
+      shiftSchedule: undefined,
+      actorUserId: userId,
+    }])
+
+    const invalid = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-99': sensorThreshold } },
+    })
+    assert.equal(invalid.response.status, 400)
+    assertError(invalid.body, 'VALIDATION_ERROR')
+    assert.equal(calls.length, 1)
+
+    const unexpectedQuery = await requestJson(baseUrl, `/api/machines/${machineId}/settings?force=true`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+    assert.equal(calls.length, 1)
+  })
+})
+
+test('machine settings API preserves conflicts and masks internal failures', async () => {
+  const conflict = createHttpError(409, 'SETTINGS_VERSION_CONFLICT', 'Machine settings were updated by another request.')
+  const conflictApp = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
+      getMachineSettings: async () => ({}),
+      updateMachineSettings: async () => { throw conflict },
+    },
+  })
+  const body = {
+    expectedVersion: '1',
+    sensorThresholds: {
+      'S-03': {
+        absenceDetectionEnabled: false,
+        triggerSeconds: 60,
+        recoverySeconds: null,
+      },
+    },
+  }
+
+  await withTestServer(conflictApp, async (baseUrl) => {
+    const result = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body,
+    })
+    assert.equal(result.response.status, 409)
+    assertError(result.body, 'SETTINGS_VERSION_CONFLICT')
+  })
+
+  const failure = createHttpError(500, 'SETTINGS_QUERY_FAILED', 'private database failure')
+  const failureApp = loadAppWithMocks({
+    'src/modules/settings/settings.service.js': {
+      getSettingsConstraints: () => settingsConstraints,
+      getMachineSettings: async () => { throw failure },
+      updateMachineSettings: async () => ({}),
+    },
+  })
+
+  await withTestServer(failureApp, async (baseUrl) => {
+    const result = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+      headers: authHeader(),
+    })
+    assert.equal(result.response.status, 500)
+    assertError(result.body, 'SETTINGS_QUERY_FAILED')
+    assert.equal(result.body.error.message, 'Unexpected server error.')
+    assert.doesNotMatch(JSON.stringify(result.body), /private database failure/)
+  })
+})
+
+test('live monitoring API is role-protected, non-cacheable, and rejects route tampering', async () => {
+  const liveFeed = {
+    monitoring: { mode: 'observe', capturedAt: '2026-08-22T00:02:10.000Z' },
+    machine: { id: machineId, machineCode: 'M-01', status: 'Running' },
+    sensors: [],
+  }
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => null,
+      createHeartbeat: async () => ({}),
+      createSensorEvent: async () => ({}),
+      getLiveFeed: async () => liveFeed,
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    for (const role of [
+      'Admin',
+      'Operation Manager',
+      'Asst. Operation Manager',
+      'Engineering Supervisor',
+      'Production Supervisor',
+    ]) {
+      const result = await requestJson(baseUrl, '/api/iot/live', { headers: authHeader(role) })
+      assert.equal(result.response.status, 200, role)
+      assert.deepEqual(result.body, liveFeed)
+      assert.equal(result.response.headers.get('cache-control'), 'no-store')
+    }
+
+    const unauthenticated = await requestJson(baseUrl, '/api/iot/live')
+    assert.equal(unauthenticated.response.status, 401)
+    assertError(unauthenticated.body, 'UNAUTHENTICATED')
+
+    const unexpectedQuery = await requestJson(baseUrl, '/api/iot/live?machine=M-02', {
+      headers: authHeader(),
+    })
+    assert.equal(unexpectedQuery.response.status, 400)
+    assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
+
+    const wrongMethod = await requestJson(baseUrl, '/api/iot/live', {
+      method: 'POST',
+      headers: authHeader(),
+      body: {},
+    })
+    assert.equal(wrongMethod.response.status, 404)
+
+    const suffixTampering = await requestJson(baseUrl, '/api/iot/live/export', {
+      headers: authHeader(),
+    })
+    assert.equal(suffixTampering.response.status, 404)
+  })
+})
+
+test('live monitoring API masks private snapshot failures', async () => {
+  const failure = createHttpError(500, 'LIVE_SNAPSHOT_QUERY_FAILED', 'private database failure')
+  const app = loadAppWithMocks({
+    'src/modules/iot/iot.service.js': {
+      authenticateDevice: async () => null,
+      createHeartbeat: async () => ({}),
+      createSensorEvent: async () => ({}),
+      getLiveFeed: async () => { throw failure },
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const result = await requestJson(baseUrl, '/api/iot/live', { headers: authHeader() })
+    assert.equal(result.response.status, 500)
+    assertError(result.body, 'LIVE_SNAPSHOT_QUERY_FAILED')
+    assert.equal(result.body.error.message, 'Unexpected server error.')
+    assert.doesNotMatch(JSON.stringify(result.body), /private database failure/)
   })
 })
 
@@ -396,13 +788,20 @@ test('dashboard overview route returns backend summary for allowed roles', async
     })
 
     assert.equal(result.response.status, 200)
+    assert.equal(result.response.headers.get('cache-control'), 'no-store')
     assert.equal(result.body.summary[0].id, 'pipes')
+
+    const directorOverview = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorOverview.response.status, 200)
 
     const chart = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today', {
       headers: authHeader('Production Supervisor'),
     })
 
     assert.equal(chart.response.status, 200)
+    assert.equal(chart.response.headers.get('cache-control'), 'no-store')
     assert.equal(chart.body.downtimeImpact.points[0].label, 'today')
 
     const noToken = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today')
@@ -449,7 +848,13 @@ test('downtime routes list and update records', async () => {
     })
 
     assert.equal(list.response.status, 200)
+    assert.equal(list.response.headers.get('cache-control'), 'no-store')
     assert.equal(list.body.records.length, 1)
+
+    const directorList = await requestJson(baseUrl, '/api/downtime?status=Open', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorList.response.status, 200)
 
     const controller = new AbortController()
     const stream = await fetch(`${baseUrl}/api/downtime/stream`, {
@@ -470,6 +875,7 @@ test('downtime routes list and update records', async () => {
     })
 
     assert.equal(updated.response.status, 200)
+    assert.equal(updated.response.headers.get('cache-control'), 'no-store')
     assert.equal(updated.body.record.status, 'Resolved')
 
     const clearNotes = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
@@ -492,6 +898,13 @@ test('downtime routes list and update records', async () => {
       body: { notes: 'Unauthorized edit' },
     })
     assert.equal(assistantEdit.response.status, 403)
+
+    const directorEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Managing Director'),
+      body: { notes: 'Unauthorized edit' },
+    })
+    assert.equal(directorEdit.response.status, 403)
   })
 })
 
@@ -519,7 +932,13 @@ test('reports summary is restricted to management roles', async () => {
     })
 
     assert.equal(allowed.response.status, 200)
+    assert.equal(allowed.response.headers.get('cache-control'), 'no-store')
     assert.equal(allowed.body.report.reportType, 'daily')
+
+    const director = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(director.response.status, 200)
   })
 })
 
@@ -532,8 +951,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
           id: alertId,
           severity: 'Critical',
           status: 'Active',
-          title: 'Inside Filler downtime detected',
-          message: 'S-04 Inside Filler has no pulse.',
+          title: 'Outside Filler Wire downtime detected',
+          message: 'S-04 Outside Filler Wire has no pulse.',
           revision: '1',
         }],
         snapshotRevision: '1',
@@ -542,8 +961,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
         id: targetAlertId,
         severity: 'Critical',
         status: 'Acknowledged',
-        title: 'Inside Filler downtime detected',
-        message: 'S-04 Inside Filler has no pulse.',
+        title: 'Outside Filler Wire downtime detected',
+        message: 'S-04 Outside Filler Wire has no pulse.',
         revision: '2',
         acknowledgedAt: '2026-06-11T00:00:00.000Z',
         acknowledgedBy: {
@@ -560,8 +979,8 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
               id: alertId,
               severity: 'Critical',
               status: 'Active',
-              title: 'Inside Filler downtime detected',
-              message: 'S-04 Inside Filler has no pulse.',
+              title: 'Outside Filler Wire downtime detected',
+              message: 'S-04 Outside Filler Wire has no pulse.',
               revision: '1',
             },
           })
@@ -583,9 +1002,20 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
     })
 
     assert.equal(listed.response.status, 200)
-    assert.equal(listed.body.alerts[0].message, 'S-04 Inside Filler has no pulse.')
+    assert.equal(listed.body.alerts[0].message, 'S-04 Outside Filler Wire has no pulse.')
     assert.equal(listed.body.alerts[0].revision, '1')
     assert.equal(listed.body.snapshotRevision, '1')
+
+    const directorList = await requestJson(baseUrl, '/api/alerts', {
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorList.response.status, 200)
+
+    const directorAcknowledge = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
+      method: 'PATCH',
+      headers: authHeader('Managing Director'),
+    })
+    assert.equal(directorAcknowledge.response.status, 403)
 
     const acknowledged = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
       method: 'PATCH',

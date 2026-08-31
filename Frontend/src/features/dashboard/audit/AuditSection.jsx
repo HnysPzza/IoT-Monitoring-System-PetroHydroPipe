@@ -162,9 +162,9 @@ export default function AuditSection() {
               autoComplete="off"
             />
           </label>
-          <button className="btn btn-secondary table-action-button audit-refresh-button" type="button" disabled={isRefreshing} onClick={() => loadAuditLogs({ silent: true })}>
+          <button className="btn btn-success table-action-button audit-refresh-button" type="button" aria-label="Refresh audit log" disabled={isRefreshing} onClick={() => loadAuditLogs({ silent: true })}>
             <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            {isRefreshing ? 'Refreshing' : 'Refresh'}
+            Refresh
           </button>
         </div>
       </section>

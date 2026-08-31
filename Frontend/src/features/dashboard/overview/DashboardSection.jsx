@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CircleCheck, Clock3, Factory, PackageCheck, PauseCircle, RotateCw, Target } from 'lucide-react'
+import { Link, useOutletContext } from 'react-router'
+import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
@@ -16,8 +17,33 @@ import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 
-function SkeletonBlock({ className = '' }) {
-  return <div className={`skeleton ${className}`.trim()} aria-hidden="true" />
+const AUTO_REFRESH_MS = 60 * 1000
+
+function SkeletonBlock({ className = '', style }) {
+  return <div className={`skeleton ${className}`.trim()} style={style} aria-hidden="true" />
+}
+
+function DowntimeChartSkeleton() {
+  return (
+    <div role="status" aria-live="polite">
+      <span className="sr-only">Loading downtime chart...</span>
+      <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
+    </div>
+  )
+}
+
+function ProductionAnalyticsSkeleton() {
+  return (
+    <section className="section-card production-analytics-card" aria-label="Loading production analytics">
+      <div className="section-heading">
+        <div>
+          <p className="section-eyebrow">Data analytics</p>
+          <SkeletonBlock className="skeleton-heading" />
+        </div>
+      </div>
+      <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
+    </section>
+  )
 }
 
 function OverviewLoadingState() {
@@ -77,6 +103,7 @@ function SensorStatusIcon({ status }) {
 
 export default function DashboardSection() {
   const { token } = useAuth()
+  const alertContext = useOutletContext()
   const [overviewState, setOverviewState] = useState('loading')
   const [overviewData, setOverviewData] = useState(null)
   const [overviewRequestKey, setOverviewRequestKey] = useState('')
@@ -103,7 +130,6 @@ export default function DashboardSection() {
   const downtimeChartRequestIdRef = useRef(0)
   const successfulDowntimeChartRef = useRef(null)
   const [trendMode, setTrendMode] = useState('today')
-  const [analyticsMode, setAnalyticsMode] = useState('day')
   const [trendAnchorDate, setTrendAnchorDate] = useState(() => startOfDay(new Date()))
   const today = startOfDay(new Date())
   const trendRangeLabel = getTrendRangeLabel(trendMode, trendAnchorDate)
@@ -115,6 +141,9 @@ export default function DashboardSection() {
   const hasCurrentLive = liveRequestKey === liveKey
   const hasCurrentDowntimeChart = downtimeChartRequestKey === downtimeChartKey
   const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
+  const overviewAlerts = alertContext?.hasTrustedAlertList
+    ? alertContext.activeAlerts
+    : overviewData?.alerts || []
 
   useEffect(() => {
     const requestId = overviewRequestIdRef.current + 1
@@ -146,6 +175,13 @@ export default function DashboardSection() {
       isCancelled = true
     }
   }, [overviewKey, overviewRefresh, token])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setOverviewRefresh((current) => current + 1)
+    }, AUTO_REFRESH_MS)
+    return () => window.clearInterval(intervalId)
+  }, [overviewKey])
 
   useEffect(() => {
     const requestId = liveRequestIdRef.current + 1
@@ -258,8 +294,10 @@ export default function DashboardSection() {
     errorKey: liveErrorKey,
     currentKey: liveKey,
   })
-  const overviewIsReady = overviewDisplayState === 'success' && hasCurrentOverview
-  const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.[analyticsMode] : null
+  const overviewIsReady = hasCurrentOverview
+    && (overviewDisplayState === 'success' || overviewDisplayState === 'loading')
+  const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
+  const productionDifference = selectedAnalytics?.difference ?? 0
   const summaryById = overviewIsReady
     ? Object.fromEntries(overviewData.summary.map((item) => [item.id, item]))
     : {}
@@ -312,12 +350,16 @@ export default function DashboardSection() {
       tone: 'warning',
     },
     {
-      id: 'target',
-      label: 'Target Production Output',
-      value: selectedAnalytics ? `${formatNumber(selectedAnalytics.targetTotal)} ${selectedAnalytics.unit}` : '—',
-      helper: selectedAnalytics?.label || 'Selected period',
-      icon: Target,
-      tone: 'primary',
+      id: 'comparison',
+      label: 'Difference from Yesterday',
+      value: selectedAnalytics ? `${productionDifference > 0 ? '+' : ''}${formatNumber(productionDifference)} ${selectedAnalytics.unit}` : '—',
+      helper: !selectedAnalytics
+        ? 'Comparison unavailable'
+        : selectedAnalytics.differencePercent === null
+          ? 'No output baseline yesterday'
+          : `${Math.abs(selectedAnalytics.differencePercent).toFixed(1)}% ${productionDifference > 0 ? 'higher' : productionDifference < 0 ? 'lower' : 'change'}`,
+      icon: productionDifference < 0 ? TrendingDown : TrendingUp,
+      tone: productionDifference > 0 ? 'success' : productionDifference < 0 ? 'warning' : 'neutral',
     },
   ]
   const sensorHealth = sensorIdentities.map((identity) => {
@@ -329,8 +371,46 @@ export default function DashboardSection() {
     }
   })
   const reportingSensorCount = sensorHealth.filter((sensor) => sensor.status !== 'Unavailable').length
+  const isUnifiedRefreshing = overviewState === 'loading' || liveState === 'loading' || downtimeChartState === 'loading'
+
+  const handleUnifiedRefresh = () => {
+    setOverviewRefresh((current) => current + 1)
+    setLiveRefresh((current) => current + 1)
+    setDowntimeChartRefresh((current) => current + 1)
+  }
+
   return (
     <div className="overview-layout">
+      <div className="overview-controls-card">
+        <div className="overview-meta-strip">
+          <span className="overview-meta-item">
+            <Factory size={16} aria-hidden="true" />
+            <span>Machine:</span>
+            <strong>{hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'}</strong>
+          </span>
+          <span className="overview-meta-item">
+            <CircleCheck size={16} aria-hidden="true" />
+            <span>Sensors:</span>
+            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : '5 / 5 reporting'}</strong>
+          </span>
+          <span className="overview-meta-item">
+            <Clock3 size={16} aria-hidden="true" />
+            <span>Last sync:</span>
+            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Active session'}</strong>
+          </span>
+        </div>
+        <button
+          className="btn btn-success overview-refresh-button"
+          type="button"
+          aria-label="Refresh overview data"
+          disabled={isUnifiedRefreshing}
+          onClick={handleUnifiedRefresh}
+        >
+          <RotateCw className={isUnifiedRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
       {overviewDisplayState === 'error' ? (
@@ -348,14 +428,44 @@ export default function DashboardSection() {
 
       {overviewDisplayState === 'empty' && hasCurrentOverview ? <OverviewEmptyState /> : null}
 
-      {overviewIsReady && overviewData.alerts.length > 0 ? (
+      {overviewAlerts.length > 0 ? (
         <div className="alerts-stack">
-          {overviewData.alerts.map((alert) => (
-            <div key={alert.id} className={`notice dashboard-alert ${alert.type === 'danger' ? 'notice-error' : ''}`} role="alert">
-              <AlertTriangle size={16} aria-hidden="true" />
-              <span>{alert.message}</span>
-            </div>
-          ))}
+          {(() => {
+            const primaryAlert = overviewAlerts[0]
+            const extraCount = overviewAlerts.length - 1
+            return (
+              <div
+                className={`notice dashboard-alert overview-alert-banner ${primaryAlert.type === 'danger' || primaryAlert.severity === 'Critical' ? 'notice-error' : ''}`}
+                role="alert"
+              >
+                <div className="overview-alert-lead">
+                  <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
+                  <span className="overview-alert-message">{primaryAlert.message}</span>
+                </div>
+                {extraCount > 0 ? (
+                  <Link
+                    to="/dashboard/downtime"
+                    className="overview-alert-more-link"
+                    aria-label={`+${extraCount} more active alerts. View all on downtime page.`}
+                  >
+                    <span className="overview-alert-count">+{extraCount} more active alert{extraCount > 1 ? 's' : ''}</span>
+                    <span className="meta-separator" aria-hidden="true">→</span>
+                    <span className="overview-alert-action-label">View all</span>
+                    <MoveRight size={13} aria-hidden="true" />
+                  </Link>
+                ) : (
+                  <Link
+                    to="/dashboard/downtime"
+                    className="overview-alert-more-link single-link"
+                    aria-label="View downtime logs"
+                  >
+                    <span className="overview-alert-action-label">View all</span>
+                    <MoveRight size={13} aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+            )
+          })()}
         </div>
       ) : null}
 
@@ -379,55 +489,53 @@ export default function DashboardSection() {
 
       <div className="overview-charts-grid">
         {overviewIsReady ? (
-          <ProductionAnalytics
-            analytics={overviewData.productionAnalytics}
-            mode={analyticsMode}
-            onModeChange={setAnalyticsMode}
-          />
+          <ProductionAnalytics analytics={overviewData.productionAnalytics} />
+        ) : overviewDisplayState === 'loading' && !hasCurrentOverview ? (
+          <ProductionAnalyticsSkeleton />
         ) : null}
 
         <section className="section-card downtime-chart-card">
           <div className="section-heading">
             <div>
               <p className="section-eyebrow">Downtime chart</p>
-              <h2>Downtime by Period</h2>
+              {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+                <SkeletonBlock className="skeleton-heading" />
+              ) : (
+                <h2>Downtime by Period</h2>
+              )}
             </div>
-            <div className="trend-controls" aria-label="Downtime chart controls">
-              <div className="trend-mode-toggle" role="group" aria-label="Chart range">
-                {trendModes.map((mode) => (
-                  <button
-                    key={mode.id}
-                    className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
-                    type="button"
-                    disabled={mode.disabled}
-                    title={mode.disabled ? 'Last Hour is not available yet' : undefined}
-                    aria-pressed={trendMode === mode.id}
-                    onClick={() => {
-                      setTrendMode(mode.id)
-                      setTrendAnchorDate(startOfDay(new Date()))
-                    }}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
+            {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+              <div className="trend-controls-skeleton" aria-hidden="true">
+                <SkeletonBlock className="skeleton-toggle" />
+                <SkeletonBlock className="skeleton-control" />
               </div>
-              <TrendCalendarControl
-                mode={trendMode}
-                selectedDate={trendAnchorDate}
-                maxDate={today}
-                rangeLabel={trendRangeLabel}
-                onDateChange={setTrendAnchorDate}
-              />
-              <button
-                className="btn btn-secondary table-action-button"
-                type="button"
-                disabled={downtimeChartState === 'loading'}
-                onClick={() => setDowntimeChartRefresh((current) => current + 1)}
-              >
-                <RotateCw className={downtimeChartState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-                Refresh chart
-              </button>
-            </div>
+            ) : (
+              <div className="trend-controls" aria-label="Downtime chart controls">
+                <div className="trend-mode-toggle" role="group" aria-label="Chart range">
+                  {trendModes.map((mode) => (
+                    <button
+                      key={mode.id}
+                      className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
+                      type="button"
+                      aria-pressed={trendMode === mode.id}
+                      onClick={() => {
+                        setTrendMode(mode.id)
+                        setTrendAnchorDate(startOfDay(new Date()))
+                      }}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+                <TrendCalendarControl
+                  mode={trendMode}
+                  selectedDate={trendAnchorDate}
+                  maxDate={today}
+                  rangeLabel={trendRangeLabel}
+                  onDateChange={setTrendAnchorDate}
+                />
+              </div>
+            )}
           </div>
           {downtimeChartState === 'stale' && hasCurrentDowntimeChart ? (
             <div className="notice notice-error dashboard-alert" role="alert">
@@ -458,12 +566,13 @@ export default function DashboardSection() {
               </button>
             </div>
           ) : chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
-            <div role="status" aria-live="polite">
-              <span className="sr-only">Loading downtime chart...</span>
-              <div className="skeleton skeleton-panel" aria-hidden="true" />
-            </div>
+            <DowntimeChartSkeleton />
           ) : trendData.length > 0 ? (
-            <DowntimeTrendChart data={trendData} thresholdMinutes={downtimeImpact?.thresholdMinutes || 30} />
+            <DowntimeTrendChart
+              data={trendData}
+              thresholdMinutes={downtimeImpact?.thresholdMinutes || 30}
+              lossEstimateBasis={downtimeImpact?.lossEstimateBasis || null}
+            />
           ) : hasCurrentDowntimeChart ? (
             <p className="table-muted">No downtime data is available for this range.</p>
           ) : null}
@@ -510,14 +619,6 @@ export default function DashboardSection() {
                 </button>
               </div>
             ) : null}
-            <button
-              className="btn btn-secondary"
-              type="button"
-              disabled={liveState === 'loading'}
-              onClick={() => setLiveRefresh((current) => current + 1)}
-            >
-              Refresh live status
-            </button>
           </div>
         </section>
       ) : hasCurrentLive ? (
@@ -532,15 +633,6 @@ export default function DashboardSection() {
                 <CircleCheck size={16} aria-hidden="true" />
                 {reportingSensorCount} / 5 sensors reporting
               </span>
-              <button
-                className="btn btn-secondary table-action-button"
-                type="button"
-                disabled={liveState === 'loading'}
-                onClick={() => setLiveRefresh((current) => current + 1)}
-              >
-                <RotateCw className={liveState === 'loading' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-                Refresh live status
-              </button>
             </div>
           </div>
 

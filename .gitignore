@@ -18,6 +18,11 @@ Backend/dist/
 # Local generated documentation
 docs/
 
+# Phase plans
+phase plan.md
+docs/phase plan.md
+*phase plan*.md
+
 # Logs
 *.log
 npm-debug.log*

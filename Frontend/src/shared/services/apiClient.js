@@ -27,6 +27,7 @@ export async function apiRequest(path, {
   headers = {},
   fallbackError = 'Unable to complete request.',
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  signal,
 } = {}) {
   const requestHeaders = {
     'Content-Type': 'application/json',
@@ -51,6 +52,9 @@ export async function apiRequest(path, {
   }
 
   const controller = new AbortController()
+  const abortRequest = () => controller.abort()
+  if (signal?.aborted) abortRequest()
+  else signal?.addEventListener('abort', abortRequest, { once: true })
   let timedOut = false
   const timeoutId = globalThis.setTimeout(() => {
     timedOut = true
@@ -70,6 +74,10 @@ export async function apiRequest(path, {
     } catch {
       if (timedOut) {
         throw createApiError('The request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
+      }
+
+      if (signal?.aborted) {
+        throw createApiError('The request was cancelled.', 0, null, 'REQUEST_ABORTED')
       }
 
       throw createApiError('Unable to reach the server. Check your connection and try again.', 0, null, 'NETWORK_ERROR')
@@ -102,6 +110,7 @@ export async function apiRequest(path, {
 
     return payload
   } finally {
+    signal?.removeEventListener('abort', abortRequest)
     globalThis.clearTimeout(timeoutId)
   }
 }

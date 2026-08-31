@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 ## System Flow
 
@@ -45,6 +45,7 @@ Main responsibilities:
 - Role authorization.
 - User account management.
 - Machine and sensor APIs.
+- Versioned machine operational-settings API.
 - IoT device authentication.
 - Sensor event ingestion.
 - Dashboard, downtime, report, and audit APIs.
@@ -66,7 +67,7 @@ The downtime list is loaded through the backend API:
 React dashboard -> GET /api/downtime -> Express backend -> Supabase PostgreSQL
 ```
 
-The frontend sends status, cause, date, page, and limit query parameters. The backend applies the filters, returns paginated records, and computes summary totals through the database summary function.
+The frontend sends status, cause, date, page, and limit query parameters. The backend applies interval-overlap filters, pages deterministically through all metric rows, returns paginated records, and computes break-aware summaries from effective-dated settings history. Machine totals union simultaneous sensor intervals so availability and loss are not counted twice.
 
 Realtime dashboard updates currently use Server-Sent Events:
 
@@ -79,11 +80,14 @@ The backend publishes downtime updates with an in-memory Node `EventEmitter`. Th
 Current reliability layer:
 
 - SSE gives fast dashboard refreshes during a healthy connection.
-- Frontend fallback polling starts when the SSE stream repeatedly disconnects.
+- Frontend fallback polling starts when the SSE stream repeatedly disconnects or receives repeated connection-cap responses.
 - Streams close at JWT expiry and periodically revalidate the current database user and role.
-- Alerts and downtime share process-local connection caps: two streams per user, five per source IP, and 100 total by default.
-- Slow clients use a bounded per-stream queue; overflow closes the stream instead of growing memory without limit.
+- Alerts and downtime share process-local connection caps: four streams per user, 20 per source IP, and 100 total by default. This supports two dashboard tabs per user while retaining bounded admission.
+- Heartbeats advertise their configured interval so the browser can detect and reconnect a half-open stream with a bounded inactivity watchdog.
+- Slow clients use a bounded per-stream queue and backpressure deadline; overflow or a stalled socket closes the stream instead of growing memory or holding a lease indefinitely.
 - The frontend treats stream authorization loss as terminal, honors `Retry-After` for connection caps, and reconnects normally after the configured maximum stream lifetime.
+- Unplanned and planned reconnects include bounded jitter to reduce synchronized retry bursts.
+- Admins can inspect aggregate, non-identifying SSE counters through `GET /api/operations/sse`.
 - Pagination is handled by the backend, not only by frontend state.
 - The current design is acceptable for a single persistent Express backend process.
 
@@ -135,6 +139,7 @@ Main tables:
 - `audit_logs`
 - `alerts`
 - `alert_revision_state`
+- `machine_operational_settings`
 
 ## Auth Model
 
@@ -169,15 +174,61 @@ The current `main` branch is designed around one production machine:
 
 Five ESP32-backed inductive proximity sensors are assigned to that machine:
 
-- `S-01` - Raw Material Detection
-- `S-02` - Outside Filler
-- `S-03` - Coil Joint
-- `S-04` - Inside Filler
+- `S-01` - Raw Material & Coil Joint
+- `S-02` - Inside Filler Wire
+- `S-03` - Machine Main Sensor
+- `S-04` - Outside Filler Wire
 - `S-05` - Production Output Cutting
+
+No physical ESP32 nodes are integrated yet. Device flows in this document define the backend contract and future hardware behavior; they are not evidence of a deployed sensor network.
 
 The monitoring UI should describe these sensor states and events. It should not introduce unsupported machine telemetry such as speed, pressure, temperature, RPM, bar, or degrees Celsius.
 
 Production targets currently come from fixed backend values for day, week, and month. The dashboard can display those values, but there is no current admin workflow or persistent configuration API for adding or editing targets.
+
+### Machine Operational Settings
+
+Phase 2 adds one `machine_operational_settings` row per explicitly provisioned machine and exposes it through `GET` and Admin-only `PATCH` requests at `/api/machines/:machineId/settings`. Updates use optimistic concurrency and one PostgreSQL transaction for both the settings change and its `SETTINGS_UPDATED` audit row. Migration `010` provisions M-01; future machines require explicit settings provisioning after their sensors are defined.
+
+The event-ingestion RPC still cannot detect an event that never arrives. Phase 3 therefore adds authenticated device heartbeats, persisted watchdog runtime, and idempotent atomic evaluation. Migration `014` evaluates the configured sensor set through one service-role-only database request while isolating each sensor's work. `WATCHDOG_MODE` defaults to `disabled`, which keeps heartbeat ingestion active without starting periodic evaluation cycles; `observe` records candidates without operational mutations, while `enforce` may create or resolve watchdog-owned downtime only for sensors whose absence detection is explicitly enabled. Connectivity loss creates a separate connectivity condition and cannot create production downtime. S-05 absence detection is permanently prohibited.
+
+Settings updates now also maintain `machine_operational_settings_history` in the same transaction. Downtime, dashboard, and report metrics use the schedule version effective at the requested time, exclude breaks and post-break grace, include records that overlap a window even if they started earlier, and return not-applicable availability when scheduled eligible time is zero.
+
+### Device and Schedule Responsibility
+
+Backend is authoritative for shift and break classification in the `Asia/Manila` timezone. Future ESP32 firmware must not store or independently interpret the plant schedule. This prevents device clock drift or a missed settings update from turning a planned break into false downtime.
+
+Device heartbeats remain independent from production pulses. A node must continue sending authenticated heartbeats during production, planned breaks, off-shift periods, and other intervals without pulses. Heartbeats prove connectivity; pulses prove observed activity.
+
+Future device events use these meanings:
+
+- `pulse` with `active`: confirmed sensor activity.
+- `idle` with `idle`: observed idle state; updates live state without creating downtime.
+- `downtime` with `no_pulse`: an absence observation only. Ingestion stores it without directly creating downtime or an alert; the watchdog evaluator alone applies the effective schedule, planned breaks, grace, threshold, and sensor enablement before any absence-based transition. Firmware must not emit downtime merely because a pulse did not arrive.
+- `fault` with `fault`: explicit physical sensor or machine fault. An explicit fault during a break remains recorded because it may prevent restart; planned break overlap remains excluded from unplanned minutes and estimated loss.
+- `recovered` with `active`: explicit recovery observation.
+
+S-05 absence detection remains prohibited because silence from the output counter does not prove downtime. If S-05 submits a `no_pulse` observation, it remains raw history and cannot create operational downtime or an alert. No device-facing settings or schedule-sync endpoint is planned before hardware exists. Existing `POST /api/iot/events` and `POST /api/iot/heartbeats` contracts are sufficient for future nodes.
+
+Phase 3 operational flow:
+
+```text
+ESP32 heartbeat -> device-authenticated API -> atomic heartbeat state
+watchdog tick -> one batched database evaluation -> isolated atomic sensor transitions -> post-commit SSE
+settings history + downtime overlap -> shared operational-time engine -> dashboard/report metrics
+```
+
+The watchdog runner starts only from `server.js` in observe or enforce mode, runs immediately without overlapping its own cycles, uses one database RPC per cycle, applies a bounded timeout, and stops before SSE during graceful shutdown. Cycles are classified as success, partial, failed, or cancelled; disabled mode remains idle. Admins can inspect nested aggregate, non-identifying state through `GET /api/operations/watchdog`, which is Admin-only and not cacheable.
+
+Phase 4 adds a controlled frontend over this backend state. The Admin Settings route loads settings plus backend-derived constraints and separately checks Admin-only watchdog diagnostics. It saves the complete versioned document, locks S-05, fails closed when mode is unknown, and refuses writes while enforcement is active. The global watchdog mode remains deployment-owned and has no mutation endpoint.
+
+Migration `015` adds the service-role-only `get_machine_live_snapshot` function. It returns M-01, all five sensors, each sensor's independently selected latest event, and current watchdog state from one consistent read. `GET /api/iot/live` strictly validates that result, masks disabled or stale evaluation state, rejects unexpected query fields, and sends `Cache-Control: no-store`.
+
+The Live Feed makes one request every 15 seconds with an in-flight guard. Hidden tabs pause polling, visibility restoration triggers a refresh, and failures retain the last trusted snapshot. A pure presentation layer keeps connectivity, grace, observe-only thresholds, recovery confirmation, and confirmed operational downtime distinct. S-05 is always presented as production output sensing and never receives an absence state. No additional SSE stream or browser-side transition calculation is used.
+
+Code support does not authorize enforcement. Physical signal classification, heartbeat reliability, recovery calibration, disposable PostgreSQL concurrency tests, and parallel-run evidence remain required before changing `WATCHDOG_MODE` to `enforce`.
+
+Production targets are deliberately outside Phase 2. They require a separate effective-date and reporting-period design before replacing the current fixed values.
 
 ## Future Work
 
@@ -235,19 +286,40 @@ Backend-derived connection freshness
 Dashboard context strip
 ```
 
-### Admin-Managed Production Targets
+### Production Output Comparison
 
-Admins should eventually be able to add and edit target production output. This requires replacing the current fixed backend constants with persistent configuration and a role-protected API.
+Overview production analytics compares the current Manila calendar day with the immediately preceding Manila calendar day. It does not evaluate production against a configured target.
 
-Before implementation, define:
+The backend uses S-05 Output Cutting pulse events as the single source for both totals. One bounded query covers yesterday through the end of today, then the service derives:
 
-- Whether targets apply by day, week, month, shift, machine, or effective date.
-- Validation rules and units.
-- Change history and audit-log requirements.
-- How charts handle target changes inside a reporting period.
+- Today's pipe count.
+- Yesterday's pipe count.
+- The signed difference in pipes.
+- The percentage difference when yesterday is greater than zero.
+- Cumulative Today and Yesterday chart points.
 
-The design may show an Admin-only edit affordance, but it must remain documented as planned until the storage model, API contract, authorization, and audit behavior are implemented.
+When yesterday is zero, the API returns a null percentage so the frontend displays a no-baseline state instead of a misleading zero-percent change. Day, week, and month selectors remain available for downtime analysis only.
+
+### Estimated Output Loss
+
+Estimated output loss is a counterfactual calculation, not a directly measured sensor value. The backend resolves one current production-rate basis per request and applies it to unplanned downtime across Analytics, Overview, Reports, and Downtime.
+
+The rate uses recorded S-05 output divided by productive minutes. Productive minutes are scheduled eligible minutes minus unioned unplanned downtime, so breaks, grace periods, and overlapping downtime are not double-counted. Only fully completed Manila days with recorded S-05 output qualify.
+
+The backend uses the previous seven completed days when the sample contains at least three qualified production days, 360 productive minutes, and 10 output pieces. It expands to 30 completed days when the seven-day sample is insufficient. If both samples are insufficient, it uses `OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE`, which defaults to `0.05` pieces per minute (one piece per 20 minutes).
+
+API responses include the source, rate, window, qualified day count, productive minutes, and recorded output used for the estimate. Existing sensor and downtime history is never rewritten. Historical heartbeat completeness remains unavailable, so zero-output days are not treated as proven production observations, and S-05 absence detection remains prohibited.
+
+### Manual Sensor Recovery Override
+
+Physical `pulse` and `recovered` events remain the normal authority for sensor recovery. Production administrators may use a separate manual recovery override when the physical issue has been verified but the recovery event is unavailable.
+
+The override requires a reason and atomically activates the selected sensor, recalculates the machine from all sensor states, resolves matching open downtime, marks the matching alert as recovered, and writes an audit record. It does not insert or imitate an IoT sensor event. A later physical event remains valid and is processed idempotently through the normal ingestion flow.
+
+An Active alert becomes recovered and waits for acknowledgement. An already acknowledged alert resolves immediately when recovery is recorded. Machine status must not be used by itself to recover a sensor-specific incident.
 
 ### Downtime Period Expansion
 
 The planned overview control uses `Last Hour`, `Today`, `Weekly`, and `Monthly`. The current dashboard supports today, week, and month ranges. `Last Hour` requires an additional backend time-window contract and should not be treated as implemented until the API and chart aggregation support it.
+
+Daily downtime uses non-overlapping Manila-time periods (`12-6AM`, `6-9AM`, `9AM-12PM`, `12-3PM`, `3-6PM`, and `6-9PM`). The current period is calculated only through the request time, while future periods return no observed value. Production comparison checkpoints remain cumulative and use a separate boundary calculation.

@@ -1,8 +1,29 @@
-import { Activity, BarChart3, Bell, Check, Gauge, History, LogOut, Menu, Monitor, Settings, TriangleAlert, UserRound, Users, X } from 'lucide-react'
+import {
+  BarChart3,
+  Bell,
+  ChartNoAxesCombined,
+  Check,
+  Gauge,
+  History,
+  LogOut,
+  Logs,
+  Monitor,
+  Moon,
+  MoveRight,
+  Rss,
+  Settings,
+  Sun,
+  TriangleAlert,
+  UserRound,
+  UserRoundCheck,
+  Users,
+} from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useTheme } from '../../../shared/hooks/useTheme.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import {
   applyLiveAlertDelta,
   areAlertDeltasEquivalent,
@@ -12,24 +33,29 @@ import {
 } from '../alerts/alertReconciliation.js'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
 
-const ALERT_RESYNC_MIN_INTERVAL_MS = 5000
-const MAX_BUFFERED_ALERT_DELTAS = 256
-const ALERT_STREAM_EVENT_TYPES = new Set([
+import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
+import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.jsx'
+
+const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
+const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
+const SIDEBAR_SCROLL_ACTIVE_MS = 500 // transition duration active window for sidebar scroll animations
+const ALERT_STREAM_EVENT_TYPES = new Set([ //event filtering SSE
   'alert.acknowledged',
   'alert.created',
   'alert.resolved',
   'alert.updated',
 ])
-const ACKNOWLEDGEMENT_RESPONSE_STATUSES = new Set(['Acknowledged', 'Resolved'])
+const ACKNOWLEDGEMENT_RESPONSE_STATUSES = new Set(['Acknowledged', 'Resolved']) //backend api can only return two valid result
 
 const icons = {
-  gauge: Gauge,
-  activity: Activity,
+  gauge: AnimatedGauge,
+  rss: Rss,
   'triangle-alert': TriangleAlert,
   'bar-chart-3': BarChart3,
+  'chart-no-axes-combined': AnimatedAnalytics,
   users: Users,
   monitor: Monitor,
-  history: History,
+  logs: Logs,
   settings: Settings,
 }
 
@@ -65,7 +91,7 @@ function DashboardClock() {
     </time>
   )
 }
-
+//for notif case 1 - recover not yet acknowledge
 function getAlertStatusLabel(alert) {
   if (alert.status === 'Active' && alert.metadata?.recoveryPending) {
     return 'Recovered, waiting for acknowledgement'
@@ -89,16 +115,20 @@ export default function AdminDashboard() {
   const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
+  const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
+  const desktopSidebarToggleRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
-  const retryAlertsRef = useRef(() => {})
+  const sidebarScrollTimerRef = useRef(null)
+  const retryAlertsRef = useRef(() => { })
   const sessionTokenRef = useRef(null)
   const acknowledgementIdRef = useRef(0)
   const acknowledgementOperationsRef = useRef(new Map())
-  const applyAlertDeltaRef = useRef(() => {})
+  const applyAlertDeltaRef = useRef(() => { })
   const { token, user, logout } = useAuth()
+  const { theme, setTheme } = useTheme()
   sessionTokenRef.current = token
   const navigate = useNavigate()
   const location = useLocation()
@@ -118,6 +148,7 @@ export default function AdminDashboard() {
   const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
   const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
   const activeAlertCount = activeAlerts.length
+  const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
@@ -140,10 +171,17 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!isDrawerOpen) return
+    if (isMobileViewport || !isDrawerOpen) return
+
+    setIsDrawerOpen(false)
+    desktopSidebarToggleRef.current?.focus({ preventScroll: true })
+  }, [isDrawerOpen, isMobileViewport])
+
+  useEffect(() => {
+    if (!isMobileViewport || !isDrawerOpen) return
 
     mobileCloseButtonRef.current?.focus({ preventScroll: true })
-  }, [isDrawerOpen])
+  }, [isDrawerOpen, isMobileViewport])
 
   useEffect(() => {
     if (!isAlertsOpen) return
@@ -187,6 +225,13 @@ export default function AdminDashboard() {
       document.removeEventListener('keydown', handleEscape)
     }
   }, [isAlertsOpen, isDrawerOpen])
+
+  useEffect(() => () => {
+    if (sidebarScrollTimerRef.current !== null) {
+      window.clearTimeout(sidebarScrollTimerRef.current)
+      sidebarScrollTimerRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!token) return undefined
@@ -353,7 +398,7 @@ export default function AdminDashboard() {
     }
 
     function startFallbackPolling() {
-      if (!isMounted || pollingId) return
+      if (!isMounted || pollingId !== null) return
 
       setAlertConnectionStatus('polling')
       pollingId = window.setInterval(scheduleAlertReload, 10000)
@@ -361,7 +406,7 @@ export default function AdminDashboard() {
 
     function stopFallbackPolling() {
       if (!isMounted) return
-      if (pollingId) {
+      if (pollingId !== null) {
         window.clearInterval(pollingId)
         pollingId = null
       }
@@ -396,6 +441,7 @@ export default function AdminDashboard() {
         if (status === 'live') setAlertConnectionStatus('live')
         if (status === 'connecting') setAlertConnectionStatus('connecting')
         if (status === 'reconnecting') setAlertConnectionStatus('reconnecting')
+        if (status === 'degraded') setAlertConnectionStatus('degraded')
       },
     })
 
@@ -403,15 +449,15 @@ export default function AdminDashboard() {
       isMounted = false
       activeListRequest = null
       reloadQueued = false
-      retryAlertsRef.current = () => {}
-      applyAlertDeltaRef.current = () => {}
+      retryAlertsRef.current = () => { }
+      applyAlertDeltaRef.current = () => { }
       unsubscribe()
 
-      if (pollingId) {
+      if (pollingId !== null) {
         window.clearInterval(pollingId)
       }
 
-      if (resyncTimerId) {
+      if (resyncTimerId !== null) {
         window.clearTimeout(resyncTimerId)
       }
     }
@@ -451,10 +497,23 @@ export default function AdminDashboard() {
     navigate('/login', { replace: true })
   }
 
+  function handleSidebarScroll() {
+    setIsSidebarScrolling(true)
+
+    if (sidebarScrollTimerRef.current !== null) {
+      window.clearTimeout(sidebarScrollTimerRef.current)
+    }
+
+    sidebarScrollTimerRef.current = window.setTimeout(() => {
+      sidebarScrollTimerRef.current = null
+      setIsSidebarScrolling(false)
+    }, SIDEBAR_SCROLL_ACTIVE_MS)
+  }
+
   return (
     <main className="dashboard-shell">
       <aside
-        className={`dashboard-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
+        className={`dashboard-sidebar ${isDesktopSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
         aria-hidden={isMobileViewport && !isDrawerOpen ? 'true' : undefined}
         inert={isMobileViewport && !isDrawerOpen}
       >
@@ -465,29 +524,30 @@ export default function AdminDashboard() {
               <span className="sidebar-brand-name">PetroHydroPipe</span>
             </div>
           </div>
-          <button
-            className="icon-button dashboard-icon-button desktop-only"
-            type="button"
-            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          <PanelToggle
+            ref={desktopSidebarToggleRef}
+            className="sidebar-toggle desktop-only"
+            isCollapsed={isDesktopSidebarCollapsed}
+            ariaLabel={isDesktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsSidebarCollapsed((value) => !value)}
-          >
-            <Menu size={20} aria-hidden="true" />
-          </button>
-          <button
+          />
+          <PanelToggle
             ref={mobileCloseButtonRef}
-            className="icon-button dashboard-icon-button mobile-only"
-            type="button"
-            aria-label="Close navigation"
+            className="sidebar-toggle mobile-only"
+            isOpen={true}
+            ariaLabel="Close navigation"
             onClick={() => {
               setIsDrawerOpen(false)
               mobileMenuButtonRef.current?.focus({ preventScroll: true })
             }}
-          >
-            <X size={20} aria-hidden="true" />
-          </button>
+          />
         </div>
 
-        <nav className="sidebar-nav" aria-label="Dashboard sections">
+        <nav
+          className={`sidebar-nav ${isSidebarScrolling ? 'is-scrolling' : ''}`}
+          aria-label="Dashboard sections"
+          onScroll={handleSidebarScroll}
+        >
           {visibleNavGroups.map((group) => (
             <div className="sidebar-nav-group" key={group.id}>
               <p className="sidebar-nav-heading">{group.label}</p>
@@ -499,12 +559,16 @@ export default function AdminDashboard() {
                       key={item.to}
                       to={item.to}
                       end={item.to === '/dashboard'}
-                      title={isSidebarCollapsed ? item.label : undefined}
-                      className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''}`}
+                      title={isDesktopSidebarCollapsed ? item.label : undefined}
+                      aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
+                      className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
                     >
-                      <span className="sidebar-link-icon" aria-hidden="true">
-                        <Icon size={18} />
-                      </span>
+                      <Icon
+                        className="sidebar-link-icon"
+                        size={20}
+                        strokeWidth={item.icon === 'logs' ? 2.25 : 1.75}
+                        aria-hidden="true"
+                      />
                       <span className="sidebar-link-copy">
                         <span className="sidebar-link-label">{item.label}</span>
                       </span>
@@ -548,18 +612,16 @@ export default function AdminDashboard() {
       <div className="dashboard-main">
         <header className="dashboard-topbar">
           <div className="topbar-leading">
-            <button
+            <PanelToggle
               ref={mobileMenuButtonRef}
-              className="icon-button dashboard-icon-button mobile-only"
-              type="button"
-              aria-label="Open navigation"
+              className="mobile-only"
+              isOpen={false}
+              ariaLabel="Open navigation"
               onClick={() => {
                 setIsAlertsOpen(false)
                 setIsDrawerOpen(true)
               }}
-            >
-              <Menu size={20} aria-hidden="true" />
-            </button>
+            />
             <div>
               <h1 className="topbar-label">{pageMeta.title}</h1>
               <p className="topbar-subtitle">{pageMeta.subtitle}</p>
@@ -574,9 +636,27 @@ export default function AdminDashboard() {
                   ? 'Polling'
                   : alertConnectionStatus === 'connecting'
                     ? 'Connecting'
-                    : 'Reconnecting'}
+                    : alertConnectionStatus === 'degraded'
+                      ? 'Real-time temporarily unavailable — retrying'
+                      : 'Reconnecting'}
             </span>
+            <div className="topbar-divider" aria-hidden="true" />
             <DashboardClock />
+            <div className="topbar-divider" aria-hidden="true" />
+            <button
+              className={`theme-toggle-btn is-${theme}`}
+              type="button"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            >
+              {theme === 'dark' ? (
+                <Sun className="theme-toggle-icon is-sun" size={18} aria-hidden="true" />
+              ) : (
+                <Moon className="theme-toggle-icon is-moon" size={18} aria-hidden="true" />
+              )}
+            </button>
+            <div className="topbar-divider" aria-hidden="true" />
             <button
               ref={alertsButtonRef}
               className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
@@ -594,7 +674,12 @@ export default function AdminDashboard() {
                 setIsAlertsOpen((value) => !value)
               }}
             >
-              <Bell size={18} aria-hidden="true" />
+              <Bell className="bell-icon" size={20} aria-hidden="true" />
+              {hasTrustedAlertList && activeAlertCount > 0 ? (
+                <span key={activeAlertCount} className="notification-badge" aria-hidden="true">
+                  {activeAlertCount > 99 ? '99+' : activeAlertCount}
+                </span>
+              ) : null}
               <span className="sr-only">
                 {!hasTrustedAlertList
                   ? 'Alert status unavailable'
@@ -606,10 +691,15 @@ export default function AdminDashboard() {
             {isAlertsOpen ? (
               <div ref={alertsPopoverRef} className="alerts-popover" role="dialog" aria-label="Active alerts" tabIndex="-1">
                 <div className="alerts-popover-header">
-                  <strong>Notifications</strong>
-                  <span aria-label={!hasTrustedAlertList ? 'Alert count unavailable' : undefined}>
-                    {hasTrustedAlertList ? activeAlertCount : '—'}
-                  </span>
+                  <div className="alerts-header-title-wrap">
+                    <strong>Notifications</strong>
+                    <span
+                      className="alerts-header-count"
+                      aria-label={!hasTrustedAlertList ? 'Alert count unavailable' : `${activeAlertCount} active alerts`}
+                    >
+                      {hasTrustedAlertList ? (activeAlertCount > 99 ? '99+' : activeAlertCount) : '—'}
+                    </span>
+                  </div>
                 </div>
                 {alertLoadError ? (
                   <div className="alert-load-error" role="alert">
@@ -620,37 +710,78 @@ export default function AdminDashboard() {
                   </div>
                 ) : null}
                 {alerts.length > 0 ? (
-                  <ul>
-                    {[...activeAlerts, ...acknowledgedAlerts].map((alert) => (
-                      <li key={alert.id} className={alert.status === 'Acknowledged' ? 'is-acknowledged' : ''}>
-                        <TriangleAlert size={15} aria-hidden="true" />
-                        <div className="alert-popover-copy">
-                          <span className="alert-popover-title">{alert.title}</span>
-                          <span>{alert.message}</span>
-                          <span className="alert-popover-meta">{getAlertStatusLabel(alert)}</span>
-                          {alertAcknowledgementErrors[alert.id] ? (
-                            <span className="alert-acknowledgement-error" role="alert">
-                              {alertAcknowledgementErrors[alert.id]}
+                  <ul className="alerts-popover-list">
+                    {[...activeAlerts, ...acknowledgedAlerts].map((alert) => {
+                      const isAcked = alert.status === 'Acknowledged'
+                      const isRecoveryPending = alert.status === 'Active' && Boolean(alert.metadata?.recoveryPending)
+                      const statusLabel = getAlertStatusLabel(alert)
+                      const rowStateClass = isRecoveryPending
+                        ? 'is-recovered'
+                        : isAcked
+                          ? 'is-acknowledged'
+                          : 'is-active'
+                      return (
+                        <li key={alert.id} className={`alert-row ${rowStateClass}`}>
+                          <div className="alert-row-indicator">
+                            {isRecoveryPending ? (
+                              <History size={14} className="alert-icon-recovered" aria-hidden="true" />
+                            ) : isAcked ? (
+                              <UserRoundCheck size={14} className="alert-icon-acked" aria-hidden="true" />
+                            ) : (
+                              <span className="alert-dot-active" aria-hidden="true" />
+                            )}
+                          </div>
+                          <div className="alert-row-body">
+                            <p className="alert-row-primary">
+                              {alert.title || alert.message}
+                            </p>
+                            {alert.title && alert.message && alert.title !== alert.message ? (
+                              <p className="alert-row-message">{alert.message}</p>
+                            ) : null}
+                            <div className="alert-row-meta">
+                              <span>{alert.machineName || 'Spiral Mill 01'}</span>
+                              <span className="meta-separator">·</span>
+                              <span className="alert-status-text">{statusLabel}</span>
+                              {alertAcknowledgementErrors[alert.id] ? (
+                                <span className="alert-acknowledgement-error" role="alert">
+                                  {alertAcknowledgementErrors[alert.id]}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          {!isAcked ? (
+                            <button
+                              className="alert-acknowledge-ghost-btn"
+                              type="button"
+                              disabled={acknowledgingAlertIds.includes(alert.id)}
+                              onClick={() => handleAcknowledgeAlert(alert.id)}
+                            >
+                              Acknowledge
+                            </button>
+                          ) : (
+                            <span className="alert-acked-tag">
+                              <UserRoundCheck size={12} aria-hidden="true" /> Acked
                             </span>
-                          ) : null}
-                        </div>
-                        {alert.status === 'Active' ? (
-                          <button
-                            className="btn btn-secondary alert-acknowledge-button"
-                            type="button"
-                            disabled={acknowledgingAlertIds.includes(alert.id)}
-                            onClick={() => handleAcknowledgeAlert(alert.id)}
-                          >
-                            <Check size={14} aria-hidden="true" />
-                            Acknowledge
-                          </button>
-                        ) : null}
-                      </li>
-                    ))}
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 ) : hasTrustedAlertList ? (
-                  <p>No active alerts.</p>
+                  <div className="alerts-empty-state">
+                    <p>No active alerts.</p>
+                  </div>
                 ) : null}
+                <div className="alerts-popover-footer">
+                  <NavLink
+                    to="/dashboard/downtime"
+                    className="alerts-footer-link"
+                    onClick={() => setIsAlertsOpen(false)}
+                  >
+                    <span>View all downtime logs</span>
+                    <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
+                  </NavLink>
+                </div>
               </div>
             ) : null}
           </div>
@@ -658,7 +789,7 @@ export default function AdminDashboard() {
 
         <section className="dashboard-content">
           {/* Nested /dashboard routes render here. */}
-          <Outlet />
+          <Outlet context={{ activeAlerts, hasTrustedAlertList }} />
         </section>
       </div>
     </main>

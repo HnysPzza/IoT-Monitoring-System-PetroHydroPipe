@@ -3,6 +3,28 @@ const path = require('node:path')
 const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
+const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const LOSS_BASIS = {
+  source: 'configured-fallback',
+  ratePiecesPerMinute: 0.05,
+  windowStartAt: '2026-06-13T16:00:00.000Z',
+  windowEndAt: '2026-07-13T16:00:00.000Z',
+  qualifiedProductionDays: 0,
+  productiveMinutes: 0,
+  outputPieces: 0,
+}
+const SETTINGS_HISTORY = [{
+  machine_id: MACHINE_ID,
+  version: '1',
+  shift_schedule: {
+    workStart: '08:00',
+    workEnd: '17:00',
+    breaks: [],
+    rampUpGraceMinutes: 0,
+  },
+  effective_from: null,
+  effective_to: null,
+}]
 
 function clearSourceCache() {
   Object.keys(require.cache).forEach((cacheKey) => {
@@ -32,7 +54,7 @@ function attachRelations(record) {
     machines: { name: 'Spiral Mill 01' },
     sensors: {
       sensor_code: isManual ? 'S-03' : 'S-04',
-      label: isManual ? 'Coil Joint' : 'Inside Filler',
+      label: isManual ? 'Machine Main Sensor' : 'Outside Filler Wire',
     },
   }
 }
@@ -40,7 +62,8 @@ function attachRelations(record) {
 function createFakeSupabase(records, calls) {
   return {
     from(tableName) {
-      assert.equal(tableName, 'downtime_events')
+      assert.ok(['downtime_events', 'machine_operational_settings_history'].includes(tableName))
+      const sourceRecords = tableName === 'downtime_events' ? records : SETTINGS_HISTORY
       const query = {
         filters: {},
         fromIndex: 0,
@@ -50,15 +73,16 @@ function createFakeSupabase(records, calls) {
         eq(field, value) { this.filters[field] = value; return this },
         gte(field, value) { calls.push({ operation: 'gte', field, value }); return this },
         lt(field, value) { calls.push({ operation: 'lt', field, value }); return this },
+        or(value) { calls.push({ operation: 'or', value }); return this },
         range(from, to) { this.fromIndex = from; this.toIndex = to; return this },
         matches(record) {
           return Object.entries(this.filters).every(([field, value]) => record[field] === value)
         },
         async maybeSingle() {
-          return { data: records.find((record) => this.matches(record)) || null, error: null }
+          return { data: sourceRecords.find((record) => this.matches(record)) || null, error: null }
         },
         then(resolve, reject) {
-          const matching = records.filter((record) => this.matches(record))
+          const matching = sourceRecords.filter((record) => this.matches(record))
           return Promise.resolve({
             data: matching.slice(this.fromIndex, this.toIndex + 1),
             count: matching.length,
@@ -107,6 +131,9 @@ function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = 
   clearSourceCache()
   const fakeSupabase = createFakeSupabase(records, calls)
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
+  mockModule('src/shared/outputLossBasis.js', {
+    getOutputLossBasis: async () => LOSS_BASIS,
+  })
   mockModule('src/modules/audit/audit.service.js', {
     recordAuditLog: async (entry) => auditLogs.push(entry),
   })
@@ -148,7 +175,7 @@ test('downtime list uses Manila day boundaries and returns pagination', async ()
   const calls = []
   const records = Array.from({ length: 30 }, (_, index) => attachRelations({
     id: `downtime-${index}`,
-    machine_id: 'machine-1',
+    machine_id: MACHINE_ID,
     sensor_id: 'sensor-1',
     started_at: '2026-07-12T16:00:00.000Z',
     cause: 'Flux Refill',
@@ -168,15 +195,17 @@ test('downtime list uses Manila day boundaries and returns pagination', async ()
     hasPreviousPage: true,
   })
   assert.equal(result.summary.open, 30)
-  assert.equal(calls.find((call) => call.operation === 'gte').value, '2026-07-12T16:00:00.000Z')
+  assert.equal(result.summary.loss, 27)
+  assert.deepEqual(result.lossEstimateBasis, LOSS_BASIS)
   assert.equal(calls.find((call) => call.operation === 'lt').value, '2026-07-13T16:00:00.000Z')
+  assert.match(calls.find((call) => call.operation === 'or').value, /ended_at\.gt\.2026-07-12T16:00:00\.000Z/)
   assert.match(result.records[0].displayLabel, /^S-04 12:00 AM$/)
 })
 
 test('manual sensor cause and notes are updated through the database RPC', async () => {
   const records = [attachRelations({
     id: 'downtime-1',
-    machine_id: 'machine-1',
+    machine_id: MACHINE_ID,
     sensor_id: 'sensor-3',
     started_at: '2026-06-11T00:00:00.000Z',
     cause: 'Pending Cause Review',
@@ -188,12 +217,12 @@ test('manual sensor cause and notes are updated through the database RPC', async
 
   const result = await service.updateDowntime({
     downtimeId: 'downtime-1',
-    values: { cause: 'Coil Joint', notes: 'Operator confirmed replacement.' },
+    values: { cause: 'Misalignment', notes: 'Operator confirmed roller tracking issue.' },
     actorUserId: 'user-1',
   })
 
-  assert.equal(result.record.cause, 'Coil Joint')
-  assert.equal(result.record.notes, 'Operator confirmed replacement.')
+  assert.equal(result.record.cause, 'Misalignment')
+  assert.equal(result.record.notes, 'Operator confirmed roller tracking issue.')
   assert.equal(calls.find((call) => call.operation === 'rpc').functionName, 'update_downtime_record')
   assert.equal(auditLogs[0].action, 'DOWNTIME_UPDATED')
 })
@@ -201,7 +230,7 @@ test('manual sensor cause and notes are updated through the database RPC', async
 test('notes can be cleared without changing the cause', async () => {
   const records = [attachRelations({
     id: 'downtime-1',
-    machine_id: 'machine-1',
+    machine_id: MACHINE_ID,
     sensor_id: 'sensor-3',
     started_at: '2026-06-11T00:00:00.000Z',
     cause: 'Coil Joint',
@@ -223,7 +252,7 @@ test('notes can be cleared without changing the cause', async () => {
 test('resolving is idempotent and never reopens a record', async () => {
   const records = [attachRelations({
     id: 'downtime-1',
-    machine_id: 'machine-1',
+    machine_id: MACHINE_ID,
     sensor_id: 'sensor-3',
     started_at: '2026-06-11T00:00:00.000Z',
     cause: 'Coil Joint',
@@ -247,10 +276,40 @@ test('resolving is idempotent and never reopens a record', async () => {
   assert.equal(second.record.durationMinutes, first.record.durationMinutes)
 })
 
+test('manual sensor downtime cannot resolve before its cause is reviewed', async () => {
+  const records = [attachRelations({
+    id: 'downtime-1',
+    machine_id: MACHINE_ID,
+    sensor_id: 'sensor-3',
+    started_at: '2026-06-11T00:00:00.000Z',
+    cause: 'Pending Cause Review',
+    status: 'Open',
+  })]
+  const service = loadDowntimeService({ records })
+
+  await assert.rejects(
+    () => service.updateDowntime({
+      downtimeId: 'downtime-1',
+      values: { status: 'Resolved' },
+      actorUserId: 'user-1',
+    }),
+    { code: 'DOWNTIME_CAUSE_REQUIRED', status: 400 },
+  )
+
+  const result = await service.updateDowntime({
+    downtimeId: 'downtime-1',
+    values: { cause: 'Misalignment', status: 'Resolved' },
+    actorUserId: 'user-1',
+  })
+
+  assert.equal(result.record.cause, 'Misalignment')
+  assert.equal(result.record.status, 'Resolved')
+})
+
 test('automatic sensor downtime cause cannot be manually changed', async () => {
   const records = [attachRelations({
     id: 'downtime-1',
-    machine_id: 'machine-1',
+    machine_id: MACHINE_ID,
     sensor_id: 'sensor-1',
     started_at: '2026-06-11T00:00:00.000Z',
     cause: 'Flux Refill',

@@ -2,7 +2,6 @@ import { AlertTriangle } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 export const trendModes = [
-  { id: 'hour', label: 'Last Hour', disabled: true },
   { id: 'today', label: 'Daily' },
   { id: 'week', label: 'Weekly' },
   { id: 'month', label: 'Monthly' },
@@ -63,14 +62,19 @@ function formatMonth(date) {
   })
 }
 
-function formatDowntimeDuration(minutes) {
+function formatDowntimeDuration(minutes, periodState) {
+  if (periodState === 'future') {
+    return 'Period not reached yet'
+  }
+
   if (minutes < 60) {
-    return `${minutes} min down`
+    return `${minutes} min down${periodState === 'current' ? ' so far' : ''}`
   }
 
   const hours = Math.floor(minutes / 60)
   const remainingMinutes = minutes % 60
-  return remainingMinutes ? `${hours} hr ${remainingMinutes} min down` : `${hours} hr down`
+  const duration = remainingMinutes ? `${hours} hr ${remainingMinutes} min down` : `${hours} hr down`
+  return periodState === 'current' ? `${duration} so far` : duration
 }
 
 export function getTrendRangeLabel(mode, anchorDate) {
@@ -91,42 +95,75 @@ function ChartTooltip({ active, payload, label }) {
     return null
   }
 
+  const point = payload[0].payload
+
   return (
     <div className="recharts-tooltip-card">
       <strong>{label}</strong>
-      <span>{formatDowntimeDuration(payload[0].value)}</span>
-      <span>Estimated loss: {payload[0].payload.estimatedLoss} pcs</span>
-      <span>Likely cause: {payload[0].payload.cause}</span>
+      <span>{formatDowntimeDuration(payload[0].value, point.periodState)}</span>
+      {point.periodState !== 'future' ? (
+        <>
+          <span>Estimated loss: {point.estimatedLoss} pcs</span>
+          <span>
+            {point.cause
+              ? `Likely cause: ${point.cause}`
+              : point.causeReviewPending
+                ? 'Cause awaiting review'
+                : 'No reviewed cause recorded'}
+          </span>
+        </>
+      ) : null}
     </div>
   )
 }
 
-export default function DowntimeTrendChart({ data, thresholdMinutes = 30 }) {
+export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEstimateBasis = null }) {
+  const observedPeriods = data.filter((item) => item.periodState !== 'future')
+  const futurePeriodCount = data.length - observedPeriods.length
+
   return (
-    <div className="trend-chart-panel" role="img" aria-label="Downtime by period bar chart in minutes">
-      <ResponsiveContainer width="100%" height={260} minWidth={0}>
-        <BarChart data={data} margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
-          <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
-          <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
-          <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" label={{ value: `${thresholdMinutes} min limit`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
-          <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
-            {data.map((item) => (
-              <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="trend-chart-panel">
+      <div role="img" aria-label="Downtime by non-overlapping period bar chart in minutes">
+        <ResponsiveContainer width="100%" height={260} minWidth={0}>
+          <BarChart data={data} margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
+            <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
+            <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
+            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" label={{ value: `${thresholdMinutes} min limit`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
+            <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
+              {data.map((item) => (
+                <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
       <div className="downtime-threshold-note">
         <AlertTriangle size={15} aria-hidden="true" />
         <span>Red bars indicate periods at or above {thresholdMinutes} minutes.</span>
       </div>
-      <div className="trend-data-row" aria-hidden="true">
-        {data.slice(-4).map((item) => (
-          <span key={item.label}>{item.label}: {item.minutes}m</span>
+      <div className="trend-data-row" role="list" aria-label="Observed downtime period summary">
+        {observedPeriods.slice(-4).map((item) => (
+          <span key={item.label} role="listitem">
+            {item.label}: {item.minutes}m{item.periodState === 'current' ? ' so far' : ''}
+          </span>
         ))}
+        {futurePeriodCount > 0 ? (
+          <span role="listitem">{futurePeriodCount} future {futurePeriodCount === 1 ? 'period' : 'periods'} not reached</span>
+        ) : null}
       </div>
+      {lossEstimateBasis ? (
+        <div className="downtime-threshold-note">
+          <span>
+            Estimated loss uses {lossEstimateBasis.source === 'trailing-7-days'
+              ? 'last 7 completed days'
+              : lossEstimateBasis.source === 'trailing-30-days'
+                ? 'last 30 completed days'
+                : 'configured fallback'}: {lossEstimateBasis.ratePiecesPerMinute} pcs/min.
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }

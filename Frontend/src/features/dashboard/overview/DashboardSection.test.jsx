@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../auth/authSession.jsx'
@@ -38,14 +39,17 @@ vi.mock('./DowntimeTrendChart.jsx', async () => {
 function overviewPayload() {
   return {
     alerts: [],
-    summary: [{ id: 'output', label: 'Production Output', value: '5 pcs', helper: 'Today' }],
+    summary: [{ id: 'pipes', label: 'Production Output', value: '5 pcs', helper: 'Today' }],
     productionAnalytics: {
       day: {
         currentTotal: 5,
-        targetTotal: 1400,
+        previousTotal: 3,
+        difference: 2,
+        differencePercent: 66.67,
         unit: 'pcs',
         currentLabel: 'Today',
-        label: 'Daily Output',
+        previousLabel: 'Yesterday',
+        label: 'Today vs Yesterday',
       },
     },
     availability: [{ machineId: 'Spiral Mill 01', percent: 98 }],
@@ -84,11 +88,74 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+function RealtimeAlertHarness() {
+  const [activeAlerts, setActiveAlerts] = useState([])
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setActiveAlerts([{
+          id: 'alert-1',
+          severity: 'Critical',
+          status: 'Active',
+          message: 'S-04 Outside Filler Wire has no pulse.',
+        }])}
+      >
+        Emit alert
+      </button>
+      <Outlet context={{ activeAlerts, hasTrustedAlertList: true }} />
+    </>
+  )
+}
+
 describe('DashboardSection', () => {
   beforeEach(() => {
     getDashboardOverview.mockReset()
     getDashboardDowntimeImpact.mockReset()
     getLiveFeed.mockReset()
+  })
+
+  it('shows a trusted realtime alert without refetching the overview', async () => {
+    const user = userEvent.setup()
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<RealtimeAlertHarness />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    expect(screen.queryByText('S-04 Outside Filler Wire has no pulse.')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Emit alert' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('S-04 Outside Filler Wire has no pulse.')
+    expect(getDashboardOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes production bucket states while the page remains open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    try {
+      renderWithAuth(<DashboardSection />)
+      expect(await screen.findByText('Production Output')).toBeInTheDocument()
+      expect(getDashboardOverview).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(60 * 1000)
+      await waitFor(() => expect(getDashboardOverview).toHaveBeenCalledTimes(2))
+      expect(screen.getByLabelText('Production analytics')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reloads only the downtime chart when chart range changes', async () => {
@@ -105,9 +172,10 @@ describe('DashboardSection', () => {
     expect(await screen.findByText('Production Output')).toBeInTheDocument()
     expect(await screen.findByTestId('downtime-chart')).toHaveTextContent('Downtime points: 1')
     expect(screen.getByText('1 / 1')).toBeInTheDocument()
-    expect(screen.getByText('Target Production Output')).toBeInTheDocument()
+    expect(screen.getByText('Difference from Yesterday')).toBeInTheDocument()
+    expect(screen.getByText('+2 pcs')).toBeInTheDocument()
     expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /last hour/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /last hour/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(screen.getByRole('button', { name: /weekly/i }))
@@ -220,7 +288,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByRole('heading', { name: 'No live machine is available' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live status' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(await screen.findByText(/last successful empty result/i)).toHaveTextContent('Empty live refresh failed.')
     expect(screen.getByRole('heading', { name: 'No live machine is available' })).toBeInTheDocument()
@@ -239,13 +307,13 @@ describe('DashboardSection', () => {
 
     renderWithAuth(<DashboardSection />)
 
-    expect(await screen.findByText('5 / 5 sensors reporting')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live status' }))
+    expect(await screen.findByText('5 / 5 reporting')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     const staleNotice = await screen.findByText(/Live machine status is stale/i)
     expect(staleNotice).toHaveTextContent('Live refresh failed.')
     expect(staleNotice.querySelector('time')).toHaveAttribute('dateTime')
-    expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
+    expect(screen.getByText('5 / 5 reporting')).toBeInTheDocument()
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
   })
 
@@ -290,7 +358,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText('No downtime data is available for this range.')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh chart' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(await screen.findByText(/Downtime chart data is stale/i)).toHaveTextContent('Empty chart refresh failed.')
     expect(screen.getByText('No downtime data is available for this range.')).toBeInTheDocument()
@@ -336,7 +404,7 @@ describe('DashboardSection', () => {
 
     const view = render(renderTree('first-token'))
     expect(await screen.findByRole('heading', { name: 'Prior token machine' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live status' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
     expect(await screen.findByText(/Live machine status is stale/i)).toHaveTextContent('Prior token refresh failed.')
 
     const staleMachineKpi = screen.getByText('Machine Online').closest('article')
@@ -363,6 +431,7 @@ describe('DashboardSection', () => {
     getDashboardDowntimeImpact
       .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Old daily point', minutes: 10 }] } })
       .mockReturnValueOnce(weeklyRequest.promise)
+      .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Cached daily point', minutes: 10 }] } })
 
     renderWithAuth(<DashboardSection />)
 
@@ -370,9 +439,9 @@ describe('DashboardSection', () => {
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
     expect(screen.queryByText(/Old daily point/)).not.toBeInTheDocument()
 
-    weeklyRequest.reject(new Error('Weekly chart failed.'))
+    weeklyRequest.reject(new Error('Weekly range failed.'))
 
-    expect(await screen.findByText('Weekly chart failed.')).toBeInTheDocument()
+    expect(await screen.findByText('Weekly range failed.')).toBeInTheDocument()
     expect(screen.queryByText(/Old daily point/)).not.toBeInTheDocument()
     expect(screen.queryByText('No downtime data is available for this range.')).not.toBeInTheDocument()
   })
@@ -412,7 +481,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Cached chart point/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh chart' }))
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(screen.getByText(/Cached chart point/)).toBeInTheDocument()
     const refreshStatus = screen.getByText('Refreshing downtime chart...')

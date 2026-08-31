@@ -13,6 +13,7 @@ const actionLabels = {
   DOWNTIME_UPDATED: 'Downtime record updated',
   MACHINE_STATUS_UPDATED: 'Machine status changed',
   SENSOR_STATUS_UPDATED: 'Sensor status changed',
+  SENSOR_MANUAL_RECOVERY_OVERRIDE: 'Manual sensor recovery override',
   IOT_EVENT_RECEIVED: 'Sensor event received',
   IOT_DEVICE_AUTH_FAILED: 'ESP32 device rejected',
   IOT_MACHINE_STATUS_UPDATED: 'Machine status updated by sensor data',
@@ -57,8 +58,12 @@ const technicalLabels = {
   eventType: 'Event type',
   machineCode: 'Machine code',
   machineName: 'Machine',
+  newMachineStatus: 'New machine status',
+  newSensorStatus: 'New sensor status',
   newStatus: 'New status',
   reason: 'Reason',
+  previousMachineStatus: 'Previous machine status',
+  previousSensorStatus: 'Previous sensor status',
   recordedAt: 'Recorded at',
   recoveredAt: 'Recovered at',
   recoveryEventId: 'Recovery event ID',
@@ -225,6 +230,8 @@ export function getReadableDetails(log) {
       return `${getMachineName(log)} changed to ${status}.`
     case 'SENSOR_STATUS_UPDATED':
       return `${sensor} changed to ${status}.`
+    case 'SENSOR_MANUAL_RECOVERY_OVERRIDE':
+      return `${sensor} was manually recovered because ${metadata.reason || 'an authorized override was recorded'}. ${getMachineName(log)} was recalculated to ${metadata.newMachineStatus || 'its derived status'}.`
     case 'IOT_EVENT_RECEIVED':
       return `${sensor} detected ${eventType}. Signal: ${signal}.`
     case 'IOT_DEVICE_AUTH_FAILED':
@@ -267,6 +274,9 @@ export function getReadableSource(log) {
 export function getReadableDetailItems(log) {
   return [
     { label: 'What happened', value: getReadableDetails(log) },
+    ...(log.action === 'SENSOR_MANUAL_RECOVERY_OVERRIDE' && log.metadata?.reason
+      ? [{ label: 'Override reason', value: log.metadata.reason }]
+      : []),
     { label: 'Who did it', value: getReadableActor(log) },
     { label: 'Affected item', value: getReadableTarget(log) },
     { label: 'Result', value: getReadableAction(log) },

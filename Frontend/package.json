@@ -2,14 +2,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=1 --fileParallelism=false",
     "test:watch": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@internationalized/date": "^3.12.3",
     "@radix-ui/react-popover": "^1.1.23",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",
+    "react-aria-components": "^1.20.0",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.7",
     "react-router": "^8.3.0",

@@ -1,0 +1,126 @@
+/* PanelToggle - Softer and Simpler Lucide Panel Left Toggle */
+
+.panel-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid var(--card-border, rgba(175, 192, 206, 0.16));
+  border-radius: 10px;
+  background: var(--icon-bg, rgba(255, 255, 255, 0.04));
+  color: var(--c-text-2, #AFC0CE);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  transition:
+    background-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-toggle-btn.desktop-only {
+  display: inline-flex;
+}
+
+.panel-toggle-btn.mobile-only {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .panel-toggle-btn.desktop-only {
+    display: none !important;
+  }
+
+  .panel-toggle-btn.mobile-only {
+    display: inline-flex !important;
+  }
+}
+
+.panel-toggle-btn:hover {
+  color: var(--c-text, #F8FAFC);
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.25);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.18),
+    0 0 12px rgba(56, 189, 248, 0.1);
+}
+
+.panel-toggle-btn:active {
+  transform: scale(0.92);
+}
+
+.panel-toggle-btn:focus-visible {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+/* Sidebar-header toggles keep a full touch target while rendering as an icon only. */
+.panel-toggle-btn.sidebar-toggle,
+.panel-toggle-btn.sidebar-toggle:hover,
+.panel-toggle-btn.sidebar-toggle:active {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.panel-toggle-btn.sidebar-toggle:hover,
+.panel-toggle-btn.sidebar-toggle:active {
+  color: var(--c-text, #F8FAFC);
+}
+
+.panel-toggle-btn.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--c-primary, #1677FF);
+  outline-offset: 2px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Base Lucide SVG */
+.panel-toggle-svg {
+  display: block;
+  overflow: visible;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.panel-rect,
+.panel-divider {
+  transition: stroke 200ms ease, opacity 200ms ease;
+}
+
+/* Seamless animated chevron */
+.panel-chevron {
+  transform-origin: 15px 12px;
+  transition:
+    transform 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    stroke 200ms ease;
+}
+
+/* When pointing right (PanelLeftOpen: ready to expand / open) */
+.panel-toggle-btn.is-pointing-right .panel-chevron {
+  transform: scaleX(-1);
+}
+
+/* Subtle micro-interaction on hover: chevron gently nudges in the action direction */
+.panel-toggle-btn.is-pointing-left:hover .panel-chevron {
+  transform: translateX(-1.5px);
+}
+
+.panel-toggle-btn.is-pointing-right:hover .panel-chevron {
+  transform: scaleX(-1) translateX(-1.5px);
+}

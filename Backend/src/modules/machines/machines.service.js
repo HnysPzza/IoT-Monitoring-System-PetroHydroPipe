@@ -1,6 +1,7 @@
 const { getSupabaseClient } = require('../../database/client')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
 const { recordAuditLog } = require('../audit/audit.service')
+const { publishTransitionDescriptors } = require('../operations/transitionPublisher')
 
 function createMachineError(status, code, message) {
   const error = new Error(message)
@@ -16,7 +17,7 @@ function toMachineResponse(machineRecord) {
     name: machineRecord.name,
     status: machineRecord.status,
     location: machineRecord.location,
-    sensorCount: Number(machineRecord.sensors?.[0]?.count || 0),
+    sensorCount: Number(machineRecord.sensor_count ?? machineRecord.sensors?.[0]?.count ?? 0),
     createdAt: machineRecord.created_at,
     updatedAt: machineRecord.updated_at,
   }
@@ -91,6 +92,29 @@ async function listSensorsByMachine(machineId) {
 
 async function updateMachineStatus({ machineId, status, actorUserId }) {
   const supabase = getSupabaseClient()
+
+  if (status !== 'Downtime') {
+    const [{ data: sensors, error: sensorsError }, { count: unresolvedAlertCount, error: alertsError }] = await Promise.all([
+      supabase.from('sensors').select('status').eq('machine_id', machineId),
+      supabase
+        .from('alerts')
+        .select('id', { count: 'exact', head: true })
+        .eq('machine_id', machineId)
+        .in('status', ['Active', 'Acknowledged']),
+    ])
+
+    if (sensorsError || alertsError) {
+      throw createMachineError(500, 'MACHINE_STATUS_GUARD_FAILED', 'Unable to verify the machine operational state.')
+    }
+    if ((sensors || []).some((sensor) => sensor.status === 'Fault') || Number(unresolvedAlertCount || 0) > 0) {
+      throw createMachineError(
+        409,
+        'MACHINE_STATUS_CONFLICT',
+        'Recover or override the affected sensor before changing the machine status.',
+      )
+    }
+  }
+
   const { data, error } = await supabase
     .from('machines')
     .update({ status })
@@ -131,7 +155,60 @@ async function updateMachineStatus({ machineId, status, actorUserId }) {
   return machine
 }
 
-async function updateSensorStatus({ sensorId, status, actorUserId }) {
+async function applyManualSensorRecovery({ sensorId, actorUserId, overrideReason }) {
+  const { data, error } = await getSupabaseClient()
+    .rpc('override_sensor_recovery', {
+      p_sensor_id: sensorId,
+      p_actor_user_id: actorUserId,
+      p_reason: overrideReason,
+    })
+    .single()
+
+  if (error?.code === 'P0002') {
+    throw createMachineError(404, 'SENSOR_NOT_FOUND', 'Sensor not found.')
+  }
+  if (error?.code === '22023') {
+    throw createMachineError(400, 'SENSOR_RECOVERY_OVERRIDE_INVALID', 'A valid recovery override reason is required.')
+  }
+  if (error || !data?.sensor_record || !data?.machine_record) {
+    throw createMachineError(500, 'SENSOR_RECOVERY_OVERRIDE_FAILED', 'Unable to apply the sensor recovery override.')
+  }
+
+  const sensor = toSensorResponse(data.sensor_record)
+  const machine = toMachineResponse(data.machine_record)
+  const descriptors = []
+
+  if (data.downtime_action && data.downtime_id) {
+    descriptors.push({
+      kind: 'downtime',
+      action: data.downtime_action,
+      id: data.downtime_id,
+      sensorCode: sensor.sensorCode,
+      machineCode: machine.machineCode,
+    })
+  }
+  if (data.alert_action && data.alert_record) {
+    descriptors.push({ kind: 'alert', action: data.alert_action, record: data.alert_record })
+  }
+  publishTransitionDescriptors(descriptors)
+
+  return {
+    sensor,
+    machine,
+    recoveryOverride: {
+      source: 'manual_override',
+      reason: overrideReason,
+      downtimeAction: data.downtime_action || null,
+      alertAction: data.alert_action || null,
+    },
+  }
+}
+
+async function updateSensorStatus({ sensorId, status, actorUserId, overrideReason }) {
+  if (status === 'Active') {
+    return applyManualSensorRecovery({ sensorId, actorUserId, overrideReason })
+  }
+
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('sensors')
@@ -161,7 +238,7 @@ async function updateSensorStatus({ sensorId, status, actorUserId }) {
     },
   })
 
-  return sensor
+  return { sensor, machine: null, recoveryOverride: null }
 }
 
 module.exports = {

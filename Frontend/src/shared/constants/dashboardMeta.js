@@ -5,15 +5,15 @@ export const navItems = [
     to: '/dashboard',
     icon: 'gauge',
     group: 'monitor',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor'],
     subtitle: 'Production and downtime monitoring for Spiral Mill 01.',
   },
   {
     label: 'Live Feed',
     to: '/dashboard/live',
-    icon: 'activity',
+    icon: 'rss',
     group: 'monitor',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor'],
     subtitle: 'Live status across five monitoring points.',
   },
   {
@@ -21,7 +21,7 @@ export const navItems = [
     to: '/dashboard/downtime',
     icon: 'triangle-alert',
     group: 'monitor',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor'],
     subtitle: 'Review stoppages, causes, and intervention history.',
   },
   {
@@ -29,13 +29,21 @@ export const navItems = [
     to: '/dashboard/reports',
     icon: 'bar-chart-3',
     group: 'analyze',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Managing Director'],
     subtitle: 'Generate and export production summaries.',
+  },
+  {
+    label: 'Analytics',
+    to: '/dashboard/analytics',
+    icon: 'chart-no-axes-combined',
+    group: 'analyze',
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director'],
+    subtitle: 'Explore production, downtime, and process trends.',
   },
   {
     label: 'Audit Log',
     to: '/dashboard/audit',
-    icon: 'history',
+    icon: 'logs',
     group: 'analyze',
     roles: ['Admin'],
     subtitle: 'Trace operator actions and system changes.',
@@ -62,7 +70,7 @@ export const navItems = [
     icon: 'settings',
     group: 'admin',
     roles: ['Admin'],
-    subtitle: 'Appearance and display preferences.',
+    subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 ]
 
@@ -90,6 +98,10 @@ export const dashboardPageMeta = {
     title: 'Reports',
     subtitle: 'Daily, weekly, and monthly production summaries.',
   },
+  '/dashboard/analytics': {
+    title: 'Analytics',
+    subtitle: 'Production, downtime, and process trends.',
+  },
   '/dashboard/users': {
     title: 'User Accounts',
     subtitle: 'Access management for operational staff.',
@@ -104,6 +116,6 @@ export const dashboardPageMeta = {
   },
   '/dashboard/settings': {
     title: 'Settings',
-    subtitle: 'Appearance and display preferences.',
+    subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 }

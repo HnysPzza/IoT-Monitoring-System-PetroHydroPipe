@@ -11,6 +11,7 @@ async function createSensorEvent(req, res) {
 
 async function getLiveFeed(req, res) {
   const liveFeed = await iotService.getLiveFeed()
+  res.set('Cache-Control', 'no-store')
   res.json(liveFeed)
 }
 

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
+import { ThemeContext } from '../../../shared/context/ThemeContext.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AdminDashboard from './AdminDashboard.jsx'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
@@ -18,8 +19,8 @@ function activeAlert() {
     id: 'alert-1',
     severity: 'Critical',
     status: 'Active',
-    title: 'Inside Filler downtime detected',
-    message: 'S-04 Inside Filler has no pulse.',
+    title: 'Outside Filler Wire downtime detected',
+    message: 'S-04 Outside Filler Wire has no pulse.',
     revision: '1',
   }
 }
@@ -44,16 +45,44 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+function createControllableMatchMedia(initialMatches = false) {
+  let matches = initialMatches
+  const listeners = new Set()
+  const mediaQuery = {
+    media: '(max-width: 900px)',
+    get matches() {
+      return matches
+    },
+    onchange: null,
+    addEventListener: vi.fn((type, listener) => {
+      if (type === 'change') listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((type, listener) => {
+      if (type === 'change') listeners.delete(listener)
+    }),
+  }
+
+  return {
+    matchMedia: vi.fn(() => mediaQuery),
+    setMatches(nextMatches) {
+      matches = nextMatches
+      const event = { matches, media: mediaQuery.media }
+      mediaQuery.onchange?.(event)
+      listeners.forEach((listener) => listener(event))
+    },
+  }
+}
+
 describe('AdminDashboard alerts', () => {
   beforeEach(() => {
     acknowledgeAlert.mockReset()
     getAlerts.mockReset()
     subscribeToAlerts.mockReset()
-    subscribeToAlerts.mockReturnValue(() => {})
+    subscribeToAlerts.mockReturnValue(() => { })
   })
 
   it('uses the route title as the dashboard level-one heading', async () => {
-    getAlerts.mockReturnValue(new Promise(() => {}))
+    getAlerts.mockReturnValue(new Promise(() => { }))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
@@ -61,12 +90,81 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('labels the reporting navigation group as Analytics', () => {
-    getAlerts.mockReturnValue(new Promise(() => {}))
+    getAlerts.mockReturnValue(new Promise(() => { }))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
-    expect(screen.getByText('Analytics')).toBeInTheDocument()
-    expect(screen.queryByText('Analyze')).not.toBeInTheDocument()
+    expect(screen.getByText('Analytics', { selector: '.sidebar-nav-heading' })).toBeInTheDocument()
+    expect(screen.queryByText('Analyze', { selector: '.sidebar-nav-heading' })).not.toBeInTheDocument()
+  })
+
+  it('renders the requested Lucide icons while keeping Reports on BarChart3', () => {
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const liveFeedIcon = screen.getByRole('link', { name: 'Live Feed' }).querySelector('svg')
+    const reportsIcon = screen.getByRole('link', { name: 'Reports' }).querySelector('svg')
+    const analyticsIcon = screen.getByRole('link', { name: 'Analytics' }).querySelector('svg')
+    const auditLogIcon = screen.getByRole('link', { name: 'Audit Log' }).querySelector('svg')
+
+    expect(liveFeedIcon).toHaveClass('lucide-rss')
+    expect(reportsIcon).toHaveClass('lucide-chart-column')
+    expect(analyticsIcon).toHaveClass('lucide-chart-no-axes-combined')
+    expect(auditLogIcon).toHaveClass('lucide-logs')
+    expect(auditLogIcon).toHaveAttribute('stroke-width', '2.25')
+  })
+
+  it('keeps the sidebar scrollbar visible while navigation is being scrolled', () => {
+    vi.useFakeTimers()
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
+
+    fireEvent.scroll(sidebarNav)
+    act(() => {
+      vi.advanceTimersByTime(250)
+    })
+    fireEvent.scroll(sidebarNav)
+    expect(sidebarNav).toHaveClass('is-scrolling')
+
+    act(() => {
+      vi.advanceTimersByTime(251)
+    })
+    expect(sidebarNav).toHaveClass('is-scrolling')
+
+    act(() => {
+      vi.advanceTimersByTime(248)
+    })
+    expect(sidebarNav).toHaveClass('is-scrolling')
+
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(sidebarNav).not.toHaveClass('is-scrolling')
+
+    view.unmount()
+  })
+
+  it('clears the sidebar scrollbar timer on unmount', () => {
+    vi.useFakeTimers()
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    const view = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    const sidebarNav = screen.getByRole('navigation', { name: 'Dashboard sections' })
+
+    fireEvent.scroll(sidebarNav)
+    expect(sidebarNav).toHaveClass('is-scrolling')
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(() => {
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+    }).not.toThrow()
   })
 
   it('shows active alert count and acknowledges an alert without reloading the dashboard', async () => {
@@ -87,7 +185,7 @@ describe('AdminDashboard alerts', () => {
     const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
     await user.click(bell)
 
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /acknowledge/i }))
 
@@ -100,6 +198,7 @@ describe('AdminDashboard alerts', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('shows an unavailable alert status on initial failure and retries without calling it empty', async () => {
@@ -122,7 +221,7 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByLabelText('Alert count unavailable')).toHaveTextContent('—')
 
     act(() => streamHandlers.onEvent({ type: 'alert.created', payload: { alert: activeAlert() } }))
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Alert list failed.')
 
@@ -157,7 +256,7 @@ describe('AdminDashboard alerts', () => {
 
     const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
     await user.click(bell)
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
   })
 
   it('does not replay a post-load SSE delta into a later polling response', async () => {
@@ -253,7 +352,7 @@ describe('AdminDashboard alerts', () => {
       }
     })
 
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Acknowledgement failed.')
     expect(screen.getByRole('button', { name: /acknowledge/i })).toBeEnabled()
   })
@@ -282,7 +381,7 @@ describe('AdminDashboard alerts', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /open alerts, 1 active/i }))
     expect(screen.getByRole('alert')).toHaveTextContent('Polling failed.')
-    expect(screen.getByText('S-04 Inside Filler has no pulse.')).toBeInTheDocument()
+    expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
 
     act(() => streamHandlers.onRecovery())
     expect(screen.getByRole('status')).toHaveTextContent('Live')
@@ -681,9 +780,11 @@ describe('AdminDashboard alerts', () => {
     function renderTree(sessionToken) {
       return (
         <AuthContext.Provider value={{ token: sessionToken, user, logout: vi.fn() }}>
-          <MemoryRouter initialEntries={['/dashboard']}>
-            <AdminDashboard />
-          </MemoryRouter>
+          <ThemeContext.Provider value={{ theme: 'light', setTheme: vi.fn() }}>
+            <MemoryRouter initialEntries={['/dashboard']}>
+              <AdminDashboard />
+            </MemoryRouter>
+          </ThemeContext.Provider>
         </AuthContext.Provider>
       )
     }
@@ -728,10 +829,12 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('ignores stream callbacks from the previous token session', async () => {
+    const firstRequest = deferred()
+    const secondRequest = deferred()
     const handlersByToken = new Map()
     getAlerts
-      .mockResolvedValueOnce(alertSnapshot([activeAlert()]))
-      .mockResolvedValueOnce(alertSnapshot([], '1'))
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
     subscribeToAlerts.mockImplementation((streamToken, handlers) => {
       handlersByToken.set(streamToken, handlers)
       return vi.fn()
@@ -741,18 +844,28 @@ describe('AdminDashboard alerts', () => {
     function renderTree(sessionToken) {
       return (
         <AuthContext.Provider value={{ token: sessionToken, user, logout: vi.fn() }}>
-          <MemoryRouter initialEntries={['/dashboard']}>
-            <AdminDashboard />
-          </MemoryRouter>
+          <ThemeContext.Provider value={{ theme: 'light', setTheme: vi.fn() }}>
+            <MemoryRouter initialEntries={['/dashboard']}>
+              <AdminDashboard />
+            </MemoryRouter>
+          </ThemeContext.Provider>
         </AuthContext.Provider>
       )
     }
 
     const view = render(renderTree('first-token'))
-    expect(await screen.findByRole('button', { name: /open alerts, 1 active/i })).toBeInTheDocument()
+    await act(async () => {
+      firstRequest.resolve(alertSnapshot([activeAlert()]))
+      await firstRequest.promise
+    })
+    expect(screen.getByRole('button', { name: /open alerts, 1 active/i })).toBeInTheDocument()
 
     view.rerender(renderTree('second-token'))
-    expect(await screen.findByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
+    await act(async () => {
+      secondRequest.resolve(alertSnapshot([], '1'))
+      await secondRequest.promise
+    })
+    expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
 
     act(() => {
       handlersByToken.get('first-token').onEvent({
@@ -821,6 +934,8 @@ describe('AdminDashboard alerts', () => {
   })
 
   it('closes alerts before opening the mobile navigation drawer', async () => {
+    const viewport = createControllableMatchMedia(true)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
     const user = userEvent.setup()
 
     getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
@@ -828,9 +943,105 @@ describe('AdminDashboard alerts', () => {
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
     await user.click(await screen.findByRole('button', { name: /open alerts, 1 active/i }))
-    await user.click(screen.getByRole('button', { name: /open navigation/i }))
+    const openNavigationButton = screen.getByRole('button', { name: /open navigation/i })
+    expect(openNavigationButton).not.toHaveClass('sidebar-toggle')
+    await user.click(openNavigationButton)
 
     expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveClass('sidebar-toggle')
     expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveFocus()
+  })
+
+  it('toggles sidebar collapsed state when clicking the sidebar panel toggle', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockReturnValue(new Promise(() => {}))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const collapseBtn = screen.getByRole('button', { name: 'Collapse sidebar' })
+    expect(collapseBtn).toBeInTheDocument()
+    expect(collapseBtn).toHaveClass('sidebar-toggle')
+    expect(collapseBtn).toHaveAttribute('aria-expanded', 'true')
+    expect(collapseBtn).toHaveClass('is-pointing-left')
+
+    await user.click(collapseBtn)
+
+    const expandBtn = screen.getByRole('button', { name: 'Expand sidebar' })
+    expect(expandBtn).toBeInTheDocument()
+    expect(expandBtn).toHaveAttribute('aria-expanded', 'false')
+    expect(expandBtn).toHaveClass('is-pointing-right')
+    expect(screen.getByRole('complementary')).toHaveClass('is-collapsed')
+
+    await user.click(expandBtn)
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary')).not.toHaveClass('is-collapsed')
+  })
+
+  it('keeps the desktop collapse preference while the mobile drawer stays expanded and labeled', async () => {
+    const viewport = createControllableMatchMedia(false)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
+    const user = userEvent.setup()
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const sidebar = screen.getByRole('complementary')
+    const liveFeedLink = screen.getByRole('link', { name: 'Live Feed' })
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+
+    expect(sidebar).toHaveClass('is-collapsed')
+    expect(liveFeedLink).toHaveAttribute('title', 'Live Feed')
+    expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
+
+    act(() => viewport.setMatches(true))
+
+    await waitFor(() => expect(sidebar).not.toHaveClass('is-collapsed'))
+    expect(liveFeedLink).not.toHaveAttribute('title')
+    expect(liveFeedLink).not.toHaveAttribute('aria-label')
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+
+    expect(sidebar).toHaveClass('is-open')
+    expect(sidebar).not.toHaveClass('is-collapsed')
+    expect(screen.getByRole('link', { name: 'Live Feed' })).toHaveTextContent('Live Feed')
+    expect(screen.getByRole('button', { name: 'Close navigation' })).toHaveFocus()
+
+    act(() => viewport.setMatches(false))
+
+    await waitFor(() => {
+      expect(sidebar).toHaveClass('is-collapsed')
+      expect(sidebar).not.toHaveClass('is-open')
+      expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveFocus()
+    })
+    expect(liveFeedLink).toHaveAttribute('title', 'Live Feed')
+    expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
+  })
+
+  it('renders topbar theme toggle and allows switching themes', async () => {
+    const setThemeMock = vi.fn()
+    const user = userEvent.setup()
+
+    renderWithAuth(<AdminDashboard />, {
+      themeValue: { theme: 'dark', setTheme: setThemeMock },
+    })
+
+    const toggleButton = screen.getByRole('button', { name: 'Switch to light theme' })
+    expect(toggleButton).toBeInTheDocument()
+    expect(toggleButton).toHaveAttribute('title', 'Switch to light theme')
+    expect(toggleButton.querySelector('.theme-toggle-icon.is-sun')).toBeInTheDocument()
+
+    await user.click(toggleButton)
+    expect(setThemeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders moon icon and switch to dark theme label when currently in light theme', async () => {
+    renderWithAuth(<AdminDashboard />, {
+      themeValue: { theme: 'light', setTheme: vi.fn() },
+    })
+
+    const toggleButton = screen.getByRole('button', { name: 'Switch to dark theme' })
+    expect(toggleButton).toBeInTheDocument()
+    expect(toggleButton).toHaveAttribute('title', 'Switch to dark theme')
+    expect(toggleButton.querySelector('.theme-toggle-icon.is-moon')).toBeInTheDocument()
   })
 })

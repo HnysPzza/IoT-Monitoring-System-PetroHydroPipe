@@ -1,24 +1,33 @@
 const express = require('express')
-const alertsRoutes = require('../modules/alerts/alerts.routes')
-const auditRoutes = require('../modules/audit/audit.routes')
-const authRoutes = require('../modules/auth/auth.routes')
-const dashboardRoutes = require('../modules/dashboard/dashboard.routes')
-const downtimeRoutes = require('../modules/downtime/downtime.routes')
-const iotRoutes = require('../modules/iot/iot.routes')
-const machinesRoutes = require('../modules/machines/machines.routes')
-const reportsRoutes = require('../modules/reports/reports.routes')
-const usersRoutes = require('../modules/users/users.routes')
+
+const routeConfig = [
+    { path: '/auth', module: 'auth' },
+    { path: '/alerts', module: 'alerts' },
+    { path: '/users', module: 'users' },
+    { path: '/machines/:machineId/settings', module: 'settings' },
+    { path: '/machines', module: 'machines' },
+    { path: '/operations', module: 'operations' },
+    { path: '/iot', module: 'iot' },
+    { path: '/dashboard', module: 'dashboard' },
+    { path: '/analytics', module: 'analytics' },
+    { path: '/downtime', module: 'downtime' },
+    { path: '/reports', module: 'reports' },
+    { path: '/audit', module: 'audit' },
+]
 
 const router = express.Router()
 
-router.use('/auth', authRoutes)
-router.use('/alerts', alertsRoutes)
-router.use('/users', usersRoutes)
-router.use('/machines', machinesRoutes)
-router.use('/iot', iotRoutes)
-router.use('/dashboard', dashboardRoutes)
-router.use('/downtime', downtimeRoutes)
-router.use('/reports', reportsRoutes)
-router.use('/audit', auditRoutes)
+routeConfig.forEach(({ path, module: mod }) => {
+    let moduleRoutes
+    try {
+        moduleRoutes = require(`../modules/${mod}/${mod}.routes`)
+    } catch (err) {
+        if (err.code === 'MODULE_NOT_FOUND') {
+            throw new Error(`Route module "${mod}" not found: ${err.message}`)
+        }
+        throw err
+    }
+    router.use(path, moduleRoutes)
+})
 
 module.exports = router

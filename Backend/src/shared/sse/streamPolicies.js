@@ -3,6 +3,7 @@ const DASHBOARD_STREAM_ROLES = Object.freeze([
   'Operation Manager',
   'Asst. Operation Manager',
   'Engineering Supervisor',
+  'Managing Director',
   'Production Supervisor',
 ])
 

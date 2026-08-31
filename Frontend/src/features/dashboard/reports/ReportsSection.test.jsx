@@ -15,10 +15,22 @@ vi.mock('./reportsService.js', async () => {
   }
 })
 
-function reportPayload({ rows = [], summaryValue = '0 min' } = {}) {
+function reportPayload({ rows = [], summaryValue = '0 min', processSensors = [], periodState = 'complete' } = {}) {
   return {
     report: {
+      generatedAt: '2026-08-31T04:00:00.000Z',
+      lossEstimateBasis: {
+        source: 'configured-fallback',
+        ratePiecesPerMinute: 0.05,
+        windowStartAt: '2026-07-31T16:00:00.000Z',
+        windowEndAt: '2026-08-30T16:00:00.000Z',
+        qualifiedProductionDays: 2,
+        productiveMinutes: 240,
+        outputPieces: 8,
+      },
       summary: [{ id: 'downtime', label: 'Downtime', value: summaryValue, helper: 'Selected period' }],
+      periodState,
+      processSensors,
       rows,
     },
   }
@@ -47,6 +59,64 @@ function deferred() {
 describe('ReportsSection request states', () => {
   beforeEach(() => {
     getReportSummary.mockReset()
+  })
+
+  it('shows the process-event breakdown returned by the report API', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({
+      processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText('S-01 - Raw Material & Coil Joint')).toBeInTheDocument()
+    expect(screen.getByText('7')).toBeInTheDocument()
+  })
+
+  it('exports the generation time and output-loss basis with report rows', async () => {
+    const user = userEvent.setup()
+    const blobs = []
+    vi.stubGlobal('Blob', class {
+      constructor(parts) {
+        this.parts = parts
+        blobs.push(this)
+      }
+    })
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+
+    renderWithAuth(<ReportsSection />)
+    await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
+
+    expect(blobs[0].parts[0]).toContain('Generated At,2026-08-31T04:00:00.000Z')
+    expect(blobs[0].parts[0]).toContain('Loss Rate Source,configured-fallback')
+    expect(blobs[0].parts[0]).toContain('Loss Rate Pieces Per Minute,0.05')
+    vi.unstubAllGlobals()
+  })
+
+  it('labels partial reports and prevents choosing a future date', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({ periodState: 'partial' }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText(/Partial report/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Date')).toHaveAttribute('max')
+  })
+
+  it('renders future report values as unobserved and blocks export', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({
+      periodState: 'future',
+      summaryValue: 'N/A',
+      processSensors: [{ sensorCode: 'S-01', eventCount: null }],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText(/Period not reached yet/i)).toBeInTheDocument()
+    expect(screen.getByText('Not observed')).toBeInTheDocument()
+    expect(screen.getByText('Downtime not observed yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
   })
 
   it('shows an unavailable state on initial failure and retries the same query', async () => {

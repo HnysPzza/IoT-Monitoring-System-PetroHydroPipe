@@ -1,10 +1,14 @@
 const { EventEmitter } = require('node:events')
 const { getSupabaseClient } = require('../../database/client')
+const env = require('../../config/env')
 const { formatBusinessTime, getBusinessDayRange } = require('../../shared/businessTime')
+const { calculateMachineMetrics, calculateRecordMetrics } = require('../../shared/operationalMetrics')
 const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
+const { getSettingsHistory } = require('../settings/settingsHistory.repository')
+const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
-const LOSS_PER_DOWNTIME_MINUTE = 2.3
+const METRIC_PAGE_SIZE = 500
 const MANUAL_CAUSE_REVIEW_SENSOR_CODE = 'S-03'
 const downtimeEvents = new EventEmitter()
 downtimeEvents.setMaxListeners(100)
@@ -68,7 +72,7 @@ function isCauseEditableForSensor(sensorCode) {
   return sensorCode === MANUAL_CAUSE_REVIEW_SENSOR_CODE
 }
 
-function toDowntimeRecord(record) {
+function toDowntimeRecord(record, operationalMetrics) {
   const machine = getRelationRecord(record.machines)
   const sensor = getRelationRecord(record.sensors)
   const durationMinutes = getDurationMinutes(record)
@@ -85,13 +89,15 @@ function toDowntimeRecord(record) {
     cause,
     startedAt: record.started_at,
     endedAt: record.ended_at,
-    durationMinutes,
+    durationMinutes: operationalMetrics?.durationMinutes ?? durationMinutes,
+    unplannedMinutes: operationalMetrics?.unplannedMinutes ?? durationMinutes,
+    plannedExcludedMinutes: operationalMetrics?.plannedExcludedMinutes ?? 0,
     status: record.status,
     isOpen: record.status === 'Open',
     isCauseEditable,
     needsCauseReview: isCauseEditable && cause === 'Pending Cause Review',
     notes: record.notes || '',
-    estimatedLoss: Math.round(durationMinutes * LOSS_PER_DOWNTIME_MINUTE),
+    estimatedLoss: operationalMetrics?.estimatedLoss ?? null,
   }
 }
 
@@ -118,54 +124,145 @@ function createBaseQuery(options) {
     `, options)
 }
 
+function applyListFilters(query, filters, dateRange) {
+  let filtered = query
+
+  if (filters.status && filters.status !== 'All') filtered = filtered.eq('status', filters.status)
+  if (filters.cause && filters.cause !== 'All') filtered = filtered.eq('cause', filters.cause)
+  if (dateRange) {
+    filtered = filtered
+      .lt('started_at', dateRange.end.toISOString())
+      .or(`ended_at.is.null,ended_at.gt.${dateRange.start.toISOString()}`)
+  }
+
+  return filtered
+}
+
+async function getAllFilteredRecords(filters, dateRange) {
+  const records = []
+
+  for (let from = 0; ; from += METRIC_PAGE_SIZE) {
+    const query = applyListFilters(
+      createBaseQuery().order('started_at', { ascending: true }).order('id', { ascending: true }),
+      filters,
+      dateRange,
+    )
+    const { data, error } = await query.range(from, from + METRIC_PAGE_SIZE - 1)
+
+    if (error) throw createDowntimeError(500, 'DOWNTIME_QUERY_FAILED', 'Unable to load downtime records.')
+    const page = data || []
+    records.push(...page)
+    if (page.length < METRIC_PAGE_SIZE) break
+  }
+
+  return records
+}
+
+function getRecordWindow(records, asOf) {
+  const starts = records.map((record) => new Date(record.started_at).getTime())
+  const ends = records.map((record) => (
+    record.ended_at ? new Date(record.ended_at).getTime() : asOf.getTime()
+  ))
+  const start = new Date(Math.min(...starts))
+  const latestEnd = Math.max(...ends)
+  const end = new Date(Math.max(latestEnd, start.getTime() + 1000))
+  return { start, end }
+}
+
+async function calculateListMetrics(records, dateRange, asOf, lossEstimateBasis) {
+  const recordMetrics = new Map()
+  const machineTotals = []
+  const recordsByMachine = new Map()
+  records.forEach((record) => {
+    const grouped = recordsByMachine.get(record.machine_id) || []
+    grouped.push(record)
+    recordsByMachine.set(record.machine_id, grouped)
+  })
+
+  for (const [machineId, machineRecords] of recordsByMachine) {
+    const recordWindow = getRecordWindow(machineRecords, asOf)
+    const historyWindow = dateRange ? {
+      start: dateRange.start < recordWindow.start ? dateRange.start : recordWindow.start,
+      end: dateRange.end > recordWindow.end ? dateRange.end : recordWindow.end,
+    } : recordWindow
+    const settingsHistory = await getSettingsHistory(machineId, historyWindow)
+    const positiveRecords = machineRecords.filter((record) => {
+      const endedAt = record.ended_at ? new Date(record.ended_at) : asOf
+      return new Date(record.started_at) < endedAt
+    })
+
+    machineRecords.forEach((record) => {
+      if (!positiveRecords.includes(record)) {
+        recordMetrics.set(record.id, {
+          durationMinutes: 0,
+          unplannedMinutes: 0,
+          plannedExcludedMinutes: 0,
+          estimatedLoss: 0,
+        })
+      } else {
+        recordMetrics.set(record.id, calculateRecordMetrics({
+          record,
+          window: recordWindow,
+          settingsHistory,
+          asOf,
+          lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+        }))
+      }
+    })
+    machineTotals.push(calculateMachineMetrics({
+      records: positiveRecords,
+      window: dateRange || recordWindow,
+      settingsHistory,
+      asOf,
+      lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+    }))
+  }
+
+  return {
+    recordMetrics,
+    durationMinutes: machineTotals.reduce((sum, metric) => sum + metric.durationMinutes, 0),
+    unplannedMinutes: machineTotals.reduce((sum, metric) => sum + metric.unplannedMinutes, 0),
+    plannedExcludedMinutes: machineTotals.reduce((sum, metric) => sum + metric.plannedExcludedMinutes, 0),
+    estimatedLoss: machineTotals.reduce((sum, metric) => sum + metric.estimatedLoss, 0),
+  }
+}
+
 async function listDowntime(filters = {}) {
+  const asOf = new Date()
   const page = filters.page || 1
   const limit = filters.limit || 25
   const from = (page - 1) * limit
-  const to = from + limit - 1
   const dateRange = filters.date ? getBusinessDayRange(filters.date) : null
-  let query = createBaseQuery({ count: 'exact' }).order('started_at', { ascending: false })
-
-  if (filters.status && filters.status !== 'All') {
-    query = query.eq('status', filters.status)
-  }
-
-  if (filters.cause && filters.cause !== 'All') {
-    query = query.eq('cause', filters.cause)
-  }
-
-  if (dateRange) {
-    query = query.gte('started_at', dateRange.start.toISOString()).lt('started_at', dateRange.end.toISOString())
-  }
-
-  const [recordsResult, summaryResult] = await Promise.all([
-    query.range(from, to),
-    getSupabaseClient()
-      .rpc('get_downtime_summary', {
-        p_status: filters.status || null,
-        p_cause: filters.cause || null,
-        p_started_from: dateRange?.start.toISOString() || null,
-        p_started_to: dateRange?.end.toISOString() || null,
-      })
-      .single(),
-  ])
-  const { data, error, count } = recordsResult
-
-  if (error || summaryResult.error) {
-    throw createDowntimeError(500, 'DOWNTIME_QUERY_FAILED', 'Unable to load downtime records.')
-  }
-
-  const records = (data || []).map(toDowntimeRecord)
-  const total = count || 0
+  const allRecords = await getAllFilteredRecords(filters, dateRange)
+  const lossEstimateBasis = allRecords.length === 0
+    ? null
+    : await getOutputLossBasis({
+      machineId: allRecords[0].machine_id,
+      asOf,
+      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+    })
+  const metrics = allRecords.length === 0
+    ? { recordMetrics: new Map(), durationMinutes: 0, unplannedMinutes: 0, plannedExcludedMinutes: 0, estimatedLoss: 0 }
+    : await calculateListMetrics(allRecords, dateRange, asOf, lossEstimateBasis)
+  const ordered = [...allRecords].sort((left, right) => (
+    new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
+  ))
+  const records = ordered
+    .slice(from, from + limit)
+    .map((record) => toDowntimeRecord(record, metrics.recordMetrics.get(record.id)))
+  const total = allRecords.length
   const totalPages = Math.max(1, Math.ceil(total / limit))
 
   return {
     records,
+    lossEstimateBasis,
     summary: {
-      open: Number(summaryResult.data.open_count || 0),
-      resolved: Number(summaryResult.data.resolved_count || 0),
-      minutes: Number(summaryResult.data.total_minutes || 0),
-      loss: Number(summaryResult.data.estimated_loss || 0),
+      open: allRecords.filter((record) => record.status === 'Open').length,
+      resolved: allRecords.filter((record) => record.status === 'Resolved').length,
+      minutes: metrics.durationMinutes,
+      unplannedMinutes: metrics.unplannedMinutes,
+      plannedExcludedMinutes: metrics.plannedExcludedMinutes,
+      loss: metrics.estimatedLoss,
     },
     pagination: {
       page,
@@ -204,6 +301,11 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
     }
   }
 
+  const resolvedCause = values.cause ?? existingRecord.cause
+  if (values.status === 'Resolved' && existingRecord.isCauseEditable && resolvedCause === 'Pending Cause Review') {
+    throw createDowntimeError(400, 'DOWNTIME_CAUSE_REQUIRED', 'Choose the downtime cause before resolving this record.')
+  }
+
   const { error } = await getSupabaseClient()
     .rpc('update_downtime_record', {
       p_downtime_id: downtimeId,
@@ -221,6 +323,10 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
 
     if (error.code === '22023') {
       throw createDowntimeError(400, 'DOWNTIME_CAUSE_LOCKED', 'This downtime cause is assigned automatically by the sensor.')
+    }
+
+    if (error.code === '23514') {
+      throw createDowntimeError(400, 'DOWNTIME_CAUSE_REQUIRED', 'Choose the downtime cause before resolving this record.')
     }
 
     throw createDowntimeError(500, 'DOWNTIME_UPDATE_FAILED', 'Unable to update downtime record.')

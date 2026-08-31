@@ -54,7 +54,7 @@ describe('AuditSection', () => {
           createdAt: '2026-06-11T00:00:00.000Z',
           actor: null,
           metadata: {
-            title: 'Inside Filler downtime detected',
+            title: 'Outside Filler Wire downtime detected',
             sensorCode: 'S-04',
             signal: 'no_pulse',
             eventId: 'event-1',
@@ -72,7 +72,7 @@ describe('AuditSection', () => {
 
     expect(screen.getByText('Readable details')).toBeInTheDocument()
     expect(screen.getByText('What happened')).toBeInTheDocument()
-    expect(screen.getAllByText(/inside filler downtime detected was created/i).length).toBeGreaterThan(1)
+    expect(screen.getAllByText(/outside filler wire downtime detected was created/i).length).toBeGreaterThan(1)
     expect(screen.queryByText('Action code')).not.toBeInTheDocument()
     expect(screen.queryByText('event-1')).not.toBeInTheDocument()
 
@@ -86,5 +86,34 @@ describe('AuditSection', () => {
     await user.click(screen.getByRole('button', { name: /hide details/i }))
 
     expect(screen.queryByText('Readable details')).not.toBeInTheDocument()
+  })
+
+  it('shows manual recovery reason in readable details', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [{
+        id: 'audit-override',
+        action: 'SENSOR_MANUAL_RECOVERY_OVERRIDE',
+        entityType: 'sensor',
+        entityId: 'sensor-4',
+        createdAt: '2026-08-31T01:00:00.000Z',
+        actor: { username: 'admin', role: 'Admin' },
+        metadata: {
+          sensorCode: 'S-04',
+          machineName: 'Spiral Mill 01',
+          newMachineStatus: 'Running',
+          reason: 'Maintenance confirmed normal operation',
+        },
+      }],
+      pagination: { page: 1, limit: 25, total: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+    await user.click(await screen.findByRole('button', { name: /view details/i }))
+
+    expect(screen.getByText('Override reason')).toBeInTheDocument()
+    expect(screen.getByText('Maintenance confirmed normal operation')).toBeInTheDocument()
+    expect(screen.queryByText('Technical details')).not.toBeInTheDocument()
   })
 })

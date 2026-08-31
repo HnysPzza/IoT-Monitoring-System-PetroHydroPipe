@@ -1,30 +1,10 @@
-export const sensorIdentities = [
-  {
-    code: 'S-01',
-    label: 'Raw Material Detection',
-    purpose: 'Detects raw material movement into the production line.',
-  },
-  {
-    code: 'S-02',
-    label: 'Outside Filler',
-    purpose: 'Monitors outside filler activity during pipe production.',
-  },
-  {
-    code: 'S-03',
-    label: 'Coil Joint',
-    purpose: 'Detects coil joint replacement activity.',
-  },
-  {
-    code: 'S-04',
-    label: 'Inside Filler',
-    purpose: 'Monitors inside filler activity during pipe production.',
-  },
-  {
-    code: 'S-05',
-    label: 'Production Output Cutting',
-    purpose: 'Counts output cutting events at the end of the production line.',
-  },
-]
+import registry from './sensor-registry.json'
+
+export const sensorIdentities = registry.sensors.map(({ code, label, purpose }) => ({
+  code,
+  label,
+  purpose,
+}))
 
 export const sensorIdentityByCode = Object.fromEntries(
   sensorIdentities.map((sensor) => [sensor.code, sensor]),

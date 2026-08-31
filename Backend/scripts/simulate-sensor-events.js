@@ -8,38 +8,14 @@ const DETERMINISTIC_MODE = process.argv.includes('--deterministic')
 const verificationArgument = process.argv.find((argument) => argument.startsWith('--verify-sensor='))
 const VERIFICATION_SENSOR_CODE = verificationArgument?.slice('--verify-sensor='.length).toUpperCase() || null
 
-const devices = [
-  {
-    sensorCode: 'S-01',
-    deviceId: 'esp32-m01-s01',
-    keyEnv: 'IOT_SIM_S01_KEY',
-    label: 'Raw Material Detection',
-  },
-  {
-    sensorCode: 'S-02',
-    deviceId: 'esp32-m01-s02',
-    keyEnv: 'IOT_SIM_S02_KEY',
-    label: 'Outside Filler',
-  },
-  {
-    sensorCode: 'S-03',
-    deviceId: 'esp32-m01-s03',
-    keyEnv: 'IOT_SIM_S03_KEY',
-    label: 'Coil Joint',
-  },
-  {
-    sensorCode: 'S-04',
-    deviceId: 'esp32-m01-s04',
-    keyEnv: 'IOT_SIM_S04_KEY',
-    label: 'Inside Filler',
-  },
-  {
-    sensorCode: 'S-05',
-    deviceId: 'esp32-m01-s05',
-    keyEnv: 'IOT_SIM_S05_KEY',
-    label: 'Production Output Cutting',
-  },
-]
+const registry = require('../src/shared/sensor-registry.json')
+
+const devices = registry.sensors.map((sensor) => ({
+  sensorCode: sensor.code,
+  deviceId: sensor.deviceId,
+  keyEnv: `IOT_SIM_${sensor.code.replace('-', '')}_KEY`,
+  label: sensor.label,
+}))
 
 let batchNumber = 0
 let previousIssueSensorCode = null

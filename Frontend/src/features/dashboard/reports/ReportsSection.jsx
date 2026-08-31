@@ -4,10 +4,10 @@ import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { getReportSummary, reportTypes } from './reportsService.js'
 
-function toCsv(rows) {
+function toCsv(report) {
   // Escapes quote characters so exported CSV stays valid.
   const headers = ['Cause', 'Sensor', 'Events', 'Duration Minutes', 'Estimated Loss']
-  const body = rows.map((row) => [
+  const body = report.rows.map((row) => [
     row.cause,
     row.sensor,
     row.events,
@@ -15,13 +15,21 @@ function toCsv(rows) {
     row.estimatedLoss,
   ])
 
-  return [headers, ...body]
+  const metadata = [
+    `Generated At,${report.generatedAt || 'Not recorded'}`,
+    `Loss Rate Source,${report.lossEstimateBasis?.source || 'Not available'}`,
+    `Loss Rate Pieces Per Minute,${report.lossEstimateBasis?.ratePiecesPerMinute ?? 'Not available'}`,
+    '',
+  ]
+  const table = [headers, ...body]
     .map((cells) => cells.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
     .join('\n')
+
+  return [...metadata, table].join('\n')
 }
 
-function downloadCsv(filename, rows) {
-  const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' })
+function downloadCsv(filename, report) {
+  const blob = new Blob([toCsv(report)], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -64,6 +72,7 @@ export default function ReportsSection() {
   const requestIdRef = useRef(0)
   const successfulReportRef = useRef(null)
   const selectedReportLabel = reportTypes.find((type) => type.id === reportType)?.label || 'Report'
+  const currentDate = getManilaDateInputValue()
   const queryKey = getQueryKey(reportType, selectedDate)
   const requestKey = `${token || 'anonymous'}:${queryKey}`
   const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
@@ -175,30 +184,44 @@ export default function ReportsSection() {
               name="reportDate"
               type={reportType === 'monthly' ? 'month' : 'date'}
               value={reportType === 'monthly' ? selectedDate.slice(0, 7) : selectedDate}
+              max={reportType === 'monthly' ? currentDate.slice(0, 7) : currentDate}
               onChange={(event) => setSelectedDate(event.target.value)}
               autoComplete="off"
             />
           </label>
           <button
-            className="btn btn-secondary reports-action"
+            className="btn btn-success reports-action reports-refresh-button"
             type="button"
+            aria-label="Refresh report"
             disabled={loadState === 'loading'}
             onClick={retryCurrentReport}
           >
             <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={17} aria-hidden="true" />
-            Refresh report
+            Refresh
           </button>
           <button
             className="btn btn-primary reports-action"
             type="button"
-            disabled={!isCurrentSuccess}
-            onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report.rows)}
+            disabled={!isCurrentSuccess || report?.periodState === 'future'}
+            onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report)}
           >
             <Download size={17} aria-hidden="true" />
             Export CSV
           </button>
         </div>
       </section>
+
+      {hasCurrentReport && report.periodState === 'partial' ? (
+        <div className="notice dashboard-alert" role="status">
+          <span>Partial report. Values cover recorded time so far.</span>
+        </div>
+      ) : null}
+
+      {hasCurrentReport && report.periodState === 'future' ? (
+        <div className="notice dashboard-alert" role="status">
+          <span>Period not reached yet. No values have been observed.</span>
+        </div>
+      ) : null}
 
       {loadState === 'error' ? (
         <section className="section-card section-placeholder" aria-labelledby="reports-error-title">
@@ -228,6 +251,38 @@ export default function ReportsSection() {
       ) : null}
 
       {loadState !== 'error' ? (
+        <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
+          <div className="section-heading">
+            <div>
+              <p className="section-eyebrow">Process activity</p>
+              <h2 id="reports-process-title">Events by process sensor</h2>
+            </div>
+          </div>
+
+          <div className="account-table-wrap">
+            <table className="account-table reports-table">
+              <thead>
+                <tr>
+                  <th scope="col">Sensor</th>
+                  <th scope="col">Recorded events</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
+                  <tr key={sensor.sensorCode}>
+                    <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
+                    <td data-label="Recorded events">{sensor.eventCount ?? 'Not observed'}</td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan="2">{hasCurrentReport && report.periodState === 'future' ? 'Process events not observed yet.' : hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {loadState !== 'error' ? (
         <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
           <div className="section-heading">
             <div>
@@ -254,7 +309,7 @@ export default function ReportsSection() {
                   </tr>
                 ) : hasCurrentReport && report.rows.length === 0 ? (
                   <tr>
-                    <td colSpan="5">No downtime rows found for this report range.</td>
+                    <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
                   </tr>
                 ) : hasCurrentReport ? (
                   report.rows.map((row) => (

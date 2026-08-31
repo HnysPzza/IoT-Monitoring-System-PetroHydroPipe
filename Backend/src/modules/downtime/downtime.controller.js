@@ -4,6 +4,7 @@ const { DASHBOARD_STREAM_ROLES } = require('../../shared/sse/streamPolicies')
 
 async function listDowntime(req, res) {
   const result = await downtimeService.listDowntime(req.validated.query)
+  res.set('Cache-Control', 'no-store')
   res.json(result)
 }
 
@@ -14,6 +15,7 @@ async function updateDowntime(req, res) {
     actorUserId: req.user.sub,
   })
 
+  res.set('Cache-Control', 'no-store')
   res.json(result)
 }
 

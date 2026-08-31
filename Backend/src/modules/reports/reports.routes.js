@@ -9,7 +9,7 @@ const { reportSummarySchema } = require('./reports.model')
 const router = express.Router()
 
 router.use(authenticate)
-router.use(authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager']))
+router.use(authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Managing Director']))
 
 router.get('/summary', validateRequest(reportSummarySchema), asyncHandler(reportsController.getSummary))
 

@@ -31,6 +31,13 @@ const MOCK_USERS = {
       role: 'Engineering Supervisor',
     },
   },
+  managingdirector: {
+    token: 'mock-managing-director-token',
+    user: {
+      name: 'Managing Director',
+      role: 'Managing Director',
+    },
+  },
   prodsupervisor: {
     token: 'mock-production-supervisor-token',
     user: {

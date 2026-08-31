@@ -7,6 +7,7 @@ values
   ('Operation Manager', 'Production and downtime monitoring access.'),
   ('Asst. Operation Manager', 'Assistant production monitoring access.'),
   ('Engineering Supervisor', 'Machine and sensor monitoring access.'),
+  ('Managing Director', 'Full read access to operational analytics and reports.'),
   ('Production Supervisor', 'Production floor monitoring access.')
 on conflict (name) do update
 set description = excluded.description;
@@ -51,6 +52,35 @@ set
   status = excluded.status,
   location = excluded.location;
 
+-- Operational settings are provisioned explicitly per machine.
+insert into machine_operational_settings (machine_id)
+select id from machines where machine_code = 'M-01'
+on conflict (machine_id) do nothing;
+
+insert into machine_operational_settings_history (
+  machine_id,
+  version,
+  sensor_thresholds,
+  shift_schedule,
+  effective_from,
+  effective_to,
+  changed_by,
+  created_at
+)
+select
+  settings.machine_id,
+  settings.version,
+  settings.sensor_thresholds,
+  settings.shift_schedule,
+  null,
+  null,
+  settings.updated_by,
+  settings.updated_at
+from machine_operational_settings settings
+join machines on machines.id = settings.machine_id
+where machines.machine_code = 'M-01'
+on conflict (machine_id, version) do nothing;
+
 -- Five sensors attached to Spiral Mill 01; each maps to one ESP32 device.
 insert into sensors (
   machine_id,
@@ -68,10 +98,10 @@ select
 from machines
 cross join (
   values
-    ('S-01', 'esp32-m01-s01', 'Raw Material Detection'),
-    ('S-02', 'esp32-m01-s02', 'Outside Filler'),
-    ('S-03', 'esp32-m01-s03', 'Coil Joint'),
-    ('S-04', 'esp32-m01-s04', 'Inside Filler'),
+    ('S-01', 'esp32-m01-s01', 'Raw Material & Coil Joint'),
+    ('S-02', 'esp32-m01-s02', 'Inside Filler Wire'),
+    ('S-03', 'esp32-m01-s03', 'Machine Main Sensor'),
+    ('S-04', 'esp32-m01-s04', 'Outside Filler Wire'),
     ('S-05', 'esp32-m01-s05', 'Production Output Cutting')
 ) as sensor_seed(sensor_code, esp32_device_id, label)
 where machines.machine_code = 'M-01'
@@ -81,3 +111,11 @@ set
   esp32_device_id = excluded.esp32_device_id,
   label = excluded.label,
   status = excluded.status;
+
+insert into sensor_watchdog_state (sensor_id, machine_id, settings_version)
+select sensor.id, sensor.machine_id, settings.version
+from sensors sensor
+join machines on machines.id = sensor.machine_id
+left join machine_operational_settings settings on settings.machine_id = sensor.machine_id
+where machines.machine_code = 'M-01'
+on conflict (sensor_id) do nothing;
