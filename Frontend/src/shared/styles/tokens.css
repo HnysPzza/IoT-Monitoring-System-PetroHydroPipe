@@ -2893,10 +2893,48 @@ button:disabled {
 }
 
 .analytics-delta {
+  position: relative;
   align-content: center;
   justify-items: start;
   font-family: 'IBM Plex Mono', monospace;
   font-weight: 700;
+}
+
+.analytics-baseline-help {
+  position: static;
+  display: inline-flex;
+  cursor: help;
+}
+
+.analytics-baseline-tooltip {
+  position: absolute;
+  z-index: 20;
+  top: auto;
+  bottom: calc(100% + 8px);
+  right: auto;
+  left: 50%;
+  width: min(260px, calc(100% - 24px));
+  max-width: calc(100vw - 48px);
+  white-space: normal;
+  text-align: center;
+  font-weight: 400;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.analytics-baseline-help:hover .analytics-baseline-tooltip,
+.analytics-baseline-help:focus-visible .analytics-baseline-tooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.analytics-baseline-help:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .analytics-delta.is-positive {
@@ -3055,6 +3093,20 @@ button:disabled {
 
 .live-sensor-card {
   align-content: start;
+  min-width: 0;
+}
+
+.live-sensor-card .machine-card-header > div,
+.live-sensor-meta div,
+.live-connectivity-label,
+.live-purpose-row span {
+  min-width: 0;
+}
+
+.live-sensor-card h3,
+.live-connectivity-label,
+.live-purpose-row span {
+  overflow-wrap: anywhere;
 }
 
 .live-heading-badges {
@@ -3084,6 +3136,12 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+.live-sensor-meta dd svg,
+.live-purpose-row svg {
+  flex: 0 0 auto;
 }
 
 .live-sensor-meta dd.live-offline {

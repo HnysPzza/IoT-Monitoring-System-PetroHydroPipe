@@ -72,21 +72,30 @@ export function formatAnalyticsTrendValue(value, metric) {
   return `${formatNumber(value)} ${metric.shortUnit}`
 }
 
+export function getVisibleAnalyticsTrendPoints(points) {
+  return points.filter((point) => point.hasSelectedSegment === false || point.periodState !== 'future')
+}
+
 export function getAnalyticsTrendSummary(trend) {
   const { metric, points, selectedSummaryValue } = trend
+  const selectedPoints = points.filter((point) => point.hasSelectedSegment !== false)
+  const observedBucketCount = selectedPoints.filter((point) => point.periodState !== 'future' && point.value !== null && point.value !== undefined).length
+  const unobservedBucketCount = selectedPoints.filter((point) => (
+    point.periodState !== 'future' && (point.value === null || point.value === undefined)
+  )).length
+  const stateSuffix = unobservedBucketCount > 0
+    ? `; ${unobservedBucketCount} ${unobservedBucketCount === 1 ? 'bucket is' : 'buckets are'} unobserved`
+    : ''
+
   if (selectedSummaryValue === null || selectedSummaryValue === undefined) {
-    return `No observed ${metric.label.toLowerCase()} value is available for this range.`
+    return `No observed ${metric.label.toLowerCase()} value is available for this range${stateSuffix}.`
   }
   if (metric.id === 'availability') {
-    return `Availability is ${formatAnalyticsTrendValue(selectedSummaryValue, metric)} for the observed portion of this range.`
+    return `Availability is ${formatAnalyticsTrendValue(selectedSummaryValue, metric)} for the observed portion of this range${stateSuffix}.`
   }
-  const selectedPoints = points.filter((point) => point.hasSelectedSegment !== false)
-  const observedBucketCount = selectedPoints.filter((point) => point.value !== null && point.value !== undefined).length
-  const unobservedBucketCount = selectedPoints.length - observedBucketCount
   const observedSummary = `${formatAnalyticsTrendValue(selectedSummaryValue, metric)} across ${observedBucketCount} observed ${observedBucketCount === 1 ? 'bucket' : 'buckets'}`
 
-  if (unobservedBucketCount === 0) return `${observedSummary}.`
-  return `${observedSummary}; ${unobservedBucketCount} ${unobservedBucketCount === 1 ? 'bucket is' : 'buckets are'} unobserved.`
+  return `${observedSummary}${stateSuffix}.`
 }
 
 export function getDowntimeSensorBreakdown(snapshot) {
@@ -126,16 +135,12 @@ export function getTrendEvaluation(trend) {
   }
   if (activePoints.length < 2) return neutralEvaluation('Insufficient observations')
 
-  const count = activePoints.length
-  const sumY = activePoints.reduce((total, point) => total + Number(point.value), 0)
-  const sumXY = activePoints.reduce((total, point, index) => total + (index * Number(point.value)), 0)
-  const sumX = (count * (count - 1)) / 2
-  const sumX2 = ((count - 1) * count * ((2 * count) - 1)) / 6
-  const denominator = sumX2 - ((sumX * sumX) / count)
-  const slope = denominator ? (sumXY - ((sumX * sumY) / count)) / denominator : 0
-  const delta = slope * (count - 1)
-  const mean = sumY / count
-  const deltaPercent = mean ? (delta / Math.abs(mean)) * 100 : 0
+  const firstValue = Number(activePoints[0].value)
+  const lastValue = Number(activePoints.at(-1).value)
+  if (firstValue === 0) return neutralEvaluation('No baseline')
+
+  const delta = lastValue - firstValue
+  const deltaPercent = (delta / Math.abs(firstValue)) * 100
   const direction = delta > 0.001 ? 'up' : delta < -0.001 ? 'down' : 'flat'
   if (direction === 'flat') return neutralEvaluation()
 

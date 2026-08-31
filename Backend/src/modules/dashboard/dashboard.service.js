@@ -103,13 +103,27 @@ function getProductionTotal(events, window) {
   }, 0)
 }
 
-function getModePointBoundaries(mode, window) {
+function getModePointBoundaries(mode, window, asOf) {
+  const withPeriodState = (boundary) => {
+    const periodState = asOf <= boundary.start
+      ? 'future'
+      : asOf < boundary.end
+        ? 'current'
+        : 'completed'
+
+    return {
+      ...boundary,
+      end: periodState === 'current' ? new Date(asOf) : boundary.end,
+      periodState,
+    }
+  }
+
   if (mode === 'month') {
     return Array.from({ length: 4 }, (_, index) => {
       const start = addBusinessDays(window.start, index * 7)
       const end = index === 3 ? window.end : addBusinessDays(window.start, (index + 1) * 7)
       return { label: `W${index + 1}`, shift: `Week ${index + 1}`, start, end }
-    })
+    }).map(withPeriodState)
   }
 
   if (mode === 'week') {
@@ -121,7 +135,7 @@ function getModePointBoundaries(mode, window) {
         start,
         end: addBusinessDays(start, 1),
       }
-    })
+    }).map(withPeriodState)
   }
 
   return [6, 9, 12, 15, 18, 21].map((hour) => {
@@ -132,7 +146,7 @@ function getModePointBoundaries(mode, window) {
       start: window.start,
       end: start,
     }
-  })
+  }).map(withPeriodState)
 }
 
 function getDailyDowntimeBoundaries(window, asOf) {
@@ -231,7 +245,7 @@ function buildDowntimeImpact(rows, mode, anchorDate, settingsHistory, asOf) {
   const window = getWindowForMode(mode, anchorDate)
   const boundaries = mode === 'today'
     ? getDailyDowntimeBoundaries(window, asOf)
-    : getModePointBoundaries(mode, window)
+    : getModePointBoundaries(mode, window, asOf)
 
   return {
     thresholdMinutes: DOWNTIME_THRESHOLD_MINUTES,

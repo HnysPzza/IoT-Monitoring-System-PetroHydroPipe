@@ -1,11 +1,12 @@
 import { BarChart3, Minus, TrendingDown, TrendingUp } from 'lucide-react'
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   analyticsTrendMetrics,
   buildAnalyticsTrend,
   formatAnalyticsTrendValue,
   getAnalyticsTrendSummary,
   getTrendEvaluation,
+  getVisibleAnalyticsTrendPoints,
 } from './analyticsPresentation.js'
 
 function AnalyticsTrendTooltip({ active, payload, label, metric }) {
@@ -32,9 +33,13 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
   const summary = getAnalyticsTrendSummary(trend)
   const evaluation = getTrendEvaluation(trend)
   const strokeColor = evaluation.strokeColor
-  const hasTrendData = points.some((point) => point.value !== null && point.value !== undefined)
+  const visiblePoints = getVisibleAnalyticsTrendPoints(points)
+  const hasTrendData = visiblePoints.some((point) => point.value !== null && point.value !== undefined)
   const hasComparison = snapshot.comparisonMode !== 'none'
   const selectedRange = snapshot.selected.range
+  const currentPoint = visiblePoints.find((point) => point.periodState === 'partial')
+  const selectedVisiblePointCount = visiblePoints.filter((point) => point.hasSelectedSegment !== false).length
+  const visibleEndLabel = visiblePoints.findLast((point) => point.hasSelectedSegment !== false)?.selectedLabel
 
   return (
     <section className="section-card analytics-trend-card industrial-chart-card" aria-labelledby="analytics-trend-title">
@@ -82,10 +87,10 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
       <div
         className="analytics-trend-chart"
         role="img"
-        aria-label={`${metric.label} trend chart from ${selectedRange.requestedStartDate} to ${selectedRange.requestedEndDate}${hasComparison ? ', compared with the prior period' : ''}`}
+        aria-label={`${metric.label} trend chart from ${selectedRange.requestedStartDate}${visibleEndLabel ? ` through ${visibleEndLabel}` : ' with no elapsed buckets'}${hasComparison ? ', compared with the prior period' : ''}`}
       >
         <ResponsiveContainer width="100%" height={320} minWidth={0}>
-          <AreaChart data={points} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
+          <AreaChart data={visiblePoints} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
             <defs>
               <linearGradient id="analyticsTrendAreaGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={strokeColor} stopOpacity={0.30} />
@@ -93,6 +98,14 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
               </linearGradient>
             </defs>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 7" vertical={false} />
+            {currentPoint && selectedVisiblePointCount > 1 ? (
+              <ReferenceLine
+                x={currentPoint.label}
+                stroke="var(--c-text-3)"
+                strokeDasharray="4 4"
+                label={{ value: 'Now', position: 'insideTopRight', fill: 'var(--c-text-3)', fontSize: 11 }}
+              />
+            ) : null}
             <XAxis
               dataKey="label"
               tickLine={false}

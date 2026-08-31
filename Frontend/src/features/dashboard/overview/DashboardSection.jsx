@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useOutletContext } from 'react-router'
 import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
@@ -16,6 +16,8 @@ import DowntimeTrendChart, {
 import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
+
+const AUTO_REFRESH_MS = 60 * 1000
 
 function SkeletonBlock({ className = '', style }) {
   return <div className={`skeleton ${className}`.trim()} style={style} aria-hidden="true" />
@@ -101,6 +103,7 @@ function SensorStatusIcon({ status }) {
 
 export default function DashboardSection() {
   const { token } = useAuth()
+  const alertContext = useOutletContext()
   const [overviewState, setOverviewState] = useState('loading')
   const [overviewData, setOverviewData] = useState(null)
   const [overviewRequestKey, setOverviewRequestKey] = useState('')
@@ -138,6 +141,9 @@ export default function DashboardSection() {
   const hasCurrentLive = liveRequestKey === liveKey
   const hasCurrentDowntimeChart = downtimeChartRequestKey === downtimeChartKey
   const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
+  const overviewAlerts = alertContext?.hasTrustedAlertList
+    ? alertContext.activeAlerts
+    : overviewData?.alerts || []
 
   useEffect(() => {
     const requestId = overviewRequestIdRef.current + 1
@@ -169,6 +175,13 @@ export default function DashboardSection() {
       isCancelled = true
     }
   }, [overviewKey, overviewRefresh, token])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setOverviewRefresh((current) => current + 1)
+    }, AUTO_REFRESH_MS)
+    return () => window.clearInterval(intervalId)
+  }, [overviewKey])
 
   useEffect(() => {
     const requestId = liveRequestIdRef.current + 1
@@ -281,7 +294,8 @@ export default function DashboardSection() {
     errorKey: liveErrorKey,
     currentKey: liveKey,
   })
-  const overviewIsReady = overviewDisplayState === 'success' && hasCurrentOverview
+  const overviewIsReady = hasCurrentOverview
+    && (overviewDisplayState === 'success' || overviewDisplayState === 'loading')
   const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
   const productionDifference = selectedAnalytics?.difference ?? 0
   const summaryById = overviewIsReady
@@ -414,14 +428,14 @@ export default function DashboardSection() {
 
       {overviewDisplayState === 'empty' && hasCurrentOverview ? <OverviewEmptyState /> : null}
 
-      {overviewIsReady && overviewData.alerts.length > 0 ? (
+      {overviewAlerts.length > 0 ? (
         <div className="alerts-stack">
           {(() => {
-            const primaryAlert = overviewData.alerts[0]
-            const extraCount = overviewData.alerts.length - 1
+            const primaryAlert = overviewAlerts[0]
+            const extraCount = overviewAlerts.length - 1
             return (
               <div
-                className={`notice dashboard-alert overview-alert-banner ${primaryAlert.type === 'danger' ? 'notice-error' : ''}`}
+                className={`notice dashboard-alert overview-alert-banner ${primaryAlert.type === 'danger' || primaryAlert.severity === 'Critical' ? 'notice-error' : ''}`}
                 role="alert"
               >
                 <div className="overview-alert-lead">

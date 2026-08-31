@@ -1,8 +1,18 @@
-import { fireEvent, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AnalyticsOperationsDetails, { getDonutDisplayMinutes } from './AnalyticsOperationsDetails.jsx'
 import { analyticsTestFixture } from './analyticsTestFixtures.js'
+
+vi.mock('recharts', async () => {
+  const actual = await vi.importActual('recharts')
+  const { cloneElement } = await import('react')
+
+  return {
+    ...actual,
+    ResponsiveContainer: ({ children, height }) => cloneElement(children, { width: 400, height }),
+  }
+})
 
 function withSelected(overrides) {
   return {
@@ -34,17 +44,24 @@ describe('AnalyticsOperationsDetails', () => {
     expect(maintenanceCause).toHaveTextContent(/140 pcs estimated loss/i)
   })
 
-  it('keeps semantic legend hover state outside the hidden chart', () => {
-    renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
+  it('applies legend hover and focus state to the matching donut sector', async () => {
+    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
     const legend = screen.getByRole('list', { name: 'Sensor downtime distribution' })
     const first = within(legend).getByText('S-01 — Raw Material & Coil Joint').closest('li')
     const second = within(legend).getByText('S-02 — Inside Filler Wire').closest('li')
 
     fireEvent.mouseEnter(first)
     expect(first).toHaveClass('is-hovered')
+    await waitFor(() => expect(container.querySelector('.analytics-donut-active-sector')).toBeInTheDocument())
     fireEvent.mouseEnter(second)
     expect(first).not.toHaveClass('is-hovered')
     expect(second).toHaveClass('is-hovered')
+
+    fireEvent.mouseLeave(second)
+    await waitFor(() => expect(container.querySelector('.analytics-donut-active-sector')).not.toBeInTheDocument())
+    fireEvent.focus(first)
+    expect(first).toHaveClass('is-hovered')
+    await waitFor(() => expect(container.querySelector('.analytics-donut-active-sector')).toBeInTheDocument())
   })
 
   it('shows an honest empty state when all five sensors have zero downtime', () => {

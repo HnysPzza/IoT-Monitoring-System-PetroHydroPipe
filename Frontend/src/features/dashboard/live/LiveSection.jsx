@@ -152,7 +152,7 @@ export default function LiveSection() {
             <dl className="machine-meta live-sensor-meta">
               <div><dt>Signal</dt><dd>{formatSignal(sensor.signal)}</dd></div>
               <div><dt>Last Event</dt><dd>{formatLiveDateTime(sensor.lastEventAt)}</dd></div>
-              <div><dt>Connection</dt><dd className={sensor.monitoring?.connectivityState === 'offline' ? 'live-offline' : ''}>{sensor.monitoring?.connectivityState === 'online' ? <CheckCircle2 size={14} aria-hidden="true" /> : null}{sensor.monitoring?.connectivityState === 'offline' ? <WifiOff size={14} aria-hidden="true" /> : null}{sensor.connectivityLabel}</dd></div>
+              <div><dt>Connection</dt><dd className={sensor.monitoring?.connectivityState === 'offline' ? 'live-offline' : ''}>{sensor.monitoring?.connectivityState === 'online' ? <CheckCircle2 size={14} aria-hidden="true" /> : null}{sensor.monitoring?.connectivityState === 'offline' ? <WifiOff size={14} aria-hidden="true" /> : null}<span className="live-connectivity-label">{sensor.connectivityLabel}</span></dd></div>
             </dl>
             <div className="live-purpose-row">{sensor.displayStatus === 'Downtime' ? <Wrench size={16} aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}<span>{sensor.purpose}</span></div>
           </article>

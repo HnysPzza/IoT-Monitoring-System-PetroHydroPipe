@@ -5,8 +5,9 @@ import ProductionAnalytics from './ProductionAnalytics.jsx'
 vi.mock('recharts', () => ({
   Area: () => null,
   CartesianGrid: () => null,
-  ComposedChart: ({ children }) => <div data-testid="production-chart">{children}</div>,
+  ComposedChart: ({ children, data }) => <div data-testid="production-chart" data-points={data.map((point) => point.label).join(',')}>{children}</div>,
   Line: () => null,
+  ReferenceLine: ({ label }) => <span>{label?.value}</span>,
   ResponsiveContainer: ({ children }) => <div>{children}</div>,
   Tooltip: () => null,
   XAxis: () => null,
@@ -25,9 +26,9 @@ function buildAnalytics(overrides = {}) {
       differencePercent: 13.04,
       unit: 'pcs',
       points: [
-        { label: '6AM', current: 8, previous: 7 },
-        { label: '9AM', current: 16, previous: 14 },
-        { label: '12PM', current: 26, previous: 23 },
+        { label: '6AM', current: 8, previous: 7, periodState: 'completed' },
+        { label: '9AM', current: 16, previous: 14, periodState: 'current' },
+        { label: '12PM', current: null, previous: null, periodState: 'future' },
       ],
       ...overrides,
     },
@@ -39,10 +40,14 @@ describe('ProductionAnalytics', () => {
     render(<ProductionAnalytics analytics={buildAnalytics()} />)
 
     expect(screen.getByRole('heading', { name: 'Today so far vs Yesterday at same time' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Today so far vs Yesterday at same time production output comparison chart' })).toBeInTheDocument()
     expect(screen.getByText('+13.0%')).toBeInTheDocument()
     expect(screen.getByText('Today so far is 13.0% above yesterday at same time.')).toBeInTheDocument()
     expect(screen.queryByText(/target/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Day' })).not.toBeInTheDocument()
+    expect(screen.getByText('Now')).toBeInTheDocument()
+    expect(screen.getByTestId('production-chart')).toHaveAttribute('data-points', '6AM,9AM')
+    expect(screen.queryByText('Future')).not.toBeInTheDocument()
   })
 
   it('describes lower and equal output without treating equality as an increase', () => {
@@ -65,7 +70,19 @@ describe('ProductionAnalytics', () => {
     )
 
     expect(screen.getByText('No baseline')).toBeInTheDocument()
+    expect(screen.getByLabelText('No prior output from yesterday'))
+      .toHaveAttribute('aria-describedby', 'analytics-baseline-tooltip')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('No prior output from yesterday')
     expect(screen.getByText('Today so far recorded 4 pcs; yesterday at same time recorded none.')).toBeInTheDocument()
     expect(screen.queryByText('0.0%')).not.toBeInTheDocument()
+  })
+
+  it('does not draw a misleading Now line when only one bucket is visible', () => {
+    render(<ProductionAnalytics analytics={buildAnalytics({
+      points: [{ label: '6AM', current: 1, previous: 0, periodState: 'current' }],
+    })} />)
+
+    expect(screen.queryByText('Now')).not.toBeInTheDocument()
+    expect(screen.getByTestId('production-chart')).toHaveAttribute('data-points', '6AM')
   })
 })

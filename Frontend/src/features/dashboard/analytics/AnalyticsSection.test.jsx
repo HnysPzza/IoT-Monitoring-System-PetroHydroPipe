@@ -26,6 +26,22 @@ function createDeferred() {
 }
 
 describe('AnalyticsSection recorded-data states', () => {
+  it('refreshes server-owned bucket states while the page remains open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
+
+    try {
+      renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+      expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
+      expect(loadAnalytics).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(60 * 1000)
+      await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows loading and the backend data-coverage warning', async () => {
     const deferred = createDeferred()
     const loadAnalytics = vi.fn(() => deferred.promise)
@@ -140,10 +156,10 @@ describe('AnalyticsSection recorded-data states', () => {
         ...analyticsTestFixture.selected,
         range: {
           ...analyticsTestFixture.selected.range,
-          requestedStartDate: '2024-01-15',
+          requestedStartDate: '2026-06-01',
           requestedEndDate: '2026-08-15',
-          daysInclusive: 944,
-          bucket: 'monthly',
+          daysInclusive: 76,
+          bucket: 'weekly',
         },
       },
     }
@@ -160,6 +176,7 @@ describe('AnalyticsSection recorded-data states', () => {
       { period: 'all' },
       { signal: expect.any(AbortSignal) },
     ))
+    expect(screen.getByText('weekly')).toBeInTheDocument()
     expect(screen.queryByText('Prior period')).not.toBeInTheDocument()
     expect(screen.queryByText(/All recorded history:/i)).not.toBeInTheDocument()
   })

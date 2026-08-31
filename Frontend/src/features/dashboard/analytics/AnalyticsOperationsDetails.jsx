@@ -203,9 +203,11 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
               <ResponsiveContainer width="100%" height={220} minWidth={0}>
                 <PieChart accessibilityLayer={false}>
                   <Pie
-                    activeIndex={activeIndex}
-                    activeShape={renderActiveSector}
-                    data={downtimeDistribution}
+                    shape={(props) => (props.legendActive ? renderActiveSector(props) : <Sector {...props} />)}
+                    data={downtimeDistribution.map((sensor, index) => ({
+                      ...sensor,
+                      legendActive: activeIndex === index,
+                    }))}
                     dataKey="chartDurationMinutes"
                     nameKey="sensorLabel"
                     cx="50%"
@@ -217,7 +219,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     stroke="var(--card-bg)"
                     strokeWidth={2}
                     strokeLinejoin="round"
-                    isAnimationActive={true}
+                    isAnimationActive={activeIndex === null}
                     animationDuration={500}
                     animationEasing="ease-out"
                     onMouseEnter={(_, index) => setActiveIndex(index)}
@@ -276,8 +278,11 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 <li
                   key={sensor.sensorCode}
                   className={`analytics-cause-legend-item ${activeIndex === index ? 'is-hovered' : ''}`}
+                  tabIndex={0}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseLeave={() => setActiveIndex(null)}
+                  onFocus={() => setActiveIndex(index)}
+                  onBlur={() => setActiveIndex(null)}
                 >
                   <span
                     className="analytics-cause-swatch"

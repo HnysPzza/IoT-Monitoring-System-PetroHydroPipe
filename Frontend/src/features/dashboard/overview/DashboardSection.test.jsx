@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../auth/authSession.jsx'
@@ -87,11 +88,74 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+function RealtimeAlertHarness() {
+  const [activeAlerts, setActiveAlerts] = useState([])
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setActiveAlerts([{
+          id: 'alert-1',
+          severity: 'Critical',
+          status: 'Active',
+          message: 'S-04 Outside Filler Wire has no pulse.',
+        }])}
+      >
+        Emit alert
+      </button>
+      <Outlet context={{ activeAlerts, hasTrustedAlertList: true }} />
+    </>
+  )
+}
+
 describe('DashboardSection', () => {
   beforeEach(() => {
     getDashboardOverview.mockReset()
     getDashboardDowntimeImpact.mockReset()
     getLiveFeed.mockReset()
+  })
+
+  it('shows a trusted realtime alert without refetching the overview', async () => {
+    const user = userEvent.setup()
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<RealtimeAlertHarness />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    expect(screen.queryByText('S-04 Outside Filler Wire has no pulse.')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Emit alert' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('S-04 Outside Filler Wire has no pulse.')
+    expect(getDashboardOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes production bucket states while the page remains open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    try {
+      renderWithAuth(<DashboardSection />)
+      expect(await screen.findByText('Production Output')).toBeInTheDocument()
+      expect(getDashboardOverview).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(60 * 1000)
+      await waitFor(() => expect(getDashboardOverview).toHaveBeenCalledTimes(2))
+      expect(screen.getByLabelText('Production analytics')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reloads only the downtime chart when chart range changes', async () => {

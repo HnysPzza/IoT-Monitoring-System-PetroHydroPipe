@@ -789,7 +789,7 @@ export default function AdminDashboard() {
 
         <section className="dashboard-content">
           {/* Nested /dashboard routes render here. */}
-          <Outlet />
+          <Outlet context={{ activeAlerts, hasTrustedAlertList }} />
         </section>
       </div>
     </main>

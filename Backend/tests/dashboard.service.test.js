@@ -219,6 +219,41 @@ test('current-day downtime appears only in its interval and future periods remai
   assert.equal(result.points[1].causeReviewPending, true)
 })
 
+test('weekly and monthly downtime keep fixed buckets while future periods remain null', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-10T07:39:00+08:00') })
+  clearSourceCache()
+  mockModule('src/database/client.js', { getSupabaseClient: createMachineClient })
+  mockModule('src/modules/downtime/downtime.repository.js', {
+    getOverlappingDowntime: async () => [],
+  })
+  mockModule('src/modules/settings/settingsHistory.repository.js', {
+    getSettingsHistory: async () => [{
+      machine_id: MACHINE_ID,
+      version: '1',
+      shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0 },
+      effective_from: null,
+      effective_to: null,
+    }],
+  })
+  const dashboardService = require('../src/modules/dashboard/dashboard.service')
+
+  const week = await dashboardService.getDowntimeImpact({ trendMode: 'week', date: '2026-08-10' })
+  const month = await dashboardService.getDowntimeImpact({ trendMode: 'month', date: '2026-08-10' })
+
+  assert.equal(week.points.length, 7)
+  assert.deepEqual(week.points.map(({ periodState, minutes }) => ({ periodState, minutes })), [
+    { periodState: 'current', minutes: 0 },
+    ...Array.from({ length: 6 }, () => ({ periodState: 'future', minutes: null })),
+  ])
+  assert.equal(month.points.length, 4)
+  assert.deepEqual(month.points.map(({ periodState, minutes }) => ({ periodState, minutes })), [
+    { periodState: 'completed', minutes: 0 },
+    { periodState: 'current', minutes: 0 },
+    { periodState: 'future', minutes: null },
+    { periodState: 'future', minutes: null },
+  ])
+})
+
 test('overview compares today with the same elapsed portion of yesterday using only S-05 pulse events', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-25T10:30:00+08:00') })
   const todayStart = startOfBusinessDay(new Date())

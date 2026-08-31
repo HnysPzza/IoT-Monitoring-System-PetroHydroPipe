@@ -8,6 +8,7 @@ import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 import './analytics-date-range-picker.css'
 
 const AnalyticsDateRangePicker = lazy(() => import('./AnalyticsDateRangePicker.jsx'))
+const AUTO_REFRESH_MS = 60 * 1000
 
 const rangePresets = [
   { id: 'this-week', label: 'This week' },
@@ -129,6 +130,13 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     loadSnapshot()
   }, [loadSnapshot, range])
 
+  useEffect(() => {
+    if (!range) return undefined
+
+    const intervalId = window.setInterval(loadSnapshot, AUTO_REFRESH_MS)
+    return () => window.clearInterval(intervalId)
+  }, [loadSnapshot, range])
+
   useEffect(() => () => {
     requestIdRef.current += 1
     requestControllerRef.current?.abort()
@@ -184,7 +192,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
           <div className="analytics-bucket-summary" aria-live="polite">
             <CalendarDays size={17} aria-hidden="true" />
-            <strong>{range?.bucket || 'Fix dates'}</strong>
+            <strong>{snapshot?.selected?.range?.bucket || (range?.range === 'all' ? 'Automatic' : range?.bucket) || 'Fix dates'}</strong>
           </div>
 
           <button

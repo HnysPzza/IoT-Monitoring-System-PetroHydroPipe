@@ -10,6 +10,7 @@ import {
   getDowntimeSensorBreakdown,
   getProcessSensorBreakdown,
   getTrendEvaluation,
+  getVisibleAnalyticsTrendPoints,
 } from './analyticsPresentation.js'
 
 describe('Analytics presentation helpers', () => {
@@ -71,13 +72,29 @@ describe('Analytics presentation helpers', () => {
     expect(trend.points[1]).toMatchObject({
       label: 'Prior 2', selectedLabel: 'No selected segment', hasSelectedSegment: false, comparisonValue: 110,
     })
+    expect(getVisibleAnalyticsTrendPoints(trend.points)).toHaveLength(2)
     expect(trend.isCalendarSegmentComparison).toBe(true)
     expect(getAnalyticsTrendSummary(trend)).toBe('595 pcs across 1 observed bucket.')
   })
 
   it('provides a visible summary from the selected server summary', () => {
     const trend = buildAnalyticsTrend(analyticsTestFixture, 'process-events')
-    expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 6 observed buckets; 1 bucket is unobserved.')
+    expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 6 observed buckets.')
+    expect(getVisibleAnalyticsTrendPoints(trend.points)).toHaveLength(6)
+  })
+
+  it('separates passed null buckets from future buckets', () => {
+    const trend = buildAnalyticsTrend({
+      ...analyticsTestFixture,
+      selected: {
+        ...analyticsTestFixture.selected,
+        trends: analyticsTestFixture.selected.trends.map((point, index) => (
+          index === 4 ? { ...point, metrics: { ...point.metrics, processEventCount: null } } : point
+        )),
+      },
+    }, 'process-events')
+
+    expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 5 observed buckets; 1 bucket is unobserved.')
   })
 
   it('returns the server-provided downtime cause and sensor aggregations unchanged', () => {
@@ -101,6 +118,16 @@ describe('Analytics presentation helpers', () => {
 
     expect(result.direction).toBe('up')
     expect(result.strokeColor).toBe('var(--chart-target)')
+  })
+
+  it('reports conventional first-to-last change without regression percentages below minus 100 percent', () => {
+    const result = getTrendEvaluation({
+      metric: { id: 'production' },
+      points: [{ value: 100 }, { value: 0 }, { value: 0 }],
+    })
+
+    expect(result.deltaPercent).toBe(-100)
+    expect(result.label).toBe('Trending down (-100.0%)')
   })
 
   it('labels a fully unobserved trend without implying a steady measurement', () => {

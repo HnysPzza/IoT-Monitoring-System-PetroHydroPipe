@@ -1,5 +1,5 @@
 import { CircleHelp, Minus, TrendingDown, TrendingUp } from 'lucide-react'
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatNumber } from '../../../shared/utils/formatters.js'
 
 function ChartTooltip({ active, payload, label, unit }) {
@@ -27,6 +27,8 @@ export default function ProductionAnalytics({ analytics }) {
   const hasBaseline = selected.previousTotal > 0 && selected.differencePercent !== null
   const isPositive = difference > 0
   const isNegative = difference < 0
+  const visiblePoints = selected.points.filter((point) => point.periodState !== 'future')
+  const currentPoint = visiblePoints.find((point) => point.periodState === 'current')
   const comparisonClass = isPositive ? 'is-positive' : isNegative ? 'is-negative' : 'is-neutral'
   let comparisonLabel = 'No change'
   let insight = `${selected.currentLabel} matches ${selected.previousLabel.toLowerCase()} at ${formatNumber(selected.currentTotal)} ${selected.unit}.`
@@ -71,19 +73,37 @@ export default function ProductionAnalytics({ analytics }) {
           <strong>{difference > 0 ? '+' : ''}{formatNumber(difference)} {selected.unit}</strong>
         </div>
         <div className={`analytics-delta ${comparisonClass}`}>
-          <InsightIcon size={18} aria-hidden="true" />
+          {!hasBaseline ? (
+            <span
+              className="analytics-baseline-help"
+              aria-label="No prior output from yesterday"
+              aria-describedby="analytics-baseline-tooltip"
+              tabIndex="0"
+            >
+              <InsightIcon size={18} aria-hidden="true" />
+              <span
+                id="analytics-baseline-tooltip"
+                className="recharts-tooltip-card industrial-tooltip analytics-baseline-tooltip"
+                role="tooltip"
+              >
+                <span>No prior output from yesterday</span>
+              </span>
+            </span>
+          ) : (
+            <InsightIcon size={18} aria-hidden="true" />
+          )}
           <span>{comparisonLabel}</span>
         </div>
       </div>
 
-      <div className="analytics-chart industrial-recharts-panel" aria-label={`${selected.label} production output comparison chart`}>
+      <div className="analytics-chart industrial-recharts-panel" role="img" aria-label={`${selected.label} production output comparison chart`}>
         <div className="chart-legend" aria-label="Production chart legend">
           <span><i className="legend-line legend-current" aria-hidden="true" />{selected.currentLabel}</span>
           <span><i className="legend-line legend-previous" aria-hidden="true" />{selected.previousLabel}</span>
         </div>
         <ResponsiveContainer width="100%" height={320} minWidth={0}>
           {/* ComposedChart layers cumulative output for today and yesterday in one view. */}
-          <ComposedChart data={selected.points} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
+          <ComposedChart data={visiblePoints} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="productionCurrentArea" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="var(--chart-current)" stopOpacity={0.28} />
@@ -91,6 +111,14 @@ export default function ProductionAnalytics({ analytics }) {
               </linearGradient>
             </defs>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="2 8" vertical={false} />
+            {currentPoint && visiblePoints.length > 1 ? (
+              <ReferenceLine
+                x={currentPoint.label}
+                stroke="var(--c-text-3)"
+                strokeDasharray="4 4"
+                label={{ value: 'Now', position: 'insideTopRight', fill: 'var(--c-text-3)', fontSize: 11 }}
+              />
+            ) : null}
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={formatNumber} width={58} />
             <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.24 }} />

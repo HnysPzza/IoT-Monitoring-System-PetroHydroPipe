@@ -274,6 +274,9 @@ export function getReadableSource(log) {
 export function getReadableDetailItems(log) {
   return [
     { label: 'What happened', value: getReadableDetails(log) },
+    ...(log.action === 'SENSOR_MANUAL_RECOVERY_OVERRIDE' && log.metadata?.reason
+      ? [{ label: 'Override reason', value: log.metadata.reason }]
+      : []),
     { label: 'Who did it', value: getReadableActor(log) },
     { label: 'Affected item', value: getReadableTarget(log) },
     { label: 'Result', value: getReadableAction(log) },
