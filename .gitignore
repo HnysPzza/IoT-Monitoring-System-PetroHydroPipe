@@ -10,6 +10,9 @@ node_modules/
 Backend/node_modules/
 Frontend/node_modules/
 
+# Local agent skills
+.agents/
+
 # Build output
 dist/
 Frontend/dist/
