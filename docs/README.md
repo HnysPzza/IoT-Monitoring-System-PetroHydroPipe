@@ -10,15 +10,8 @@ Use this folder for technical project documentation. Use the Obsidian vault for 
 |---|---|
 | Product requirements | [PRD.md](./PRD.md) |
 | Technical design | [TDD.md](./TDD.md) |
-| Current whole-system audit | [ForUrgentFix/Whole System Audit.md](./ForUrgentFix/Whole%20System%20Audit.md) |
-| Setup instructions | [SETUP.md](./SETUP.md) |
 | System architecture | [ARCHITECTURE.md](./ARCHITECTURE.md) |
-| Deployment and auth planning | [DEPLOYMENT_AUTH_PLANNING.md](./DEPLOYMENT_AUTH_PLANNING.md) |
 | Common commands and workflows | [RUNBOOK.md](./RUNBOOK.md) |
-| Phase 1 sensor alignment | [ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md](./ForUrgentWork/Plan/2026-08-22-phase-1-sensor-label-harmonization.md) |
-| Phase 2 settings and backend API | [ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md](./ForUrgentWork/Plan/2026-08-22-phase-2-settings-storage-and-backend-api.md) |
-| Phase 3 operational-time watchdog | [ForUrgentFix/Plans/phase 3.md](./ForUrgentFix/Plans/phase%203.md) |
-| Phase 4 settings and live monitoring | [ForUrgentFix/Plans/phase 4.md](./ForUrgentFix/Plans/phase%204.md) |
 
 ## Current System Summary
 
