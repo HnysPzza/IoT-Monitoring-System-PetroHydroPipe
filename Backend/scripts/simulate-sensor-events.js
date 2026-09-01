@@ -16,6 +16,7 @@ const devices = registry.sensors.map((sensor) => ({
   keyEnv: `IOT_SIM_${sensor.code.replace('-', '')}_KEY`,
   label: sensor.label,
 }))
+const issueDevices = devices.filter((device) => device.sensorCode !== registry.outputSensorCode)
 
 let batchNumber = 0
 let previousIssueSensorCode = null
@@ -28,12 +29,12 @@ function getMissingKeys() {
 
 function pickIssueDevice() {
   if (DETERMINISTIC_MODE) {
-    return devices[(batchNumber - 1) % devices.length]
+    return issueDevices[(batchNumber - 1) % issueDevices.length]
   }
 
   const candidates = previousIssueSensorCode
-    ? devices.filter((device) => device.sensorCode !== previousIssueSensorCode)
-    : devices
+    ? issueDevices.filter((device) => device.sensorCode !== previousIssueSensorCode)
+    : issueDevices
   const index = Math.floor(Math.random() * candidates.length)
 
   return candidates[index]
@@ -42,12 +43,12 @@ function pickIssueDevice() {
 function pickIssueEvent() {
   if (DETERMINISTIC_MODE) {
     return batchNumber % 2 === 0
-      ? { eventType: 'downtime', signal: 'no_pulse', expectedAlertAction: 'creates or updates alert' }
+      ? { eventType: 'downtime', signal: 'no_pulse', expectedAlertAction: 'records observation without alert' }
       : { eventType: 'fault', signal: 'fault', expectedAlertAction: 'creates or updates alert' }
   }
 
   return Math.random() < 0.7
-    ? { eventType: 'downtime', signal: 'no_pulse', expectedAlertAction: 'creates or updates alert' }
+    ? { eventType: 'downtime', signal: 'no_pulse', expectedAlertAction: 'records observation without alert' }
     : { eventType: 'fault', signal: 'fault', expectedAlertAction: 'creates or updates alert' }
 }
 
@@ -128,6 +129,9 @@ async function runVerificationLifecycle() {
   const device = devices.find((candidate) => candidate.sensorCode === VERIFICATION_SENSOR_CODE)
   if (!device) {
     throw new Error(`Unknown verification sensor ${VERIFICATION_SENSOR_CODE}.`)
+  }
+  if (device.sensorCode === registry.outputSensorCode) {
+    throw new Error(`${device.sensorCode} does not support downtime verification.`)
   }
 
   const issueAt = new Date()
