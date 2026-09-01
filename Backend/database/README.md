@@ -30,6 +30,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/021_add_managing_director_role.sql` adds the PRD-required Managing Director role for read-only operational access.
 - `migrations/022_require_reviewed_cause_before_resolve.sql` prevents unresolved S-03 causes from being silently finalized.
 - `migrations/023_route_no_pulse_through_watchdog.sql` prevents `no_pulse` observations from bypassing schedule-aware watchdog evaluation.
+- `migrations/025_prevent_s05_downtime.sql` keeps S-05 issue telemetry observational and blocks new S-05 downtime rows.
 
 ## Tables
 
@@ -229,7 +230,11 @@ node --test tests/base-table-security.migration.pglite.test.js tests/downtime-up
 
 Apply migration `023` after migration `022` and before accepting future ESP32 traffic. It replaces only the public `ingest_iot_sensor_event` wrapper. Every `downtime/no_pulse` input is routed to observational ingestion, so it can be retained and deduplicated but cannot directly create downtime or an alert. Only `evaluate_sensor_watchdog` may create absence-owned downtime after checking schedule, planned breaks, grace, thresholds, sensor enablement, and the permanent S-05 exclusion.
 
-The migration is forward-only, safe to reapply, does not rewrite historical events or downtime, and preserves immediate `fault/fault` processing. Existing suspicious downtime must be reviewed separately; do not delete operational history automatically.
+The migration is forward-only, safe to reapply, does not rewrite historical events or downtime, and preserves immediate `fault/fault` processing for S-01 through S-04. Existing suspicious downtime must be reviewed separately; do not delete operational history automatically.
+
+### Migration 025
+
+Apply migration `025` after migration `024`. S-05 `downtime` and `fault` inputs remain in `sensor_events` as observational history but cannot change sensor or machine operational state, create alerts, or create downtime. A table trigger also rejects new S-05 downtime rows from any database function. Historical S-05 rows remain unchanged and can still be resolved or annotated.
 
 Use this read-only query to identify records that may require administrator review:
 
@@ -326,7 +331,7 @@ POST /api/iot/events
 
 Every event body includes a client-generated UUID `eventId`. Retrying the same `eventId` returns the stored event without replaying sensor, machine, alert, or downtime transitions. Reusing it with conflicting content is rejected. Events whose NTP-synchronized `recordedAt` is stale or equal to the sensor watermark are retained in history with `stateApplied: false` and cannot overwrite current state. This timestamp watermark is interim; future firmware should add a per-sensor monotonic counter persisted across reboot, separate from the UUID event ID.
 
-It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one sensor per batch to send a downtime/fault event. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
+It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one of S-01 through S-04 per batch to send a downtime/fault event. S-05 continues sending normal production activity and is rejected by downtime lifecycle verification. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
 
 Local simulator environment values:
 

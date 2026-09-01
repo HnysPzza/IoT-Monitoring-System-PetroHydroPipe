@@ -340,6 +340,35 @@ create index if not exists idx_alerts_sensor_id on alerts(sensor_id);
 create index if not exists idx_alerts_acknowledged_by on alerts(acknowledged_by);
 create unique index if not exists idx_alerts_revision on alerts(revision);
 
+-- S-05 measures production output and must never own a downtime record.
+create or replace function public.prevent_s05_downtime()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+begin
+  if tg_op = 'UPDATE' and new.sensor_id is not distinct from old.sensor_id then
+    return new;
+  end if;
+
+  if exists (
+    select 1 from public.sensors sensor
+    where sensor.id = new.sensor_id and sensor.sensor_code = 'S-05'
+  ) then
+    raise exception using
+      errcode = '23514',
+      message = 'S-05 cannot create downtime records.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists prevent_s05_downtime on public.downtime_events;
+create trigger prevent_s05_downtime
+before insert or update of sensor_id on public.downtime_events
+for each row execute function public.prevent_s05_downtime();
+
 -- Shared trigger helper keeps updated_at current after edits.
 create or replace function set_updated_at()
 returns trigger as $$
@@ -1752,7 +1781,8 @@ begin
       and downtime.status = 'Open' and downtime.detection_source = 'absence_watchdog'
   ) into v_watchdog_open;
 
-  if (p_event_type = 'downtime' and p_event_value->>'signal' = 'no_pulse')
+  if (v_sensor_code = 'S-05' and p_event_type in ('downtime', 'fault'))
+    or (p_event_type = 'downtime' and p_event_value->>'signal' = 'no_pulse')
     or (v_watchdog_open and p_event_type in ('pulse', 'recovered')
       and p_event_value->>'signal' = 'active') then
     return query select * from public.ingest_iot_watchdog_observation(

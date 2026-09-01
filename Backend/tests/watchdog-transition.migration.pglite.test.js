@@ -14,6 +14,10 @@ const noPulseFixMigrationSql = fs.readFileSync(
   path.join(backendRoot, 'database', 'migrations', '023_route_no_pulse_through_watchdog.sql'),
   'utf8',
 )
+const s05ProtectionMigrationSql = fs.readFileSync(
+  path.join(backendRoot, 'database', 'migrations', '025_prevent_s05_downtime.sql'),
+  'utf8',
+)
 
 const actorId = '20000000-0000-4000-8000-000000000099'
 
@@ -362,6 +366,68 @@ test('S-05 no-pulse ingestion remains raw history without downtime or alerts', a
       (select count(*) from public.alerts)::integer as alert_count
   `)
   assert.deepEqual(rows[0], { event_count: 1, downtime_count: 0, alert_count: 0 })
+})
+
+test('S-05 explicit fault remains raw history without downtime, alerts, or operational state changes', async (t) => {
+  const db = await createDatabase()
+  t.after(() => db.close())
+  await db.exec(s05ProtectionMigrationSql)
+  await db.exec(s05ProtectionMigrationSql)
+  const ids = await getIds(db, 'S-05')
+
+  const result = await db.query(`select * from public.ingest_iot_sensor_event(
+    gen_random_uuid(), $1, $2, 'fault', '{"signal":"fault"}', '2026-08-21T01:00:00Z'
+  )`, [ids.sensor_id, ids.machine_id])
+  assert.equal(result.rows[0].state_applied, true)
+  assert.equal(result.rows[0].downtime_action, null)
+  assert.equal(result.rows[0].alert_action, null)
+
+  const { rows } = await db.query(`
+    select
+      (select count(*) from public.sensor_events)::integer as event_count,
+      (select count(*) from public.downtime_events)::integer as downtime_count,
+      (select count(*) from public.alerts)::integer as alert_count,
+      (select status from public.sensors where id = $1) as sensor_status,
+      (select status from public.machines where id = $2) as machine_status
+  `, [ids.sensor_id, ids.machine_id])
+  assert.deepEqual(rows[0], {
+    event_count: 1,
+    downtime_count: 0,
+    alert_count: 0,
+    sensor_status: 'Active',
+    machine_status: 'Idle',
+  })
+})
+
+test('database rejects new S-05 downtime rows at the table boundary', async (t) => {
+  const db = await createDatabase()
+  t.after(() => db.close())
+  const ids = await getIds(db, 'S-05')
+
+  await assert.rejects(
+    db.query(`insert into public.downtime_events
+      (machine_id, sensor_id, started_at, cause, status)
+      values ($1, $2, '2026-08-21T01:00:00Z', 'Manual Cutting', 'Open')`,
+    [ids.machine_id, ids.sensor_id]),
+    /S-05 cannot create downtime records/,
+  )
+
+  await db.exec('alter table public.downtime_events disable trigger prevent_s05_downtime;')
+  const historical = await db.query(`insert into public.downtime_events
+    (machine_id, sensor_id, started_at, cause, status)
+    values ($1, $2, '2026-08-20T01:00:00Z', 'Manual Cutting', 'Open')
+    returning id`, [ids.machine_id, ids.sensor_id])
+  await db.exec('alter table public.downtime_events enable trigger prevent_s05_downtime;')
+
+  await db.query(`update public.downtime_events
+    set sensor_id = sensor_id, status = 'Resolved',
+      ended_at = '2026-08-20T01:05:00Z', duration_seconds = 300
+    where id = $1`, [historical.rows[0].id])
+  const resolved = await db.query(
+    'select status, duration_seconds from public.downtime_events where id = $1',
+    [historical.rows[0].id],
+  )
+  assert.deepEqual(resolved.rows, [{ status: 'Resolved', duration_seconds: 300 }])
 })
 
 test('one recovered event cannot resolve watchdog-created downtime and sustained recovery resolves once', async (t) => {
