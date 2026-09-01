@@ -101,3 +101,28 @@ test('output loss fallback rate accepts positive decimals and rejects zero', () 
     assert.throws(loadEnv, /OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE/)
   })
 })
+
+test('API request deadline defaults to twelve seconds and rejects unsafe values', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    API_REQUEST_TIMEOUT_MS: '',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().API_REQUEST_TIMEOUT_MS, 12_000)
+  })
+
+  for (const value of ['0', '-1', '499', '14001', '15000', '120001', 'not-a-number']) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      API_REQUEST_TIMEOUT_MS: value,
+    }, (loadEnv) => {
+      assert.throws(loadEnv, /API_REQUEST_TIMEOUT_MS/)
+    })
+  }
+
+  withEnvironment({
+    NODE_ENV: 'test',
+    API_REQUEST_TIMEOUT_MS: '8000',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().API_REQUEST_TIMEOUT_MS, 8000)
+  })
+})

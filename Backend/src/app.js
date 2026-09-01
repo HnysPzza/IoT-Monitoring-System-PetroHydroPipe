@@ -4,6 +4,7 @@ const helmet = require('helmet')
 const morgan = require('morgan')
 const env = require('./config/env')
 const errorHandler = require('./middleware/errorHandler')
+const requestDeadline = require('./middleware/requestDeadline')
 const routes = require('./routes')
 
 const app = express()
@@ -39,7 +40,7 @@ app.get('/api/health', (req, res) => {
 })
 
 // Feature route prefixes. Some modules are placeholders until later phases.
-app.use('/api', routes)
+app.use('/api', requestDeadline, routes)
 
 // Unknown API paths return a consistent JSON error.
 app.use((req, res) => {

@@ -33,6 +33,29 @@ npm test
 npm run build
 ```
 
+## Test Backend Request Deadlines
+
+Run the deterministic regression tests. They use a local fake slow upstream and do not require or modify hosted Supabase data.
+
+```powershell
+cd Backend
+node --test tests/request-deadline.api.test.js tests/env.test.js
+```
+
+Expected result: **10 tests pass**.
+
+Expected behavior:
+
+- An ordinary `/api` request whose Supabase HTTP work exceeds the configured deadline is cancelled and returns HTTP `504` with `error.code: "UPSTREAM_TIMEOUT"`.
+- The response message is safe for users and does not expose database, credential, or internal error details.
+- If the client disconnects first, the backend cancels the outstanding upstream HTTP request.
+- A response that already committed headers, such as an SSE stream, remains open past the ordinary request deadline and follows its own stream controls.
+- `API_REQUEST_TIMEOUT_MS` defaults to `12000` and accepts only `500` through `14000`, keeping the backend deadline below the frontend's 15-second timeout.
+
+Previous behavior: most Supabase work had no request-scoped server deadline, so it could continue consuming backend resources after the frontend stopped waiting.
+
+Current behavior: ordinary API work has one bounded request lifecycle shared with Supabase HTTP calls. This verifies HTTP cancellation locally; staging verification is still required to determine how quickly hosted Supabase stops a PostgreSQL statement that was already executing.
+
 ## Check Supabase Structure
 
 Read-only integration checks skip unless enabled:

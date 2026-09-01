@@ -10,6 +10,10 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url().optional().or(z.literal('')),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional().or(z.literal('')),
   JWT_SECRET: z.string().min(24, 'JWT_SECRET must be at least 24 characters.').optional().or(z.literal('')),
+  API_REQUEST_TIMEOUT_MS: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.coerce.number().int().min(500).max(14_000).default(12_000),
+  ),
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   ANALYTICS_RATE_LIMIT: z.coerce.number().int().positive().default(30),
   OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE: z.coerce.number().positive().max(100).default(0.05),
