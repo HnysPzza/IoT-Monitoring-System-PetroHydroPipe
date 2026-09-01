@@ -441,20 +441,28 @@ async function main() {
     return 0
   }
 
-  let suiteId = options.suite
-  if (!suiteId) {
-    if (!process.stdin.isTTY) {
-      console.error('Interactive menu requires a terminal. Use --suite <id>.')
+  if (options.suite) {
+    if (!hasSuite(options.suite)) {
+      console.error(`Unknown suite: ${options.suite}. Use --list to see valid IDs.`)
       return 2
     }
-    suiteId = await chooseSuite()
+    return runSuite(options.suite, options)
   }
-  if (suiteId === null) return 0
-  if (!hasSuite(suiteId)) {
-    console.error(`Unknown suite: ${suiteId ?? '(empty)'}. Use --list to see valid IDs.`)
+
+  if (!process.stdin.isTTY) {
+    console.error('Interactive menu requires a terminal. Use --suite <id>.')
     return 2
   }
-  return runSuite(suiteId, options)
+
+  while (true) {
+    const suiteId = await chooseSuite()
+    if (suiteId === null) return 0
+    if (!suiteId || !hasSuite(suiteId)) {
+      console.error(`\nUnknown choice. Use numbers shown in the menu or 0 to exit.`)
+      continue
+    }
+    await runSuite(suiteId, options)
+  }
 }
 
 main()
