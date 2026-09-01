@@ -617,7 +617,7 @@ export default function MachinesSection() {
                   </div>
                   <div>
                     <dt>Purpose</dt>
-                    <dd>{sensor.purpose || getSensorPurpose(sensor.sensorCode)}</dd>
+                    <dd>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</dd>
                   </div>
                   <div>
                     <dt>Updated</dt>

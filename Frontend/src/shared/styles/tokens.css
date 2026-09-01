@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 /* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
@@ -263,7 +263,7 @@ button:disabled {
   align-items: center;
   gap: 12px;
   color: var(--c-text);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-weight: 600;
 }
 
@@ -278,7 +278,7 @@ button:disabled {
 .machine-meta dd,
 .trend-bar-value,
 .availability-copy span {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 .eyebrow {
@@ -460,7 +460,7 @@ button:disabled {
   color: var(--c-text);
   background: transparent;
   font-size: 0.98rem;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 .input-shell input:focus,
@@ -2226,7 +2226,7 @@ button:disabled {
 
 .analytics-bucket-summary strong {
   color: var(--c-text);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.8rem;
   text-transform: capitalize;
 }
@@ -2331,7 +2331,7 @@ button:disabled {
 
 .analytics-kpi-card .stat-value {
   color: var(--c-text);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 1.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -2458,7 +2458,7 @@ button:disabled {
 }
 
 .account-table.analytics-chart-table td:nth-child(2) {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-weight: 600;
 }
 
@@ -2548,7 +2548,7 @@ button:disabled {
 
 .analytics-cause-meta {
   color: var(--c-text-3);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.72rem;
   line-height: 1.45;
 }
@@ -2570,7 +2570,7 @@ button:disabled {
 
 .analytics-cause-empty span {
   color: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.78rem;
 }
 
@@ -2617,7 +2617,7 @@ button:disabled {
   display: grid;
   place-items: center;
   color: var(--c-text-3);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -2739,13 +2739,13 @@ button:disabled {
 }
 
 .analytics-sensor-tooltip strong {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 .analytics-cause-tooltip span,
 .analytics-sensor-tooltip span {
   color: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.74rem;
 }
 
@@ -2806,7 +2806,7 @@ button:disabled {
 .settings-profile-card p {
   margin: 0;
   color: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.74rem;
   text-transform: uppercase;
 }
@@ -2896,7 +2896,7 @@ button:disabled {
   position: relative;
   align-content: center;
   justify-items: start;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-weight: 700;
 }
 
@@ -3049,7 +3049,7 @@ button:disabled {
 .live-metric-label {
   display: block;
   margin: 0;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.74rem;
   text-transform: uppercase;
 }
@@ -3081,7 +3081,7 @@ button:disabled {
   justify-content: flex-end;
   gap: 12px;
   color: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.78rem;
 }
 
@@ -3089,24 +3089,44 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(5, minmax(180px, 1fr));
   gap: 16px;
+  align-items: stretch;
 }
 
 .live-sensor-card {
-  align-content: start;
+  display: grid;
+  grid-template-rows: minmax(56px, auto) minmax(48px, auto) minmax(80px, auto) 1fr;
+  align-content: stretch;
+  gap: 14px;
   min-width: 0;
+  height: 100%;
 }
 
-.live-sensor-card .machine-card-header > div,
-.live-sensor-meta div,
-.live-connectivity-label,
-.live-purpose-row span {
-  min-width: 0;
+.live-sensor-card .machine-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 56px;
 }
 
-.live-sensor-card h3,
-.live-connectivity-label,
-.live-purpose-row span {
-  overflow-wrap: anywhere;
+.live-sensor-card .machine-card-header > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.live-sensor-card h3 {
+  margin: 2px 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+
+.live-sensor-card .machine-id {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--c-accent);
 }
 
 .live-heading-badges {
@@ -3117,30 +3137,65 @@ button:disabled {
 }
 
 .live-detection-state {
-  min-height: 38px;
+  display: flex;
+  align-items: center;
+  min-height: 48px;
   margin: 0;
   padding: 8px 10px;
   border-left: 3px solid var(--card-border);
+  border-radius: 0 6px 6px 0;
   color: var(--c-text-2);
   background: var(--panel-bg);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.76rem;
-  line-height: 1.45;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
-.live-sensor-meta {
-  grid-template-columns: 1fr;
+.live-sensor-card .live-sensor-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  min-height: 80px;
+  align-content: start;
+}
+
+.live-sensor-meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.live-sensor-meta dt {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .live-sensor-meta dd {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  margin: 0;
   min-width: 0;
+  color: var(--c-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
-.live-sensor-meta dd svg,
-.live-purpose-row svg {
+.live-connectivity-label {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.live-sensor-meta dd svg {
   flex: 0 0 auto;
 }
 
@@ -3148,24 +3203,33 @@ button:disabled {
   color: var(--status-downtime-text);
 }
 
-.live-purpose-row,
-.live-network-card {
+.live-purpose-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 60px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--subtle-border);
   color: var(--c-text-2);
-  line-height: 1.5;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
-.live-purpose-row {
-  padding-top: 4px;
-  font-size: 0.84rem;
+.live-purpose-row svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.live-purpose-row span {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .live-network-card {
   min-height: 52px;
   padding: 14px 16px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.78rem;
 }
 
@@ -3702,7 +3766,7 @@ button:disabled {
 
 .recharts-tooltip-card strong,
 .recharts-tooltip-card span {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 .recharts-tooltip-card strong {
@@ -3752,7 +3816,7 @@ button:disabled {
   border-radius: 999px;
   color: var(--c-text-2);
   background: var(--panel-bg);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.72rem;
 }
 
@@ -3912,7 +3976,7 @@ button:disabled {
   background: rgba(56, 189, 248, 0.1);
   border: 1px solid rgba(56, 189, 248, 0.25);
   color: #38BDF8;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -3957,7 +4021,7 @@ button:disabled {
   border-radius: 8px;
   color: var(--c-text);
   background: rgba(15, 23, 42, 0.7);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.88rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -3992,7 +4056,7 @@ button:disabled {
   position: absolute;
   right: 10px;
   color: #94A3B8;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.78rem;
   font-weight: 500;
   pointer-events: none;
@@ -4097,7 +4161,7 @@ button:disabled {
   border-radius: 8px;
   color: var(--c-text);
   background: var(--c-surface2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 .settings-mode-note,
@@ -4246,7 +4310,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   border-radius: 8px;
   color: var(--c-text);
   background: var(--c-surface2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.88rem;
   font-weight: 600;
 }
@@ -4306,7 +4370,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   background: var(--c-surface2);
   border: 1px solid var(--c-border);
   color: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.72rem;
   font-weight: 600;
 }
@@ -4386,7 +4450,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.2);
   color: #60A5FA;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
@@ -4501,7 +4565,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 .settings-actions span {
   margin-right: auto;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 @media (max-width: 900px) {
@@ -4858,7 +4922,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .audit-entity-label {
   margin-top: 4px;
   color: var(--c-text-2);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.72rem;
 }
 
@@ -5032,7 +5096,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .audit-technical-panel dt,
 .audit-technical-panel dd {
   margin: 0;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.76rem;
 }
 
@@ -5215,7 +5279,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 .placeholder-card strong {
   color: var(--c-text);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 @keyframes spin {

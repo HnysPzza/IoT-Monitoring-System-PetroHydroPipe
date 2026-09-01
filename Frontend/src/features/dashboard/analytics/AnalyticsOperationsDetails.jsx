@@ -244,7 +244,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     dominantBaseline="central"
                     fill="var(--c-text)"
                     style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontFamily: "'Inter', sans-serif",
                       fontSize: '1.15rem',
                       fontWeight: 700,
                       letterSpacing: '-0.02em',
@@ -352,13 +352,13 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     dataKey="sensorCode"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'var(--c-text-2)', fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" }}
+                    tick={{ fill: 'var(--c-text-2)', fontSize: 12, fontFamily: "'Inter', sans-serif" }}
                   />
                   <YAxis
                     allowDecimals={false}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'var(--c-text-3)', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" }}
+                    tick={{ fill: 'var(--c-text-3)', fontSize: 11, fontFamily: "'Inter', sans-serif" }}
                   />
                   <Tooltip
                     content={<SensorTooltip />}
