@@ -126,3 +126,45 @@ test('API request deadline defaults to twelve seconds and rejects unsafe values'
     assert.equal(loadEnv().API_REQUEST_TIMEOUT_MS, 8000)
   })
 })
+
+test('health readiness timeout is short and below the API request deadline', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    API_REQUEST_TIMEOUT_MS: '12000',
+    HEALTH_READINESS_TIMEOUT_MS: '',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().HEALTH_READINESS_TIMEOUT_MS, 2_000)
+  })
+
+  for (const value of ['0', '99', '5001', '12000', 'not-a-number']) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      API_REQUEST_TIMEOUT_MS: '12000',
+      HEALTH_READINESS_TIMEOUT_MS: value,
+    }, (loadEnv) => assert.throws(loadEnv, /HEALTH_READINESS_TIMEOUT_MS/))
+  }
+
+  withEnvironment({
+    NODE_ENV: 'test',
+    API_REQUEST_TIMEOUT_MS: '500',
+    HEALTH_READINESS_TIMEOUT_MS: '500',
+  }, (loadEnv) => {
+    assert.throws(loadEnv, /HEALTH_READINESS_TIMEOUT_MS must be shorter/)
+  })
+})
+
+test('server shutdown deadline is bounded', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    SERVER_SHUTDOWN_TIMEOUT_MS: '',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().SERVER_SHUTDOWN_TIMEOUT_MS, 10_000)
+  })
+
+  for (const value of ['0', '999', '60001', 'not-a-number']) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      SERVER_SHUTDOWN_TIMEOUT_MS: value,
+    }, (loadEnv) => assert.throws(loadEnv, /SERVER_SHUTDOWN_TIMEOUT_MS/))
+  }
+})

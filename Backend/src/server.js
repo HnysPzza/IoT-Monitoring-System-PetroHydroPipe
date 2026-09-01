@@ -3,6 +3,7 @@ const env = require('./config/env')
 const logger = require('./utils/logger')
 const { closeAllSseStreams } = require('./shared/sse/openSseStream')
 const watchdog = require('./modules/watchdog')
+const { createShutdownHandler, handleServerError } = require('./serverLifecycle')
 
 const PORT = env.PORT
 
@@ -12,21 +13,14 @@ const server = app.listen(PORT, () => {
   watchdog.start()
 })
 
-let isShuttingDown = false
+server.once('error', (error) => handleServerError(error))
 
-async function shutdown(signal) {
-  if (isShuttingDown) return
-  isShuttingDown = true
-  logger.info('API server shutdown started.', { signal })
-  await watchdog.stop()
-  closeAllSseStreams()
-  server.close((error) => {
-    if (error) {
-      logger.error('API server shutdown failed.', error)
-      process.exitCode = 1
-    }
-  })
-}
+const shutdown = createShutdownHandler({
+  server,
+  stopWatchdog: watchdog.stop,
+  closeStreams: closeAllSseStreams,
+  timeoutMs: env.SERVER_SHUTDOWN_TIMEOUT_MS,
+})
 
 process.once('SIGTERM', () => shutdown('SIGTERM'))
 process.once('SIGINT', () => shutdown('SIGINT'))

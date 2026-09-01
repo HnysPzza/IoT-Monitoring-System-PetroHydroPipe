@@ -16,16 +16,16 @@ cd Frontend
 npm run dev
 ```
 
-## Run Tests
+## Required Test Suite
 
-Backend:
+Backend: verifies all API, database, security, analytics, watchdog, health, and shutdown behavior. Expected: `0 fail` (current baseline: 308 tests).
 
 ```bash
 cd Backend
 npm test
 ```
 
-Frontend:
+Frontend: verifies UI behavior and production compilation. Expected: all tests pass (current baseline: 250 tests) and Vite build completes.
 
 ```bash
 cd Frontend
@@ -33,44 +33,117 @@ npm test
 npm run build
 ```
 
-## Test Backend Request Deadlines
+Documentation: run after editing public docs. Expected: `0 fail`.
 
-Run the deterministic regression tests. They use a local fake slow upstream and do not require or modify hosted Supabase data.
+```bash
+cd Backend
+node --test tests/contracts/documentation.contract.test.js
+```
 
-```powershell
+## Focused Backend Tests
+
+### Request deadlines
+
+Verifies safe `504 UPSTREAM_TIMEOUT`, upstream cancellation, disconnect handling, SSE exemption, and timeout configuration. Simulated timeout warnings are expected.
+
+```bash
 cd Backend
 node --test tests/request-deadline.api.test.js tests/env.test.js
 ```
 
-Expected result: **10 tests pass**.
+Expected: `0 fail`.
 
-Expected behavior:
+### Health and readiness
 
-- An ordinary `/api` request whose Supabase HTTP work exceeds the configured deadline is cancelled and returns HTTP `504` with `error.code: "UPSTREAM_TIMEOUT"`.
-- The response message is safe for users and does not expose database, credential, or internal error details.
-- If the client disconnects first, the backend cancels the outstanding upstream HTTP request.
-- A response that already committed headers, such as an SSE stream, remains open past the ordinary request deadline and follows its own stream controls.
-- `API_REQUEST_TIMEOUT_MS` defaults to `12000` and accepts only `500` through `14000`, keeping the backend deadline below the frontend's 15-second timeout.
+Verifies liveness, bounded readiness, schema version 24, critical dependencies, safe `503`, and service-role-only migration access. Negative-case warnings are expected.
 
-Previous behavior: most Supabase work had no request-scoped server deadline, so it could continue consuming backend resources after the frontend stopped waiting.
+```bash
+cd Backend
+node --test tests/health.api.test.js tests/health-readiness.migration.pglite.test.js tests/env.test.js
+```
 
-Current behavior: ordinary API work has one bounded request lifecycle shared with Supabase HTTP calls. This verifies HTTP cancellation locally; staging verification is still required to determine how quickly hosted Supabase stops a PostgreSQL statement that was already executing.
+Expected: `0 fail`. Apply migration `024_add_backend_readiness_check.sql` after migration `023` before hosted readiness checks.
 
-## Check Supabase Structure
+```bash
+curl -i http://localhost:3000/api/health/live
+curl -i http://localhost:3000/api/health/ready
+```
 
-Read-only integration checks skip unless enabled:
+Expected: liveness returns HTTP `200`. Readiness returns HTTP `200` only when Supabase and migration 024 are ready; otherwise safe HTTP `503`.
+
+### Graceful shutdown
+
+Verifies normal drain, duplicate signals, forced deadline, cleanup failure, and listen-error handling.
+
+```bash
+cd Backend
+node --test tests/server-lifecycle.test.js tests/env.test.js
+```
+
+Expected: `0 fail`.
+
+Manual check: start Node directly, then press `Ctrl+C`.
+
+```bash
+cd Backend
+node src/server.js
+```
+
+Expected logs:
+
+```text
+API server shutdown started.
+API server shutdown completed.
+```
+
+### Phase 3 watchdog and heartbeat
+
+Verifies heartbeat contracts, watchdog transitions, planned breaks, S-05 protection, and SSE shutdown.
+
+```bash
+cd Backend
+node --test tests/heartbeat.api.test.js tests/heartbeat.service.test.js tests/watchdog.repository.test.js tests/watchdog.service.test.js tests/sse.test.js
+```
+
+Expected: `0 fail`.
+
+### Phase 4 settings and live feed
+
+Verifies settings validation, snapshot migration, live feed, and API authorization.
+
+```bash
+cd Backend
+node --test tests/live-monitoring-snapshot.migration.pglite.test.js tests/database.contract.test.js tests/iot.service.test.js tests/settings.service.test.js tests/api.test.js
+```
+
+Expected: `0 fail`.
+
+```bash
+cd Frontend
+npm test -- src/features/dashboard/settings/SettingsSection.test.jsx src/features/dashboard/settings/settingsUtils.test.js
+npm test -- src/features/dashboard/live/LiveSection.test.jsx src/features/dashboard/live/livePresentation.test.js
+npm run build
+```
+
+Expected: focused tests pass and production build completes.
+
+## Hosted Supabase Integration
+
+Default command skips hosted checks unless enabled.
 
 ```bash
 cd Backend
 npm run test:integration
 ```
 
-To run them against the configured Supabase project:
+Run against configured Supabase from a terminal:
 
 ```bash
-$env:RUN_SUPABASE_INTEGRATION_TESTS='true'
-npm run test:integration
+cd Backend
+RUN_SUPABASE_INTEGRATION_TESTS=true npm run test:integration
 ```
+
+Expected: `0 fail`. Never target an unreviewed production database.
 
 ## Simulate ESP32 Events
 
@@ -96,7 +169,7 @@ The selected issue sensor should appear in the dashboard notification bell. The 
 
 ## Phase 3 Heartbeat and Watchdog Checks
 
-Apply database migrations `011`, `012`, `013`, and `014` in numeric order before running the completed Phase 3 backend. Migration `013` repairs Supabase heartbeat hashing. Migration `014` replaces sequential watchdog requests with one service-role-only batched evaluation. Take a backup and use a disposable staging copy first. Do not apply destructive rollback SQL; disable the feature and repair forward.
+Apply migrations `011`–`014` in order using a backup and staging first. Keep watchdog disabled until heartbeat and manual-log checks pass. Repair forward; do not use destructive rollback SQL.
 
 Keep the first deployment disabled:
 
@@ -121,7 +194,7 @@ Run continuous heartbeat simulation:
 npm run iot:heartbeat
 ```
 
-The simulator uses the existing `IOT_SIM_S01_KEY` through `IOT_SIM_S05_KEY` secrets. Optional `IOT_SIM_S##_ACTIVE=false` values simulate no activity while keeping device connectivity alive. `IOT_SIM_BOOT_COUNTER` must be a positive decimal string and must increase when simulating a new device boot generation.
+The simulator uses `IOT_SIM_S01_KEY` through `IOT_SIM_S05_KEY`. Set `IOT_SIM_S##_ACTIVE=false` to simulate inactivity while keeping connectivity. Increase positive `IOT_SIM_BOOT_COUNTER` for each simulated reboot.
 
 As an Admin, inspect bounded aggregate diagnostics:
 
@@ -129,9 +202,9 @@ As an Admin, inspect bounded aggregate diagnostics:
 GET /api/operations/watchdog
 ```
 
-The response uses a nested `watchdog.counters` object, returns aggregate states only, and sends `Cache-Control: no-store`. In disabled mode, verify `running: false`, `lastOutcome: "idle"`, `counters.cycles: 0`, and `states: {}` while heartbeat ingestion continues normally.
+Expected in disabled mode: `running: false`, `lastOutcome: "idle"`, `counters.cycles: 0`, and `states: {}` while heartbeats continue. Response must use `Cache-Control: no-store`.
 
-Do not switch directly from disabled to enforce. Verify heartbeat ordering and connectivity first, then run observe mode against the manual log. Enforcement requires separate physical calibration and parallel-run approval. S-05 must never have absence detection enabled.
+Move from disabled to observe only after heartbeat checks. Enforce requires physical calibration and parallel-run approval. Never enable absence detection for S-05.
 
 If the watchdog behaves unsafely:
 
@@ -143,7 +216,7 @@ If the watchdog behaves unsafely:
 
 ## Phase 4 Settings and Live Feed Checks
 
-Apply migration `015` after migration `014` before deploying the Phase 4 backend. Review it first and use a backup or disposable staging database. It adds a read-only service-role snapshot and has no destructive rollback.
+Apply migration `015` after `014` in staging first. It adds the service-role live snapshot.
 
 Start the backend with `WATCHDOG_MODE=disabled`, log in as Admin, then verify:
 
@@ -156,19 +229,7 @@ Start the backend with `WATCHDOG_MODE=disabled`, log in as Admin, then verify:
 7. Disconnecting the network keeps the last snapshot visible with a stale-data warning.
 8. Production Supervisor can read Live Feed but cannot access the Admin Settings route.
 
-Focused local checks:
-
-```powershell
-cd Backend
-node --test tests/live-monitoring-snapshot.migration.pglite.test.js tests/database.contract.test.js tests/iot.service.test.js tests/settings.service.test.js tests/api.test.js
-
-cd ../Frontend
-npm.cmd test -- src/features/dashboard/settings/SettingsSection.test.jsx src/features/dashboard/settings/settingsUtils.test.js
-npm.cmd test -- src/features/dashboard/live/LiveSection.test.jsx src/features/dashboard/live/livePresentation.test.js
-npm.cmd run build
-```
-
-The Settings page does not change `WATCHDOG_MODE`. Do not use enforce mode as a UI test. Enforcement still requires the Phase 3 physical calibration, concurrency, soak, and parallel-run approvals.
+Settings does not change `WATCHDOG_MODE`. Do not use enforce mode as a UI test; physical calibration, concurrency, soak, and parallel-run approval remain required.
 
 ## Deployment Planning
 

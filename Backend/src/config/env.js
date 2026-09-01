@@ -14,6 +14,14 @@ const envSchema = z.object({
     (value) => value === '' ? undefined : value,
     z.coerce.number().int().min(500).max(14_000).default(12_000),
   ),
+  HEALTH_READINESS_TIMEOUT_MS: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.coerce.number().int().min(100).max(5_000).default(2_000),
+  ),
+  SERVER_SHUTDOWN_TIMEOUT_MS: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.coerce.number().int().min(1_000).max(60_000).default(10_000),
+  ),
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   ANALYTICS_RATE_LIMIT: z.coerce.number().int().positive().default(30),
   OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE: z.coerce.number().positive().max(100).default(0.05),
@@ -47,6 +55,13 @@ function validateEnv() {
   }
 
   const env = parsed.data
+
+  if (env.HEALTH_READINESS_TIMEOUT_MS >= env.API_REQUEST_TIMEOUT_MS) {
+    if (process.env.HEALTH_READINESS_TIMEOUT_MS?.trim()) {
+      throw new Error('Invalid environment configuration. HEALTH_READINESS_TIMEOUT_MS must be shorter than API_REQUEST_TIMEOUT_MS.')
+    }
+    env.HEALTH_READINESS_TIMEOUT_MS = env.API_REQUEST_TIMEOUT_MS - 100
+  }
 
   if (env.SSE_AUTH_REVALIDATION_INTERVAL_MS >= env.SSE_MAX_CONNECTION_LIFETIME_MS) {
     throw new Error('Invalid environment configuration. SSE_AUTH_REVALIDATION_INTERVAL_MS must be shorter than SSE_MAX_CONNECTION_LIFETIME_MS.')

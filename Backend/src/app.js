@@ -6,6 +6,7 @@ const env = require('./config/env')
 const errorHandler = require('./middleware/errorHandler')
 const requestDeadline = require('./middleware/requestDeadline')
 const routes = require('./routes')
+const healthRoutes = require('./modules/health/health.routes')
 
 const app = express()
 const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
@@ -31,13 +32,8 @@ if (isDevelopment) {
   app.use(morgan('dev'))
 }
 
-// Health stays public so frontend/dev tools can verify the backend is running.
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'iot-monitoring-backend',
-  })
-})
+// Health stays public so deployment probes can distinguish liveness from readiness.
+app.use('/api/health', healthRoutes)
 
 // Feature route prefixes. Some modules are placeholders until later phases.
 app.use('/api', requestDeadline, routes)
