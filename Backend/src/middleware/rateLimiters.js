@@ -34,6 +34,19 @@ const analyticsRateLimiter = rateLimit({
   },
 })
 
+// Exports are heavier than reads (serialization + audit) so they get a tighter cap.
+const exportRateLimiter = rateLimit({
+  windowMs: env.EXPORT_RATE_LIMIT_WINDOW_MS,
+  limit: env.EXPORT_RATE_LIMIT,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.authenticatedUser.id,
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many export requests. Please try again later.'))
+  },
+})
+
 // This first layer limits untrusted callers before device lookup and bcrypt work.
 // This is for the sensors to avoid sensor attack and flood with false events.
 const iotIngressRateLimiter = rateLimit({
@@ -64,6 +77,7 @@ const iotVerifiedDeviceRateLimiter = rateLimit({
 
 module.exports = {
   analyticsRateLimiter,
+  exportRateLimiter,
   iotIngressRateLimiter,
   iotVerifiedDeviceRateLimiter,
   loginRateLimiter,

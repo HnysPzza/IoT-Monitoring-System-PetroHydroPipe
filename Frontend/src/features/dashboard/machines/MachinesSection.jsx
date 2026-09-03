@@ -522,27 +522,31 @@ export default function MachinesSection() {
 
         {recoveryOverrideSensor ? (
           <form className="sensor-recovery-override" aria-labelledby="sensor-recovery-override-title" onSubmit={submitRecoveryOverride}>
-            <div>
-              <p className="section-eyebrow">Manual recovery override</p>
+            <div className="sensor-recovery-header">
+              <div className="sensor-recovery-eyebrow">
+                <AlertTriangle size={14} aria-hidden="true" />
+                <span>Manual recovery override</span>
+              </div>
               <h3 id="sensor-recovery-override-title">
                 Confirm {recoveryOverrideSensor.sensorCode} recovery
               </h3>
-              <p>
-                This records a production override, closes open downtime, recalculates the machine, and marks the alert recovered. It does not create or replace a physical sensor event.
+              <p className="sensor-recovery-warning">
+                Warning: Closes active downtime without physical sensor signal.
               </p>
             </div>
-            <label className="filter-field" htmlFor="sensor-recovery-override-reason">
+            <label className="filter-field sensor-recovery-field" htmlFor="sensor-recovery-override-reason">
               <span>Override reason</span>
               <textarea
                 id="sensor-recovery-override-reason"
                 value={recoveryOverrideReason}
                 maxLength={500}
+                placeholder="Reason for manual recovery..."
                 required
                 autoFocus
                 onChange={(event) => setRecoveryOverrideReason(event.target.value)}
               />
             </label>
-            <div className="table-actions">
+            <div className="table-actions sensor-recovery-actions">
               <button className="btn btn-success" type="submit" disabled={!recoveryOverrideReason.trim()}>
                 Confirm recovery
               </button>

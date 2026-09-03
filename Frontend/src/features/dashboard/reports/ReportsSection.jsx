@@ -2,34 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Download, FileText, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
-import { getReportSummary, reportTypes } from './reportsService.js'
+import { exportReport, getReportSummary, reportTypes } from './reportsService.js'
 
-function toCsv(report) {
-  // Escapes quote characters so exported CSV stays valid.
-  const headers = ['Cause', 'Sensor', 'Events', 'Duration Minutes', 'Estimated Loss']
-  const body = report.rows.map((row) => [
-    row.cause,
-    row.sensor,
-    row.events,
-    row.durationMinutes,
-    row.estimatedLoss,
-  ])
-
-  const metadata = [
-    `Generated At,${report.generatedAt || 'Not recorded'}`,
-    `Loss Rate Source,${report.lossEstimateBasis?.source || 'Not available'}`,
-    `Loss Rate Pieces Per Minute,${report.lossEstimateBasis?.ratePiecesPerMinute ?? 'Not available'}`,
-    '',
-  ]
-  const table = [headers, ...body]
-    .map((cells) => cells.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
-    .join('\n')
-
-  return [...metadata, table].join('\n')
-}
-
-function downloadCsv(filename, report) {
-  const blob = new Blob([toCsv(report)], { type: 'text/csv;charset=utf-8;' })
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -69,6 +44,9 @@ export default function ReportsSection() {
   const [errorMessage, setErrorMessage] = useState('')
   const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState(null)
   const [refreshRequest, setRefreshRequest] = useState(0)
+  const [exportState, setExportState] = useState('idle')
+  const [exportingFormat, setExportingFormat] = useState(null)
+  const [exportErrorMessage, setExportErrorMessage] = useState('')
   const requestIdRef = useRef(0)
   const successfulReportRef = useRef(null)
   const selectedReportLabel = reportTypes.find((type) => type.id === reportType)?.label || 'Report'
@@ -123,6 +101,27 @@ export default function ReportsSection() {
 
   function retryCurrentReport() {
     setRefreshRequest((current) => current + 1)
+  }
+
+  const isExportBlocked = !isCurrentSuccess || report?.periodState === 'future' || exportState === 'exporting'
+
+  async function handleExport(format) {
+    if (isExportBlocked) return
+
+    setExportState('exporting')
+    setExportingFormat(format)
+    setExportErrorMessage('')
+
+    try {
+      const { blob, filename } = await exportReport(token, { reportType, selectedDate, format })
+      downloadBlob(blob, filename)
+      setExportState('idle')
+      setExportingFormat(null)
+    } catch (error) {
+      setExportErrorMessage(error.message || 'Unable to export the report.')
+      setExportState('error')
+      setExportingFormat(null)
+    }
   }
 
   return (
@@ -202,13 +201,39 @@ export default function ReportsSection() {
           <button
             className="btn btn-primary reports-action"
             type="button"
-            disabled={!isCurrentSuccess || report?.periodState === 'future'}
-            onClick={() => downloadCsv(`petrohydropipe-${reportType}-report.csv`, report)}
+            aria-label="Export CSV"
+            disabled={isExportBlocked}
+            onClick={() => handleExport('csv')}
           >
-            <Download size={17} aria-hidden="true" />
-            Export CSV
+            {exportState === 'exporting' && exportingFormat === 'csv' ? (
+              <RotateCw className="spin-icon" size={17} aria-hidden="true" />
+            ) : (
+              <Download size={17} aria-hidden="true" />
+            )}
+            {exportState === 'exporting' && exportingFormat === 'csv' ? 'Exporting...' : 'Export CSV'}
+          </button>
+          <button
+            className="btn btn-primary reports-action"
+            type="button"
+            aria-label="Export PDF"
+            disabled={isExportBlocked}
+            onClick={() => handleExport('pdf')}
+          >
+            {exportState === 'exporting' && exportingFormat === 'pdf' ? (
+              <RotateCw className="spin-icon" size={17} aria-hidden="true" />
+            ) : (
+              <Download size={17} aria-hidden="true" />
+            )}
+            {exportState === 'exporting' && exportingFormat === 'pdf' ? 'Exporting...' : 'Export PDF'}
           </button>
         </div>
+
+        {exportErrorMessage ? (
+          <div className="notice notice-error dashboard-alert" role="alert">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>{exportErrorMessage}</span>
+          </div>
+        ) : null}
       </section>
 
       {hasCurrentReport && report.periodState === 'partial' ? (

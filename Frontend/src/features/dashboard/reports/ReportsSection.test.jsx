@@ -5,12 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../../features/auth/authSession.jsx'
 import ReportsSection from './ReportsSection.jsx'
-import { getReportSummary } from './reportsService.js'
+import { exportReport, getReportSummary } from './reportsService.js'
 
 vi.mock('./reportsService.js', async () => {
   const actual = await vi.importActual('./reportsService.js')
   return {
     ...actual,
+    exportReport: vi.fn(),
     getReportSummary: vi.fn(),
   }
 })
@@ -59,6 +60,7 @@ function deferred() {
 describe('ReportsSection request states', () => {
   beforeEach(() => {
     getReportSummary.mockReset()
+    exportReport.mockReset()
   })
 
   it('shows the process-event breakdown returned by the report API', async () => {
@@ -72,27 +74,76 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('7')).toBeInTheDocument()
   })
 
-  it('exports the generation time and output-loss basis with report rows', async () => {
+  it('exports CSV through the server endpoint and downloads the returned file', async () => {
     const user = userEvent.setup()
-    const blobs = []
-    vi.stubGlobal('Blob', class {
-      constructor(parts) {
-        this.parts = parts
-        blobs.push(this)
-      }
+    const downloads = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+      downloads.push({ download: this.download, href: this.href })
     })
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+    exportReport.mockResolvedValue({
+      blob: new Blob(['cause,sensor\nCorrective Maintenance,S-03\n'], { type: 'text/csv' }),
+      filename: 'report-daily-2026-09-02.csv',
+    })
 
     renderWithAuth(<ReportsSection />)
     await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
 
-    expect(blobs[0].parts[0]).toContain('Generated At,2026-08-31T04:00:00.000Z')
-    expect(blobs[0].parts[0]).toContain('Loss Rate Source,configured-fallback')
-    expect(blobs[0].parts[0]).toContain('Loss Rate Pieces Per Minute,0.05')
+    await waitFor(() => {
+      expect(downloads).toHaveLength(1)
+    })
+    expect(downloads[0].download).toBe('report-daily-2026-09-02.csv')
+    expect(downloads[0].href).toBe('blob:report')
+
+    expect(exportReport).toHaveBeenCalledTimes(1)
+    expect(exportReport).toHaveBeenCalledWith('test-token', expect.objectContaining({
+      reportType: 'daily',
+      format: 'csv',
+    }))
+    expect(exportReport.mock.calls[0][1].selectedDate).toEqual(expect.any(String))
     vi.unstubAllGlobals()
+  })
+
+  it('exports PDF through the same server endpoint', async () => {
+    const user = userEvent.setup()
+    const downloads = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+      downloads.push({ download: this.download, href: this.href })
+    })
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report-pdf')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+    exportReport.mockResolvedValue({
+      blob: new Blob(['%PDF-x'], { type: 'application/pdf' }),
+      filename: 'report-daily-2026-09-02.pdf',
+    })
+
+    renderWithAuth(<ReportsSection />)
+    await user.click(await screen.findByRole('button', { name: 'Export PDF' }))
+
+    await waitFor(() => {
+      expect(downloads).toHaveLength(1)
+    })
+    expect(downloads[0].download).toBe('report-daily-2026-09-02.pdf')
+    expect(exportReport).toHaveBeenCalledWith('test-token', expect.objectContaining({
+      reportType: 'daily',
+      format: 'pdf',
+    }))
+    vi.unstubAllGlobals()
+  })
+
+  it('surfaces export failures without discarding the loaded report', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+    exportReport.mockRejectedValue(new Error('Too many export requests. Please try again later.'))
+
+    renderWithAuth(<ReportsSection />)
+    await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many export requests. Please try again later.')
+    expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
   })
 
   it('labels partial reports and prevents choosing a future date', async () => {
@@ -117,6 +168,7 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('Not observed')).toBeInTheDocument()
     expect(screen.getByText('Downtime not observed yet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeDisabled()
   })
 
   it('shows an unavailable state on initial failure and retries the same query', async () => {
