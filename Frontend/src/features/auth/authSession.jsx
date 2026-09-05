@@ -17,17 +17,22 @@ export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(null)
   const [isRestoring, setIsRestoring] = useState(true)
   const [sessionExpired, setSessionExpired] = useState(false)
-  const expiredTokenRef = useRef(null)
+  const removeUnauthorizedHandlerRef = useRef(() => {})
   const explicitlyLoggedOutRef = useRef(false)
 
   function applySession(payload) {
-    expiredTokenRef.current = null
+    removeUnauthorizedHandlerRef.current()
+    removeUnauthorizedHandlerRef.current = setUnauthorizedHandler(payload.token, () => {
+      removeUnauthorizedHandlerRef.current()
+      setAuth(null)
+      setSessionExpired(true)
+    })
     setSessionExpired(false)
     setAuth(payload)
   }
 
   function clearSession() {
-    expiredTokenRef.current = null
+    removeUnauthorizedHandlerRef.current()
     setSessionExpired(false)
     setAuth(null)
   }
@@ -53,7 +58,7 @@ export function AuthProvider({ children }) {
       } catch (error) {
         if (explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
-        setAuth(null)
+        clearSession()
         if (EXPIRED_REFRESH_CODES.has(error?.code)) {
           setSessionExpired(true)
         }
@@ -69,7 +74,10 @@ export function AuthProvider({ children }) {
       if (!explicitlyLoggedOutRef.current) applySession(payload)
     })
 
-    return () => setSessionRefresher(null)
+    return () => {
+      setSessionRefresher(null)
+      removeUnauthorizedHandlerRef.current()
+    }
   }, [])
 
   // Silent restore: a valid HttpOnly refresh cookie brings the session back
@@ -93,22 +101,6 @@ export function AuthProvider({ children }) {
       cancelled = true
     }
   }, [])
-
-  useLayoutEffect(() => {
-    if (!auth?.token) {
-      return setUnauthorizedHandler(null, null)
-    }
-
-    const activeToken = auth.token
-
-    return setUnauthorizedHandler(activeToken, () => {
-      if (expiredTokenRef.current === activeToken) return
-
-      expiredTokenRef.current = activeToken
-      setAuth(null)
-      setSessionExpired(true)
-    })
-  }, [auth?.token])
 
   async function login(credentials) {
     const generation = beginSessionChange()

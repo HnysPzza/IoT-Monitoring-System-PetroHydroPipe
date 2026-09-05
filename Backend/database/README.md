@@ -372,7 +372,7 @@ Start the frontend with `VITE_API_BASE_URL=http://localhost:3005` on `localhost:
 
 Run `node scripts/smoke-auth-session.js` with `AUTH_SMOKE_BASE_URL`, `AUTH_SMOKE_USERNAME`, and `AUTH_SMOKE_PASSWORD` set in the environment. **Use only a disposable account: the replay check revokes every refresh session for that account.**
 
-Chrome DevTools verification on 2026-09-05 passed login, reload restore, empty legacy token storage, non-readable refresh cookies, two-tab single refresh, logout during delayed refresh, cross-account stale-write rejection, and bounded refresh waiting. Auth transport used the local helper; the stale-write and timeout checks injected controlled responses. Hosted HTTPS and Supabase deployment checks remain required.
+Chrome DevTools verification on 2026-09-05 passed login, reload restore, empty legacy token storage, non-readable refresh cookies, two-tab single refresh, logout during delayed refresh, cross-account stale-write rejection, bounded refresh waiting, and sign-out with an expiry banner after the replacement token is rejected. A React regression also covers rejection before the refreshed state commits. Auth transport used the local helper; stale-write, timeout, and protected-route rejection checks injected controlled responses. Hosted HTTPS and Supabase deployment checks remain required.
 
 ## Seeded Admin Account
 

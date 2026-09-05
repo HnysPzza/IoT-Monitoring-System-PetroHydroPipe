@@ -226,6 +226,19 @@ describe('AuthProvider memory-only sessions', () => {
     expect(screen.getByText('session-expired')).toBeInTheDocument()
   })
 
+  it('handles a replacement-token failure before React commits the refreshed state', async () => {
+    apiRequest.mockResolvedValue({ token: 'original', user: { id: 'user-1' } })
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    apiRequest.mockResolvedValue({ token: 'replacement', user: { id: 'user-1' } })
+    await act(async () => {
+      await registeredRefresher()
+      notifyUnauthorized(createApiError('Expired.', 401), { token: 'replacement', path: '/api/alerts' })
+    })
+    expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(screen.getByText('session-expired')).toBeInTheDocument()
+  })
+
   it('keeps the active session for a different token or a forbidden response', async () => {
     apiRequest.mockResolvedValue({
       token: 'stored-token',
