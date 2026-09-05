@@ -2,6 +2,19 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 const { createAuthSessionDatabase } = require('./helpers/authSessionDatabase')
 
+test('expired rotated tokens cannot revoke a newer session', async (t) => {
+  const { db, userId } = await createAuthSessionDatabase(t)
+  await db.query("select issue_refresh_token($1,repeat('a',64),now()+interval '1 hour')", [userId])
+  await db.query("select * from rotate_refresh_token(repeat('a',64),repeat('b',64))")
+  await db.exec("update refresh_tokens set expires_at=now()-interval '1 second'; update auth_sessions set expires_at=now()-interval '1 second';")
+  await db.query("select issue_refresh_token($1,repeat('c',64),now()+interval '1 hour')", [userId])
+  const replay = await db.query("select * from rotate_refresh_token(repeat('a',64),repeat('d',64))")
+  assert.equal(replay.rows[0].outcome, 'invalid')
+  const fresh = await db.query("select * from rotate_refresh_token(repeat('c',64),repeat('e',64))")
+  assert.equal(fresh.rows[0].outcome, 'rotated')
+  assert.equal((await db.query("select count(*)::int as count from audit_logs where action='REFRESH_TOKEN_REUSED'")).rows[0].count, 0)
+})
+
 test('logout through a rotated ancestor revokes its successor but not another browser session', async (t) => {
   const { db, userId } = await createAuthSessionDatabase(t)
   await db.query("select * from issue_refresh_token($1,repeat('a',64),now()+interval '8 hours')", [userId])

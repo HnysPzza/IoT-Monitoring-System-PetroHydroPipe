@@ -73,7 +73,7 @@ begin
   end if;
   perform 1 from public.users where id = v_token.user_id for update;
   select session.* into v_session from public.auth_sessions session where session.id = v_token.session_id for update;
-  if v_session.revoked_at is not null then
+  if v_session.revoked_at is not null or v_session.expires_at <= clock_timestamp() or v_token.expires_at <= clock_timestamp() then
     return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
     return;
   end if;
@@ -84,10 +84,6 @@ begin
     insert into public.audit_logs(user_id, action, entity_type, metadata)
     values (v_token.user_id, 'REFRESH_TOKEN_REUSED', 'auth', jsonb_build_object('sessionId', v_token.session_id));
     return query select 'reused'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
-    return;
-  end if;
-  if v_token.expires_at <= clock_timestamp() then
-    return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
     return;
   end if;
   perform 1 from public.users account where account.id = v_token.user_id and account.status = 'Active' and account.deleted_at is null for share;
