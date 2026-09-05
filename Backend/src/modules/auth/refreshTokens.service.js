@@ -22,27 +22,17 @@ function generateRawToken() {
 async function issueRefreshToken(userId, expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_MINUTES * 60 * 1000).toISOString()) {
   const rawToken = generateRawToken()
 
-  const { error } = await getSupabaseClient()
-    .from('refresh_tokens')
-    .insert({ user_id: userId, token_hash: hashToken(rawToken), expires_at: expiresAt })
+  const { data: sessionId, error } = await getSupabaseClient().rpc('issue_refresh_token', {
+    p_user_id: userId,
+    p_token_hash: hashToken(rawToken),
+    p_expires_at: expiresAt,
+  })
 
   if (error) {
     throw createAuthError(500, 'REFRESH_TOKEN_ISSUE_FAILED', 'Unable to start session.')
   }
 
-  return rawToken
-}
-
-async function revokeById(rowId) {
-  const { error } = await getSupabaseClient()
-    .from('refresh_tokens')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', rowId)
-    .is('revoked_at', null)
-
-  if (error) {
-    throw createAuthError(500, 'REFRESH_TOKEN_REVOKE_FAILED', 'Unable to end session.')
-  }
+  return { rawToken, sessionId, expiresAt }
 }
 
 async function rotateRefreshToken(rawToken) {
@@ -68,23 +58,16 @@ async function rotateRefreshToken(rawToken) {
 
   const user = await authService.getAuthenticatedUser({ sub: data.user_id })
 
-  return { user, rawToken: newRawToken, expiresAt: data.expires_at }
+  return { user, rawToken: newRawToken, expiresAt: data.expires_at, sessionId: data.session_id }
 }
 
 async function revokeRefreshToken(rawToken) {
-  const { data: row, error } = await getSupabaseClient()
-    .from('refresh_tokens')
-    .select('id, user_id, revoked_at')
-    .eq('token_hash', hashToken(rawToken))
-    .maybeSingle()
+  const { error } = await getSupabaseClient().rpc('revoke_refresh_token', { p_token_hash: hashToken(rawToken) })
 
   if (error) {
-    throw createAuthError(500, 'REFRESH_QUERY_FAILED', 'Unable to end session.')
+    throw createAuthError(500, 'REFRESH_TOKEN_REVOKE_FAILED', 'Unable to end session.')
   }
 
-  if (!row || row.revoked_at) return
-
-  await revokeById(row.id)
 }
 
 module.exports = {

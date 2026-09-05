@@ -21,7 +21,7 @@ function findRefreshCookie(response) {
 
 function mockRefreshService(overrides = {}) {
   return {
-    issueRefreshToken: async () => 'issued-raw-token',
+    issueRefreshToken: async () => ({ rawToken: 'issued-raw-token', sessionId: 'session-1' }),
     revokeRefreshToken: async () => {},
     revokeAllForUser: async () => {},
     rotateRefreshToken: async () => ({

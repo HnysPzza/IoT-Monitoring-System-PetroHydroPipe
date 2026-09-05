@@ -43,7 +43,7 @@ function loadAppWithMocks(mocks = {}) {
 
   if (!mocks['src/modules/auth/refreshTokens.service.js']) {
     mockModule('src/modules/auth/refreshTokens.service.js', {
-      issueRefreshToken: async () => 'test-refresh-token',
+      issueRefreshToken: async () => ({ rawToken: 'test-refresh-token', sessionId: 'test-session' }),
       revokeRefreshToken: async () => {},
       revokeAllForUser: async () => {},
       rotateRefreshToken: async () => ({

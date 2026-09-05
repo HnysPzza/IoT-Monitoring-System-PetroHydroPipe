@@ -77,11 +77,16 @@ function createSupabaseFake({
       return buildChain(table)
     },
     rpc(functionName, parameters) {
+      const execute = async () => {
+        ops.push({ table: 'rpc', functionName, parameters })
+        return {
+          data: functionName === 'issue_refresh_token' ? 'session-1' : rotationResult,
+          error: rpcError || writeError,
+        }
+      }
       return {
-        single: async () => {
-          ops.push({ table: 'rpc', functionName, parameters })
-          return { data: rotationResult, error: rpcError }
-        },
+        single: execute,
+        then: (resolve, reject) => execute().then(resolve, reject),
       }
     },
   }
@@ -114,13 +119,14 @@ const revokedRow = { ...validRow, revoked_at: new Date(Date.now() - 1000).toISOS
 test('issue stores only a SHA-256 hash, never the raw token', async () => {
   const { service, ops } = loadServiceWithMocks()
 
-  const rawToken = await service.issueRefreshToken('user-1')
+  const { rawToken, sessionId } = await service.issueRefreshToken('user-1')
 
   assert.ok(rawToken.length >= 40)
-  const insertOp = ops.find((op) => op.action === 'insert')
-  assert.equal(insertOp.payload.token_hash, service.hashToken(rawToken))
-  assert.notEqual(insertOp.payload.token_hash, rawToken)
-  assert.equal(insertOp.payload.user_id, 'user-1')
+  const insertOp = ops.find((op) => op.functionName === 'issue_refresh_token')
+  assert.equal(insertOp.parameters.p_token_hash, service.hashToken(rawToken))
+  assert.notEqual(insertOp.parameters.p_token_hash, rawToken)
+  assert.equal(insertOp.parameters.p_user_id, 'user-1')
+  assert.equal(sessionId, 'session-1')
 })
 
 test('rotation with a valid token revokes it and returns a new raw token', async () => {
@@ -206,7 +212,7 @@ test('logout revokes the presented token row', async () => {
 
   await service.revokeRefreshToken('raw-token-value')
 
-  const revokeOp = ops.find((op) => op.action === 'update' && op.filters.id === 'token-row-1')
+  const revokeOp = ops.find((op) => op.functionName === 'revoke_refresh_token')
   assert.ok(revokeOp, 'presented token must be revoked')
 })
 

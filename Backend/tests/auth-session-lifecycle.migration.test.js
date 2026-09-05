@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict')
+const test = require('node:test')
+const { createAuthSessionDatabase } = require('./helpers/authSessionDatabase')
+
+test('logout through a rotated ancestor revokes its successor but not another browser session', async (t) => {
+  const { db, userId } = await createAuthSessionDatabase(t)
+  await db.query("select * from issue_refresh_token($1,repeat('a',64),now()+interval '8 hours')", [userId])
+  await db.query("select * from issue_refresh_token($1,repeat('d',64),now()+interval '8 hours')", [userId])
+  await db.query("select * from rotate_refresh_token(repeat('a',64),repeat('b',64))")
+  await db.query("select revoke_refresh_token(repeat('a',64))")
+  const rejected = await db.query("select * from rotate_refresh_token(repeat('b',64),repeat('c',64))")
+  assert.equal(rejected.rows[0].outcome, 'invalid')
+  const other = await db.query("select * from rotate_refresh_token(repeat('d',64),repeat('e',64))")
+  assert.equal(other.rows[0].outcome, 'rotated')
+})

@@ -15,9 +15,9 @@ async function login(req, res) {
     await refreshTokens.revokeRefreshToken(existingRawRefreshToken)
   }
 
-  const rawRefreshToken = await refreshTokens.issueRefreshToken(result.user.id)
-  setRefreshCookie(res, rawRefreshToken)
-  res.set('Cache-Control', 'no-store').json(result)
+  const { rawToken, sessionId, expiresAt } = await refreshTokens.issueRefreshToken(result.user.id)
+  setRefreshCookie(res, rawToken, expiresAt)
+  res.set('Cache-Control', 'no-store').json({ ...result, sessionId })
 }
 
 async function me(req, res) {
@@ -31,11 +31,11 @@ async function refresh(req, res) {
   const rawToken = readRefreshCookie(req)
 
   try {
-    const { user, rawToken: rotatedToken, expiresAt } = await refreshTokens.rotateRefreshToken(rawToken)
+    const { user, rawToken: rotatedToken, expiresAt, sessionId } = await refreshTokens.rotateRefreshToken(rawToken)
     const accessToken = authService.createAuthToken(user)
 
     setRefreshCookie(res, rotatedToken, expiresAt)
-    res.set('Cache-Control', 'no-store').json({ token: accessToken, user })
+    res.set('Cache-Control', 'no-store').json({ token: accessToken, user, sessionId })
   } catch (error) {
     // A rejected refresh token must never linger in the browser.
     if (error.status === 401 || error.status === 403) clearRefreshCookie(res)
