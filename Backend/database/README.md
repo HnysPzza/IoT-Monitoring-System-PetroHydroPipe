@@ -356,13 +356,23 @@ Common simulator issues:
 
 1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
 2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
-3. Deploy the matching backend and frontend together. The backend now requires readiness version 27. Check `GET /api/health/ready` after deployment.
+3. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. The backend now requires readiness version 27. Check `GET /api/health/ready` after deployment.
 4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
 5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
 For a fresh database, use `schema.sql`, which already includes the hardened auth objects; do not replay historical migrations over it. Logout revokes refresh sessions, not already-issued access JWTs; those remain valid until expiry (30 minutes for newly issued tokens). Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
 Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
+
+### Local Verification
+
+Run `node tests/helpers/auth-browser-server.js` from `Backend` for a disposable in-memory PostgreSQL-compatible auth API on port 3005. It uses the real auth routes, services, bcrypt, JWT, and cookies; only the Supabase transport and login audit writer are replaced. It never connects to Supabase. Dashboard APIs are intentionally absent and show unavailable states.
+
+Start the frontend with `VITE_API_BASE_URL=http://localhost:3005` on `localhost:5175`. Test credentials are `reviewadmin` or `reviewother`, password `Review-only-123!`; these accounts exist only in the disposable database. Stop the helper when finished.
+
+Run `node scripts/smoke-auth-session.js` with `AUTH_SMOKE_BASE_URL`, `AUTH_SMOKE_USERNAME`, and `AUTH_SMOKE_PASSWORD` set in the environment. **Use only a disposable account: the replay check revokes every refresh session for that account.**
+
+Chrome DevTools verification on 2026-09-05 passed login, reload restore, empty legacy token storage, non-readable refresh cookies, two-tab single refresh, logout during delayed refresh, cross-account stale-write rejection, and bounded refresh waiting. Auth transport used the local helper; the stale-write and timeout checks injected controlled responses. Hosted HTTPS and Supabase deployment checks remain required.
 
 ## Seeded Admin Account
 

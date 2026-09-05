@@ -2,6 +2,16 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 const { createAuthSessionDatabase } = require('./helpers/authSessionDatabase')
 
+test('a failed safe-user lookup leaves the original token usable', async (t) => {
+  const { db, userId } = await createAuthSessionDatabase(t)
+  await db.query("select issue_refresh_token($1,repeat('a',64),now()+interval '1 hour')", [userId])
+  await db.exec('alter table roles rename column name to unavailable_name')
+  await assert.rejects(db.query("select * from rotate_refresh_token(repeat('a',64),repeat('b',64))"), /does not exist/)
+  assert.equal((await db.query("select revoked_at from refresh_tokens where token_hash=repeat('a',64)")).rows[0].revoked_at, null)
+  await db.exec('alter table roles rename column unavailable_name to name')
+  assert.equal((await db.query("select * from rotate_refresh_token(repeat('a',64),repeat('b',64))")).rows[0].outcome, 'rotated')
+})
+
 test('expired rotated tokens cannot revoke a newer session', async (t) => {
   const { db, userId } = await createAuthSessionDatabase(t)
   await db.query("select issue_refresh_token($1,repeat('a',64),now()+interval '1 hour')", [userId])

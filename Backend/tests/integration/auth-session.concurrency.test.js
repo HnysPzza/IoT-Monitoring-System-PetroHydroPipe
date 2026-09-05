@@ -1,7 +1,6 @@
 const assert = require('node:assert/strict')
 const { execFile, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
-const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const test = require('node:test')

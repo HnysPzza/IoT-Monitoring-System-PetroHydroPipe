@@ -1,9 +1,9 @@
 // Live smoke test for the session lifecycle (Asset 7 fix).
 // Requires migrations 026 and 027 to be applied first.
-// and the backend dev server to be running (npm run dev or npm start).
+// Run against a disposable account: replay revokes all of its sessions.
 //
-// Usage: node scripts/smoke-auth-session.js <username> <password>
-// Env: reads Backend/.env through config/env.js.
+// Set AUTH_SMOKE_BASE_URL, AUTH_SMOKE_USERNAME, and AUTH_SMOKE_PASSWORD.
+// Usage: node scripts/smoke-auth-session.js
 
 const BASE_URL = process.env.AUTH_SMOKE_BASE_URL || 'http://localhost:3000'
 const COOKIE_NAME = 'ph_refresh'
