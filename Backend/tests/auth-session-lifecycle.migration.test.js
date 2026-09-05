@@ -25,4 +25,7 @@ test('logout through a rotated ancestor revokes its successor but not another br
   assert.equal(rejected.rows[0].outcome, 'invalid')
   const other = await db.query("select * from rotate_refresh_token(repeat('d',64),repeat('e',64))")
   assert.equal(other.rows[0].outcome, 'rotated')
+  assert.equal(other.rows[0].auth_user.role, 'Admin')
+  assert.equal(other.rows[0].auth_user.id, userId)
+  assert.equal('password_hash' in other.rows[0].auth_user, false)
 })

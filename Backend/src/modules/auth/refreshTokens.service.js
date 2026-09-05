@@ -36,8 +36,6 @@ async function issueRefreshToken(userId, expiresAt = new Date(Date.now() + env.R
 }
 
 async function rotateRefreshToken(rawToken) {
-  const authService = require('./auth.service')
-
   const newRawToken = generateRawToken()
   const { data, error } = await getSupabaseClient().rpc('rotate_refresh_token', {
     p_token_hash: hashToken(rawToken),
@@ -56,7 +54,10 @@ async function rotateRefreshToken(rawToken) {
     throw createAuthError(401, 'INVALID_REFRESH_TOKEN', INVALID_REFRESH_MESSAGE)
   }
 
-  const user = await authService.getAuthenticatedUser({ sub: data.user_id })
+  const user = data.auth_user
+  if (!user || user.id !== data.user_id || typeof user.role !== 'string' || !data.session_id) {
+    throw createAuthError(500, 'REFRESH_QUERY_FAILED', 'Unable to refresh session.')
+  }
 
   return { user, rawToken: newRawToken, expiresAt: data.expires_at, sessionId: data.session_id }
 }

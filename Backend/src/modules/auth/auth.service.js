@@ -20,7 +20,7 @@ function getRoleName(userRecord) {
     return userRecord.roles[0]?.name || null
   }
 
-  return userRecord.roles?.name || null
+  return userRecord.roles?.name || userRecord.role || null
 }
 
 function toAuthUser(userRecord) {

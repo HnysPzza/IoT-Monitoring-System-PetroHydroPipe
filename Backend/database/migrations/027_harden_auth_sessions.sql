@@ -54,27 +54,28 @@ $$;
 
 drop function if exists public.rotate_refresh_token(text, text);
 create function public.rotate_refresh_token(p_token_hash text, p_replacement_token_hash text)
-returns table(outcome text, user_id uuid, expires_at timestamptz, session_id uuid)
+returns table(outcome text, user_id uuid, expires_at timestamptz, session_id uuid, auth_user jsonb)
 language plpgsql security definer set search_path = pg_catalog, public as $$
 declare
   v_token public.refresh_tokens%rowtype;
   v_session public.auth_sessions%rowtype;
+  v_auth_user jsonb;
 begin
   if p_token_hash is null or p_replacement_token_hash is null
     or p_token_hash = p_replacement_token_hash
     or p_token_hash !~ '^[0-9a-f]{64}$' or p_replacement_token_hash !~ '^[0-9a-f]{64}$' then
-    return query select 'invalid'::text, null::uuid, null::timestamptz, null::uuid;
+    return query select 'invalid'::text, null::uuid, null::timestamptz, null::uuid, null::jsonb;
     return;
   end if;
   select token.* into v_token from public.refresh_tokens token where token.token_hash = p_token_hash;
   if not found then
-    return query select 'invalid'::text, null::uuid, null::timestamptz, null::uuid;
+    return query select 'invalid'::text, null::uuid, null::timestamptz, null::uuid, null::jsonb;
     return;
   end if;
   perform 1 from public.users where id = v_token.user_id for update;
   select session.* into v_session from public.auth_sessions session where session.id = v_token.session_id for update;
   if v_session.revoked_at is not null or v_session.expires_at <= clock_timestamp() or v_token.expires_at <= clock_timestamp() then
-    return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
+    return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id, null::jsonb;
     return;
   end if;
   select token.* into v_token from public.refresh_tokens token where token.token_hash = p_token_hash for update;
@@ -83,18 +84,21 @@ begin
     update public.refresh_tokens token set revoked_at = clock_timestamp() where token.user_id = v_token.user_id and token.revoked_at is null;
     insert into public.audit_logs(user_id, action, entity_type, metadata)
     values (v_token.user_id, 'REFRESH_TOKEN_REUSED', 'auth', jsonb_build_object('sessionId', v_token.session_id));
-    return query select 'reused'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
+    return query select 'reused'::text, v_token.user_id, v_token.expires_at, v_token.session_id, null::jsonb;
     return;
   end if;
-  perform 1 from public.users account where account.id = v_token.user_id and account.status = 'Active' and account.deleted_at is null for share;
+  select jsonb_build_object('id', account.id, 'name', account.name, 'username', account.username,
+    'email', account.email, 'role', role.name, 'mustChangePassword', account.must_change_password)
+  into v_auth_user from public.users account join public.roles role on role.id = account.role_id
+  where account.id = v_token.user_id and account.status = 'Active' and account.deleted_at is null;
   if not found then
-    return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
+    return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id, null::jsonb;
     return;
   end if;
   update public.refresh_tokens set revoked_at = clock_timestamp() where id = v_token.id;
   insert into public.refresh_tokens(user_id, token_hash, expires_at, session_id)
   values (v_token.user_id, p_replacement_token_hash, v_token.expires_at, v_token.session_id);
-  return query select 'rotated'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
+  return query select 'rotated'::text, v_token.user_id, v_token.expires_at, v_token.session_id, v_auth_user;
 end;
 $$;
 

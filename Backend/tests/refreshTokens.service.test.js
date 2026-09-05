@@ -116,6 +116,22 @@ const validRow = {
 
 const revokedRow = { ...validRow, revoked_at: new Date(Date.now() - 1000).toISOString() }
 
+test('rotation returns the transaction user without a second database read', async () => {
+  const user = { id: 'user-1', username: 'admin', role: 'Admin', mustChangePassword: false }
+  const { service, ops } = loadServiceWithMocks({ rotationResult: {
+    outcome: 'rotated', user_id: user.id, expires_at: validRow.expires_at, session_id: 'session-1', auth_user: user,
+  } })
+  const result = await service.rotateRefreshToken('original')
+  assert.deepEqual(result.user, user)
+  assert.equal(ops.length, 1)
+})
+
+test('refreshed tokens preserve the safe user role', () => {
+  const authService = require('../src/modules/auth/auth.service')
+  const token = authService.createAuthToken({ id: 'user-1', username: 'admin', role: 'Admin' })
+  assert.equal(require('jsonwebtoken').decode(token).role, 'Admin')
+})
+
 test('issue stores only a SHA-256 hash, never the raw token', async () => {
   const { service, ops } = loadServiceWithMocks()
 
@@ -135,6 +151,8 @@ test('rotation with a valid token revokes it and returns a new raw token', async
       outcome: 'rotated',
       user_id: 'user-1',
       expires_at: validRow.expires_at,
+      session_id: 'session-1',
+      auth_user: { id: 'user-1', name: 'Admin', username: 'admin', role: 'Admin' },
     },
     usersRow: {
       id: 'user-1',
