@@ -29,7 +29,7 @@ begin
     or p_expires_at > clock_timestamp() + interval '24 hours' then
     raise exception 'Invalid session parameters.' using errcode = '22023';
   end if;
-  perform 1 from public.users where id = p_user_id and status = 'Active' and deleted_at is null for share;
+  perform 1 from public.users where id = p_user_id and status = 'Active' and deleted_at is null for update;
   if not found then raise exception 'Account unavailable.' using errcode = '28000'; end if;
   insert into public.auth_sessions(user_id, expires_at) values (p_user_id, p_expires_at) returning id into v_session_id;
   insert into public.refresh_tokens(user_id, token_hash, expires_at, session_id)
@@ -42,9 +42,11 @@ create or replace function public.revoke_refresh_token(p_token_hash text)
 returns void language plpgsql security definer set search_path = pg_catalog, public as $$
 declare
   v_session_id uuid;
+  v_user_id uuid;
 begin
-  select token.session_id into v_session_id from public.refresh_tokens token where token.token_hash = p_token_hash;
+  select token.session_id, token.user_id into v_session_id, v_user_id from public.refresh_tokens token where token.token_hash = p_token_hash;
   if not found then return; end if;
+  perform 1 from public.users where id = v_user_id for update;
   update public.auth_sessions set revoked_at = coalesce(revoked_at, clock_timestamp()) where id = v_session_id;
   update public.refresh_tokens set revoked_at = coalesce(revoked_at, clock_timestamp()) where session_id = v_session_id;
 end;
@@ -69,6 +71,7 @@ begin
     return query select 'invalid'::text, null::uuid, null::timestamptz, null::uuid;
     return;
   end if;
+  perform 1 from public.users where id = v_token.user_id for update;
   select session.* into v_session from public.auth_sessions session where session.id = v_token.session_id for update;
   if v_session.revoked_at is not null then
     return query select 'invalid'::text, v_token.user_id, v_token.expires_at, v_token.session_id;
