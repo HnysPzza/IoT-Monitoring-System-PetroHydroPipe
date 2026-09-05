@@ -11,7 +11,6 @@ function rateLimitResponse(message) {
 }
 
 // Login is IP-based to slow down password guessing.
-// User cant just refresh - it is check IP-Based to prevent brute force
 const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
@@ -19,6 +18,18 @@ const loginRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => {
     res.status(429).json(rateLimitResponse('Too many login attempts. Please try again later.'))
+  },
+})
+
+const refreshRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many session refresh requests. Please try again shortly.'))
   },
 })
 
@@ -81,4 +92,5 @@ module.exports = {
   iotIngressRateLimiter,
   iotVerifiedDeviceRateLimiter,
   loginRateLimiter,
+  refreshRateLimiter,
 }

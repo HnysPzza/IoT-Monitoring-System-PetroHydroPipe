@@ -41,6 +41,18 @@ function loadAppWithMocks(mocks = {}) {
     })
   }
 
+  if (!mocks['src/modules/auth/refreshTokens.service.js']) {
+    mockModule('src/modules/auth/refreshTokens.service.js', {
+      issueRefreshToken: async () => 'test-refresh-token',
+      revokeRefreshToken: async () => {},
+      revokeAllForUser: async () => {},
+      rotateRefreshToken: async () => ({
+        rawToken: 'test-rotated-token',
+        user: { id: 'user-1', username: 'admin', name: 'Admin', role: 'Admin' },
+      }),
+    })
+  }
+
   Object.entries(mocks).forEach(([relativePath, exportsValue]) => {
     mockModule(relativePath, exportsValue)
   })

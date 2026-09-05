@@ -45,3 +45,11 @@ export async function login({ username, password }) {
     throw error
   }
 }
+
+// Server-side logout revokes the refresh token; failures still clear locally.
+export async function logout() {
+  await apiRequest('/api/auth/logout', {
+    method: 'POST',
+    fallbackError: 'Unable to sign out. Please try again.',
+  })
+}

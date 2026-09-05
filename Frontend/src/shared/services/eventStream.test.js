@@ -2,6 +2,7 @@ import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { subscribeToServerEvents } from './eventStream.js'
 import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
+import { setSessionRefresher } from './sessionRefresh.js'
 
 describe('subscribeToServerEvents', () => {
   beforeEach(() => {
@@ -10,9 +11,49 @@ describe('subscribeToServerEvents', () => {
 
   afterEach(() => {
     setUnauthorizedHandler(null, null)
+    setSessionRefresher(null)
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
     vi.useRealTimers()
+  })
+
+  it('refreshes the session once and reconnects with the new token when the stream token expires', async () => {
+    vi.useFakeTimers()
+    const onError = vi.fn()
+    const onStatusChange = vi.fn()
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler('stale-token', onUnauthorized)
+    const refresher = vi.fn().mockResolvedValue('fresh-token')
+    setSessionRefresher(refresher)
+
+    const sseResponse = () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: heartbeat\ndata: {"intervalMs": 30000}\n\n'))
+      },
+    }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValue(sseResponse())
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'stale-token', {
+      onError,
+      onStatusChange,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(refresher).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer fresh-token')
+    expect(onUnauthorized).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(onStatusChange.mock.calls.map(([status]) => status)).toContain('reconnecting')
+    expect(onStatusChange.mock.calls.map(([status]) => status)).toContain('live')
+    unsubscribe()
   })
 
   it('notifies the shared session handler for an authenticated HTTP 401', async () => {
@@ -508,7 +549,9 @@ describe('subscribeToServerEvents', () => {
     vi.useFakeTimers()
     const onUnauthorized = vi.fn()
     const onFallback = vi.fn()
+    const refresher = vi.fn().mockResolvedValue('fresh-token')
     setUnauthorizedHandler('active-token', onUnauthorized)
+    setSessionRefresher(refresher)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 403 })))
 
     const unsubscribe = subscribeToServerEvents('/api/downtime/stream', 'active-token', { onFallback })
@@ -519,6 +562,7 @@ describe('subscribeToServerEvents', () => {
       { path: '/api/downtime/stream' },
     )
     expect(onFallback).not.toHaveBeenCalled()
+    expect(refresher).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetch).toHaveBeenCalledTimes(1)
     unsubscribe()

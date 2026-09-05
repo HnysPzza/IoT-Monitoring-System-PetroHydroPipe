@@ -4,8 +4,9 @@ const env = require('../../config/env')
 const { getSupabaseClient } = require('../../database/client')
 const { recordAuditLog } = require('../audit/audit.service')
 
-const TOKEN_EXPIRES_IN = '8h'
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid username or password.'
+
+const TOKEN_EXPIRES_IN = `${env.ACCESS_TOKEN_EXPIRES_MINUTES}m`
 
 function createAuthError(status, code, message) {
   const error = new Error(message)

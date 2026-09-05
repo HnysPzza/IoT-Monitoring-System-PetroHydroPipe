@@ -1,6 +1,7 @@
 import { createApiError } from '../errors/apiError.js'
 import { notifyStreamAuthorizationLost } from '../errors/unauthorizedSession.js'
 import { API_BASE_URL } from './apiClient.js'
+import { refreshSessionOnce } from './sessionRefresh.js'
 
 const LIVE_STABILITY_WINDOW_MS = 5000
 const DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS = 75000
@@ -82,6 +83,9 @@ export function subscribeToServerEvents(path, token, {
   onStatusChange,
 } = {}) {
   const controller = new AbortController()
+  // Held in a mutable binding so a silent session refresh can re-arm the
+  // stream with the new access token without re-subscribing.
+  let activeToken = token
   let isClosed = false
   let retryCount = 0
   let retryTimer = null
@@ -220,7 +224,7 @@ export function subscribeToServerEvents(path, token, {
     try {
       const response = await fetch(`${API_BASE_URL}${path}`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${activeToken}`,
         },
         signal: controller.signal,
       })
@@ -347,9 +351,34 @@ export function subscribeToServerEvents(path, token, {
         failedConnectionAttempts += 1
       }
 
+      if (error.status === 401 || error.isTerminalStreamAuthorization) {
+        // The access token may have simply expired; one silent refresh revives
+        // the stream without tearing down the whole session.
+        let refreshedToken = null
+        try {
+          refreshedToken = await refreshSessionOnce()
+        } catch {
+          refreshedToken = null
+        }
+
+        if (refreshedToken && refreshedToken !== activeToken && !isClosed) {
+          activeToken = refreshedToken
+          retryCount = 0
+          rateLimitFailureCount = 0
+          fallbackStarted = false
+          updateStatus('reconnecting')
+          retryTimer = window.setTimeout(
+            connect,
+            addJitter(EXPECTED_RECONNECT_DELAY_MS, EXPECTED_RECONNECT_JITTER_MS),
+          )
+          return
+        }
+
+      }
+
       if (error.status === 401 || error.status === 403 || error.isTerminalStreamAuthorization) {
         invokeHandler(onError, error)
-        notifyStreamAuthorizationLost(error, { token, path })
+        notifyStreamAuthorizationLost(error, { token: activeToken, path })
         updateStatus('unauthorized')
         return
       }

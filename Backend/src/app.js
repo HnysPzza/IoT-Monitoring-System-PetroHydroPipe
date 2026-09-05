@@ -24,6 +24,7 @@ function corsOrigin(origin, callback) {
 app.use(helmet())
 app.use(cors({
   origin: corsOrigin,
+  credentials: true,
   exposedHeaders: ['Retry-After'],
 }))
 app.use(express.json({ limit: '100kb' }))

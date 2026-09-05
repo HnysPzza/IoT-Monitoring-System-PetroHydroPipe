@@ -18,8 +18,13 @@ const SettingsSection = lazy(() => import('../features/dashboard/settings/Settin
 const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
 
 export function ProtectedRoute({ children }) {
-  const { isAuthenticated, sessionExpired } = useAuth()
+  const { isAuthenticated, isRestoring, sessionExpired } = useAuth()
   const location = useLocation()
+
+  // Wait for the silent refresh before deciding the session is gone.
+  if (isRestoring) {
+    return <DashboardLoadingFallback />
+  }
 
   // Guard dashboard pages; unauthenticated users always go back to login.
   if (!isAuthenticated) {

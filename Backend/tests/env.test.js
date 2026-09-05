@@ -168,3 +168,35 @@ test('server shutdown deadline is bounded', () => {
     }, (loadEnv) => assert.throws(loadEnv, /SERVER_SHUTDOWN_TIMEOUT_MS/))
   }
 })
+
+test('access token lifetime is bounded to the documented 15-60 minute window', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    ACCESS_TOKEN_EXPIRES_MINUTES: '',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().ACCESS_TOKEN_EXPIRES_MINUTES, 30)
+  })
+
+  for (const value of ['14', '61', 'not-a-number']) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      ACCESS_TOKEN_EXPIRES_MINUTES: value,
+    }, (loadEnv) => assert.throws(loadEnv, /ACCESS_TOKEN_EXPIRES_MINUTES/))
+  }
+})
+
+test('refresh token lifetime is bounded between 1 hour and 24 hours', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    REFRESH_TOKEN_TTL_MINUTES: '',
+  }, (loadEnv) => {
+    assert.equal(loadEnv().REFRESH_TOKEN_TTL_MINUTES, 480)
+  })
+
+  for (const value of ['59', '1441', 'not-a-number']) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      REFRESH_TOKEN_TTL_MINUTES: value,
+    }, (loadEnv) => assert.throws(loadEnv, /REFRESH_TOKEN_TTL_MINUTES/))
+  }
+})

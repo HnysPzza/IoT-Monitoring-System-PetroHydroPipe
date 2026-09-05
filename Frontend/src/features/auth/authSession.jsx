@@ -1,24 +1,97 @@
-import { createContext, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
-import { login as loginRequest } from './authService.js'
+import { apiRequest } from '../../shared/services/apiClient.js'
+import { endSessionAcrossTabs, refreshSessionOnce, setSessionRefresher } from '../../shared/services/sessionRefresh.js'
+import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
-const AUTH_STORAGE_KEY = 'iot_monitoring_auth'
+const LEGACY_STORAGE_KEY = 'iot_monitoring_auth'
+
+// 401 codes that mean the refresh cookie itself is dead (revoked, reused, or
+// unknown) versus a missing cookie on a first visit.
+const EXPIRED_REFRESH_CODES = new Set(['INVALID_REFRESH_TOKEN', 'REFRESH_TOKEN_REUSED'])
+
 export const AuthContext = createContext(null)
 
-// Reads the saved JWT/user payload so reloads keep the user signed in.
-function readStoredAuth() {
-  try {
-    const stored = window.localStorage.getItem(AUTH_STORAGE_KEY)
-    return stored ? JSON.parse(stored) : null
-  } catch {
-    return null
-  }
-}
-
 export function AuthProvider({ children }) {
-  const [auth, setAuth] = useState(readStoredAuth)
+  const [auth, setAuth] = useState(null)
+  const [isRestoring, setIsRestoring] = useState(true)
   const [sessionExpired, setSessionExpired] = useState(false)
   const expiredTokenRef = useRef(null)
+  const explicitlyLoggedOutRef = useRef(false)
+
+  function applySession(payload) {
+    expiredTokenRef.current = null
+    setSessionExpired(false)
+    setAuth(payload)
+  }
+
+  function clearSession() {
+    expiredTokenRef.current = null
+    setSessionExpired(false)
+    setAuth(null)
+  }
+
+  // Sessions live in React state only; clear any pre-migration localStorage token.
+  useEffect(() => {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+  }, [])
+
+  // The single-flight refresher backs apiClient retries and SSE recovery.
+  useLayoutEffect(() => {
+    setSessionRefresher(async () => {
+      try {
+        const payload = await apiRequest('/api/auth/refresh', {
+          method: 'POST',
+          fallbackError: 'Your session has expired.',
+        })
+
+        if (!payload?.token || explicitlyLoggedOutRef.current) return null
+
+        applySession(payload)
+        return payload
+      } catch (error) {
+        if (explicitlyLoggedOutRef.current) return null
+
+        setAuth(null)
+        if (EXPIRED_REFRESH_CODES.has(error?.code)) {
+          setSessionExpired(true)
+        }
+        return null
+      }
+    }, (payload) => {
+      if (!payload) {
+        explicitlyLoggedOutRef.current = true
+        clearSession()
+        return
+      }
+
+      if (!explicitlyLoggedOutRef.current) applySession(payload)
+    })
+
+    return () => setSessionRefresher(null)
+  }, [])
+
+  // Silent restore: a valid HttpOnly refresh cookie brings the session back
+  // after a page reload without ever exposing a token to storage.
+  useEffect(() => {
+    let cancelled = false
+
+    async function restoreSession() {
+      try {
+        await refreshSessionOnce()
+      } catch {
+        // Session restore must never block the login page on errors.
+      } finally {
+        if (!cancelled) setIsRestoring(false)
+      }
+    }
+
+    restoreSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useLayoutEffect(() => {
     if (!auth?.token) {
@@ -33,38 +106,39 @@ export function AuthProvider({ children }) {
       expiredTokenRef.current = activeToken
       setAuth(null)
       setSessionExpired(true)
-      window.localStorage.removeItem(AUTH_STORAGE_KEY)
     })
   }, [auth?.token])
 
-  // Login is the bridge from the UI to authService, then stores the returned token locally.
   async function login(credentials) {
     const nextAuth = await loginRequest(credentials)
-    expiredTokenRef.current = null
-    setSessionExpired(false)
-    setAuth(nextAuth)
-    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextAuth))
+    explicitlyLoggedOutRef.current = false
+    applySession(nextAuth)
     return nextAuth
   }
 
-  function logout() {
-    expiredTokenRef.current = null
-    setSessionExpired(false)
-    setAuth(null)
-    window.localStorage.removeItem(AUTH_STORAGE_KEY)
+  async function logout() {
+    explicitlyLoggedOutRef.current = true
+    clearSession()
+    endSessionAcrossTabs()
+
+    try {
+      await logoutRequest()
+    } catch {
+      // Clear the local session even if the backend call fails.
+    }
   }
 
-  // Shared auth object used by protected routes, API calls, and dashboard user display.
   const value = useMemo(
     () => ({
       token: auth?.token || null,
       user: auth?.user || null,
       isAuthenticated: Boolean(auth?.token),
+      isRestoring,
       sessionExpired,
       login,
       logout,
     }),
-    [auth, sessionExpired],
+    [auth, isRestoring, sessionExpired],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
