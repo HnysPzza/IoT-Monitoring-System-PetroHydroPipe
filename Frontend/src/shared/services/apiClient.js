@@ -33,6 +33,7 @@ export async function apiRequest(path, {
   signal,
 } = {}) {
   const sessionContext = getSessionContext(token)
+  let activeToken = token
   const requestHeaders = {
     'Content-Type': 'application/json',
     ...headers,
@@ -83,6 +84,7 @@ export async function apiRequest(path, {
         const refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
 
         if (refreshedToken && refreshedToken !== token) {
+          activeToken = refreshedToken
           response = await fetch(`${API_BASE_URL}${path}`, {
             method,
             credentials: 'include',
@@ -120,13 +122,13 @@ export async function apiRequest(path, {
         null,
         'MALFORMED_RESPONSE',
       )
-      notifyUnauthorized(error, { token, path })
+      notifyUnauthorized(error, { token: activeToken, path })
       throw error
     }
 
     if (!response.ok) {
       const error = createApiError(getErrorMessage(payload, fallbackError), response.status, payload)
-      notifyUnauthorized(error, { token, path })
+      notifyUnauthorized(error, { token: activeToken, path })
       throw error
     }
 

@@ -154,6 +154,16 @@ describe('apiRequest', () => {
 })
 
 describe('apiRequest session refresh', () => {
+  it('notifies the active replacement session when its retry is unauthorized', async () => {
+    const expired = vi.fn()
+    setSessionRefresher(async () => {
+      setUnauthorizedHandler('replacement', expired)
+      return 'replacement'
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })))
+    await expect(apiRequest('/api/alerts', { token: 'original' })).rejects.toMatchObject({ status: 401 })
+    expect(expired).toHaveBeenCalledTimes(1)
+  })
   it.each(['timeout', 'abort'])('honors %s while waiting for shared refresh', async (reason) => {
     vi.useFakeTimers()
     let resolveRefresh
