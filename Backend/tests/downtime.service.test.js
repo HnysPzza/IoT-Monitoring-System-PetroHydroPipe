@@ -127,7 +127,7 @@ function createFakeSupabase(records, calls) {
   }
 }
 
-function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [] } = {}) {
+function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [], calculatedRecords = [] } = {}) {
   clearSourceCache()
   const fakeSupabase = createFakeSupabase(records, calls)
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
@@ -142,8 +142,75 @@ function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = 
     info: () => {},
     warn: () => {},
   })
+  const metrics = require('../src/shared/operationalMetrics')
+  mockModule('src/shared/operationalMetrics.js', {
+    ...metrics,
+    calculateRecordMetrics(values) {
+      calculatedRecords.push(values.record.id)
+      return metrics.calculateRecordMetrics(values)
+    },
+  })
   return require(path.join(backendRoot, 'src', 'modules', 'downtime', 'downtime.service.js'))
 }
+
+test('list calculates detail only for the visible page while preserving whole-result totals', async () => {
+  const records = Array.from({ length: 30 }, (_, index) => attachRelations({
+    id: `downtime-${String(index).padStart(2, '0')}`,
+    machine_id: MACHINE_ID,
+    sensor_id: 'sensor-3',
+    started_at: new Date(Date.UTC(2026, 6, 13, 0, index * 10)).toISOString(),
+    ended_at: new Date(Date.UTC(2026, 6, 13, 0, index * 10 + 5)).toISOString(),
+    cause: 'Coil Joint',
+    status: 'Resolved',
+  }))
+  const calculatedRecords = []
+  const service = loadDowntimeService({ records, calculatedRecords })
+  const first = await service.listDowntime({ page: 1, limit: 10 })
+  assert.deepEqual(first.summary, {
+    open: 0, resolved: 30, minutes: 150, unplannedMinutes: 150, plannedExcludedMinutes: 0, loss: 7.5,
+  })
+  assert.equal(first.records[0].id, 'downtime-29')
+  assert.equal(first.records[0].estimatedLoss, 0.25)
+  assert.equal(calculatedRecords.length, 10)
+  assert.deepEqual(new Set(calculatedRecords), new Set(first.records.map((record) => record.id)))
+  calculatedRecords.length = 0
+  const second = await service.listDowntime({ page: 2, limit: 10 })
+  assert.deepEqual(second.summary, first.summary)
+  assert.equal(second.records[0].id, 'downtime-19')
+  assert.equal(calculatedRecords.length, 10)
+  calculatedRecords.length = 0
+  const outside = await service.listDowntime({ page: 4, limit: 10 })
+  assert.deepEqual(outside.summary, first.summary)
+  assert.deepEqual(outside.records, [])
+  assert.equal(calculatedRecords.length, 0)
+})
+
+test('empty list returns empty metrics without calculating details', async () => {
+  const calculatedRecords = []
+  const service = loadDowntimeService({ calculatedRecords })
+  const result = await service.listDowntime()
+  assert.deepEqual(result.records, [])
+  assert.equal(result.pagination.total, 0)
+  assert.equal(result.summary.minutes, 0)
+  assert.equal(result.lossEstimateBasis, null)
+  assert.equal(calculatedRecords.length, 0)
+})
+
+test('tied starts keep descending IDs and union overlaps across pages', async () => {
+  const records = ['a', 'c', 'b'].map((id) => attachRelations({
+    id, machine_id: MACHINE_ID, sensor_id: 'sensor-3',
+    started_at: '2026-07-13T00:00:00.000Z', ended_at: '2026-07-13T00:30:00.000Z',
+    cause: 'Coil Joint', status: 'Resolved',
+  }))
+  const service = loadDowntimeService({ records })
+  const first = await service.listDowntime({ page: 1, limit: 2 })
+  const last = await service.listDowntime({ page: 2, limit: 2 })
+  assert.deepEqual(first.records.map((record) => record.id), ['c', 'b'])
+  assert.deepEqual(last.records.map((record) => record.id), ['a'])
+  assert.equal(first.summary.minutes, 30)
+  assert.equal(first.summary.loss, 1.5)
+  assert.deepEqual(last.summary, first.summary)
+})
 
 test('downtime publication isolates a throwing listener from healthy subscribers', () => {
   const logs = []
