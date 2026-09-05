@@ -22,6 +22,24 @@ function withEnvironment(overrides, assertion) {
   }
 }
 
+test('production refuses each missing backend credential even when other settings are supplied', () => {
+  const configured = {
+    NODE_ENV: 'production',
+    CORS_ORIGIN: 'https://frontend.example.test',
+    SUPABASE_URL: 'https://database.example.test',
+    SUPABASE_SERVICE_ROLE_KEY: 'synthetic-test-value',
+    JWT_SECRET: 'synthetic-signing-value-for-tests-only',
+  }
+  for (const missing of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET']) {
+    withEnvironment({ ...configured, [missing]: '' }, (loadEnv) => {
+      assert.throws(loadEnv, new RegExp(missing))
+    })
+  }
+  withEnvironment(configured, (loadEnv) => {
+    assert.equal(loadEnv().NODE_ENV, 'production')
+  })
+})
+
 test('SSE authorization timeout must be shorter than its revalidation interval', () => {
   withEnvironment({
     NODE_ENV: 'test',
