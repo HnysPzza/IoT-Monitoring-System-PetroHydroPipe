@@ -274,3 +274,37 @@ Check backend CORS:
 ```env
 CORS_ORIGIN=http://localhost:5173
 ```
+
+## Database Secrets and Recovery Verification
+
+For development, keep runtime secrets in the ignored backend environment file with filesystem access limited to the developer. Never copy secrets into frontend variables, build artifacts, screenshots, logs, or documentation. Git ignore rules do not encrypt files or remove previous exposure.
+
+For deployment, inject `SUPABASE_SERVICE_ROLE_KEY` and `JWT_SECRET` through the hosting provider's protected environment configuration. Restrict dashboard/operator access and separate development credentials. Missing required production values must prevent startup. Environment injection does not protect a compromised running backend. If exposure is confirmed, rotate the affected key and verify dependent services; do not paste the value into a ticket.
+
+### Synthetic Restore Drill
+
+From `Backend`, with a local PostgreSQL installation:
+
+```powershell
+$env:RECOVERY_PG_BIN = 'C:\Program Files\PostgreSQL\18\bin'
+node --test tests/integration/database-recovery.test.js
+Remove-Item Env:\RECOVERY_PG_BIN
+```
+
+This opt-in test creates its own temporary cluster bound to loopback on a temporary port, uses synthetic records only, dumps `recovery_source`, and restores into a separate empty `recovery_target`. It never loads application environment credentials or connects to Supabase. Local trust authentication is used only for this disposable synthetic cluster. Shutdown runs through test cleanup; the diagnostic output identifies retained temporary evidence. Do not expose this cluster to a network or use it for real data.
+
+The drill verifies 10,000 downtime records, foreign keys, audit/settings rows, RLS, denied client-role access, restricted backend writes, and refresh-token rotation after restoration. PostgreSQL roles are bootstrapped separately: a database-only dump is not a backup of cluster-global roles. A schema-based fixture demonstrates that snapshot, not every historical migration path.
+
+September 5, 2026 result: passed on PostgreSQL 18.1; `pg_restore` took 934ms. This excludes cluster creation, application validation and operational recovery. It is not a production recovery-time guarantee.
+
+### Actual Project Recovery Gate
+
+Before deployment, record the selected backup mechanism, most recent successful backup, retention, encryption/access policy, and exactly what it includes (database, roles/configuration, and any external storage). Actual vendor backup coverage remains unverified. Keep backup files outside Git and the Obsidian vault.
+
+Agree the maximum acceptable data loss (RPO) and service recovery time (RTO) with the project owner; both remain unset until that decision. Choose backup frequency and retention to meet them, rather than assuming a vendor default is sufficient.
+
+For a real drill, confirm a disposable restore target distinct from the source, restore an actual project backup there, then verify record counts, relationships, schema/RPC versions, grants, negative client-role access, and representative application reads. Record backup timestamp, recoverable cutoff, total elapsed recovery time, and failures. Never overwrite the source database. Synthetic test success does not close this gate.
+
+### Downtime Performance Scope
+
+The list computes detailed metrics only for returned rows, while summaries still cover all matching records. Full-history fetching remains. See [Database Loading Improvement Evidence](./Database%20Loading%20Improvement%20Evidence.md) for measurements and the SQL parity stop condition. No new migration is required for this incremental change.

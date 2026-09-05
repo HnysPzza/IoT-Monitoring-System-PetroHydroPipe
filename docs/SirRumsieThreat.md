@@ -132,13 +132,17 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 - Row Level Security on all base tables; direct `anon`/`public` access revoked — the Express backend is the only gateway, using parameterized queries.
 - `Backend/.env` is gitignored and untracked (only `.env.example` files are committed).
 - `JWT_SECRET` must be at least 24 characters, validated at boot; production fails fast if any required secret is missing.
+- September 5 local verification: base-table security/configuration checks passed; an isolated PostgreSQL backup restored 10,000 synthetic downtime records with grants, constraints and session RPC behavior intact. See `RUNBOOK.md` for the reproducible drill.
 
 **What's missing**
 - Secrets sit in plaintext `.env` on the host — acceptable for this deployment tier, but not a secrets manager.
-- Backups rely on the cloud vendor with no local restore drill ever performed.
+- Actual project backup availability, retention, acceptable data loss/recovery time, and restoration of a real project backup remain unverified. The successful synthetic local drill does not verify these production controls.
 
 **The fix**
 - In production, provision `SUPABASE_SERVICE_ROLE_KEY` and `JWT_SECRET` via environment injection or a secrets manager. Schedule one backup-restore verification drill.
+- Use the deployment and actual-project recovery gates in `RUNBOOK.md`. RLS does not block a stolen service-role key; restricted grants and backend-only secret handling remain necessary.
+
+**Related loading improvement**: Detailed downtime calculations are now limited to the requested page, preserving full-result summaries. Local synthetic benchmarks show reduced service work; full database pagination/summary replacement is deferred because existing SQL helpers do not exactly match operational-time semantics. This performance change does not close item 6's remaining deployment/recovery gates and needs no migration.
 
 ---
 
