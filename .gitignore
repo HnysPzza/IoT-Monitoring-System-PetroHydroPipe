@@ -47,5 +47,5 @@ yarn-error.log*
 Thumbs.db
 
 # Scripts
-scripts/
+/scripts/
 
