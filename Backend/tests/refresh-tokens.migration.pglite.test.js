@@ -5,6 +5,7 @@ const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
 const schemaSql = fs.readFileSync(path.join(backendRoot, 'database', 'schema.sql'), 'utf8')
+  .split('create table if not exists public.refresh_tokens')[0]
 const migrationSql = fs.readFileSync(
   path.join(backendRoot, 'database', 'migrations', '026_refresh_tokens.sql'),
   'utf8',

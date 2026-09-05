@@ -21,7 +21,7 @@ function withEnvironment(overrides, action) {
     })
 }
 
-function startReadinessServer({ status = 200, body = '24', delayMs = 0 } = {}) {
+function startReadinessServer({ status = 200, body = '27', delayMs = 0 } = {}) {
   let observeCancellation
   const cancellation = new Promise((resolve) => { observeCancellation = resolve })
   const server = http.createServer((request, response) => {

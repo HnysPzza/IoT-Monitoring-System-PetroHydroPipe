@@ -46,7 +46,7 @@ test.before(async () => {
   if (!enabled) return
   await execute(psql, [...connectionArgs, '-d', 'postgres', '-c', `create database ${databaseName}`])
   await query("do $$ begin create role anon; exception when duplicate_object then null; end $$; do $$ begin create role authenticated; exception when duplicate_object then null; end $$; do $$ begin create role service_role bypassrls; exception when duplicate_object then null; end $$;")
-  for (const filename of ['schema.sql', 'migrations/026_refresh_tokens.sql', 'migrations/027_harden_auth_sessions.sql']) {
+  for (const filename of ['schema.sql', 'migrations/027_harden_auth_sessions.sql']) {
     await execute(psql, [...args, '-f', path.resolve(__dirname, '../../database', filename)])
   }
 })

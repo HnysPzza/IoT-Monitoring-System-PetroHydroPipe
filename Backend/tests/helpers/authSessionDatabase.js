@@ -9,7 +9,6 @@ async function createAuthSessionDatabase(t) {
   await db.exec('create role anon; create role authenticated; create role service_role bypassrls;')
   const directory = path.resolve(__dirname, '../../database')
   await db.exec(fs.readFileSync(path.join(directory, 'schema.sql'), 'utf8'))
-  await db.exec(fs.readFileSync(path.join(directory, 'migrations/026_refresh_tokens.sql'), 'utf8'))
   const migration = path.join(directory, 'migrations/027_harden_auth_sessions.sql')
   if (fs.existsSync(migration)) await db.exec(fs.readFileSync(migration, 'utf8'))
   const roles = await db.query("insert into roles(name) values ('Admin') returning id")
