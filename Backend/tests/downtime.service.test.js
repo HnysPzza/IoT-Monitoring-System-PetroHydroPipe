@@ -59,24 +59,38 @@ function attachRelations(record) {
   }
 }
 
-function createFakeSupabase(records, calls) {
+function createFakeSupabase(records, calls, settingsHistory) {
   return {
     from(tableName) {
       assert.ok(['downtime_events', 'machine_operational_settings_history'].includes(tableName))
-      const sourceRecords = tableName === 'downtime_events' ? records : SETTINGS_HISTORY
+      const sourceRecords = tableName === 'downtime_events' ? records : settingsHistory
       const query = {
         filters: {},
+        predicates: [],
         fromIndex: 0,
         toIndex: Number.POSITIVE_INFINITY,
         select() { return this },
         order() { return this },
         eq(field, value) { this.filters[field] = value; return this },
         gte(field, value) { calls.push({ operation: 'gte', field, value }); return this },
-        lt(field, value) { calls.push({ operation: 'lt', field, value }); return this },
-        or(value) { calls.push({ operation: 'or', value }); return this },
+        lt(field, value) {
+          calls.push({ operation: 'lt', field, value })
+          this.predicates.push((record) => new Date(record[field]) < new Date(value))
+          return this
+        },
+        or(value) {
+          calls.push({ operation: 'or', value })
+          if (tableName === 'downtime_events') {
+            const boundary = value.split('ended_at.gt.')[1]
+            assert.ok(boundary)
+            this.predicates.push((record) => record.ended_at == null || new Date(record.ended_at) > new Date(boundary))
+          }
+          return this
+        },
         range(from, to) { this.fromIndex = from; this.toIndex = to; return this },
         matches(record) {
           return Object.entries(this.filters).every(([field, value]) => record[field] === value)
+            && this.predicates.every((predicate) => predicate(record))
         },
         async maybeSingle() {
           return { data: sourceRecords.find((record) => this.matches(record)) || null, error: null }
@@ -127,9 +141,9 @@ function createFakeSupabase(records, calls) {
   }
 }
 
-function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [], calculatedRecords = [] } = {}) {
+function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [], calculatedRecords = [], settingsHistory = SETTINGS_HISTORY } = {}) {
   clearSourceCache()
-  const fakeSupabase = createFakeSupabase(records, calls)
+  const fakeSupabase = createFakeSupabase(records, calls, settingsHistory)
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
   mockModule('src/shared/outputLossBasis.js', {
     getOutputLossBasis: async () => LOSS_BASIS,
@@ -210,6 +224,69 @@ test('tied starts keep descending IDs and union overlaps across pages', async ()
   assert.equal(first.summary.minutes, 30)
   assert.equal(first.summary.loss, 1.5)
   assert.deepEqual(last.summary, first.summary)
+})
+
+test('paged details retain breaks, grace and effective-dated schedules', async () => {
+  const changeAt = '2026-07-13T02:30:00.000Z'
+  const settingsHistory = [
+    { ...SETTINGS_HISTORY[0], effective_to: changeAt, shift_schedule: {
+      workStart: '08:00', workEnd: '17:00', rampUpGraceMinutes: 10,
+      breaks: [{ name: 'Morning', startTime: '10:00', endTime: '10:15' }],
+    } },
+    { ...SETTINGS_HISTORY[0], version: '2', effective_from: changeAt, shift_schedule: {
+      workStart: '11:00', workEnd: '17:00', rampUpGraceMinutes: 0, breaks: [],
+    } },
+  ]
+  const records = [
+    { id: 'before', started_at: '2026-07-13T01:55:00.000Z', ended_at: changeAt },
+    { id: 'after', started_at: changeAt, ended_at: '2026-07-13T03:10:00.000Z' },
+  ].map((record) => attachRelations({ ...record, machine_id: MACHINE_ID, sensor_id: 'sensor-3', status: 'Resolved', cause: 'Other' }))
+  const service = loadDowntimeService({ records, settingsHistory })
+  const first = await service.listDowntime({ page: 1, limit: 1 })
+  const second = await service.listDowntime({ page: 2, limit: 1 })
+  assert.deepEqual(first.summary, { open: 0, resolved: 2, minutes: 75, unplannedMinutes: 20, plannedExcludedMinutes: 55, loss: 1 })
+  assert.deepEqual(second.summary, first.summary)
+  assert.equal(first.records[0].durationMinutes, 40)
+  assert.equal(first.records[0].unplannedMinutes, 10)
+  assert.equal(second.records[0].plannedExcludedMinutes, 25)
+})
+
+test('Manila date filters use overlap and keep status and cause filters on all pages', async () => {
+  const records = [
+    { id: 'crossing', started_at: '2026-07-12T15:55:00.000Z', ended_at: '2026-07-12T16:05:00.000Z' },
+    { id: 'ends-at-start', started_at: '2026-07-12T15:50:00.000Z', ended_at: '2026-07-12T16:00:00.000Z' },
+    { id: 'starts-at-end', started_at: '2026-07-13T16:00:00.000Z', ended_at: '2026-07-13T16:10:00.000Z' },
+    { id: 'other-cause', started_at: '2026-07-13T00:00:00.000Z', ended_at: '2026-07-13T00:10:00.000Z', cause: 'Coil Joint' },
+    { id: 'open', started_at: '2026-07-13T00:00:00.000Z', ended_at: null, status: 'Open' },
+  ].map((record) => attachRelations({ machine_id: MACHINE_ID, sensor_id: 'sensor-3', status: 'Resolved', cause: 'Other', ...record }))
+  const service = loadDowntimeService({ records })
+  const result = await service.listDowntime({ date: '2026-07-13', status: 'Resolved', cause: 'Other' })
+  assert.deepEqual(result.records.map((record) => record.id), ['crossing'])
+  assert.equal(result.summary.minutes, 5)
+  assert.equal(result.records[0].durationMinutes, 10)
+  assert.equal(result.summary.loss, 0)
+})
+
+test('open and zero-length records preserve metrics with a fixed clock across pages', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T00:30:00.000Z') })
+  const records = [
+    { id: 'open', started_at: '2026-07-13T00:00:00.000Z', ended_at: null, status: 'Open' },
+    { id: 'zero', started_at: '2026-07-13T00:30:00.000Z', ended_at: '2026-07-13T00:30:00.000Z', status: 'Resolved' },
+  ].map((record) => attachRelations({ machine_id: MACHINE_ID, sensor_id: 'sensor-3', cause: 'Other', ...record }))
+  const service = loadDowntimeService({ records })
+  const first = await service.listDowntime({ page: 1, limit: 1 })
+  const second = await service.listDowntime({ page: 2, limit: 1 })
+  assert.deepEqual(first.summary, { open: 1, resolved: 1, minutes: 30, unplannedMinutes: 30, plannedExcludedMinutes: 0, loss: 1.5 })
+  assert.deepEqual(second.summary, first.summary)
+  assert.equal(first.records[0].estimatedLoss, 0)
+  assert.equal(second.records[0].estimatedLoss, 1.5)
+})
+
+test('missing history fails closed even when the requested page is empty', async () => {
+  const records = [attachRelations({ id: 'history-gap', machine_id: MACHINE_ID, sensor_id: 'sensor-3',
+    started_at: '2026-07-13T00:00:00.000Z', ended_at: '2026-07-13T00:30:00.000Z', status: 'Resolved', cause: 'Other' })]
+  const service = loadDowntimeService({ records, settingsHistory: [] })
+  await assert.rejects(() => service.listDowntime({ page: 2, limit: 25 }), { code: 'SETTINGS_HISTORY_GAP' })
 })
 
 test('downtime publication isolates a throwing listener from healthy subscribers', () => {
