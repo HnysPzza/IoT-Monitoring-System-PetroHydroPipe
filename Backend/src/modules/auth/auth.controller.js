@@ -17,7 +17,7 @@ async function login(req, res) {
 
   const { rawToken, sessionId, expiresAt } = await refreshTokens.issueRefreshToken(result.user.id)
   setRefreshCookie(res, rawToken, expiresAt)
-  res.set('Cache-Control', 'no-store').json({ ...result, sessionId })
+  res.set('Cache-Control', 'no-store').json({ ...result, token: authService.createAuthToken(result.user, sessionId), sessionId })
 }
 
 async function me(req, res) {
@@ -32,7 +32,7 @@ async function refresh(req, res) {
 
   try {
     const { user, rawToken: rotatedToken, expiresAt, sessionId } = await refreshTokens.rotateRefreshToken(rawToken)
-    const accessToken = authService.createAuthToken(user)
+    const accessToken = authService.createAuthToken(user, sessionId)
 
     setRefreshCookie(res, rotatedToken, expiresAt)
     res.set('Cache-Control', 'no-store').json({ token: accessToken, user, sessionId })

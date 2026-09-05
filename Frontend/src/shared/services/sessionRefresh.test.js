@@ -1,7 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { refreshSessionOnce, setSessionRefresher } from './sessionRefresh.js'
+import { getSessionContext, refreshSessionOnce, setCurrentSession, setSessionRefresher } from './sessionRefresh.js'
 
 describe('sessionRefresh', () => {
+  it.each([
+    { user: { id: 'other-user' }, sessionId: 'other-session' },
+    { user: { id: 'user-1' }, sessionId: 'other-session' },
+  ])('rejects refresh results belonging to a different identity: %j', async (identity) => {
+    const received = vi.fn()
+    setSessionRefresher(async () => ({ token: 'replacement', ...identity }), received)
+    setCurrentSession({ token: 'original', user: { id: 'user-1' }, sessionId: 'session-1' })
+    await expect(refreshSessionOnce(getSessionContext('original'))).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
+    expect(received).toHaveBeenCalledWith(null)
+    expect(received).not.toHaveBeenCalledWith(expect.objectContaining({ token: 'replacement' }))
+  })
   afterEach(() => {
     setSessionRefresher(null)
     vi.unstubAllGlobals()

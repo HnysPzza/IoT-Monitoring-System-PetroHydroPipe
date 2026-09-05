@@ -201,6 +201,7 @@ test('watchdog diagnostics reject invalid, expired, inactive, and archived authe
 test('POST /api/auth/login succeeds with valid credentials', async () => {
   const app = loadAppWithMocks({
     'src/modules/auth/auth.service.js': {
+      createAuthToken: () => 'test-token',
       login: async ({ username, password }) => {
         assert.equal(username, 'admin')
         assert.equal(password, 'password123')

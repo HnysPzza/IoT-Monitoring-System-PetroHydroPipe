@@ -128,8 +128,9 @@ test('rotation returns the transaction user without a second database read', asy
 
 test('refreshed tokens preserve the safe user role', () => {
   const authService = require('../src/modules/auth/auth.service')
-  const token = authService.createAuthToken({ id: 'user-1', username: 'admin', role: 'Admin' })
+  const token = authService.createAuthToken({ id: 'user-1', username: 'admin', role: 'Admin' }, 'session-1')
   assert.equal(require('jsonwebtoken').decode(token).role, 'Admin')
+  assert.equal(require('jsonwebtoken').decode(token).sid, 'session-1')
 })
 
 test('issue stores only a SHA-256 hash, never the raw token', async () => {

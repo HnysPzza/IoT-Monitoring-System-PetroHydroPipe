@@ -95,7 +95,7 @@ async function verifyPassword(password, passwordHash) {
   return bcrypt.compare(password, passwordHash)
 }
 
-function createAuthToken(userRecord) {
+function createAuthToken(userRecord, sessionId) {
   if (!env.JWT_SECRET) {
     throw createAuthError(500, 'JWT_NOT_CONFIGURED', 'JWT_SECRET is not configured.')
   }
@@ -105,6 +105,7 @@ function createAuthToken(userRecord) {
     {
       username: userRecord.username,
       role: getRoleName(userRecord),
+      ...(sessionId ? { sid: sessionId } : {}),
     },
     env.JWT_SECRET,
     {

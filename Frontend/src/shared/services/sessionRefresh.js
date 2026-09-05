@@ -1,3 +1,5 @@
+import { createApiError } from '../errors/apiError.js'
+
 const SESSION_CHANNEL_NAME = 'petrohydropipe-session'
 const SHARED_SESSION_WAIT_MS = 50
 
@@ -8,6 +10,7 @@ let sessionChannel = null
 let sessionGeneration = 0
 let sessionEpoch = 0
 let latestSession = null
+let acceptSharedSessions = true
 const sessionWaiters = new Set()
 
 function normalizeSession(value) {
@@ -30,6 +33,7 @@ function rememberSession(session, { notify = false } = {}) {
 }
 
 function endSharedSession({ notify = false } = {}) {
+  acceptSharedSessions = false
   latestSession = null
   sessionGeneration += 1
   sessionEpoch += 1
@@ -44,7 +48,12 @@ function getSessionChannel() {
   sessionChannel = new BroadcastChannel(SESSION_CHANNEL_NAME)
   sessionChannel.addEventListener('message', ({ data }) => {
     if (data?.type === 'session-refreshed') {
+      if (!acceptSharedSessions) return
       const session = normalizeSession(data.session)
+      if (session && latestSession && !matchesSession(session, getSessionContext())) {
+        endSharedSession({ notify: true })
+        return
+      }
       if (session) rememberSession(session, { notify: true })
     }
 
@@ -72,11 +81,16 @@ function waitForSharedSession(startGeneration) {
   })
 }
 
-async function runRefresher(epoch, { holdLock = false } = {}) {
+async function runRefresher(context, { holdLock = false } = {}) {
+  assertSessionCurrent(context)
   const session = normalizeSession(await refresher())
-  if (!session || sessionEpoch !== epoch) return null
+  if (!session || sessionEpoch !== context.generation) return null
+  if (!matchesSession(session, context)) {
+    endSharedSession({ notify: true })
+    throw sessionChangedError()
+  }
 
-  rememberSession(session)
+  rememberSession(session, { notify: true })
   sessionChannel?.postMessage({ type: 'session-refreshed', session })
 
   if (holdLock && sessionChannel) {
@@ -86,23 +100,18 @@ async function runRefresher(epoch, { holdLock = false } = {}) {
   return session
 }
 
-async function refreshAcrossTabs() {
+async function refreshAcrossTabs(context) {
   const startGeneration = sessionGeneration
-  const epoch = sessionEpoch
   const locks = globalThis.navigator?.locks
 
-  if (!locks?.request || !sessionChannel) return runRefresher(epoch)
+  if (!locks?.request || !sessionChannel) return runRefresher(context)
 
-  try {
-    return await locks.request('petrohydropipe-session-refresh', async () => {
-      const sharedSession = await waitForSharedSession(startGeneration)
-      if (sharedSession) return sharedSession
-      if (sessionEpoch !== epoch) return null
-      return runRefresher(epoch, { holdLock: true })
-    })
-  } catch {
-    return runRefresher(epoch)
-  }
+  return locks.request('petrohydropipe-session-refresh', async () => {
+    const sharedSession = await waitForSharedSession(startGeneration)
+    assertSessionCurrent(context)
+    if (sharedSession && matchesSession(sharedSession, context)) return sharedSession
+    return runRefresher(context, { holdLock: true })
+  })
 }
 
 // Registered by AuthProvider; apiClient and the SSE client call
@@ -113,6 +122,7 @@ export function setSessionRefresher(nextRefresher, onSharedSession) {
   inFlight = null
 
   if (refresher) {
+    acceptSharedSessions = true
     getSessionChannel()
     return
   }
@@ -136,11 +146,44 @@ export function beginSessionChange() {
   return sessionEpoch
 }
 
-export function refreshSessionOnce() {
+function sessionChangedError() {
+  return createApiError('The session changed. Please repeat the action.', 0, null, 'SESSION_CHANGED')
+}
+
+function matchesSession(session, context) {
+  return (!context.userId || session?.user?.id === context.userId)
+    && (!context.sessionId || session?.sessionId === context.sessionId)
+}
+
+export function getSessionContext(token) {
+  let identity = {}
+  if (token) {
+    try { identity = JSON.parse(globalThis.atob(token.split('.')[1].replaceAll('-', '+').replaceAll('_', '/'))) } catch {}
+  }
+  return {
+    generation: sessionEpoch,
+    userId: identity.sub || latestSession?.user?.id,
+    sessionId: identity.sid || latestSession?.sessionId,
+    token,
+  }
+}
+
+export function assertSessionCurrent(context) {
+  if (context.generation !== sessionEpoch || (latestSession && !matchesSession(latestSession, context))) throw sessionChangedError()
+}
+
+export function setCurrentSession(session) {
+  acceptSharedSessions = true
+  rememberSession(session)
+  getSessionChannel()?.postMessage({ type: 'session-refreshed', session })
+}
+
+export function refreshSessionOnce(context = getSessionContext()) {
   if (!refresher) return Promise.resolve(null)
+  try { assertSessionCurrent(context) } catch (error) { return Promise.reject(error) }
 
   if (!inFlight) {
-    const operation = refreshAcrossTabs()
+    const operation = refreshAcrossTabs(context)
       .then((session) => session?.token || null)
       .finally(() => {
         if (inFlight === operation) inFlight = null
@@ -148,5 +191,8 @@ export function refreshSessionOnce() {
     inFlight = operation
   }
 
-  return inFlight
+  return inFlight.then((token) => {
+    assertSessionCurrent(context)
+    return token
+  })
 }

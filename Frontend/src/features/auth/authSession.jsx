@@ -1,7 +1,7 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
-import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setSessionRefresher } from '../../shared/services/sessionRefresh.js'
+import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher } from '../../shared/services/sessionRefresh.js'
 import { createApiError } from '../../shared/errors/apiError.js'
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
@@ -49,7 +49,6 @@ export function AuthProvider({ children }) {
 
         if (!payload?.token || explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
-        applySession(payload)
         return payload
       } catch (error) {
         if (explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
@@ -116,6 +115,7 @@ export function AuthProvider({ children }) {
     const nextAuth = await loginRequest(credentials)
     if (generation !== getSessionGeneration()) throw createApiError('Sign-in was cancelled.', 0, null, 'SESSION_CHANGED')
     explicitlyLoggedOutRef.current = false
+    setCurrentSession(nextAuth)
     applySession(nextAuth)
     return nextAuth
   }

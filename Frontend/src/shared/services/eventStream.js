@@ -1,7 +1,7 @@
 import { createApiError } from '../errors/apiError.js'
 import { notifyStreamAuthorizationLost } from '../errors/unauthorizedSession.js'
 import { API_BASE_URL } from './apiClient.js'
-import { refreshSessionOnce } from './sessionRefresh.js'
+import { getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
 
 const LIVE_STABILITY_WINDOW_MS = 5000
 const DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS = 75000
@@ -83,6 +83,7 @@ export function subscribeToServerEvents(path, token, {
   onStatusChange,
 } = {}) {
   const controller = new AbortController()
+  const sessionContext = getSessionContext(token)
   // Held in a mutable binding so a silent session refresh can re-arm the
   // stream with the new access token without re-subscribing.
   let activeToken = token
@@ -356,7 +357,7 @@ export function subscribeToServerEvents(path, token, {
         // the stream without tearing down the whole session.
         let refreshedToken = null
         try {
-          refreshedToken = await refreshSessionOnce()
+          refreshedToken = await refreshSessionOnce(sessionContext)
         } catch {
           refreshedToken = null
         }

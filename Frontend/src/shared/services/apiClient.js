@@ -1,6 +1,6 @@
 import { createApiError } from '../errors/apiError.js'
 import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
-import { refreshSessionOnce } from './sessionRefresh.js'
+import { assertSessionCurrent, getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000
@@ -32,6 +32,7 @@ export async function apiRequest(path, {
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   signal,
 } = {}) {
+  const sessionContext = getSessionContext(token)
   const requestHeaders = {
     'Content-Type': 'application/json',
     ...headers,
@@ -78,7 +79,8 @@ export async function apiRequest(path, {
 
       // An expired access token gets exactly one silent refresh and retry.
       if (response.status === 401 && !AUTH_COOKIE_PATH_PATTERN.test(path)) {
-        const refreshedToken = await refreshSessionOnce()
+        assertSessionCurrent(sessionContext)
+        const refreshedToken = await refreshSessionOnce(sessionContext)
 
         if (refreshedToken && refreshedToken !== token) {
           response = await fetch(`${API_BASE_URL}${path}`, {
@@ -90,7 +92,8 @@ export async function apiRequest(path, {
           })
         }
       }
-    } catch {
+    } catch (error) {
+      if (error.code === 'SESSION_CHANGED') throw error
       if (timedOut) {
         throw createApiError('The request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
       }

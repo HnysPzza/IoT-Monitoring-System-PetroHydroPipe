@@ -4,7 +4,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
 } from './apiClient.js'
 import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
-import { setSessionRefresher } from './sessionRefresh.js'
+import { beginSessionChange, setSessionRefresher } from './sessionRefresh.js'
 
 describe('apiRequest', () => {
   afterEach(() => {
@@ -154,6 +154,21 @@ describe('apiRequest', () => {
 })
 
 describe('apiRequest session refresh', () => {
+  it('does not retry an old write after the session changes', async () => {
+    let resolveRequest
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveRequest = resolve }))
+      .mockResolvedValue(new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const refresher = vi.fn(async () => 'another-account-token')
+    setSessionRefresher(refresher)
+    const request = apiRequest('/api/users/target/archive', { token: 'old-account-token', method: 'PATCH' })
+    const assertion = expect(request).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
+    beginSessionChange()
+    resolveRequest(new Response('{}', { status: 401 }))
+    await assertion
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(refresher).not.toHaveBeenCalled()
+  })
   afterEach(() => {
     setUnauthorizedHandler(null, null)
     setSessionRefresher(null)

@@ -20,6 +20,7 @@ const sessionGeneration = vi.hoisted(() => ({ value: 0 }))
 vi.mock('../../shared/services/sessionRefresh.js', () => ({
   beginSessionChange: () => ++sessionGeneration.value,
   getSessionGeneration: () => sessionGeneration.value,
+  setCurrentSession: vi.fn(),
   endSessionAcrossTabs: vi.fn(),
   setSessionRefresher: vi.fn(),
   refreshSessionOnce: vi.fn(),
@@ -66,8 +67,12 @@ describe('AuthProvider memory-only sessions', () => {
 
     // The mocked single-flight helper delegates to whatever refresher the
     // provider registers, so restore/refresh flows run real provider logic.
-    setSessionRefresher.mockImplementation((refresher) => {
-      registeredRefresher = refresher
+    setSessionRefresher.mockImplementation((refresher, handler) => {
+      registeredRefresher = refresher && (async () => {
+        const payload = await refresher()
+        if (payload) handler(payload)
+        return payload
+      })
     })
     refreshSessionOnce.mockImplementation(() => (
       registeredRefresher ? registeredRefresher() : Promise.resolve(null)

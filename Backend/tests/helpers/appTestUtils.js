@@ -31,6 +31,7 @@ function loadAppWithMocks(mocks = {}) {
   if (!mocks['src/modules/auth/auth.service.js']) {
     mockModule('src/modules/auth/auth.service.js', {
       login: async () => ({}),
+      createAuthToken: () => 'test-access-token',
       getAuthenticatedUser: async (tokenPayload) => ({
         id: tokenPayload.sub,
         name: tokenPayload.username,
