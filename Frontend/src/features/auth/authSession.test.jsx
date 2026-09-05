@@ -15,7 +15,11 @@ vi.mock('../../shared/services/apiClient.js', () => ({
   API_BASE_URL: 'http://localhost:3000',
 }))
 
+const sessionGeneration = vi.hoisted(() => ({ value: 0 }))
+
 vi.mock('../../shared/services/sessionRefresh.js', () => ({
+  beginSessionChange: () => ++sessionGeneration.value,
+  getSessionGeneration: () => sessionGeneration.value,
   endSessionAcrossTabs: vi.fn(),
   setSessionRefresher: vi.fn(),
   refreshSessionOnce: vi.fn(),
@@ -156,6 +160,25 @@ describe('AuthProvider memory-only sessions', () => {
 
     expect(logoutRequest).toHaveBeenCalledTimes(1)
     expect(screen.getByText('signed-out')).toBeInTheDocument()
+  })
+
+  it.each(['resolve', 'reject'])('ignores an older restore that later %ss after login', async (outcome) => {
+    let resolveRestore
+    let rejectRestore
+    apiRequest.mockReturnValue(new Promise((resolve, reject) => {
+      resolveRestore = resolve
+      rejectRestore = reject
+    }))
+    loginRequest.mockResolvedValue({ token: 'new-login', user: { id: 'new-user' } })
+    renderProvider()
+    await act(async () => { screen.getByText('do-login').click() })
+    expect(screen.getByText('new-login')).toBeInTheDocument()
+    await act(async () => {
+      if (outcome === 'resolve') resolveRestore({ token: 'old-restore', user: { id: 'old-user' } })
+      else rejectRestore(createApiError('Expired', 401))
+    })
+    expect(screen.getByText('new-login')).toBeInTheDocument()
+    expect(screen.getByText('authenticated')).toBeInTheDocument()
   })
 
   it('clears local auth before a slow logout request settles', async () => {

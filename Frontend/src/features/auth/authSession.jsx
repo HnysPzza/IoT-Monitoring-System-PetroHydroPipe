@@ -1,7 +1,8 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
-import { endSessionAcrossTabs, refreshSessionOnce, setSessionRefresher } from '../../shared/services/sessionRefresh.js'
+import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setSessionRefresher } from '../../shared/services/sessionRefresh.js'
+import { createApiError } from '../../shared/errors/apiError.js'
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
 const LEGACY_STORAGE_KEY = 'iot_monitoring_auth'
@@ -39,18 +40,19 @@ export function AuthProvider({ children }) {
   // The single-flight refresher backs apiClient retries and SSE recovery.
   useLayoutEffect(() => {
     setSessionRefresher(async () => {
+      const generation = getSessionGeneration()
       try {
         const payload = await apiRequest('/api/auth/refresh', {
           method: 'POST',
           fallbackError: 'Your session has expired.',
         })
 
-        if (!payload?.token || explicitlyLoggedOutRef.current) return null
+        if (!payload?.token || explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
         applySession(payload)
         return payload
       } catch (error) {
-        if (explicitlyLoggedOutRef.current) return null
+        if (explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
         setAuth(null)
         if (EXPIRED_REFRESH_CODES.has(error?.code)) {
@@ -110,7 +112,9 @@ export function AuthProvider({ children }) {
   }, [auth?.token])
 
   async function login(credentials) {
+    const generation = beginSessionChange()
     const nextAuth = await loginRequest(credentials)
+    if (generation !== getSessionGeneration()) throw createApiError('Sign-in was cancelled.', 0, null, 'SESSION_CHANGED')
     explicitlyLoggedOutRef.current = false
     applySession(nextAuth)
     return nextAuth

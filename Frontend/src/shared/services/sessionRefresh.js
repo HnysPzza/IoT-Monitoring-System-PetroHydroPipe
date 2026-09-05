@@ -126,15 +126,26 @@ export function endSessionAcrossTabs() {
   getSessionChannel()?.postMessage({ type: 'session-ended' })
 }
 
+export function getSessionGeneration() {
+  return sessionEpoch
+}
+
+export function beginSessionChange() {
+  endSharedSession()
+  inFlight = null
+  return sessionEpoch
+}
+
 export function refreshSessionOnce() {
   if (!refresher) return Promise.resolve(null)
 
   if (!inFlight) {
-    inFlight = refreshAcrossTabs()
+    const operation = refreshAcrossTabs()
       .then((session) => session?.token || null)
       .finally(() => {
-        inFlight = null
+        if (inFlight === operation) inFlight = null
       })
+    inFlight = operation
   }
 
   return inFlight
