@@ -357,7 +357,7 @@ export function subscribeToServerEvents(path, token, {
         // the stream without tearing down the whole session.
         let refreshedToken = null
         try {
-          refreshedToken = await refreshSessionOnce(sessionContext)
+          refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
         } catch {
           refreshedToken = null
         }

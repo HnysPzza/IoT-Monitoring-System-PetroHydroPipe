@@ -18,6 +18,7 @@ vi.mock('../../shared/services/apiClient.js', () => ({
 const sessionGeneration = vi.hoisted(() => ({ value: 0 }))
 
 vi.mock('../../shared/services/sessionRefresh.js', () => ({
+  withSessionLock: (operation) => operation(),
   beginSessionChange: () => ++sessionGeneration.value,
   getSessionGeneration: () => sessionGeneration.value,
   setCurrentSession: vi.fn(),

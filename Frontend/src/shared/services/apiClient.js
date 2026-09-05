@@ -80,7 +80,7 @@ export async function apiRequest(path, {
       // An expired access token gets exactly one silent refresh and retry.
       if (response.status === 401 && !AUTH_COOKIE_PATH_PATTERN.test(path)) {
         assertSessionCurrent(sessionContext)
-        const refreshedToken = await refreshSessionOnce(sessionContext)
+        const refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
 
         if (refreshedToken && refreshedToken !== token) {
           response = await fetch(`${API_BASE_URL}${path}`, {

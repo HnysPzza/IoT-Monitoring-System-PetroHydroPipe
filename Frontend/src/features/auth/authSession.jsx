@@ -1,7 +1,7 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
-import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher } from '../../shared/services/sessionRefresh.js'
+import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher, withSessionLock } from '../../shared/services/sessionRefresh.js'
 import { createApiError } from '../../shared/errors/apiError.js'
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
@@ -112,7 +112,7 @@ export function AuthProvider({ children }) {
 
   async function login(credentials) {
     const generation = beginSessionChange()
-    const nextAuth = await loginRequest(credentials)
+    const nextAuth = await withSessionLock(() => loginRequest(credentials))
     if (generation !== getSessionGeneration()) throw createApiError('Sign-in was cancelled.', 0, null, 'SESSION_CHANGED')
     explicitlyLoggedOutRef.current = false
     setCurrentSession(nextAuth)
@@ -126,7 +126,7 @@ export function AuthProvider({ children }) {
     endSessionAcrossTabs()
 
     try {
-      await logoutRequest()
+      await withSessionLock(logoutRequest)
     } catch {
       // Clear the local session even if the backend call fails.
     }

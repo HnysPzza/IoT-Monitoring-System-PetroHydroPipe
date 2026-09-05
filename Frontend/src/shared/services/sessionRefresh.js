@@ -106,12 +106,27 @@ async function refreshAcrossTabs(context) {
 
   if (!locks?.request || !sessionChannel) return runRefresher(context)
 
-  return locks.request('petrohydropipe-session-refresh', async () => {
+  return withSessionLock(async () => {
     const sharedSession = await waitForSharedSession(startGeneration)
     assertSessionCurrent(context)
     if (sharedSession && matchesSession(sharedSession, context)) return sharedSession
     return runRefresher(context, { holdLock: true })
   })
+}
+
+export async function withSessionLock(operation) {
+  const locks = globalThis.navigator?.locks
+  if (!locks?.request) return operation()
+  const controller = new AbortController()
+  const timeout = globalThis.setTimeout(() => controller.abort(), 15000)
+  try {
+    return await locks.request('petrohydropipe-session-refresh', { signal: controller.signal }, () => {
+      globalThis.clearTimeout(timeout)
+      return operation()
+    })
+  } finally {
+    globalThis.clearTimeout(timeout)
+  }
 }
 
 // Registered by AuthProvider; apiClient and the SSE client call
@@ -178,7 +193,17 @@ export function setCurrentSession(session) {
   getSessionChannel()?.postMessage({ type: 'session-refreshed', session })
 }
 
-export function refreshSessionOnce(context = getSessionContext()) {
+function waitForRefresh(operation, signal) {
+  if (!signal) return operation
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    operation.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
+export function refreshSessionOnce(context = getSessionContext(), { signal } = {}) {
   if (!refresher) return Promise.resolve(null)
   try { assertSessionCurrent(context) } catch (error) { return Promise.reject(error) }
   if (context.token && latestSession?.token && latestSession.token !== context.token) {
@@ -194,8 +219,8 @@ export function refreshSessionOnce(context = getSessionContext()) {
     inFlight = operation
   }
 
-  return inFlight.then((token) => {
+  return waitForRefresh(inFlight.then((token) => {
     assertSessionCurrent(context)
     return token
-  })
+  }), signal)
 }

@@ -1,7 +1,31 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getSessionContext, refreshSessionOnce, setCurrentSession, setSessionRefresher } from './sessionRefresh.js'
+import { getSessionContext, refreshSessionOnce, setCurrentSession, setSessionRefresher, withSessionLock } from './sessionRefresh.js'
 
 describe('sessionRefresh', () => {
+  it('bounds lock acquisition without running an unlocked fallback', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('navigator', { locks: { request: (_name, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    }) } })
+    const operation = vi.fn()
+    const assertion = expect(withSessionLock(operation)).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.advanceTimersByTimeAsync(15000)
+    await assertion
+    expect(operation).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+  it('cancels one waiter without cancelling another caller', async () => {
+    let complete
+    setSessionRefresher(() => new Promise((resolve) => { complete = resolve }))
+    const controller = new AbortController()
+    const cancelled = refreshSessionOnce(getSessionContext(), { signal: controller.signal })
+    const remaining = refreshSessionOnce()
+    controller.abort()
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+    complete('replacement')
+    await expect(remaining).resolves.toBe('replacement')
+  })
   it('reuses the replacement for staggered failures of the same token', async () => {
     const refresher = vi.fn().mockResolvedValue('replacement')
     setSessionRefresher(refresher)
@@ -90,7 +114,7 @@ describe('sessionRefresh', () => {
     const externalChannel = new BroadcastChannel('petrohydropipe-session')
     vi.stubGlobal('navigator', {
       locks: {
-        request: async (_name, callback) => {
+        request: async (_name, _options, callback) => {
           externalChannel.postMessage({
             type: 'session-refreshed',
             session: { token: 'shared-token', user: { id: 'user-1' } },

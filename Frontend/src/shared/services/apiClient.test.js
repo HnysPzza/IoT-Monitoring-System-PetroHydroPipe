@@ -154,6 +154,25 @@ describe('apiRequest', () => {
 })
 
 describe('apiRequest session refresh', () => {
+  it.each(['timeout', 'abort'])('honors %s while waiting for shared refresh', async (reason) => {
+    vi.useFakeTimers()
+    let resolveRefresh
+    setSessionRefresher(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })))
+    const controller = new AbortController()
+    let result
+    const request = apiRequest('/api/alerts', { token: 'old', timeoutMs: 100, signal: controller.signal })
+      .catch((error) => { result = error })
+    await vi.advanceTimersByTimeAsync(0)
+    if (reason === 'abort') controller.abort()
+    await vi.advanceTimersByTimeAsync(reason === 'timeout' ? 100 : 0)
+    try {
+      expect(result?.code).toBe(reason === 'timeout' ? 'REQUEST_TIMEOUT' : 'REQUEST_ABORTED')
+    } finally {
+      resolveRefresh(null)
+      await request
+    }
+  })
   it('does not retry an old write after the session changes', async () => {
     let resolveRequest
     const fetchMock = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveRequest = resolve }))
