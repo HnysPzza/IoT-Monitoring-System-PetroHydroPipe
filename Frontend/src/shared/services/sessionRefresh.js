@@ -181,6 +181,9 @@ export function setCurrentSession(session) {
 export function refreshSessionOnce(context = getSessionContext()) {
   if (!refresher) return Promise.resolve(null)
   try { assertSessionCurrent(context) } catch (error) { return Promise.reject(error) }
+  if (context.token && latestSession?.token && latestSession.token !== context.token) {
+    return Promise.resolve(latestSession.token)
+  }
 
   if (!inFlight) {
     const operation = refreshAcrossTabs(context)

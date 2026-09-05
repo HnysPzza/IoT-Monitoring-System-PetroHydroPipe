@@ -2,6 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getSessionContext, refreshSessionOnce, setCurrentSession, setSessionRefresher } from './sessionRefresh.js'
 
 describe('sessionRefresh', () => {
+  it('reuses the replacement for staggered failures of the same token', async () => {
+    const refresher = vi.fn().mockResolvedValue('replacement')
+    setSessionRefresher(refresher)
+    const context = getSessionContext('expired')
+    expect(await refreshSessionOnce(context)).toBe('replacement')
+    expect(await refreshSessionOnce(context)).toBe('replacement')
+    expect(refresher).toHaveBeenCalledTimes(1)
+    await refreshSessionOnce(getSessionContext('replacement'))
+    expect(refresher).toHaveBeenCalledTimes(2)
+  })
   it.each([
     { user: { id: 'other-user' }, sessionId: 'other-session' },
     { user: { id: 'user-1' }, sessionId: 'other-session' },

@@ -364,6 +364,7 @@ export function subscribeToServerEvents(path, token, {
 
         if (refreshedToken && refreshedToken !== activeToken && !isClosed) {
           activeToken = refreshedToken
+          sessionContext.token = refreshedToken
           retryCount = 0
           rateLimitFailureCount = 0
           fallbackStarted = false
