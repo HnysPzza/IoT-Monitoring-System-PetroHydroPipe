@@ -19,16 +19,18 @@ function generateRawToken() {
   return randomBytes(32).toString('base64url')
 }
 
-async function issueRefreshToken(userId, expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_MINUTES * 60 * 1000).toISOString()) {
+async function issueRefreshToken(userId, verifiedPasswordHash, expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_MINUTES * 60 * 1000).toISOString()) {
   const rawToken = generateRawToken()
 
   const { data: sessionId, error } = await getSupabaseClient().rpc('issue_refresh_token', {
     p_user_id: userId,
     p_token_hash: hashToken(rawToken),
     p_expires_at: expiresAt,
+    p_verified_hash: verifiedPasswordHash,
   })
 
   if (error) {
+    if (error.code === '28000') throw createAuthError(401, 'INVALID_CREDENTIALS', 'Credentials changed. Please sign in again.')
     throw createAuthError(500, 'REFRESH_TOKEN_ISSUE_FAILED', 'Unable to start session.')
   }
 

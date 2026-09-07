@@ -15,9 +15,9 @@ async function login(req, res) {
     await refreshTokens.revokeRefreshToken(existingRawRefreshToken)
   }
 
-  const { rawToken, sessionId, expiresAt } = await refreshTokens.issueRefreshToken(result.user.id)
+  const { rawToken, sessionId, expiresAt } = await refreshTokens.issueRefreshToken(result.user.id, result.verifiedPasswordHash)
   setRefreshCookie(res, rawToken, expiresAt)
-  res.set('Cache-Control', 'no-store').json({ ...result, token: authService.createAuthToken(result.user, sessionId), sessionId })
+  res.set('Cache-Control', 'no-store').json({ user: result.user, token: authService.createAuthToken(result.user, sessionId), sessionId })
 }
 
 async function me(req, res) {

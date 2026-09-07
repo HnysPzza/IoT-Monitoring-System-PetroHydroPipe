@@ -136,13 +136,14 @@ test('refreshed tokens preserve the safe user role', () => {
 test('issue stores only a SHA-256 hash, never the raw token', async () => {
   const { service, ops } = loadServiceWithMocks()
 
-  const { rawToken, sessionId } = await service.issueRefreshToken('user-1')
+  const { rawToken, sessionId } = await service.issueRefreshToken('user-1', 'verified-hash')
 
   assert.ok(rawToken.length >= 40)
   const insertOp = ops.find((op) => op.functionName === 'issue_refresh_token')
   assert.equal(insertOp.parameters.p_token_hash, service.hashToken(rawToken))
   assert.notEqual(insertOp.parameters.p_token_hash, rawToken)
   assert.equal(insertOp.parameters.p_user_id, 'user-1')
+  assert.equal(insertOp.parameters.p_verified_hash, 'verified-hash')
   assert.equal(sessionId, 'session-1')
 })
 

@@ -23,13 +23,17 @@ async function main() {
   await db.exec(fs.readFileSync(path.resolve(__dirname, '../../database/schema.sql'), 'utf8'))
   const roles = await db.query("insert into roles(name) values ('Admin') returning id")
   const passwordHash = await bcrypt.hash('Review-only-123!', 10)
+  const otherRole = await db.query("insert into roles(name) values ('Production Supervisor') returning id")
   for (const username of ['reviewadmin', 'reviewother']) {
-    await db.query("insert into users(name,username,email,password_hash,role_id,must_change_password) values ($1,$1,$2,$3,$4,false)", [username, `${username}@example.test`, passwordHash, roles.rows[0].id])
+    await db.query("insert into users(name,username,email,password_hash,role_id,must_change_password) values ($1,$1,$2,$3,$4,false)", [username, `${username}@example.test`, passwordHash, username === 'reviewadmin' ? roles.rows[0].id : otherRole.rows[0].id])
+  }
+  for (const migration of ['029_account_onboarding.sql', '030_verify_login_credentials.sql']) {
+    await db.exec(fs.readFileSync(path.resolve(__dirname, '../../database/migrations', migration), 'utf8'))
   }
   const client = {
     rpc(name, values) {
       const signatures = {
-        issue_refresh_token: ['p_user_id', 'p_token_hash', 'p_expires_at'],
+        issue_refresh_token: ['p_user_id', 'p_token_hash', 'p_expires_at', 'p_verified_hash'],
         rotate_refresh_token: ['p_token_hash', 'p_replacement_token_hash'],
         revoke_refresh_token: ['p_token_hash'],
       }

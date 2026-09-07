@@ -176,6 +176,7 @@ async function login({ username, password }) {
 
   return {
     token,
+    verifiedPasswordHash: userRecord.password_hash,
     user: toAuthUser(userRecord),
   }
 }
