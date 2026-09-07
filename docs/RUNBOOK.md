@@ -53,7 +53,37 @@ node --test tests/request-deadline.api.test.js tests/env.test.js
 
 Expected: `0 fail`.
 
-### Health and readiness
+### Telemetry staleness migration 028
+
+Apply `Backend/database/migrations/028_persist_telemetry_staleness.sql` after migration 027, then apply `029_account_onboarding.sql` before deploying the current backend, which requires readiness version 29. Migration 029 requires exactly one active, unarchived Admin. Do not rerun older migrations over 028: they can restore unfiltered readers or older readiness functions. Existing installations use migrations, not the complete `schema.sql`.
+
+For a fresh installation, run `schema.sql` (baseline 028), provision the roles and exactly one active, unarchived Admin with a privately generated bcrypt password hash, then apply 029. The known password in `seed.sql` is only suitable for disposable local development. Do not replay migrations 001 through 028 over the fresh baseline.
+
+The migration runs in one transaction with a two-second lock timeout. If it fails to acquire locks, allow the transaction to roll back and retry during a quiet ingestion window. It does not delete raw events, rewrite historical timestamps, or change sensor roles.
+
+New events receive database-computed `stale = true` when their timestamp is at or behind their sensor's last applied timestamp; otherwise they receive `false`. Both ingestion paths share this insert trigger. Stale rows are excluded from pulse totals, the Analytics start date, and live snapshot selection.
+
+Pre-migration rows remain `NULL` (unclassified) and retain their existing contribution to totals. There is no reliable reconstruction of the original ingestion decision from the final sensor watermark alone. Do not mark every older row stale or silently erase those counts. Historical repair needs separate evidence and review. Legitimate newly delayed pulses are also excluded under this conservative policy; offline reconciliation is not implemented.
+
+Run local regressions from `Backend`:
+
+```powershell
+node --test --test-concurrency=1 tests/telemetry-staleness.migration.pglite.test.js tests/health.api.test.js
+node --test --test-concurrency=1 tests/*.test.js tests/contracts/*.test.js
+```
+
+For the real-connection concurrency check, point `TELEMETRY_REVIEW_PG_PORT`, `TELEMETRY_REVIEW_PSQL`, and `TELEMETRY_REVIEW_PG_USER` at a disposable local PostgreSQL cluster, then run `node --test tests/integration/telemetry-staleness.concurrency.test.js`. It creates and drops its own test database and requires database-creation privileges. Without the port variable, it explicitly skips. Local PostgreSQL 18 verification passed concurrent ingestion with the older request blocked until the newer event committed.
+
+After applying 028, verify in the project SQL editor:
+
+```sql
+select public.get_backend_readiness();
+select stale, count(*) from public.sensor_events group by stale;
+```
+
+Expected readiness immediately after 028: `28`; after required migration 029: `29`. Only the latter matches the current backend and allows `/api/health/ready` to return 200. The grouped query exposes existing unclassified rows without changing them. A missing or disabled classification trigger makes readiness fail closed. A passing readiness check is a schema check, not a historical-data certification.
+
+### Health and readiness (historical migration 024 checks)
 
 Verifies liveness, bounded readiness, schema version 24, critical dependencies, safe `503`, and service-role-only migration access. Negative-case warnings are expected.
 

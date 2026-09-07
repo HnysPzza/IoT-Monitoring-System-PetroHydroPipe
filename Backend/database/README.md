@@ -54,10 +54,11 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 1. Open your Supabase project.
 2. Go to SQL Editor.
 3. Copy and run `schema.sql`.
-4. Copy and run `seed.sql`.
-5. For existing databases, run migration files in order from `Backend/database/migrations/`.
-6. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
-7. Confirm the seeded rows:
+4. Provision the roles and exactly one active, unarchived Admin with a privately generated bcrypt password hash. `seed.sql` contains a known development password; use it only for a disposable local database.
+5. Run `migrations/029_account_onboarding.sql` after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `29` before starting the current backend.
+6. For existing databases, skip fresh-install steps 3 through 5 and apply only pending migration files in order through 029 from `Backend/database/migrations/`.
+7. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
+8. Confirm the configured rows:
    - 5 roles
    - 1 admin user
    - 1 machine
@@ -356,11 +357,11 @@ Common simulator issues:
 
 1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
 2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
-3. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. The backend now requires readiness version 27. Check `GET /api/health/ready` after deployment.
+3. Apply pending migrations 028 and 029 before deploying the current backend, which requires readiness version 29. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
 4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
 5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
-For a fresh database, use `schema.sql`, which already includes the hardened auth objects; do not replay historical migrations over it. Logout revokes refresh sessions, not already-issued access JWTs; those remain valid until expiry (30 minutes for newly issued tokens). Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
+For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply `029_account_onboarding.sql`. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
 Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
 

@@ -3,7 +3,7 @@
 **System**: IoT-Based Pipe Manufacturing Machine Monitoring System
 **Source**: `Sir Rumsie Activity.docx` — 10 threat scenarios
 **Method**: Every claim below was verified directly against the codebase (Backend, Frontend, database schema/migrations).
-**Last updated**: September 5, 2026
+**Last updated**: September 6, 2026
 
 Each asset follows the same pattern: the threat, what's already working, what's missing, and the fix.
 
@@ -15,10 +15,10 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 1. Administrator Credentials — 🟠 Partially implemented
 2. ESP32 Sensor Nodes & Firmware — ⚠️ Hardware gate
-3. IoT Telemetry Ingestion — 🟡 Near-complete, one real integrity leak
+3. IoT Telemetry Ingestion — ✅ Complete for development; deployment verification pending
 4. Machine Downtime Records (S-03) — 🟡 Near-complete
 5. Pipe Output Counts (S-05) — ❌ Core control missing
-6. Database & Secrets — 🟡 Strong
+6. Database & Secrets — ✅ Complete for local development; hosting pending
 7. JWT Tokens & Sessions — ✅ Fully implemented for development; hosting not started
 8. Real-time SSE Stream — ✅ Fully implemented
 9. Operational Settings — ✅ Fully implemented
@@ -66,7 +66,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ---
 
-## 3. IoT Telemetry Ingestion (`/api/iot/events`) — 🟡 Near-complete, one real leak
+## 3. IoT Telemetry Ingestion (`/api/iot/events`) — ✅ Complete for development; deployment verification pending
 
 **Inherent risk**: 3 × 5 = 15 (High)
 **Threat**: A rogue device or an attacker with a device key spoofing events, replaying old packets, or flooding the endpoint.
@@ -74,14 +74,22 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 **What's working**
 - Bcrypt device authentication via decoupled `x-device-id` / `x-device-key` headers.
 - Two-tier rate limiting: 300/min per IP, then 120/min per verified device.
-- 100kb JSON body cap, strict schema validation, rejection of timestamps more than ±5 minutes in the future, and device-event-ID reuse detection.
+- 100kb JSON body cap, strict schema validation, rejection of timestamps more than 5 minutes in the future, and device-event-ID reuse detection. This is not a five-minute maximum age for delayed events.
 - Idempotent ACID ingestion RPC with a monotonic timestamp watermark that blocks machine-state regressions.
 
-**What's missing**
-- Stale/backdated packets are inserted into `sensor_events` *before* the watermark check, and staleness is never persisted — there is no stale column. The analytics aggregation then counts **all** pulse rows, so replayed pulses inflate historical production counts (see Finding A below). This is the one genuine integrity leak.
+**Implemented September 6**
+- Migration `028_persist_telemetry_staleness.sql` adds a database-owned `stale` classification. A shared insert trigger uses the locked sensor watermark, covering both legacy ingestion and watchdog observations in their existing transactions. Caller-supplied classifications are overwritten.
+- Stale rows remain raw evidence, but no longer contribute to the shared Overview, Analytics, Reports, and output-loss pulse aggregation. The all-time start lookup uses the same exclusion.
+- The live snapshot also excludes stale events, closing an equal-timestamp UUID tie that could otherwise display a rejected event as the latest observation.
+- Exact event-ID retries remain idempotent; conflicting reuse stays rejected. Stale events still cannot advance current state or watchdog recovery.
+- Backend readiness now requires version 28 and an enabled classification trigger. Focused local regression tests cover counts, both ingestion paths, legacy rows, permissions, readiness, and snapshot ties.
+- Final local verification: 371 backend tests passed with zero failures or skips; a separate disposable PostgreSQL 18 concurrency test passed. The concurrency test verified that an older request waits for the newer transaction, persists `stale = true`, and leaves the aggregate count at one.
 
-**The fix**
-- Persist a `stale` boolean at insert time inside the ingest RPC, and exclude stale rows from `aggregate_analytics_sensor_events` and report SQL. Optionally add a uniqueness rule on `(sensor_id, recorded_at)` for pulse events to block window-shifted replays.
+**Status: Complete for development**
+- Migration 028 has been applied to the development database (user-confirmed). Restart the matching backend and verify `/api/health/ready` returns HTTP 200 with readiness version 28.
+- Existing rows receive `stale = NULL`, meaning unclassified. They retain their previous contribution through `stale IS NOT TRUE`; no historical records are deleted or falsely marked verified. Historical count inflation is not automatically repaired.
+- Newly classified stale pulses are excluded even if they were legitimate delayed events. Supporting offline buffered production requires a separate reconciliation rule. New timestamps and IDs from a compromised device can still fabricate activity; this is not physical-event verification.
+- Timestamp uniqueness was deliberately not added: separate legitimate events can share device timestamp precision. See `RUNBOOK.md` for migration and validation steps.
 
 ---
 
@@ -116,14 +124,14 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 **What's missing**
 - **Zero cutter-cycle cross-correlation.** The document's primary safeguard — checking that a count pulse coincides with actual machine movement — does not exist. Pulses arriving while the mill is Idle or in Downtime are still recorded and still count toward shift totals.
 - Debounce filtering depends entirely on unverified firmware (Asset 2).
-- The stale-replay leak from Asset 3 also lands here: backdated replays sail past the watermark into historical totals.
+- Asset 3's new stale-event exclusion protects new ingestion after migration 028. Previously stored unclassified events remain a historical integrity limitation.
 
 **The fix**
 - Cross-check S-05 pulses against S-03 machine state: reject or flag pulses received when the mill has been stationary longer than the minimum cycle threshold. Combined with the Asset 3 stale-flag fix, this closes the fabrication paths that don't require hardware.
 
 ---
 
-## 6. Supabase Database & Environment Secrets — 🟡 Strong
+## 6. Supabase Database & Environment Secrets — ✅ Complete for local development; hosting pending
 
 **Inherent risk**: 2 × 5 = 10 (Medium)
 **Threat**: Direct database hijacking, SQL injection, or `.env` secret exfiltration.
@@ -134,7 +142,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 - `JWT_SECRET` must be at least 24 characters, validated at boot; production fails fast if any required secret is missing.
 - September 5 local verification: base-table security/configuration checks passed; an isolated PostgreSQL backup restored 10,000 synthetic downtime records with grants, constraints and session RPC behavior intact. See `RUNBOOK.md` for the reproducible drill.
 
-**What's missing**
+**What's pending for hosting**
 - Secrets sit in plaintext `.env` on the host — acceptable for this deployment tier, but not a secrets manager.
 - Actual project backup availability, retention, acceptable data loss/recovery time, and restoration of a real project backup remain unverified. The successful synthetic local drill does not verify these production controls.
 
@@ -258,7 +266,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 1. **Password rotation flow** — complexity rule, change-password endpoint, enforce `must_change_password` in backend and frontend (Asset 1; also makes PPT slide 7 true).
 2. **Token storage and lifetime** — ✅ DEVELOPMENT COMPLETE September 5, 2026 (Asset 7): session-lineage revocation, account-serialized RPCs, identity-bound retries, bounded refresh waits, replacement-token error handling, and migrations 026/027 complete. Perform hosted readiness and HTTPS verification only when deployment begins.
-3. **Stale pulse flag** — persist it at insert, filter it out of analytics (Assets 3 and 5; smallest change, biggest integrity win).
+3. **Stale pulse flag** — ✅ COMPLETE for development. Migration 028 is applied, 371 backend tests and the PostgreSQL concurrency test passed. Existing unclassified history requires separate review (Assets 3 and 5); deployment verification remains pending.
 4. **Cutter-cycle cross-correlation** — reject pulses while the mill is stopped (Asset 5).
 5. **Atomic downtime audit** — move the insert into the stored procedure (Asset 4).
 6. **Secrets and backups** — env-injected secrets in production, one restore drill (Asset 6).
