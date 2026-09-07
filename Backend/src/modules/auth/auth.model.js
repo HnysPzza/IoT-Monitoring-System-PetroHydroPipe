@@ -9,6 +9,10 @@ const loginSchema = z.object({
 })
 
 const passwordSchema = z.string().min(12, 'Use at least 12 characters.')
+  .regex(/[a-z]/, 'Include a lowercase letter.')
+  .regex(/[A-Z]/, 'Include an uppercase letter.')
+  .regex(/[0-9]/, 'Include a number.')
+  .regex(/[!-/:-@\[-`{-~]/, 'Include a special character.')
   .refine((value) => Buffer.byteLength(value, 'utf8') <= 72, 'Password must not exceed 72 UTF-8 bytes.')
 const setupPasswordSchema = z.object({ body: z.object({
   token: z.string().regex(/^[0-9a-f]{64}$/),

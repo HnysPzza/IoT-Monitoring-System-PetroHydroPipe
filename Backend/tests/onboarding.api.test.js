@@ -28,7 +28,7 @@ test('setup validates input, rejects foreign origins, and requires no login', as
     'src/modules/auth/onboarding.service.js': { setupPassword: async (body) => calls.push(body) },
   })
   await withTestServer(app, async (baseUrl) => {
-    const body = { token: 'a'.repeat(64), password: 'a-long-new-password' }
+    const body = { token: 'a'.repeat(64), password: 'A-long-new-password1!' }
     const invalid = await requestJson(baseUrl, '/api/auth/setup-password', { method: 'POST', body: { ...body, token: 'bad' } })
     assert.equal(invalid.response.status, 400)
     const foreign = await requestJson(baseUrl, '/api/auth/setup-password', { method: 'POST', body, headers: { Origin: 'https://foreign.example' } })
@@ -53,7 +53,7 @@ test('rechecking a link cannot exhaust the password submission allowance', async
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await requestJson(baseUrl, '/api/auth/setup-password/validate', { method: 'POST', body: { token } })
     }
-    const result = await fetch(`${baseUrl}/api/auth/setup-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: 'a-long-new-password' }) })
+    const result = await fetch(`${baseUrl}/api/auth/setup-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: 'A-long-new-password1!' }) })
     assert.equal(result.status, 200)
     assert.equal((await result.json()).completed, true)
   })
@@ -71,7 +71,7 @@ test('temporary-password sessions can change password but cannot use business en
     const denied = await requestJson(baseUrl, '/api/users', { headers })
     assert.equal(denied.response.status, 403)
     assert.equal(denied.body.error.code, 'PASSWORD_CHANGE_REQUIRED')
-    const allowed = await requestJson(baseUrl, '/api/auth/change-password', { method: 'POST', headers, body: { currentPassword: 'temporary', password: 'my-new-long-password' } })
+    const allowed = await requestJson(baseUrl, '/api/auth/change-password', { method: 'POST', headers, body: { currentPassword: 'temporary', password: 'My-new-long-password1!' } })
     assert.equal(allowed.response.status, 200)
     assert.equal(changed, true)
   })
