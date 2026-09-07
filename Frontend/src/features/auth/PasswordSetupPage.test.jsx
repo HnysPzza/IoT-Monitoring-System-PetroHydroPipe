@@ -163,3 +163,14 @@ it('explains rate limits without clearing the password form', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts.*wait.*try again/i)
   expect(screen.getByLabelText('New password')).toHaveValue('Valid-password1!')
 })
+
+it('counts Unicode characters instead of UTF-16 units for the minimum length', async () => {
+  render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+  const user = userEvent.setup()
+  await user.type(screen.getByLabelText('Current password'), 'old')
+  await user.type(screen.getByLabelText('New password'), 'Aa1!😀😀😀😀')
+  await user.type(screen.getByLabelText('Confirm password'), 'Aa1!😀😀😀😀')
+  await user.click(screen.getByRole('button', { name: 'Change password' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(/at least 12 characters/i)
+  expect(apiRequest).not.toHaveBeenCalledWith('/api/auth/change-password', expect.anything())
+})

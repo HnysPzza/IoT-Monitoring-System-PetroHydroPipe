@@ -12,7 +12,7 @@ test('new passwords require all four character categories without breaking legac
   for (const password of ['Abcdefghij1!', 'Aa1!' + 'x'.repeat(68), 'Aa1!' + 'é'.repeat(34)]) {
     assert.equal(setupPasswordSchema.safeParse({ body: { token: 'a'.repeat(64), password } }).success, true)
   }
-  for (const password of ['Abcdefghi1!', 'Aa1!' + 'x'.repeat(69), 'Aa1!' + 'é'.repeat(35), null, 123, {}]) {
+  for (const password of ['Abcdefghi1!', 'Aa1!😀😀😀😀', 'Aa1!' + 'x'.repeat(69), 'Aa1!' + 'é'.repeat(35), null, 123, {}]) {
     assert.equal(setupPasswordSchema.safeParse({ body: { token: 'a'.repeat(64), password } }).success, false)
   }
   assert.equal(loginSchema.safeParse({ body: { username: 'legacy', password: 'old' } }).success, true)
