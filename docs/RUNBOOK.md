@@ -55,9 +55,9 @@ Expected: `0 fail`.
 
 ### Telemetry staleness migration 028
 
-Apply `Backend/database/migrations/028_persist_telemetry_staleness.sql` after migration 027, then apply `029_account_onboarding.sql` before deploying the current backend, which requires readiness version 29. Migration 029 requires exactly one active, unarchived Admin. Do not rerun older migrations over 028: they can restore unfiltered readers or older readiness functions. Existing installations use migrations, not the complete `schema.sql`.
+Apply pending migrations 028, 029, 030, and 031 in order before deploying the current backend, which requires readiness version 31. Migration 029 requires exactly one active, unarchived Admin. Existing installations use only pending migrations, not the complete schema or old migration replays.
 
-For a fresh installation, run `schema.sql` (baseline 028), provision the roles and exactly one active, unarchived Admin with a privately generated bcrypt password hash, then apply 029. The known password in `seed.sql` is only suitable for disposable local development. Do not replay migrations 001 through 028 over the fresh baseline.
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply 029, 030, and 031. Do not replay migrations 001 through 028 over the fresh baseline.
 
 The migration runs in one transaction with a two-second lock timeout. If it fails to acquire locks, allow the transaction to roll back and retry during a quiet ingestion window. It does not delete raw events, rewrite historical timestamps, or change sensor roles.
 
@@ -81,7 +81,7 @@ select public.get_backend_readiness();
 select stale, count(*) from public.sensor_events group by stale;
 ```
 
-Expected readiness immediately after 028: `28`; after required migration 029: `29`. Only the latter matches the current backend and allows `/api/health/ready` to return 200. The grouped query exposes existing unclassified rows without changing them. A missing or disabled classification trigger makes readiness fail closed. A passing readiness check is a schema check, not a historical-data certification.
+Expected readiness after the required migration 031: `31`. This matches the current backend and allows `/api/health/ready` to return 200. The grouped query exposes existing unclassified rows without changing them. A missing or disabled classification trigger makes readiness fail closed. A passing readiness check is a schema check, not a historical-data certification.
 
 ### Health and readiness (historical migration 024 checks)
 

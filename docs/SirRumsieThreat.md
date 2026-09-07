@@ -3,7 +3,7 @@
 **System**: IoT-Based Pipe Manufacturing Machine Monitoring System
 **Source**: `Sir Rumsie Activity.docx` — 10 threat scenarios
 **Method**: Every claim below was verified directly against the codebase (Backend, Frontend, database schema/migrations).
-**Last updated**: September 6, 2026
+**Last updated**: September 7, 2026
 
 Each asset follows the same pattern: the threat, what's already working, what's missing, and the fix.
 
@@ -13,7 +13,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ## Status at a Glance
 
-1. Administrator Credentials — 🟠 Partially implemented
+1. Administrator Credentials — 🟡 Code implemented; migrations 030/031 pending
 2. ESP32 Sensor Nodes & Firmware — ⚠️ Hardware gate
 3. IoT Telemetry Ingestion — ✅ Complete for development; deployment verification pending
 4. Machine Downtime Records (S-03) — 🟡 Near-complete
@@ -26,27 +26,31 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ---
 
-## 1. Administrator Credentials — 🟠 Partially implemented
+## 1. Administrator Credentials — 🟡 Code implemented; migrations 030/031 pending
 
 **Inherent risk**: 4 × 5 = 20 (Critical — highest in the document)
 **Threat**: Brute-force login, credential guessing, or stolen passwords reaching the management interface.
 
-**What's working**
-- Passwords hashed with Bcrypt (salt round 10).
-- Login rate limited per IP: 10 attempts per 15 minutes.
-- Every request re-validates the user's role and status from the database, so disabled accounts lose access instantly.
+**Implemented controls**
+- New passwords require at least 12 characters, at most 72 UTF-8 bytes, lowercase, uppercase, a number, and ASCII punctuation. Whitespace alone is not a special character. Setup and change-password enforce the same policy; login accepts existing credentials so legacy users can rotate them.
+- Passwords use bcrypt cost 10. New accounts receive a hashed, one-hour, single-use setup token; no administrator-assigned password is emailed.
+- `POST /api/auth/change-password` verifies the current password. The completion RPC changes the hash, clears the legacy flag, revokes all sessions/refresh tokens, and audits atomically.
+- Flagged sessions cannot access business endpoints; the frontend sends them to password change.
+- Protected requests check the current account and JWT session ID. Revoked sessions cannot authenticate subsequent requests; already-running requests are not recalled.
+- Access JWTs default to 30 minutes, bounded to 15–60 minutes. Refresh sessions retain an absolute eight-hour lifetime.
+- Migration 030 rechecks the verified password hash under the account lock during session creation. Login preceding password change is revoked; login following a password change rejects the stale verified hash.
+- Migration 031 writes session issuance, last-login time, and LOGIN_SUCCESS together. Failed-login audit persistence errors produce a controlled failure and sanitized server log.
+- Login remains limited to 10 requests per IP per 15 minutes. Public setup and authenticated password changes have separate allowances; password changes also have a 100-request IP ingress cap and 10-request account cap per 15 minutes.
+- Password endpoint limits return JSON and Retry-After; parser errors no longer expose parser wording.
+- The operational seed creates no accounts and cannot reset administrator credentials, profile data, or password-change flags.
 
-**What's missing**
-- Passwords only need 8 characters — the document requires 12+ with uppercase, lowercase, number, and symbol. `"12345678"` is accepted today.
-- There is no change-password endpoint anywhere. Temporary passwords cannot be rotated through the system.
-- The `must_change_password` flag is dead code end-to-end: it is set at user creation but ignored by the backend routes and never read by any frontend component.
-- Sessions last 8 hours instead of the documented 15–60 minutes.
-
-**The fix**
-- Enforce the 12+ character complexity rule in `users.model.js`.
-- Add `POST /api/auth/change-password` (verify current password, then rotate).
-- Reject non-password requests while `must_change_password` is true — on the backend middleware and in the frontend.
-- Cut the token lifetime to 30 minutes.
+**Verification and remaining gates**
+- Focused regressions cover password categories/boundaries, legacy login compatibility, limiter isolation, safe errors, session race ordering, login audit rollback, and account-free seed reapplication.
+- September 7: 396 backend tests passed, and four real PostgreSQL connection tests passed, including both login/password-change race orderings. Browser geometry checks confirmed the legacy form fits 1366x768, 390x844, and 375x667 viewports without page scrolling.
+- Apply 030 then 031 after 029, and deploy the matching backend. Readiness must report 31. These migrations have not been applied to the configured Supabase database by this implementation.
+- Do not infer password strength from an existing bcrypt hash. The new policy applies when setting or changing passwords; existing passwords are not automatically reset.
+- Process-local rate limiting remains appropriate for one backend process. Verify HTTPS, proxy topology, cookies, and shared rate-limit enforcement before multi-instance deployment.
+- For fresh installations, provision exactly one private Admin before 029; operational seed data provides no default account.
 
 ---
 
@@ -181,9 +185,9 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 - Chrome DevTools passes login, reload restore, no localStorage token, unreadable refresh cookie, two-tab single refresh, logout during delayed refresh, account-switch protection, bounded refresh timeout, and replacement-token failure handling.
 
 **Remaining gates and residual risk**
-- When hosting begins, do not rerun 026 after 027; migration 027 intentionally revokes legacy refresh sessions. Deploy the matching backend/frontend and confirm `/api/health/ready` reports readiness version 27.
+- When hosting begins, do not rerun 026 after 027; migration 027 intentionally revokes legacy refresh sessions. Deploy the matching backend/frontend and apply all pending migrations through 031 and confirm `/api/health/ready` succeeds with database readiness version 31.
 - Hosted HTTPS, proxy behavior, Supabase RPC/table privileges, CORS origin, cookie attributes, and the live disposable-account smoke test are deferred deployment checks. Local browser verification used a disposable in-memory database and cannot prove hosted configuration.
-- Already-issued JWTs survive until their original expiry (new tokens default to 30 minutes; legacy tokens may last longer). Disabled or archived accounts are still blocked by per-request database revalidation. Add a session-ID check on protected requests only if immediate server-side access-token revocation is required.
+- Protected requests now check JWT `sid` against `auth_sessions`. Logout and password changes revoke sessions server-side; old JWTs without `sid` are rejected. Existing SSE connections revalidate periodically, and requests already executing are not cancelled by revocation.
 - Refresh rows expire but are not automatically deleted. Schedule a database cleanup of expired rows before long-running production use. Browsers without Web Locks or BroadcastChannel retain only per-tab refresh coordination. The refresh limiter is process-local; use a shared store before scaling the backend to multiple instances.
 
 ---
@@ -254,7 +258,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 ## PPT Corrections to Make Before the Defense
 
 - **Slide 5 vs Slide 11**: one says HTTP, the other claims HTTPS everywhere. Pick one story — no firmware in the repo settles it either way.
-- **Slide 7** ("Forces immediate password reset"): the flag is ignored end-to-end. Soften to "provides a flag for" — or implement the fix in Asset 1 and keep the claim.
+- **Slide 7** ("Forces immediate password reset"): legacy password-change enforcement is implemented in backend middleware and the frontend; new users set their password through the setup link.
 - **Slide 10** ("Monotonic Count Validation"): the database validates *timestamps*, not counts. Rephrase.
 - **Slide 11** ("50 readings buffered locally"): unverifiable without firmware.
 - **Slide 17** ("completely neutralize rogue telemetry" / "100% audit integrity"): overclaims given Assets 3 and 4.
@@ -264,7 +268,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ## Fix Priority
 
-1. **Password rotation flow** — complexity rule, change-password endpoint, enforce `must_change_password` in backend and frontend (Asset 1; also makes PPT slide 7 true).
+1. **Administrator credentials** — code implemented with regression coverage; apply pending migrations 030/031 and verify readiness 31 before closing the database gate (Asset 1).
 2. **Token storage and lifetime** — ✅ DEVELOPMENT COMPLETE September 5, 2026 (Asset 7): session-lineage revocation, account-serialized RPCs, identity-bound retries, bounded refresh waits, replacement-token error handling, and migrations 026/027 complete. Perform hosted readiness and HTTPS verification only when deployment begins.
 3. **Stale pulse flag** — ✅ COMPLETE for development. Migration 028 is applied, 371 backend tests and the PostgreSQL concurrency test passed. Existing unclassified history requires separate review (Assets 3 and 5); deployment verification remains pending.
 4. **Cutter-cycle cross-correlation** — reject pulses while the mill is stopped (Asset 5).
