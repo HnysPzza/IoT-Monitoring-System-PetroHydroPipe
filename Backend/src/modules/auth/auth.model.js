@@ -14,12 +14,14 @@ const setupPasswordSchema = z.object({ body: z.object({
   token: z.string().regex(/^[0-9a-f]{64}$/),
   password: passwordSchema,
 }).strict() })
+const setupTokenSchema = z.object({ body: setupPasswordSchema.shape.body.pick({ token: true }) })
 const changePasswordSchema = z.object({ body: z.object({
   currentPassword: z.string().min(1).max(200),
   password: passwordSchema,
 }).strict() })
 
 module.exports = {
+  setupTokenSchema,
   setupPasswordSchema,
   changePasswordSchema,
   loginSchema,

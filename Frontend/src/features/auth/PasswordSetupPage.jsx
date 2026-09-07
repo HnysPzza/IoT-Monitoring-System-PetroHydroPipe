@@ -1,8 +1,70 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
+import {
+  Check,
+  CheckCircle2,
+  Circle,
+  CircleAlert,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LoaderCircle,
+  LockKeyhole,
+  LogIn,
+  ShieldCheck,
+  UserRoundCheck,
+  Zap,
+} from 'lucide-react'
 import { useAuth } from '../../shared/hooks/useAuth.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
 import './passwordSetup.css'
+
+function PasswordField({
+  autoComplete,
+  describedBy,
+  disabled,
+  id,
+  inputRef,
+  label,
+  onChange,
+  value,
+}) {
+  const [visible, setVisible] = useState(false)
+  const visibilityLabel = `${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`
+
+  return (
+    <div className="password-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="password-input-shell">
+        <LockKeyhole size={18} aria-hidden="true" />
+        <input
+          ref={inputRef}
+          id={id}
+          name={id}
+          type={visible ? 'text' : 'password'}
+          autoComplete={autoComplete}
+          required
+          minLength={id === 'new-password' ? 12 : undefined}
+          maxLength={id === 'new-password' ? 72 : undefined}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          aria-describedby={describedBy}
+        />
+        <button
+          type="button"
+          className="password-visibility"
+          aria-label={visibilityLabel}
+          aria-pressed={visible}
+          disabled={disabled}
+          onClick={() => setVisible((current) => !current)}
+        >
+          {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function PasswordSetupPage({ changePassword = false }) {
   const { token, logout } = useAuth()
@@ -13,18 +75,82 @@ export default function PasswordSetupPage({ changePassword = false }) {
   const [busy, setBusy] = useState(false)
   const [completed, setCompleted] = useState(false)
   const [error, setError] = useState('')
+  const [linkState, setLinkState] = useState('checking')
+  const [checkAttempt, setCheckAttempt] = useState(0)
   const submitting = useRef(false)
+  const firstFieldRef = useRef(null)
   const validLink = /^[0-9a-f]{64}$/.test(setupToken)
+  const passwordBytes = new TextEncoder().encode(password).length
+  const confirmationMatches = confirmation.length > 0 && password === confirmation
+  const mode = changePassword
+    ? {
+        badge: 'Password update required',
+        brandTitle: 'Protect your operator account',
+        brandDescription: 'Your temporary password must be replaced before dashboard access can continue.',
+        title: 'Change your password',
+        description: 'Enter your current temporary password, then choose a private replacement.',
+      }
+    : {
+        badge: 'Secure account setup',
+        brandTitle: 'Secure access starts here',
+        brandDescription: 'Create the password you will use to access the PetroHydroPipe monitoring system.',
+        title: 'Create your password',
+        description: 'Choose a private password to finish setting up your account.',
+      }
+  const requirements = [
+    { label: 'At least 12 characters', met: password.length >= 12 },
+    { label: 'No more than 72 UTF-8 bytes', met: password.length > 0 && passwordBytes <= 72 },
+    { label: confirmationMatches ? 'Passwords match' : 'Passwords must match', met: confirmationMatches },
+  ]
 
   useEffect(() => {
     if (!changePassword) window.history.replaceState(window.history.state, '', window.location.pathname)
   }, [changePassword])
 
+  useEffect(() => {
+    if (changePassword || linkState === 'valid') firstFieldRef.current?.focus()
+  }, [changePassword, linkState])
+
+  useEffect(() => {
+    if (changePassword || !validLink || completed) return
+    const controller = new AbortController()
+    let expiryTimer
+    const startedAt = Date.now()
+    setLinkState('checking')
+    setError('')
+    apiRequest('/api/auth/setup-password/validate', {
+      method: 'POST', body: { token: setupToken }, signal: controller.signal,
+    }).then((result) => {
+      if (controller.signal.aborted) return
+      if (!Number.isFinite(result?.validForMs) || result.validForMs <= 0) {
+        throw new Error('Unable to verify the setup link. Please try again.')
+      }
+      const remaining = result.validForMs - (Date.now() - startedAt)
+      setLinkState(remaining > 0 ? 'valid' : 'invalid')
+      expiryTimer = window.setTimeout(() => {
+        setLinkState('invalid')
+        setPassword('')
+        setConfirmation('')
+      }, Math.max(0, remaining))
+    }).catch((failure) => {
+      if (controller.signal.aborted) return
+      setLinkState(failure.code === 'SETUP_LINK_INVALID' ? 'invalid' : 'error')
+      setError(failure.message)
+    })
+    const recheck = () => setCheckAttempt((attempt) => attempt + 1)
+    window.addEventListener('focus', recheck)
+    return () => {
+      controller.abort()
+      window.clearTimeout(expiryTimer)
+      window.removeEventListener('focus', recheck)
+    }
+  }, [changePassword, validLink, setupToken, completed, checkAttempt])
+
   async function submit(event) {
     event.preventDefault()
-    if (submitting.current) return
+    if (submitting.current || (!changePassword && linkState !== 'valid')) return
     if (password !== confirmation) { setError('Passwords do not match.'); return }
-    if (password.length < 12 || new TextEncoder().encode(password).length > 72) {
+    if (password.length < 12 || passwordBytes > 72) {
       setError('Use at least 12 characters and at most 72 UTF-8 bytes.'); return
     }
     submitting.current = true
@@ -42,6 +168,11 @@ export default function PasswordSetupPage({ changePassword = false }) {
       setCompleted(true)
       if (changePassword) await logout()
     } catch (failure) {
+      if (!changePassword && failure.code === 'ACCOUNT_OPERATION_INVALID') {
+        setLinkState('invalid')
+        setPassword('')
+        setConfirmation('')
+      }
       setError(`${failure.message} If the request timed out, try signing in with your new password before requesting another link.`)
     } finally {
       submitting.current = false
@@ -50,22 +181,169 @@ export default function PasswordSetupPage({ changePassword = false }) {
   }
 
   return (
-    <main className="password-setup">
-      <section className="section-card" aria-labelledby="password-setup-title">
-        <h1 id="password-setup-title">{changePassword ? 'Change your password' : 'Set up your password'}</h1>
-        {completed ? <p role="status">Password saved. <Link to="/login">Sign in</Link> with your new password.</p> : (
-          <form onSubmit={submit}>
-            <p>{changePassword ? 'Replace your temporary password before using the system.' : 'Choose your own password. Your administrator never receives it.'}</p>
-            {!changePassword && !validLink ? <p role="alert">Missing or invalid setup link. Ask your administrator to resend it.</p> : null}
-            {error ? <p role="alert">{error}</p> : null}
-            {changePassword ? <label>Current password<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} disabled={busy} /></label> : null}
-            <label>New password<input type="password" autoComplete="new-password" required minLength={12} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} aria-describedby="password-guidance" /></label>
-            <small id="password-guidance">At least 12 characters; at most 72 UTF-8 bytes. A long, unique passphrase works well.</small>
-            <label>Confirm password<input type="password" autoComplete="new-password" required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={busy} /></label>
-            <button className="btn btn-primary" disabled={busy || (!changePassword && !validLink)}>{busy ? 'Saving...' : changePassword ? 'Change password' : 'Set password'}</button>
-          </form>
-        )}
-        {changePassword && !completed ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={logout}>Sign out</button> : null}
+    <main className="login-page password-auth-page">
+      <section className="brand-panel" aria-label="System information">
+        <div className="brand-content password-brand-content">
+          <div className="brand-logo-row">
+            <img
+              className="brand-logo"
+              src="/assets/logo.png"
+              alt="PetroHydroPipe logo"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none'
+              }}
+            />
+            <div className="logo-fallback" aria-hidden="true">
+              <Zap size={22} />
+              <span>PetroHydroPipe</span>
+            </div>
+          </div>
+
+          <div className="password-brand-copy">
+            <p className="eyebrow">IoT Machine Monitoring System</p>
+            <h2 className="system-title">{mode.brandTitle}</h2>
+            <p className="facility">{mode.brandDescription}</p>
+          </div>
+
+          <div className="password-security-points" aria-label="Password security information">
+            <div>
+              <ShieldCheck size={20} aria-hidden="true" />
+              <span>
+                <strong>Private by design</strong>
+                Your administrator never receives your chosen password.
+              </span>
+            </div>
+            <div>
+              {changePassword ? <LogIn size={20} aria-hidden="true" /> : <KeyRound size={20} aria-hidden="true" />}
+              <span>
+                <strong>{changePassword ? 'Fresh sign-in required' : 'Protected setup'}</strong>
+                {changePassword ? 'You will sign in again after the password is changed.' : 'The setup link is checked before your password is accepted.'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="form-panel password-form-panel" aria-labelledby="password-setup-title">
+        <div className="password-card">
+          {completed ? (
+            <div className="password-state" role="status">
+              <span className="password-state-icon password-state-success" aria-hidden="true">
+                <CheckCircle2 size={30} />
+              </span>
+              <div>
+                <p className="password-state-kicker">Setup complete</p>
+                <h1 id="password-setup-title">Password saved</h1>
+                <p>Your account is ready. Sign in using your new password.</p>
+              </div>
+              <Link className="btn btn-primary password-primary-action" to="/login">
+                Sign in
+                <LogIn size={18} aria-hidden="true" />
+              </Link>
+            </div>
+          ) : !changePassword && (!validLink || linkState === 'invalid') ? (
+            <div className="password-state" role="alert">
+              <span className="password-state-icon password-state-error" aria-hidden="true">
+                <CircleAlert size={30} />
+              </span>
+              <div>
+                <p className="password-state-kicker">Link unavailable</p>
+                <h1 id="password-setup-title">{validLink ? 'Setup link expired or already used' : 'Missing or invalid setup link'}</h1>
+                <p>Ask your administrator to resend the account setup email, then open the newest link.</p>
+              </div>
+              <Link className="btn btn-secondary password-secondary-link" to="/login">Return to sign in</Link>
+            </div>
+          ) : !changePassword && linkState !== 'valid' ? (
+            <div className="password-state" role={linkState === 'error' ? 'alert' : 'status'}>
+              <h1 id="password-setup-title">{linkState === 'error' ? 'Unable to check setup link' : 'Checking setup link...'}</h1>
+              {linkState === 'error' ? <>
+                <p>{error}</p>
+                <button type="button" className="btn btn-primary" onClick={() => setCheckAttempt((attempt) => attempt + 1)}>Try again</button>
+              </> : <LoaderCircle className="password-spinner" aria-hidden="true" />}
+            </div>
+          ) : (
+            <>
+              <span className="password-security-badge">
+                <UserRoundCheck size={16} aria-hidden="true" />
+                {mode.badge}
+              </span>
+
+              <div className="password-heading">
+                <h1 id="password-setup-title">{mode.title}</h1>
+                <p>{mode.description}</p>
+              </div>
+
+              {error ? (
+                <div className="password-notice password-notice-error" role="alert">
+                  <CircleAlert size={18} aria-hidden="true" />
+                  <span>{error}</span>
+                </div>
+              ) : null}
+
+              <form className="password-form" onSubmit={submit} noValidate>
+                {changePassword ? (
+                  <PasswordField
+                    id="current-password"
+                    label="Current password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    disabled={busy}
+                    inputRef={firstFieldRef}
+                  />
+                ) : null}
+
+                <PasswordField
+                  id="new-password"
+                  label="New password"
+                  autoComplete="new-password"
+                  describedBy="password-requirements"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={busy}
+                  inputRef={changePassword ? undefined : firstFieldRef}
+                />
+
+                <ul id="password-requirements" className="password-requirements" aria-label="Password requirements">
+                  {requirements.map((requirement) => (
+                    <li key={requirement.label} className={requirement.met ? 'is-met' : ''}>
+                      {requirement.met ? <Check size={16} aria-hidden="true" /> : <Circle size={14} aria-hidden="true" />}
+                      <span className="sr-only">{requirement.met ? 'Met: ' : 'Required: '}</span>
+                      {requirement.label}
+                    </li>
+                  ))}
+                </ul>
+
+                <PasswordField
+                  id="confirm-password"
+                  label="Confirm password"
+                  autoComplete="new-password"
+                  describedBy="password-requirements"
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  disabled={busy}
+                />
+
+                <button className="btn btn-primary password-primary-action" disabled={busy}>
+                  {busy ? <LoaderCircle className="password-spinner" size={18} aria-hidden="true" /> : <ShieldCheck size={18} aria-hidden="true" />}
+                  {busy ? 'Saving password...' : changePassword ? 'Change password' : 'Set password'}
+                </button>
+              </form>
+
+              {changePassword ? (
+                <div className="password-card-footer">
+                  <span>Not ready to continue?</span>
+                  <button type="button" disabled={busy} onClick={logout}>Sign out instead</button>
+                </div>
+              ) : (
+                <p className="password-privacy-note">
+                  <ShieldCheck size={16} aria-hidden="true" />
+                  Your password is sent directly to the secure account service.
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </section>
     </main>
   )

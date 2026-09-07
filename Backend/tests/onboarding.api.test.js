@@ -3,6 +3,25 @@ const test = require('node:test')
 const jwt = require('jsonwebtoken')
 const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
 
+test('setup link validation is private, validates input, and does not consume the token', async () => {
+  const calls = []
+  const app = loadAppWithMocks({
+    'src/modules/auth/onboarding.service.js': { validateSetupToken: async (body) => { calls.push(body); return { validForMs: 60000 } } },
+  })
+  await withTestServer(app, async (baseUrl) => {
+    const body = { token: 'a'.repeat(64) }
+    const invalid = await requestJson(baseUrl, '/api/auth/setup-password/validate', { method: 'POST', body: { token: 'bad' } })
+    assert.equal(invalid.response.status, 400)
+    const foreign = await requestJson(baseUrl, '/api/auth/setup-password/validate', { method: 'POST', body, headers: { Origin: 'https://foreign.example' } })
+    assert.equal(foreign.response.status, 403)
+    const success = await requestJson(baseUrl, '/api/auth/setup-password/validate', { method: 'POST', body })
+    assert.equal(success.response.status, 200)
+    assert.equal(success.response.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(success.body, { validForMs: 60000 })
+    assert.deepEqual(calls, [body])
+  })
+})
+
 test('setup validates input, rejects foreign origins, and requires no login', async () => {
   const calls = []
   const app = loadAppWithMocks({
@@ -19,6 +38,24 @@ test('setup validates input, rejects foreign origins, and requires no login', as
     assert.equal(calls.length, 1)
     assert.equal(success.body.completed, true)
     assert.equal(JSON.stringify(success.body).includes(body.token), false)
+  })
+})
+
+test('rechecking a link cannot exhaust the password submission allowance', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/auth/onboarding.service.js': {
+      validateSetupToken: async () => ({ validForMs: 60000 }),
+      setupPassword: async () => {},
+    },
+  })
+  await withTestServer(app, async (baseUrl) => {
+    const token = 'a'.repeat(64)
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await requestJson(baseUrl, '/api/auth/setup-password/validate', { method: 'POST', body: { token } })
+    }
+    const result = await fetch(`${baseUrl}/api/auth/setup-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: 'a-long-new-password' }) })
+    assert.equal(result.status, 200)
+    assert.equal((await result.json()).completed, true)
   })
 })
 
