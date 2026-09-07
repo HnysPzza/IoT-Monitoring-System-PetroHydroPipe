@@ -27,7 +27,7 @@ async function main() {
   for (const username of ['reviewadmin', 'reviewother']) {
     await db.query("insert into users(name,username,email,password_hash,role_id,must_change_password) values ($1,$1,$2,$3,$4,false)", [username, `${username}@example.test`, passwordHash, username === 'reviewadmin' ? roles.rows[0].id : otherRole.rows[0].id])
   }
-  for (const migration of ['029_account_onboarding.sql', '030_verify_login_credentials.sql']) {
+  for (const migration of ['029_account_onboarding.sql', '030_verify_login_credentials.sql', '031_atomic_login_audit.sql']) {
     await db.exec(fs.readFileSync(path.resolve(__dirname, '../../database/migrations', migration), 'utf8'))
   }
   const client = {

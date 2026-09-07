@@ -84,3 +84,20 @@ test('revoked session rejects an otherwise active account', async () => {
   const { authService } = loadAuthServiceWithQuery({ data: activeUser, error: null }, { data: null, error: null })
   await assert.rejects(authService.getAuthenticatedUser({ sub: activeUser.id, sid: '11111111-1111-4111-8111-111111111111' }), (error) => error.status === 401)
 })
+
+test('failed-login audit persistence errors are surfaced without leaking database details', async () => {
+  const auditPath = require.resolve('../src/modules/audit/audit.service')
+  delete require.cache[auditPath]
+  delete require.cache[require.resolve(authServicePath)]
+  require.cache[require.resolve(databaseClientPath)] = {
+    id: databaseClientPath, filename: databaseClientPath, loaded: true,
+    exports: { getSupabaseClient: () => ({ from: (table) => table === 'users'
+      ? { select() { return this }, eq() { return this }, maybeSingle: async () => ({ data: null, error: null }) }
+      : { insert: async () => ({ error: { message: 'sensitive database detail' } }) } }) },
+  }
+  await assert.rejects(require(authServicePath).login({ username: 'unknown', password: 'wrong' }), (error) => {
+    assert.equal(error.status, 503)
+    assert.equal(error.message.includes('sensitive'), false)
+    return true
+  })
+})

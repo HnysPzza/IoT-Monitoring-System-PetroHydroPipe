@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const env = require('../../config/env')
 const { getSupabaseClient } = require('../../database/client')
-const { recordAuditLog } = require('../audit/audit.service')
+const logger = require('../../utils/logger')
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid username or password.'
 
@@ -116,16 +116,15 @@ function createAuthToken(userRecord, sessionId) {
   )
 }
 
-async function updateLastLoginAt(userId) {
-  const supabase = getSupabaseClient()
-  const { error } = await supabase
-    .from('users')
-    .update({ last_login_at: new Date().toISOString() })
-    .eq('id', userId)
-
-  if (error) {
-    // Login should still succeed even if this audit-style timestamp update fails.
-    console.warn('Unable to update last_login_at for user.', { userId })
+async function recordLoginFailure({ userId, metadata }) {
+  try {
+    const { error } = await getSupabaseClient().from('audit_logs').insert({
+      user_id: userId, action: 'LOGIN_FAILED', entity_type: 'auth', metadata,
+    })
+    if (error) throw error
+  } catch {
+    logger.error('Failed to persist login security event.')
+    throw createAuthError(503, 'AUTH_AUDIT_UNAVAILABLE', 'Sign in is temporarily unavailable.')
   }
 }
 
@@ -135,10 +134,8 @@ async function login({ username, password }) {
   const normalizedUsername = username.trim().toLowerCase()
 
   if (!userRecord || userRecord.status !== 'Active' || userRecord.deleted_at || userRecord.onboarding_state === 'Invited' || !userRecord.password_hash) {
-    await recordAuditLog({
+    await recordLoginFailure({
       userId: userRecord?.id || null,
-      action: 'LOGIN_FAILED',
-      entityType: 'auth',
       metadata: {
         username: normalizedUsername,
         reason: userRecord?.deleted_at ? 'archived_account' : userRecord?.status === 'Inactive' ? 'inactive_account' : 'invalid_credentials',
@@ -150,10 +147,8 @@ async function login({ username, password }) {
   const passwordMatches = await verifyPassword(password, userRecord.password_hash)
 
   if (!passwordMatches) {
-    await recordAuditLog({
+    await recordLoginFailure({
       userId: userRecord.id,
-      action: 'LOGIN_FAILED',
-      entityType: 'auth',
       metadata: {
         username: normalizedUsername,
         reason: 'invalid_credentials',
@@ -162,20 +157,7 @@ async function login({ username, password }) {
     throw createAuthError(401, 'INVALID_CREDENTIALS', INVALID_CREDENTIALS_MESSAGE)
   }
 
-  const token = createAuthToken(userRecord)
-  await updateLastLoginAt(userRecord.id)
-  await recordAuditLog({
-    userId: userRecord.id,
-    action: 'LOGIN_SUCCESS',
-    entityType: 'auth',
-    metadata: {
-      username: userRecord.username,
-      role: getRoleName(userRecord),
-    },
-  })
-
   return {
-    token,
     verifiedPasswordHash: userRecord.password_hash,
     user: toAuthUser(userRecord),
   }
