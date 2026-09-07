@@ -151,3 +151,15 @@ it('submits the legacy password change and signs out after success', async () =>
   }))
   expect(authState.logout).toHaveBeenCalledOnce()
 })
+
+it('explains rate limits without clearing the password form', async () => {
+  render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+  const user = userEvent.setup()
+  await user.type(screen.getByLabelText('Current password'), 'old')
+  await user.type(screen.getByLabelText('New password'), 'Valid-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'Valid-password1!')
+  apiRequest.mockRejectedValueOnce({ code: 'RATE_LIMITED' })
+  await user.click(screen.getByRole('button', { name: 'Change password' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts.*wait.*try again/i)
+  expect(screen.getByLabelText('New password')).toHaveValue('Valid-password1!')
+})

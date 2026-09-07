@@ -10,10 +10,11 @@ const env = require('../../config/env')
 const onboarding = require('./onboarding.service')
 const { setupPasswordSchema, setupTokenSchema, changePasswordSchema } = require('./auth.model')
 const { rateLimit } = require('express-rate-limit')
-const setupLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false })
-const setupCheckLimiter = rateLimit({ windowMs: 15 * 60000, limit: 30, standardHeaders: true, legacyHeaders: false })
-const changeIngressLimiter = rateLimit({ windowMs: 15 * 60000, limit: 100, standardHeaders: true, legacyHeaders: false })
-const changeLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user.sub })
+const passwordLimitMessage = { error: { code: 'RATE_LIMITED', message: 'Too many attempts. Wait before trying again.' } }
+const setupLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false, message: passwordLimitMessage })
+const setupCheckLimiter = rateLimit({ windowMs: 15 * 60000, limit: 30, standardHeaders: true, legacyHeaders: false, message: passwordLimitMessage })
+const changeIngressLimiter = rateLimit({ windowMs: 15 * 60000, limit: 100, standardHeaders: true, legacyHeaders: false, message: passwordLimitMessage })
+const changeLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user.sub, message: passwordLimitMessage })
 
 const router = express.Router()
 

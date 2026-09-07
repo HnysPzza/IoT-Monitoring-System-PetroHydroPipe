@@ -5,6 +5,13 @@ function errorHandler(err, req, res, next) {
     return next(err)
   }
 
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body must contain valid JSON.' } })
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.' } })
+  }
+
   const abortReason = req.requestSignal?.reason
 
   if (abortReason?.code === 'CLIENT_DISCONNECTED' && (req.aborted || res.destroyed)) {

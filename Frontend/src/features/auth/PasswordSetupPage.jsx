@@ -67,6 +67,8 @@ function PasswordField({
 }
 
 function passwordErrorMessage(code) {
+  if (code === 'RATE_LIMITED') return 'Too many attempts. Wait up to 15 minutes, then try again.'
+  if (code === 'VALIDATION_ERROR') return 'Check the password requirements and try again.'
   if (code === 'ACCOUNT_OPERATION_INVALID') return 'Link expired or used.'
   if (code === 'PASSWORD_INCORRECT') return 'Current password is wrong.'
   if (code === 'PASSWORD_UNCHANGED') return 'Choose a different password.'
