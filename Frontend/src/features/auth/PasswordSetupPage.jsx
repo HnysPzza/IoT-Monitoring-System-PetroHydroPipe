@@ -89,6 +89,8 @@ export default function PasswordSetupPage({ changePassword = false }) {
   const firstFieldRef = useRef(null)
   const validLink = /^[0-9a-f]{64}$/.test(setupToken)
   const passwordBytes = new TextEncoder().encode(password).length
+  const hasRequiredCharacters = /[a-z]/.test(password) && /[A-Z]/.test(password)
+    && /[0-9]/.test(password) && /[!-/:-@\[-`{-~]/.test(password)
   const confirmationMatches = confirmation.length > 0 && password === confirmation
   const mode = changePassword
     ? {
@@ -105,6 +107,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
         description: 'Finish your account setup.',
       }
   const requirements = [
+    { label: 'Uppercase, lowercase, number, special character', met: hasRequiredCharacters },
     { label: 'At least 12 characters', met: password.length >= 12 },
     { label: 'Max 72 UTF-8 bytes', met: password.length > 0 && passwordBytes <= 72 },
     { label: confirmationMatches ? 'Passwords match' : 'Passwords must match', met: confirmationMatches },
@@ -158,7 +161,10 @@ export default function PasswordSetupPage({ changePassword = false }) {
     if (submitting.current || (!changePassword && linkState !== 'valid')) return
     if (password !== confirmation) { setError('Passwords do not match.'); return }
     if (password.length < 12 || passwordBytes > 72) {
-      setError('Use 12-72 UTF-8 bytes.'); return
+      setError('Use at least 12 characters and no more than 72 UTF-8 bytes.'); return
+    }
+    if (!hasRequiredCharacters) {
+      setError('Include uppercase, lowercase, a number, and a special character.'); return
     }
     submitting.current = true
     setBusy(true)

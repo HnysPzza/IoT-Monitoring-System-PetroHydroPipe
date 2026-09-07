@@ -19,6 +19,18 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+it.each([false, true])('rejects matching weak passwords in change mode %s', async (changePassword) => {
+  window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
+  render(<MemoryRouter><PasswordSetupPage changePassword={changePassword} /></MemoryRouter>)
+  const user = userEvent.setup()
+  if (changePassword) await user.type(screen.getByLabelText('Current password'), 'old')
+  await user.type(await screen.findByLabelText('New password'), 'aaaaaaaaaaaa')
+  await user.type(screen.getByLabelText('Confirm password'), 'aaaaaaaaaaaa')
+  await user.click(screen.getByRole('button', { name: changePassword ? 'Change password' : 'Set password' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(/uppercase.*lowercase.*number.*special/i)
+  expect(apiRequest).not.toHaveBeenCalledWith(`/api/auth/${changePassword ? 'change-password' : 'setup-password'}`, expect.anything())
+})
+
 it('scrubs the token from the URL and submits only matching passwords', async () => {
   const token = 'a'.repeat(64)
   window.history.replaceState(null, '', `/setup-password#token=${token}`)
@@ -26,14 +38,14 @@ it('scrubs the token from the URL and submits only matching passwords', async ()
   render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
   expect(window.location.hash).toBe('')
   const user = userEvent.setup()
-  await user.type(await screen.findByLabelText('New password'), 'a-strong-password')
+  await user.type(await screen.findByLabelText('New password'), 'A-strong-password1!')
   await user.type(screen.getByLabelText('Confirm password'), 'different-password')
   await user.click(screen.getByRole('button', { name: 'Set password' }))
   expect(apiRequest).not.toHaveBeenCalledWith('/api/auth/setup-password', expect.anything())
   await user.clear(screen.getByLabelText('Confirm password'))
-  await user.type(screen.getByLabelText('Confirm password'), 'a-strong-password')
+  await user.type(screen.getByLabelText('Confirm password'), 'A-strong-password1!')
   await user.click(screen.getByRole('button', { name: 'Set password' }))
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/auth/setup-password', expect.objectContaining({ body: { token, password: 'a-strong-password' } })))
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/auth/setup-password', expect.objectContaining({ body: { token, password: 'A-strong-password1!' } })))
   expect(await screen.findByText(/Password saved/)).toBeInTheDocument()
 })
 
@@ -105,8 +117,8 @@ it('removes the form when the link is consumed before submission', async () => {
   window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
   render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
   const user = userEvent.setup()
-  await user.type(await screen.findByLabelText('New password'), 'a-strong-password')
-  await user.type(screen.getByLabelText('Confirm password'), 'a-strong-password')
+  await user.type(await screen.findByLabelText('New password'), 'A-strong-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'A-strong-password1!')
   apiRequest.mockRejectedValueOnce(Object.assign(new Error('Account or setup link is not eligible.'), { code: 'ACCOUNT_OPERATION_INVALID' }))
   await user.click(screen.getByRole('button', { name: 'Set password' }))
   expect(await screen.findByRole('alert')).toHaveTextContent(/expired|used/i)
@@ -125,8 +137,8 @@ it('submits the legacy password change and signs out after success', async () =>
   expect(screen.queryByText('Fresh sign-in required')).not.toBeInTheDocument()
 
   await user.type(screen.getByLabelText('Current password'), 'temporary-password')
-  await user.type(screen.getByLabelText('New password'), 'replacement-password')
-  await user.type(screen.getByLabelText('Confirm password'), 'replacement-password')
+  await user.type(screen.getByLabelText('New password'), 'Replacement-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'Replacement-password1!')
   await user.click(screen.getByRole('button', { name: 'Change password' }))
 
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/auth/change-password', {
@@ -134,7 +146,7 @@ it('submits the legacy password change and signs out after success', async () =>
     token: 'access-token',
     body: {
       currentPassword: 'temporary-password',
-      password: 'replacement-password',
+      password: 'Replacement-password1!',
     },
   }))
   expect(authState.logout).toHaveBeenCalledOnce()
