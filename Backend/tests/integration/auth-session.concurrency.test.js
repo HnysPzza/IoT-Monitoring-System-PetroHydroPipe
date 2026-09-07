@@ -48,6 +48,10 @@ test.before(async () => {
   for (const filename of ['schema.sql', 'migrations/027_harden_auth_sessions.sql']) {
     await execute(psql, [...args, '-f', path.resolve(__dirname, '../../database', filename)])
   }
+  await query("insert into roles(name) values ('Admin'),('Production Supervisor'); insert into users(name,username,password_hash,role_id) select 'Bootstrap','bootstrap','hash',id from roles where name='Admin';")
+  for (const filename of ['029_account_onboarding.sql', '030_verify_login_credentials.sql', '031_atomic_login_audit.sql']) {
+    await execute(psql, [...args, '-f', path.resolve(__dirname, '../../database/migrations', filename)])
+  }
 })
 
 test.after(async () => {
@@ -57,8 +61,8 @@ test.after(async () => {
 async function seed() {
   const userId = randomUUID()
   await query(`insert into roles(name) values ('Admin') on conflict (name) do nothing;
-    insert into users(id,name,username,email,password_hash,status,role_id) values ('${userId}','Review','${userId}','${userId}@example.test','hash','Active',(select id from roles where name='Admin'));
-    select issue_refresh_token('${userId}',md5('${userId}a')||md5('${userId}a'),now()+interval '8 hours');
+    insert into users(id,name,username,email,password_hash,status,role_id) values ('${userId}','Review','${userId}','${userId}@example.test','hash','Active',(select id from roles where name='Production Supervisor'));
+    select issue_refresh_token('${userId}',md5('${userId}a')||md5('${userId}a'),now()+interval '8 hours','hash');
     select * from rotate_refresh_token(md5('${userId}a')||md5('${userId}a'),md5('${userId}b')||md5('${userId}b'));`)
   return userId
 }
@@ -82,4 +86,27 @@ test('replay acquires the account lock before changing session rows', { skip: !e
   try { blocked = await waitForLock('auth-review-account', () => finished) } finally { await release() }
   await replay
   assert.equal(blocked, true)
+})
+
+test('password rotation commits before stale login issuance and denies the new session', { skip: !enabled, timeout: 30000 }, async () => {
+  const userId = await seed()
+  const replacement = '$2b$10$' + 'a'.repeat(53)
+  const release = await holdTransaction(`select change_account_password('${userId}','hash','${replacement}')`)
+  let finished = false
+  const login = query(`set application_name='auth-stale-login'; select issue_refresh_token('${userId}',repeat('e',64),now()+interval '1 hour','hash')`)
+    .then(() => null, (error) => error).finally(() => { finished = true })
+  try { assert.equal(await waitForLock('auth-stale-login', () => finished), true) } finally { await release() }
+  assert.match((await login)?.message || '', /Credentials changed/)
+  assert.equal(await query(`select count(*) from auth_sessions where user_id='${userId}' and revoked_at is null`), '0')
+})
+
+test('login commits first and concurrent password rotation revokes its session', { skip: !enabled, timeout: 30000 }, async () => {
+  const userId = await seed()
+  const replacement = '$2b$10$' + 'a'.repeat(53)
+  const release = await holdTransaction(`select issue_refresh_token('${userId}',repeat('f',64),now()+interval '1 hour','hash')`)
+  let finished = false
+  const change = query(`set application_name='auth-password-change'; select change_account_password('${userId}','hash','${replacement}')`).finally(() => { finished = true })
+  try { assert.equal(await waitForLock('auth-password-change', () => finished), true) } finally { await release() }
+  await change
+  assert.equal(await query(`select count(*) from auth_sessions where user_id='${userId}' and revoked_at is null`), '0')
 })
