@@ -66,6 +66,14 @@ function PasswordField({
   )
 }
 
+function passwordErrorMessage(code) {
+  if (code === 'ACCOUNT_OPERATION_INVALID') return 'Link expired or used.'
+  if (code === 'PASSWORD_INCORRECT') return 'Current password is wrong.'
+  if (code === 'PASSWORD_UNCHANGED') return 'Choose a different password.'
+  if (code === 'REQUEST_TIMEOUT') return 'Request timed out.'
+  return 'Could not save password.'
+}
+
 export default function PasswordSetupPage({ changePassword = false }) {
   const { token, logout } = useAuth()
   const [setupToken, setSetupToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('token') || '')
@@ -84,22 +92,21 @@ export default function PasswordSetupPage({ changePassword = false }) {
   const confirmationMatches = confirmation.length > 0 && password === confirmation
   const mode = changePassword
     ? {
-        badge: 'Password update required',
-        brandTitle: 'Protect your operator account',
-        brandDescription: 'Your temporary password must be replaced before dashboard access can continue.',
-        title: 'Change your password',
-        description: 'Enter your current temporary password, then choose a private replacement.',
+        badge: 'Password update',
+        brandTitle: 'Protect your account',
+        title: 'Change password',
+        description: 'Choose a new password.',
       }
     : {
-        badge: 'Secure account setup',
-        brandTitle: 'Secure access starts here',
-        brandDescription: 'Create the password you will use to access the PetroHydroPipe monitoring system.',
-        title: 'Create your password',
-        description: 'Choose a private password to finish setting up your account.',
+        badge: 'Secure setup',
+        brandTitle: 'Secure account setup',
+        brandDescription: 'Create your account password.',
+        title: 'Create password',
+        description: 'Finish your account setup.',
       }
   const requirements = [
     { label: 'At least 12 characters', met: password.length >= 12 },
-    { label: 'No more than 72 UTF-8 bytes', met: password.length > 0 && passwordBytes <= 72 },
+    { label: 'Max 72 UTF-8 bytes', met: password.length > 0 && passwordBytes <= 72 },
     { label: confirmationMatches ? 'Passwords match' : 'Passwords must match', met: confirmationMatches },
   ]
 
@@ -123,7 +130,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
     }).then((result) => {
       if (controller.signal.aborted) return
       if (!Number.isFinite(result?.validForMs) || result.validForMs <= 0) {
-        throw new Error('Unable to verify the setup link. Please try again.')
+        throw new Error('Could not check link.')
       }
       const remaining = result.validForMs - (Date.now() - startedAt)
       setLinkState(remaining > 0 ? 'valid' : 'invalid')
@@ -135,7 +142,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
     }).catch((failure) => {
       if (controller.signal.aborted) return
       setLinkState(failure.code === 'SETUP_LINK_INVALID' ? 'invalid' : 'error')
-      setError(failure.message)
+      setError('Could not check link.')
     })
     const recheck = () => setCheckAttempt((attempt) => attempt + 1)
     window.addEventListener('focus', recheck)
@@ -151,7 +158,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
     if (submitting.current || (!changePassword && linkState !== 'valid')) return
     if (password !== confirmation) { setError('Passwords do not match.'); return }
     if (password.length < 12 || passwordBytes > 72) {
-      setError('Use at least 12 characters and at most 72 UTF-8 bytes.'); return
+      setError('Use 12-72 UTF-8 bytes.'); return
     }
     submitting.current = true
     setBusy(true)
@@ -173,7 +180,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
         setPassword('')
         setConfirmation('')
       }
-      setError(`${failure.message} If the request timed out, try signing in with your new password before requesting another link.`)
+      setError(passwordErrorMessage(failure.code))
     } finally {
       submitting.current = false
       setBusy(false)
@@ -181,8 +188,8 @@ export default function PasswordSetupPage({ changePassword = false }) {
   }
 
   return (
-    <main className="login-page password-auth-page">
-      <section className="brand-panel" aria-label="System information">
+    <main className={`login-page password-auth-page${changePassword ? ' password-auth-page-legacy' : ''}`}>
+      <section className="brand-panel" aria-label="Account information">
         <div className="brand-content password-brand-content">
           <div className="brand-logo-row">
             <img
@@ -200,27 +207,29 @@ export default function PasswordSetupPage({ changePassword = false }) {
           </div>
 
           <div className="password-brand-copy">
-            <p className="eyebrow">IoT Machine Monitoring System</p>
+            <p className="eyebrow">IoT Monitoring System</p>
             <h2 className="system-title">{mode.brandTitle}</h2>
-            <p className="facility">{mode.brandDescription}</p>
+            {!changePassword ? <p className="facility">{mode.brandDescription}</p> : null}
           </div>
 
-          <div className="password-security-points" aria-label="Password security information">
-            <div>
-              <ShieldCheck size={20} aria-hidden="true" />
-              <span>
-                <strong>Private by design</strong>
-                Your administrator never receives your chosen password.
-              </span>
+          {!changePassword ? (
+            <div className="password-security-points" aria-label="Password security">
+              <div>
+                <ShieldCheck size={20} aria-hidden="true" />
+                <span>
+                  <strong>Private password</strong>
+                  Admins cannot see it.
+                </span>
+              </div>
+              <div>
+                <KeyRound size={20} aria-hidden="true" />
+                <span>
+                  <strong>One-time setup</strong>
+                  Link must be valid.
+                </span>
+              </div>
             </div>
-            <div>
-              {changePassword ? <LogIn size={20} aria-hidden="true" /> : <KeyRound size={20} aria-hidden="true" />}
-              <span>
-                <strong>{changePassword ? 'Fresh sign-in required' : 'Protected setup'}</strong>
-                {changePassword ? 'You will sign in again after the password is changed.' : 'The setup link is checked before your password is accepted.'}
-              </span>
-            </div>
-          </div>
+          ) : null}
         </div>
       </section>
 
@@ -234,7 +243,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
               <div>
                 <p className="password-state-kicker">Setup complete</p>
                 <h1 id="password-setup-title">Password saved</h1>
-                <p>Your account is ready. Sign in using your new password.</p>
+                <p>Use your new password.</p>
               </div>
               <Link className="btn btn-primary password-primary-action" to="/login">
                 Sign in
@@ -248,14 +257,14 @@ export default function PasswordSetupPage({ changePassword = false }) {
               </span>
               <div>
                 <p className="password-state-kicker">Link unavailable</p>
-                <h1 id="password-setup-title">{validLink ? 'Setup link expired or already used' : 'Missing or invalid setup link'}</h1>
-                <p>Ask your administrator to resend the account setup email, then open the newest link.</p>
+                <h1 id="password-setup-title">{validLink ? 'Link expired or used' : 'Link unavailable'}</h1>
+                <p>Request a new link.</p>
               </div>
-              <Link className="btn btn-secondary password-secondary-link" to="/login">Return to sign in</Link>
+              <Link className="btn btn-secondary password-secondary-link" to="/login">Back to sign in</Link>
             </div>
           ) : !changePassword && linkState !== 'valid' ? (
             <div className="password-state" role={linkState === 'error' ? 'alert' : 'status'}>
-              <h1 id="password-setup-title">{linkState === 'error' ? 'Unable to check setup link' : 'Checking setup link...'}</h1>
+              <h1 id="password-setup-title">{linkState === 'error' ? 'Link check failed' : 'Checking link...'}</h1>
               {linkState === 'error' ? <>
                 <p>{error}</p>
                 <button type="button" className="btn btn-primary" onClick={() => setCheckAttempt((attempt) => attempt + 1)}>Try again</button>
@@ -326,19 +335,19 @@ export default function PasswordSetupPage({ changePassword = false }) {
 
                 <button className="btn btn-primary password-primary-action" disabled={busy}>
                   {busy ? <LoaderCircle className="password-spinner" size={18} aria-hidden="true" /> : <ShieldCheck size={18} aria-hidden="true" />}
-                  {busy ? 'Saving password...' : changePassword ? 'Change password' : 'Set password'}
+                  {busy ? 'Saving...' : changePassword ? 'Change password' : 'Set password'}
                 </button>
               </form>
 
               {changePassword ? (
                 <div className="password-card-footer">
-                  <span>Not ready to continue?</span>
-                  <button type="button" disabled={busy} onClick={logout}>Sign out instead</button>
+                  <span>Need another option?</span>
+                  <button type="button" disabled={busy} onClick={logout}>Sign out</button>
                 </div>
               ) : (
                 <p className="password-privacy-note">
                   <ShieldCheck size={16} aria-hidden="true" />
-                  Your password is sent directly to the secure account service.
+                  Password stays private.
                 </p>
               )}
             </>

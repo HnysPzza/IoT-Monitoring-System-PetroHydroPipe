@@ -39,9 +39,9 @@ it('scrubs the token from the URL and submits only matching passwords', async ()
 
 it('shows a recovery state instead of the form when the setup link is missing', () => {
   render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
-  expect(screen.getByRole('alert')).toHaveTextContent(/missing or invalid/i)
+  expect(screen.getByRole('alert')).toHaveTextContent(/link unavailable/i)
   expect(screen.queryByRole('button', { name: 'Set password' })).not.toBeInTheDocument()
-  expect(screen.getByRole('link', { name: /return to sign in/i })).toHaveAttribute('href', '/login')
+  expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/login')
 })
 
 it('lets the user reveal and hide the new password', async () => {
@@ -83,7 +83,7 @@ it('allows retry after a validation network failure without showing password fie
   window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
   apiRequest.mockRejectedValueOnce(new Error('Unable to reach the server.'))
   render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
-  expect(await screen.findByRole('alert')).toHaveTextContent(/unable to reach/i)
+  expect(await screen.findByRole('alert')).toHaveTextContent(/could not check link/i)
   expect(screen.queryByLabelText('New password')).not.toBeInTheDocument()
   await userEvent.setup().click(screen.getByRole('button', { name: /try again/i }))
   expect(await screen.findByLabelText('New password')).toBeEnabled()
@@ -118,6 +118,11 @@ it('submits the legacy password change and signs out after success', async () =>
   const user = userEvent.setup()
 
   render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+
+  expect(document.querySelector('.password-auth-page')).toHaveClass('password-auth-page-legacy')
+  expect(screen.queryByText(/temporary password must be replaced before dashboard access/i)).not.toBeInTheDocument()
+  expect(screen.queryByText('Private by design')).not.toBeInTheDocument()
+  expect(screen.queryByText('Fresh sign-in required')).not.toBeInTheDocument()
 
   await user.type(screen.getByLabelText('Current password'), 'temporary-password')
   await user.type(screen.getByLabelText('New password'), 'replacement-password')
