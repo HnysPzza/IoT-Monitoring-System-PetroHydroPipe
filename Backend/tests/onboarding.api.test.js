@@ -3,6 +3,31 @@ const test = require('node:test')
 const jwt = require('jsonwebtoken')
 const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
 
+test('public setup failures do not consume authenticated password-change allowance', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/auth/onboarding.service.js': { changePassword: async () => {} },
+  })
+  const headers = { Authorization: `Bearer ${jwt.sign({ role: 'Admin' }, process.env.JWT_SECRET, { subject: '11111111-1111-4111-8111-111111111111' })}` }
+  await withTestServer(app, async (baseUrl) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await requestJson(baseUrl, '/api/auth/setup-password', { method: 'POST', body: {} })
+    }
+    const response = await fetch(`${baseUrl}/api/auth/change-password`, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'old', password: 'New-password1!' }),
+    })
+    assert.equal(response.status, 200)
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await fetch(`${baseUrl}/api/auth/change-password`, { method: 'POST', headers, body: '{}' })
+    }
+    const limited = await fetch(`${baseUrl}/api/auth/change-password`, { method: 'POST', headers })
+    assert.equal(limited.status, 429)
+    const otherHeaders = { Authorization: `Bearer ${jwt.sign({ role: 'Admin' }, process.env.JWT_SECRET, { subject: '22222222-2222-4222-8222-222222222222' })}` }
+    const other = await requestJson(baseUrl, '/api/auth/change-password', { method: 'POST', headers: otherHeaders, body: { currentPassword: 'old', password: 'New-password1!' } })
+    assert.equal(other.response.status, 200)
+  })
+})
+
 test('setup link validation is private, validates input, and does not consume the token', async () => {
   const calls = []
   const app = loadAppWithMocks({

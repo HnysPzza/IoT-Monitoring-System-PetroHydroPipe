@@ -12,6 +12,8 @@ const { setupPasswordSchema, setupTokenSchema, changePasswordSchema } = require(
 const { rateLimit } = require('express-rate-limit')
 const setupLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false })
 const setupCheckLimiter = rateLimit({ windowMs: 15 * 60000, limit: 30, standardHeaders: true, legacyHeaders: false })
+const changeIngressLimiter = rateLimit({ windowMs: 15 * 60000, limit: 100, standardHeaders: true, legacyHeaders: false })
+const changeLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user.sub })
 
 const router = express.Router()
 
@@ -59,7 +61,7 @@ router.post('/setup-password', setupLimiter, rejectForeignOrigin, validateReques
   await onboarding.setupPassword(req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
-router.post('/change-password', setupLimiter, rejectForeignOrigin, authenticate, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
+router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticate, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
   await onboarding.changePassword(req.user.sub, req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
