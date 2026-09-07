@@ -4,6 +4,7 @@ import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
 import DashboardErrorBoundary from '../shared/errors/DashboardErrorBoundary.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
+import PasswordSetupPage from '../features/auth/PasswordSetupPage.jsx'
 import { getCurrentDashboardPath } from '../features/auth/authNavigation.js'
 
 const AdminDashboard = lazy(() => import('../features/dashboard/layout/AdminDashboard.jsx'))
@@ -18,7 +19,7 @@ const SettingsSection = lazy(() => import('../features/dashboard/settings/Settin
 const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
 
 export function ProtectedRoute({ children }) {
-  const { isAuthenticated, isRestoring, sessionExpired } = useAuth()
+  const { isAuthenticated, isRestoring, sessionExpired, user } = useAuth()
   const location = useLocation()
 
   // Wait for the silent refresh before deciding the session is gone.
@@ -40,6 +41,7 @@ export function ProtectedRoute({ children }) {
     )
   }
 
+  if (user?.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
   return children
 }
 
@@ -71,6 +73,8 @@ export default function App() {
       {/* Main route map. Dashboard children render inside AdminDashboard through <Outlet />. */}
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/setup-password" element={<PasswordSetupPage />} />
+      <Route path="/change-password" element={<ProtectedRoute><PasswordSetupPage changePassword /></ProtectedRoute>} />
       <Route
         path="/dashboard"
         element={

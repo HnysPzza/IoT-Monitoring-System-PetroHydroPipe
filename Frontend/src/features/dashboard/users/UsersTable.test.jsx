@@ -16,6 +16,16 @@ const account = {
 }
 
 describe('UsersTable', () => {
+  it('protects any Admin account even when it is not the current row', async () => {
+    const user = userEvent.setup()
+    render(<UsersTable accounts={[{ ...account, role: 'Admin' }]} currentUserId="another-user" />)
+    expect(screen.getByText(/protected admin/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /actions for/i }))
+    expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /deactivate account/i })).toBeDisabled()
+  })
+
   it('calls archive handler for non-current user archive action', async () => {
     const user = userEvent.setup()
     const onArchiveAccount = vi.fn()
@@ -32,12 +42,14 @@ describe('UsersTable', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /archive/i }))
+    await user.click(screen.getByRole('button', { name: /actions for/i }))
+    await user.click(screen.getByRole('button', { name: /archive account/i }))
 
     expect(onArchiveAccount).toHaveBeenCalledWith(account)
   })
 
-  it('disables archive for the current user', () => {
+  it('disables archive for the current user', async () => {
+    const user = userEvent.setup()
     render(
       <UsersTable
         accounts={[account]}
@@ -50,6 +62,24 @@ describe('UsersTable', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: /archive/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /actions for/i }))
+    expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()
+  })
+
+  it('invokes onSortChange when clicking a sortable column header', async () => {
+    const user = userEvent.setup()
+    const onSortChange = vi.fn()
+    render(
+      <UsersTable
+        accounts={[account]}
+        currentUserId="user-1"
+        sort="created"
+        direction="desc"
+        onSortChange={onSortChange}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /sort by user/i }))
+    expect(onSortChange).toHaveBeenCalledWith('name', 'asc')
   })
 })
