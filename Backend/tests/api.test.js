@@ -407,15 +407,15 @@ test('app middleware applies JSON body limit and CORS allowlist behavior', async
 test('admin can list, create, and archive users through mocked service', async () => {
   const app = loadAppWithMocks({
     'src/modules/users/users.service.js': {
-      listUsers: async () => [{ id: userId, username: 'admin', role: 'Admin', status: 'Active' }],
+      listUsers: async () => ({ users: [{ id: userId, username: 'admin', role: 'Admin', status: 'Active' }], total: 1, page: 1, limit: 10 }),
       listRoles: async () => [{ id: 'role-admin', name: 'Admin' }],
-      createUser: async (values) => ({
+      createUser: async (values) => ({ user: {
         id: '44444444-4444-4444-8444-444444444444',
         username: values.username,
         email: values.email,
         role: values.role,
         status: 'Active',
-      }),
+      }, delivery: 'accepted' }),
       updateUserStatus: async ({ userId: targetUserId, status }) => ({ id: targetUserId, status }),
       archiveUser: async ({ userId: targetUserId }) => ({ id: targetUserId, username: 'operator01', status: 'Inactive' }),
     },
@@ -437,7 +437,6 @@ test('admin can list, create, and archive users through mocked service', async (
         username: 'operator01',
         email: 'operator01@petrohydropipe.local',
         role: 'Production Supervisor',
-        password: 'temporary123',
       },
     })
 

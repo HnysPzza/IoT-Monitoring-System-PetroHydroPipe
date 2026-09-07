@@ -43,6 +43,7 @@ function getSessionUserSelect() {
     email,
     status,
     must_change_password,
+    onboarding_state,
     deleted_at,
     roles (
       name
@@ -133,7 +134,7 @@ async function login({ username, password }) {
   const userRecord = await findUserByUsername(username)
   const normalizedUsername = username.trim().toLowerCase()
 
-  if (!userRecord || userRecord.status !== 'Active' || userRecord.deleted_at) {
+  if (!userRecord || userRecord.status !== 'Active' || userRecord.deleted_at || userRecord.onboarding_state === 'Invited' || !userRecord.password_hash) {
     await recordAuditLog({
       userId: userRecord?.id || null,
       action: 'LOGIN_FAILED',
@@ -180,6 +181,9 @@ async function login({ username, password }) {
 }
 
 async function getAuthenticatedUser(tokenPayload, options = {}) {
+  if (typeof tokenPayload.sid !== 'string' || !/^[0-9a-f-]{36}$/i.test(tokenPayload.sid)) {
+    throw createAuthError(401, 'UNAUTHENTICATED', 'Sign in again to start a verified session.')
+  }
   // /me refreshes the safe user shape from the database using the JWT subject.
   const userRecord = await findUserById(tokenPayload.sub, options)
 
@@ -194,6 +198,16 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (userRecord.status !== 'Active') {
     throw createAuthError(403, 'ACCOUNT_INACTIVE', 'User account is inactive.')
   }
+
+  if (userRecord.onboarding_state === 'Invited') {
+    throw createAuthError(403, 'ACCOUNT_SETUP_REQUIRED', 'Finish account setup before signing in.')
+  }
+  let query = getSupabaseClient().from('auth_sessions').select('id').eq('id', tokenPayload.sid)
+    .eq('user_id', userRecord.id).is('revoked_at', null).gt('expires_at', new Date().toISOString())
+  if (options.signal) query = query.abortSignal(options.signal)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to verify session.')
+  if (!data) throw createAuthError(401, 'UNAUTHENTICATED', 'Session has ended. Sign in again.')
 
   return toAuthUser(userRecord)
 }

@@ -7,8 +7,18 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
+  ACCOUNT_SETUP_ORIGIN: z.string().url().default('http://localhost:5173'),
   SUPABASE_URL: z.string().url().optional().or(z.literal('')),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional().or(z.literal('')),
+  BREVO_API_KEY: z.string().trim().optional().or(z.literal('')),
+  BREVO_FROM_EMAIL: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.string().trim().email().optional(),
+  ),
+  BREVO_FROM_NAME: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.string().trim().min(1).max(120).default('Petro Hydro Monitoring'),
+  ),
   JWT_SECRET: z.string().min(24, 'JWT_SECRET must be at least 24 characters.').optional().or(z.literal('')),
   ACCESS_TOKEN_EXPIRES_MINUTES: z.preprocess(
     (value) => value === '' ? undefined : value,

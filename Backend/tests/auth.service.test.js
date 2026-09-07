@@ -6,7 +6,7 @@ const backendRoot = path.resolve(__dirname, '..')
 const authServicePath = path.join(backendRoot, 'src', 'modules', 'auth', 'auth.service.js')
 const databaseClientPath = path.join(backendRoot, 'src', 'database', 'client.js')
 
-function loadAuthServiceWithQuery(result) {
+function loadAuthServiceWithQuery(result, sessionResult = { data: { id: 'session' }, error: null }) {
   const calls = { abortSignal: [], select: [] }
   const query = {
     abortSignal(signal) {
@@ -16,6 +16,8 @@ function loadAuthServiceWithQuery(result) {
     eq() {
       return this
     },
+    is() { return this },
+    gt() { return this },
     maybeSingle: async () => result,
     select(columns) {
       calls.select.push(columns)
@@ -24,8 +26,8 @@ function loadAuthServiceWithQuery(result) {
   }
   const supabase = {
     from(table) {
-      assert.equal(table, 'users')
-      return query
+      assert.ok(['users', 'auth_sessions'].includes(table))
+      return table === 'users' ? query : { ...query, maybeSingle: async () => sessionResult }
     },
   }
 
@@ -56,12 +58,12 @@ test('session revalidation excludes password hashes and forwards cancellation', 
   const { authService, calls } = loadAuthServiceWithQuery({ data: activeUser, error: null })
   const controller = new AbortController()
 
-  const user = await authService.getAuthenticatedUser({ sub: activeUser.id }, { signal: controller.signal })
+  const user = await authService.getAuthenticatedUser({ sub: activeUser.id, sid: '11111111-1111-4111-8111-111111111111' }, { signal: controller.signal })
 
   assert.equal(user.role, 'Admin')
-  assert.equal(calls.select.length, 1)
+  assert.equal(calls.select.length, 2)
   assert.equal(calls.select[0].includes('password_hash'), false)
-  assert.deepEqual(calls.abortSignal, [controller.signal])
+  assert.deepEqual(calls.abortSignal, [controller.signal, controller.signal])
 })
 
 test('login lookup still selects the password hash needed by bcrypt', async () => {
@@ -71,4 +73,14 @@ test('login lookup still selects the password hash needed by bcrypt', async () =
 
   assert.equal(calls.select.length, 1)
   assert.equal(calls.select[0].includes('password_hash'), true)
+})
+
+test('legacy sid-less access tokens cannot bypass session revocation', async () => {
+  const { authService } = loadAuthServiceWithQuery({ data: activeUser, error: null })
+  await assert.rejects(authService.getAuthenticatedUser({ sub: activeUser.id }), (error) => error.status === 401)
+})
+
+test('revoked session rejects an otherwise active account', async () => {
+  const { authService } = loadAuthServiceWithQuery({ data: activeUser, error: null }, { data: null, error: null })
+  await assert.rejects(authService.getAuthenticatedUser({ sub: activeUser.id, sid: '11111111-1111-4111-8111-111111111111' }), (error) => error.status === 401)
 })

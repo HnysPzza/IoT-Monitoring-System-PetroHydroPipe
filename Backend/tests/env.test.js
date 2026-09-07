@@ -40,6 +40,30 @@ test('production refuses each missing backend credential even when other setting
   })
 })
 
+test('loads valid Brevo development configuration', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    BREVO_API_KEY: 'test-brevo-key',
+    BREVO_FROM_EMAIL: 'accounts@example.test',
+    BREVO_FROM_NAME: 'Petro Hydro Monitoring',
+  }, (loadEnv) => {
+    const parsed = loadEnv()
+
+    assert.equal(parsed.BREVO_API_KEY, 'test-brevo-key')
+    assert.equal(parsed.BREVO_FROM_EMAIL, 'accounts@example.test')
+    assert.equal(parsed.BREVO_FROM_NAME, 'Petro Hydro Monitoring')
+  })
+})
+
+test('rejects an invalid Brevo sender email', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+    BREVO_FROM_EMAIL: 'not-an-email',
+  }, (loadEnv) => {
+    assert.throws(loadEnv, /BREVO_FROM_EMAIL/)
+  })
+})
+
 test('SSE authorization timeout must be shorter than its revalidation interval', () => {
   withEnvironment({
     NODE_ENV: 'test',
