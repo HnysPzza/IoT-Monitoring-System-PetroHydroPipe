@@ -1,4 +1,5 @@
 -- PetroHydroPipe IoT Monitoring System
+-- Fresh-install baseline through 028; provision one Admin, then apply 029 before starting the backend.
 -- Phase 2 simple Supabase/PostgreSQL database foundation.
 
 create schema if not exists extensions;
@@ -63,8 +64,41 @@ create table if not exists sensor_events (
   event_type text not null,
   event_value jsonb not null default '{}'::jsonb,
   recorded_at timestamptz not null,
+  stale boolean,
   created_at timestamptz not null default now()
 );
+
+alter table public.sensor_events add column if not exists stale boolean;
+
+create or replace function public.classify_sensor_event_staleness()
+returns trigger
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_watermark timestamptz;
+begin
+  select sensor.last_applied_recorded_at into v_watermark
+  from public.sensors sensor
+  where sensor.id = new.sensor_id and sensor.machine_id = new.machine_id
+  for update;
+
+  if not found then
+    raise exception using errcode = '23503', message = 'Sensor is not assigned to the supplied machine.';
+  end if;
+
+  new.stale := v_watermark is not null and new.recorded_at <= v_watermark;
+  return new;
+end;
+$$;
+
+revoke all on function public.classify_sensor_event_staleness() from public, anon, authenticated, service_role;
+
+drop trigger if exists classify_sensor_event_staleness on public.sensor_events;
+create trigger classify_sensor_event_staleness
+before insert on public.sensor_events
+for each row execute function public.classify_sensor_event_staleness();
 
 -- Downtime records derived from sensor events or manual review.
 create table if not exists downtime_events (
@@ -2336,6 +2370,7 @@ begin
         select event.id, event.event_type, event.event_value, event.recorded_at
         from public.sensor_events event
         where event.sensor_id = sensor.id
+          and event.stale is not true
         order by event.recorded_at desc, event.id desc
         limit 1
       ) latest_event on true
@@ -2534,6 +2569,7 @@ begin
   join public.sensors sensor on sensor.id = event.sensor_id
   where event.machine_id = p_machine_id
     and event.event_type = 'pulse'
+    and event.stale is not true
     and event.recorded_at >= p_started_at
     and event.recorded_at < p_ended_at
     and sensor.sensor_code in ('S-01', 'S-02', 'S-04', 'S-05')
@@ -2564,6 +2600,7 @@ as $$
     join public.sensors sensor on sensor.id = event.sensor_id
     where event.machine_id = p_machine_id
       and event.event_type = 'pulse'
+      and event.stale is not true
       and sensor.sensor_code in ('S-01', 'S-02', 'S-04', 'S-05')
 
     union all
@@ -2764,7 +2801,21 @@ begin
       message = 'Required database dependencies are missing.';
   end if;
 
-  return 27;
+  if not exists (
+    select 1 from pg_attribute
+    where attrelid = 'public.sensor_events'::regclass
+      and attname = 'stale' and atttypid = 'boolean'::regtype and not attisdropped
+  ) or not exists (
+    select 1 from pg_trigger
+    where tgrelid = 'public.sensor_events'::regclass
+      and tgname = 'classify_sensor_event_staleness'
+      and tgfoid = to_regprocedure('public.classify_sensor_event_staleness()')
+      and tgenabled in ('O', 'A')
+  ) then
+    raise exception using errcode = '55000', message = 'Required database dependencies are missing.';
+  end if;
+
+  return 28;
 end;
 $$;
 
