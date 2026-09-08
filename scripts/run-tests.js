@@ -116,33 +116,47 @@ const suites = Object.freeze({
     expected: 'Liveness is 200; readiness is 200 or safe 503; shutdown logs start and completion.',
     manual: true,
   },
-  'simulate-once': {
-    name: 'Simulate one ESP32 event batch',
-    description: 'Sends one simulated sensor-event batch to configured backend.',
-    expected: 'Simulator completes one batch; configured backend may create event, downtime, and alert records.',
+  'simulate-demo-once': {
+    name: 'Simulate random ESP32 telemetry batch',
+    description: 'Writes one random demonstration batch to the configured backend; it is not a downtime-rule test.',
+    expected: 'Simulator completes one batch and may leave process faults for later recovery.',
     simulation: true,
-    commands: [npm('run', 'iot:simulate:once')],
+    commands: [npm('run', 'iot:simulate:demo-once')],
   },
-  'simulate-deterministic': {
-    name: 'Simulate one deterministic ESP32 event batch',
-    description: 'Sends one repeatable sensor-event sequence to configured backend.',
-    expected: 'Simulator completes repeatable batch; configured backend may create event, downtime, and alert records.',
+  'simulate-recover-active-faults': {
+    name: 'Recover active S-01 through S-04 simulator faults',
+    description: 'Reads live state and sends recovered/active events only for currently faulted S-01 through S-04 sensors.',
+    expected: 'Faulted target sensors recover; the command makes no writes when none are faulted.',
     simulation: true,
-    commands: [npm('run', 'iot:simulate:once', '--', '--deterministic')],
+    commands: [npm('run', 'iot:simulate:recover-active-faults')],
   },
-  'simulate-verify': {
-    name: 'Verify ESP32 event simulation',
-    description: 'Runs configured S-04 downtime lifecycle verification against backend.',
-    expected: 'Verification completes successfully and may create lifecycle records in configured backend.',
+  'simulate-process-isolation': {
+    name: 'Verify S-01 process-isolation lifecycle',
+    description: 'Writes one S-01 process fault and its accepted recovery.',
+    expected: 'S-01 remains process-level, then recovers with no downtime record.',
     simulation: true,
-    commands: [npm('run', 'iot:simulate:verify')],
+    commands: [npm('run', 'iot:simulate:process-isolation')],
   },
-  simulate: {
+  'simulate-grouped-lifecycle': {
+    name: 'Verify grouped S-01/S-04/S-02 downtime lifecycle',
+    description: 'Writes sequential process faults, then recoveries, to verify S-03-owned group downtime.',
+    expected: 'First two remain Running, third opens S-03 downtime, and all recoveries are checked.',
+    simulation: true,
+    commands: [npm('run', 'iot:simulate:verify-grouped-lifecycle')],
+  },
+  'simulate-direct-s03-lifecycle': {
+    name: 'Verify direct S-03 downtime lifecycle',
+    description: 'Writes one S-03 fault, duplicate retry, stale recovery, and final recovery.',
+    expected: 'S-03 opens downtime directly; final recovery resolves it and restores Running.',
+    simulation: true,
+    commands: [npm('run', 'iot:simulate:verify-direct-s03-lifecycle')],
+  },
+  'simulate-demo-continuous': {
     name: 'Run continuous ESP32 event simulation',
     description: 'Continuously sends simulated sensor events until Ctrl+C.',
     expected: 'Simulator continues until cancelled; configured backend may create event, downtime, and alert records.',
     simulation: true,
-    commands: [npm('run', 'iot:simulate')],
+    commands: [npm('run', 'iot:simulate:demo-continuous')],
   },
   'heartbeat-once': {
     name: 'Simulate one heartbeat batch',
@@ -163,7 +177,7 @@ const suites = Object.freeze({
 const menu = Object.freeze([
   'all', 'backend', 'frontend', 'docs', 'deadlines', 'health',
   'shutdown', 'phase3', 'phase4', 'integration', 'hosted', 'manual',
-  'simulate-once', 'simulate-deterministic', 'simulate-verify', 'simulate',
+  'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
   'heartbeat-once', 'heartbeat',
 ])
 
@@ -178,7 +192,7 @@ const categories = Object.freeze({
   },
   simulations: {
     name: 'Simulations',
-    suites: ['simulate-once', 'simulate-deterministic', 'simulate-verify', 'simulate', 'heartbeat-once', 'heartbeat'],
+    suites: ['simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous', 'heartbeat-once', 'heartbeat'],
   },
 })
 
@@ -392,7 +406,7 @@ function selfTest() {
   assert.throws(() => parseArgs(['--suite', 'health', '--suite=docs']), /only be provided once/)
   assert.equal(suiteIdFromSelection('6'), 'health')
   assert.equal(suiteIdFromSelection('health'), 'health')
-  assert.equal(suiteIdFromSelection('1', categories.simulations.suites), 'simulate-once')
+  assert.equal(suiteIdFromSelection('1', categories.simulations.suites), 'simulate-demo-once')
   assert.equal(suiteIdFromSelection('health', categories.simulations.suites), undefined)
   assert.equal(suiteIdFromSelection('__proto__'), undefined)
   assert.equal(suiteIdFromSelection('health & whoami'), undefined)
@@ -401,9 +415,11 @@ function selfTest() {
   assert.equal(expandedCommands('all').length, 3)
   assert.equal(expandedCommands('all').some((command) => command.env?.RUN_SUPABASE_INTEGRATION_TESTS), false)
   assert.equal(expandedCommands('hosted')[0].env.RUN_SUPABASE_INTEGRATION_TESTS, 'true')
-  assert.deepEqual(expandedCommands('simulate')[0].args, ['run', 'iot:simulate'])
-  assert.deepEqual(expandedCommands('simulate-deterministic')[0].args, ['run', 'iot:simulate:once', '--', '--deterministic'])
-  assert.deepEqual(expandedCommands('simulate-verify')[0].args, ['run', 'iot:simulate:verify'])
+  assert.deepEqual(expandedCommands('simulate-demo-continuous')[0].args, ['run', 'iot:simulate:demo-continuous'])
+  assert.deepEqual(expandedCommands('simulate-recover-active-faults')[0].args, ['run', 'iot:simulate:recover-active-faults'])
+  assert.deepEqual(expandedCommands('simulate-process-isolation')[0].args, ['run', 'iot:simulate:process-isolation'])
+  assert.deepEqual(expandedCommands('simulate-grouped-lifecycle')[0].args, ['run', 'iot:simulate:verify-grouped-lifecycle'])
+  assert.deepEqual(expandedCommands('simulate-direct-s03-lifecycle')[0].args, ['run', 'iot:simulate:verify-direct-s03-lifecycle'])
   assert.deepEqual(expandedCommands('heartbeat')[0].args, ['run', 'iot:heartbeat'])
   for (const id of menu) {
     assert.ok(hasSuite(id), `Missing suite: ${id}`)
