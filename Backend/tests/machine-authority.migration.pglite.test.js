@@ -17,7 +17,7 @@ async function database(t) {
   await db.query(`insert into users(name, username, password_hash, role_id)
     select 'Authority Admin', 'authority-admin', 'hash', id from roles where name='Admin'`)
   for (const name of fs.readdirSync(path.join(root, 'migrations')).sort()) {
-    if (/^(029|030|031|032|033|034|035|036|037|038|039|040)_.*\.sql$/.test(name)) {
+    if (/^(029|030|031|032|033|034|035|036|037|038|039|040|041)_.*\.sql$/.test(name)) {
       await db.exec(fs.readFileSync(path.join(root, 'migrations', name), 'utf8'))
     }
   }
@@ -98,6 +98,26 @@ test('S-03 idle keeps the machine Idle despite active process and output sensors
   }
   await event(db, 'S-03', 'pulse', '2026-08-21T00:00:03Z')
   assert.equal(await machine(db), 'Running')
+})
+
+test('diagnostic fault and recovery cannot bypass an existing watchdog recovery window', async (t) => {
+  const db = await database(t)
+  await evaluate(db, '2026-08-21T00:01:00Z')
+  await event(db, 'S-03', 'fault', '2026-08-21T00:01:01Z')
+  await event(db, 'S-03', 'recovered', '2026-08-21T00:01:02Z')
+  assert.equal(await machine(db), 'Downtime')
+  const faultId = randomUUID()
+  await event(db, 'S-03', 'fault', '2026-08-21T00:01:03Z', faultId)
+  const state = async () => (await db.query(`select w.* from sensor_watchdog_state w
+    join sensors s on s.id=w.sensor_id where sensor_code='S-03'`)).rows[0]
+  assert.equal((await state()).recovery_observation_count, 0)
+  await event(db, 'S-03', 'recovered', '2026-08-21T00:01:04Z')
+  const before = await state()
+  assert.equal(before.recovery_observation_count, 1)
+  assert.equal((await event(db, 'S-03', 'fault', '2026-08-21T00:01:03Z', faultId)).duplicate, true)
+  assert.equal((await event(db, 'S-03', 'recovered', '2026-08-21T00:01:02Z')).stale, true)
+  assert.deepEqual(await state(), before)
+  assert.equal((await db.query("select count(*)::int n from downtime_events where status='Open'")).rows[0].n, 1)
 })
 
 test('S-03 short absence is Idle and confirmed absence opens one interval at the crossing', async (t) => {
