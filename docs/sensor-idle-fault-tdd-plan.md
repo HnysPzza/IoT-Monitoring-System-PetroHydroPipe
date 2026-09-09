@@ -133,7 +133,7 @@ node --test --test-concurrency=1 tests/process-absence.migration.pglite.test.js 
 
 ### 4. S-03 authority and machine state
 
-Status: completed and verified locally on 2026-09-10. Step 5 has not started.
+Status: completed and verified locally on 2026-09-10. Step 5 progress is recorded below.
 
 - Test short and threshold-length S-03 stops independently of process faults.
 - Fault S-01, then S-04, then S-02: only the last unresolved fault opens the S-03 interval.
@@ -163,11 +163,35 @@ node --test --test-concurrency=1 tests/machine-authority.migration.pglite.test.j
 
 ### 5. Breaks, offline and recovery
 
+Status: completed and verified locally on 2026-09-10. Step 6 is not started.
+
+Scope clarification: the proposed 10-minute trigger minimum was withdrawn by the user. Existing trigger, recovery, heartbeat-cadence and break limits remain unchanged. No minimum-threshold migration was created.
+
 - Test exact break start/end, grace end, settings boundaries and a break during an existing incident.
 - Reproduce long offline periods followed by fresh heartbeats without activity. Start a valid observation window without treating offline time as measured absence.
 - Test watchdog recovery with two ordered observations and the full configured eligible recovery duration; duplicates and stale observations cannot count.
 - Test explicit recovery independently so a diagnostic recovery does not accidentally bypass an unrelated watchdog cause.
 - Gate: no false reconnect incident and no automatic clearing of existing faults merely because monitoring pauses.
+
+Implemented fixes:
+
+1. `039_reconnect_absence_baseline.sql`: a fresh boot or confirmed offline-to-online transition starts the absence window at server receipt time. Ordinary heartbeats, duplicates and stale packets do not restart it. Existing watchdog incidents retain their baseline and recovery requirement. Regression first failed because the reconnect baseline remained null.
+2. `040_break_resume_baseline.sql`: at the exact end of break grace, an empty eligible window starts at evaluation time instead of falling back to activity from before the break. Regression first failed with `grace` instead of `healthy` at 10:25:00. Break and offline suspension preserve open incidents and reset incomplete recovery confirmation.
+3. `041_preserve_watchdog_recovery_requirement.sql`: a diagnostic fault cannot overwrite an unresolved watchdog fault's recovery requirement. A new diagnostic fault resets prior recovery evidence; duplicate or stale events cannot reset or advance it. Regression first failed because one recovery event changed the machine to Running.
+
+The TDD/debugger pass reproduced each failure before its fix. The bug-hunter follow-up checked repeated packets, fresh boots, fault preservation, interrupted recovery, and the shared ingestion path. Existing tests continue to cover two observations plus the full configured recovery duration, explicit-only recovery, overlapping grouped/direct causes and atomic rollback.
+
+Verification: the combined run passed **100 tests, zero failures and zero skips**: 32 database lifecycle tests and 68 settings, ingestion, watchdog-service and simulator tests. The three new regression scenarios also passed individually after their expected RED failures. Existing settings validation, including the guard against settings updates during active watchdog enforcement, remains unchanged.
+
+Run from `Backend`:
+
+```powershell
+node --test --test-concurrency=1 tests/machine-authority.migration.pglite.test.js tests/process-absence.migration.pglite.test.js tests/sensor-timing-baseline.migration.pglite.test.js tests/sensor-observation-contract.migration.pglite.test.js tests/settings.validation.test.js tests/settings.service.test.js tests/iot.service.test.js tests/watchdog.service.test.js tests/sensor-event-simulator.test.js
+```
+
+Scoped implementation commits: `73d1e56` (reconnect), `1e75f48` (break boundary), and `9f4976d` (diagnostic recovery). The regression fixtures now load the complete draft chain through 041; unrelated working-tree changes were preserved.
+
+Deployment boundary: migrations 039-041 are local drafts following 036-038. No hosted database was migrated, no hardware or browser verification was performed, and readiness-version integration remains in the release step. Local PGlite tests do not establish real PostgreSQL concurrency behavior.
 
 ### 6. All consumer consistency
 
