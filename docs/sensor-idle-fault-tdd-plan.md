@@ -133,12 +133,33 @@ node --test --test-concurrency=1 tests/process-absence.migration.pglite.test.js 
 
 ### 4. S-03 authority and machine state
 
+Status: completed and verified locally on 2026-09-10. Step 5 has not started.
+
 - Test short and threshold-length S-03 stops independently of process faults.
 - Fault S-01, then S-04, then S-02: only the last unresolved fault opens the S-03 interval.
 - Test overlapping direct/group causes, first process recovery, continued direct fault, duplicate transitions and stale recovery.
 - Test active S-05 cannot turn an idle or down machine into Running or recover S-03.
 - Preserve physical S-03 input separately from ownership of grouped downtime.
 - Gate: one interval, correct cause metadata and correct machine state throughout; rollback leaves no partial alert or interval.
+
+Step 4 behavior and findings:
+
+- Machine Downtime still means S-03 is faulted or all three process sensors remain faulted. Otherwise machine Running now requires S-03 to be Active; an active S-01, S-02, S-04 or S-05 cannot make an idle S-03 machine Running.
+- S-03 watchdog grace persists Inactive, which the existing API presents as Idle. At its configured threshold, direct downtime opens at the threshold crossing. Returning activity refreshes S-03 watchdog evidence; confirmed healthy evidence restores Active. Communication-only heartbeats cannot restart an established absence timer.
+- Sequential process faults open one S-03-owned interval when the third fault is confirmed. Group ownership does not turn a healthy physical S-03 input into Fault. Grouped confirmation retains its existing confirmation timestamp; this step does not reconstruct historical physical stop times from delayed process packets.
+- Direct and grouped causes can overlap. Both recovery orders preserve the same interval until neither cause remains. Original contributing sensors stay in metadata while current contributors track the remaining cause. Duplicate faults, stale recovery and S-05 output activity cannot resolve the interval.
+- A watchdog-owned S-03 fault still needs confirmed recovery observations and the configured recovery duration. One pulse does not clear it. Break/reconnect policy changes remain Step 5.
+- Four failing checks established the fixes: other active sensors incorrectly kept the machine Running; S-03 grace did not persist Idle; fresh S-03 pulses did not refresh the activity timer; and communication-only heartbeats could postpone S-03 timeout indefinitely. Debugger tracing located these in the existing reconciliation, ingestion and watchdog functions. Draft migration `038_s03_machine_authority.sql` updates those functions without adding another state authority.
+- Scoped implementation commits: `9eaf54f` corrects S-03 machine status and activity handling; `40b8546` preserves its absence baseline and adds authority/regression coverage. Existing whitespace-only edits in migration 037 were preserved and excluded from Step 4 commits. Migrations 036–038 remain local drafts pending readiness/deployment integration in Step 8; no hosted migration was applied.
+- Bug-hunter checks cover both overlapping-cause recovery orders, unchanged interval identity, original/current cause metadata, stale and duplicate events, S-05 isolation, audit-failure rollback, migration reapplication and RPC access restrictions. Real PostgreSQL concurrency, hosted state and browser/hardware behavior are not proven by the isolated PGlite tests and remain release verification work.
+
+Final verification: 28 database tests passed (9 Step 4 authority tests and 19 earlier-step regressions), plus 50 IoT service, watchdog service/runner and simulator checks. No failures or skipped tests remained. The failing tests were observed before each production correction. Staged whitespace checks passed before the implementation commits; no push was made.
+
+Run Step 4 and earlier-step database regressions from Backend:
+
+```powershell
+node --test --test-concurrency=1 tests/machine-authority.migration.pglite.test.js tests/process-absence.migration.pglite.test.js tests/sensor-timing-baseline.migration.pglite.test.js tests/sensor-observation-contract.migration.pglite.test.js
+```
 
 ### 5. Breaks, offline and recovery
 
