@@ -64,12 +64,33 @@ node --test tests/sensor-timing-baseline.migration.pglite.test.js
 
 ### 2. Observation contract
 
+Status: completed locally on 2026-09-09; Step 3 has not started.
+
 - Trace ESP32 payload validation through `iot.service.js`, public ingestion RPC, watchdog state and reconciliation.
 - Separate heartbeat connectivity, activity/material presence, no-activity observation and explicit diagnostic fault.
 - Preserve legacy wire compatibility where needed, but label no-pulse records as observations rather than confirmed downtime.
 - Test invalid pairs, authentication failure, duplicate IDs, stale timestamps and retries; none may incorrectly advance activity or recovery.
 - Keep S-05 output counting outside process fault and recovery authority.
 - Gate: contract tests prove raw event labels do not imply persisted downtime.
+
+Step 2 contract and results:
+
+- Events enter `iot.routes.js`, pass `sensorEventSchema`, authenticate through device middleware, and reach `iot.service.js`. The service calls `ingest_iot_sensor_event` once and publishes committed transition descriptors. Migration 035 dispatches no-pulse observations to `ingest_iot_watchdog_observation`; grouped operational events reach the existing atomic reconciliation path.
+- Valid pairs remain `pulse/active`, `idle/idle`, `downtime/no_pulse`, `fault/fault` and `recovered/active`. The legacy wire name `downtime` with `no_pulse` records an observation; it does not itself confirm a downtime interval. All 20 event/signal combinations are checked, including rejection of the 15 invalid combinations.
+- Heartbeat arrival establishes communication evidence. `activityObserved: false` does not establish material presence, movement or a fault. `activityObserved: true` means the device actually observed its configured activity; the boolean does not distinguish presence from movement. Hardware must supply that measurement honestly. No new material sensor or payload field is implied by this change.
+- Ordinary missing-material observations must use the absence path, rather than explicit `fault/fault`, if they require the configured waiting period. Explicit faults retain the existing immediate fault path. Classification of absence as Idle or timed Fault belongs to Step 3.
+- Confirmed defect: event timestamps rejected `2026-09-09T08:00:00+08:00`, while heartbeat validation accepted offsets. The new test failed before the fix. Event validation now accepts explicit timezone offsets and UTC `Z`, retaining rejection of timestamps without a timezone. No timestamp conversion or client clock authority changed.
+- Full migration-chain tests through draft 036 exercise all five sensors: no-pulse creates no alerts or downtime; exact retries and stale recovery packets leave watchdog runtime unchanged; conflicting reuse of an event ID is rejected. A heartbeat without activity updates heartbeat evidence without advancing activity or recovery observations.
+- Verification: 35 validation, heartbeat API/service, IoT service and historical runtime tests; 2 new full-chain observation tests; 54 API and simulator tests. Total: 91 passed, 0 failed, 0 skipped. Expected injected database errors in negative API tests verify safe responses and are not test failures.
+- Bug-hunter review covered invalid pairs, stale/replayed input, event identity conflicts, missing/wrong device credentials, observation publication and S-05 isolation. Debugger isolated the offset mismatch to validation. No additional production defect was reproduced in these checks; this is not physical-device or hosted validation.
+- Commits: `3d32af5` fixes validation with regression tests; `55fea66` adds database observation contract tests. Prior unrelated work remains outside these commits.
+- No additional migration was needed for Step 2. Draft 036 remains subject to Step 8 release integration. Step 3 requires separate authorization.
+
+Run the Step 2 checks from Backend:
+
+```powershell
+node --test tests/iot.validation.test.js tests/heartbeat.api.test.js tests/heartbeat.service.test.js tests/iot.service.test.js tests/watchdog-runtime.migration.pglite.test.js tests/sensor-observation-contract.migration.pglite.test.js tests/api.test.js tests/sensor-event-simulator.test.js
+```
 
 ### 3. Process absence and fault
 
