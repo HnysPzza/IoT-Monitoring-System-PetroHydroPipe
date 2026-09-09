@@ -17,7 +17,7 @@ async function database(t) {
   await db.query(`insert into users(name, username, password_hash, role_id)
     select 'Observation Admin', 'observation-admin', 'hash', id from roles where name='Admin'`)
   for (const name of fs.readdirSync(path.join(root, 'migrations')).sort()) {
-    if (/^(029|030|031|032|033|034|035|036|037|038|039)_.*\.sql$/.test(name)) {
+    if (/^(029|030|031|032|033|034|035|036|037|038|039|040|041)_.*\.sql$/.test(name)) {
       await db.exec(fs.readFileSync(path.join(root, 'migrations', name), 'utf8'))
     }
   }
