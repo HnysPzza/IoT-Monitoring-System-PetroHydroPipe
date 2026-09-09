@@ -1,0 +1,147 @@
+# Sensor idle/fault implementation and compatibility plan
+
+Date: 2026-09-09. Status: plan and local compatibility review; not a completed rollout.
+
+## Intended rules
+
+- S-01, S-02 and S-04 have independent process states. Missing material below the configured threshold is Idle; sustained absence reaching the threshold is a process Fault.
+- A process Fault does not prove the physical sensor is broken. Diagnostic faults must remain distinguishable from missing material.
+- One or two unresolved process faults do not create machine downtime. All three unresolved faults create one S-03-owned downtime interval, even if they started at different times.
+- S-03 movement absence below its threshold is Idle; confirmed absence reaching its threshold creates direct S-03 downtime.
+- Direct and grouped causes may overlap. Close the interval only when the direct cause is clear and the three-process group is no longer complete.
+- Idle, a planned break, loss of communications, or S-03 stopping must not clear an existing fault.
+- Scheduled breaks and configured grace exclude eligible detection time. Offline is unknown communication state, not proof of physical stoppage.
+- No separate material-change exemption is included: an S-03 stop exceeding its eligible threshold can still create downtime. A process timeout alone is only a process fault.
+
+## Audit compared with the plan
+
+| Item | Existing behavior / evidence | Assessment and required action |
+| --- | --- | --- |
+| 1. Idle presentation | `livePresentation.js` maps fresh watchdog grace to Idle; operational sensor state and monitoring state are separate. | Trace every API/UI consumer before changing persistence. Add cross-module assertions for the same grace snapshot; do not fix only a badge. |
+| 2. Presence versus movement | Activity timestamps drive absence detection. | Contract gap: define whether each ESP32 reports material presence or movement. Backend tests cannot prove the physical measurement is suitable. |
+| 3. Explicit fault | Grouped ingestion accepts explicit faults independently of the absence timer. | Intentional diagnostic path, not automatically a bug. Never encode ordinary material absence as explicit fault if it must receive a grace period. |
+| 4. Recovery | Explicit and watchdog faults have different recovery paths. | Preserve current behavior until tests define which sources require confirmed observations. Do not silently clear timed faults on one generic pulse. |
+| 5. Break timing | Watchdog suspends nonincident detection and clears its baseline outside eligible time. | Test restart versus accumulated eligible-time policy explicitly. Preserve already-open incidents. |
+| 6. Reconnect timing | Migration 035 can derive a resumed baseline from the previous suspended evaluation; fallback uses old activity/heartbeat timestamps. | Risk requiring deterministic reproduction: offline time must not cause an immediate new absence fault on reconnect. Separate this from break resumption. |
+| 7. Machine Running | Migration 035 reconciliation marks a non-downtime machine Running when any sensor is Active. | Confirmed implementation difference from an S-03-motion-based machine status. Add tests where S-05 remains active but S-03 is idle before changing this rule. |
+| 8. Atomic concurrency | Grouped decisions live in SQL RPCs. | Test duplicate and stale events locally; use real PostgreSQL concurrent sessions for lock ordering, races and rollback. Sequential PGlite success is not concurrency proof. |
+| 9. Menu Back | Test submenu had ten entries while 9 was reserved for Back. | Fixed in this pass: options after 8 use 10 and 11. Regression failed before the fix and runner self-test passes afterward. |
+
+These are a mixture of confirmed differences, contract decisions and unverified risks, not nine proven backend defects.
+
+## Execution order and TDD gates
+
+Complete each numbered gate before moving to the next implementation. For each new invariant: write the failing behavior test, verify the intended failure, make the smallest responsible change, rerun the test and adjacent regressions. Existing passing behavior needs preservation tests, not artificial failures.
+
+### 1. Baseline and timing contract
+
+Status: completed locally on 2026-09-09; Step 2 has not started.
+
+- Record checkout changes, migration chain, readiness version and current configuration without changing hosted data.
+- Define threshold comparison as elapsed eligible time greater than or equal to the configured threshold.
+- Record interval start at threshold crossing, not at the start of the permitted wait.
+- Test immediately before, exactly at and immediately after the threshold, with deterministic timestamps.
+- Gate: current grouped/direct lifecycle regressions pass and unresolved policy differences are recorded.
+
+Step 1 results:
+
+- Baseline branch: `Script`, starting commit `0b03e0d`. The checkout already contained extensive unrelated modifications and untracked migrations 032–035. Those changes are excluded from the Step 1 commits; a clean checkout of these commits alone still needs that existing migration work.
+- Backend readiness currently requires version 35. Repository default `WATCHDOG_MODE` is `disabled`; this is not proof of the running server's mode or hosted settings. Local tests explicitly use `enforce` and `observe`, a 60-second trigger, a 30-second recovery threshold and fresh communication fixtures. Hosted configuration and deployment were not inspected.
+- Timing contract: a direct S-03 absence qualifies at exactly 60 eligible seconds for the test configuration. At 59 seconds it remains in grace; repeated evaluations after qualification must retain one interval. The interval starts at the eligible threshold crossing even if evaluation runs late.
+- Confirmed bug: with last activity at 00:00 and first evaluation at 00:02, the grouped watchdog wrapper passed 00:02 to reconciliation despite the 60-second crossing at 00:01. The new regression failed with actual `00:02:00` versus expected `00:01:00`.
+- Fix: additive draft migration `036_preserve_direct_watchdog_threshold_time.sql` derives the direct S-03 crossing from the existing baseline and configured threshold before reconciliation. Explicit faults, grouped confirmation and recovery keep their existing timestamps. Applied migrations were not rewritten.
+- Tests: the five new timing tests pass, including 59/60/61-second boundaries, duplicate evaluation, delayed evaluation, observe-only behavior, migration reapplication, explicit direct/grouped recovery and RPC execution permissions. The existing grouped-downtime, sensor-audit and watchdog-transition files passed 48 tests against their existing migration fixtures. Those 48 tests do not independently prove migration 036; the five new tests load 036.
+- Bug-hunter review checked duplicate intervals, explicit-fault timestamp preservation, group ownership, recovery and permissions. Debugger traced both an initial missing-Admin fixture error and the real timestamp defect. The fixture error was corrected before assessing production behavior.
+- Observation decision retained for Step 2: heartbeat proves connectivity; activity must describe the actual sensor measurement. Material presence cannot be inferred from a heartbeat or an absence of movement alone. Payload design and physical verification remain pending.
+- Pending later gates: grouped delayed-confirmation timing, break/reconnect policy, cross-module Idle presentation and machine Running authority. Break tests currently require pre-trigger timer reset. Do not infer these are fixed by the direct S-03 correction.
+- Migration 036 is a local draft, not a deployment instruction. Step 8 must integrate the readiness contract, full migration test chain and database deployment documentation before release. No hosted migration was run.
+
+Run Step 1 tests from Backend:
+
+```powershell
+node --test tests/sensor-timing-baseline.migration.pglite.test.js
+```
+
+### 2. Observation contract
+
+- Trace ESP32 payload validation through `iot.service.js`, public ingestion RPC, watchdog state and reconciliation.
+- Separate heartbeat connectivity, activity/material presence, no-activity observation and explicit diagnostic fault.
+- Preserve legacy wire compatibility where needed, but label no-pulse records as observations rather than confirmed downtime.
+- Test invalid pairs, authentication failure, duplicate IDs, stale timestamps and retries; none may incorrectly advance activity or recovery.
+- Keep S-05 output counting outside process fault and recovery authority.
+- Gate: contract tests prove raw event labels do not imply persisted downtime.
+
+### 3. Process absence and fault
+
+- Test S-01, S-02 and S-04 individually with fresh communications and configured thresholds.
+- Below threshold: Idle, no fault alert and no downtime. At threshold: one process fault alert; still no downtime for one or two faults.
+- Repeated observations must not create duplicate alerts or reset the wait indefinitely.
+- Test that an existing fault survives Idle, S-03 stopping and unrelated sensor activity.
+- Fix classification in the existing atomic authority; do not create a second frontend/backend rule engine.
+- Gate: all three process cases and negative downtime assertions pass.
+
+### 4. S-03 authority and machine state
+
+- Test short and threshold-length S-03 stops independently of process faults.
+- Fault S-01, then S-04, then S-02: only the last unresolved fault opens the S-03 interval.
+- Test overlapping direct/group causes, first process recovery, continued direct fault, duplicate transitions and stale recovery.
+- Test active S-05 cannot turn an idle or down machine into Running or recover S-03.
+- Preserve physical S-03 input separately from ownership of grouped downtime.
+- Gate: one interval, correct cause metadata and correct machine state throughout; rollback leaves no partial alert or interval.
+
+### 5. Breaks, offline and recovery
+
+- Test exact break start/end, grace end, settings boundaries and a break during an existing incident.
+- Reproduce long offline periods followed by fresh heartbeats without activity. Start a valid observation window without treating offline time as measured absence.
+- Test watchdog recovery with two ordered observations and the full configured eligible recovery duration; duplicates and stale observations cannot count.
+- Test explicit recovery independently so a diagnostic recovery does not accidentally bypass an unrelated watchdog cause.
+- Gate: no false reconnect incident and no automatic clearing of existing faults merely because monitoring pauses.
+
+### 6. All consumer consistency
+
+- Use identical fixtures across Live Feed, Machines, Overview, notifications, Audit, Downtime, Analytics and Reports.
+- Assert Idle, process Fault, active S-03 downtime, recovered downtime and Offline labels separately.
+- Process-only faults must not increase downtime totals. Grouped downtime must appear once under S-03.
+- Verify SSE transitions, reconnect/refetch and historical records; keep raw event details available without misleading summaries.
+- Gate: frontend tests and backend read-model tests agree on the same state; browser proof is recorded separately.
+
+### 7. Deterministic simulation
+
+- Provide simple scenario names: short material pause, material fault, three process faults, short machine stop, machine downtime, planned break, offline/reconnect and recover faults.
+- Reuse the existing centralized runner and simulator. Keep 9 reserved for Back and every suite selectable.
+- Assert actual API state, alerts and downtime results rather than printing an expected success message.
+- Use controlled clocks in isolated tests; live simulations must honor real configured timing, check baseline state and avoid clearing unrelated incidents.
+- Document authentication and data impact; never store a bearer token in source or output.
+- Gate: simulator contract tests pass, menu self-test passes, and live scenarios are run only against an explicitly selected safe baseline.
+
+### 8. Migration and release verification
+
+- Inspect migration 035 deployment before choosing the next additive migration number. Do not rewrite applied migrations.
+- Keep readiness expectations, SQL permissions, contract tests and database documentation aligned.
+- Run focused tests after each issue, then full relevant backend/frontend suites and frontend build.
+- Validate migration and concurrency in staging PostgreSQL; separately validate browser behavior and physical ESP32 measurements.
+- Preserve historical incidents and unrelated faults. Do not use cleanup scripts to hide mismatches.
+- Gate: report local, staging, browser and hardware results separately; failed or unrun gates remain explicit.
+
+## Local verification commands
+
+From repository root:
+
+```powershell
+node scripts/run-tests.js --self-test
+```
+
+From Backend (isolated PGlite and simulator contract tests, not hosted simulation):
+
+```powershell
+node --test tests/grouped-downtime.migration.pglite.test.js tests/sensor-audit.migration.pglite.test.js tests/watchdog-transition.migration.pglite.test.js tests/sensor-event-simulator.test.js
+```
+
+## This pass
+
+- Saved the plan and mapped audit concerns to implementation gates.
+- Fixed the confirmed centralized submenu collision using a failing regression first; self-test passes.
+- Ran the four focused test files above: 71 passed, 0 failed, 0 skipped. They cover existing grouped/direct ownership, watchdog recovery, break handling, rollback and simulator contracts; they do not implement or prove every proposed rule.
+- Existing break tests explicitly require pre-trigger accumulation to reset during break/post-break grace. Preserve that behavior unless an accumulated-time policy is deliberately approved and tested.
+- `git diff --check` passed; Git reported line-ending warnings only.
+- Sensor-policy changes, hosted migrations, browser validation and hardware verification are not claimed complete by this document.
