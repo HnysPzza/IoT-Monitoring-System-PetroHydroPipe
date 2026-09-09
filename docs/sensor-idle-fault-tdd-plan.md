@@ -94,12 +94,42 @@ node --test tests/iot.validation.test.js tests/heartbeat.api.test.js tests/heart
 
 ### 3. Process absence and fault
 
+Status: completed and verified locally on 2026-09-09. Step 4 has not started.
+
 - Test S-01, S-02 and S-04 individually with fresh communications and configured thresholds.
 - Below threshold: Idle, no fault alert and no downtime. At threshold: one process fault alert; still no downtime for one or two faults.
 - Repeated observations must not create duplicate alerts or reset the wait indefinitely.
 - Test that an existing fault survives Idle, S-03 stopping and unrelated sensor activity.
 - Fix classification in the existing atomic authority; do not create a second frontend/backend rule engine.
 - Gate: all three process cases and negative downtime assertions pass.
+
+Step 3 behavior:
+
+- With watchdog enforcement, enabled absence detection and fresh communication, S-01/S-02/S-04 persist `Inactive` during watchdog grace; the existing live API maps that state to Idle. At the configured threshold they become `Fault` with source `absence_watchdog` and a Warning process alert.
+- Each sensor uses its own configured threshold. One or two unresolved process faults do not create downtime. The existing three-fault S-03 ownership rule is preserved as a regression check; Step 4 machine-authority changes are not included.
+- Fresh accepted process activity refreshes the server-received activity timestamp. Duplicate and stale activity cannot refresh it. Ordinary activity returning during grace restores Active; a watchdog-owned fault still requires the existing confirmed recovery flow.
+- Communication-only heartbeats cannot restart an established process absence timer. The evaluator retains the existing baseline unless newer activity supersedes it. Existing break/offline suspension behavior is retained for the later Step 5 review.
+- Existing Fault states are not downgraded to Idle by grace, idle packets, S-03 stopping or unrelated sensor activity. Observe and disabled modes retain their existing nonmutating operational behavior.
+- These classifications describe observed process inactivity. They do not prove a sensor is physically broken or identify a material-change reason. ESP32 measurement meaning remains the Step 2 contract.
+
+Root causes and fixes, using tests before implementation:
+
+1. Grace left process sensors Active. All three boundary tests failed with `Active` instead of `Inactive`. The atomic watchdog wrapper now persists process Idle during grace, preserving existing faults.
+2. Ordinary process pulses changed sensor status but did not refresh watchdog activity evidence. A returning-activity test failed. The existing grouped ingestion transaction now updates that evidence after duplicate and stale guards.
+3. A healthy watchdog evaluation could leave the newly introduced grace Idle state stuck. A test failed with `Inactive` instead of `Active`. The wrapper restores Active when healthy activity evidence supports it, without bypassing fault recovery.
+4. Before any activity had been received, a newer heartbeat restarted the timer. A test failed to produce Fault at the threshold. Process evaluation now uses the established absence baseline or newer actual activity instead of continually restarting from heartbeat time.
+
+Implementation resides in draft migration `037_process_absence_idle.sql`, following 036. It replaces the existing RPC function definitions and adds no second classification service or new dependency. Scoped commits: `cbfdb47` persists process grace Idle; `d2f1c01` fixes activity evidence and timer continuity with regression tests. Applied migrations and unrelated checkout work were not included in these commits.
+
+Final verification: 19 database tests passed against the completed local changes (12 Step 3 process tests, 5 timing tests and 2 observation tests). The preceding broader run also passed 50 IoT service, watchdog service/runner and simulator checks. No failures or skipped tests remain in those completed runs. Bug-hunter review and debugger tracing produced the four findings above; each failing regression was observed before its correction. `git diff --cached --check` passed before the implementation commits.
+
+Validation includes process thresholds, repeated observations, duplicate/stale activity, one-pulse recovery rejection, fault preservation, audit-failure rollback, migration reapplication and RPC access. Step 1 timing and Step 2 observation tests now load migration 037 as well. Browser, hosted database and physical-device verification remain pending; readiness and rollout integration remain Step 8. Do not deploy drafts 036/037 from this completion note.
+
+Run the Step 3 database checks from Backend:
+
+```powershell
+node --test --test-concurrency=1 tests/process-absence.migration.pglite.test.js tests/sensor-timing-baseline.migration.pglite.test.js tests/sensor-observation-contract.migration.pglite.test.js
+```
 
 ### 4. S-03 authority and machine state
 
