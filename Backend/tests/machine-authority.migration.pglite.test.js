@@ -17,7 +17,7 @@ async function database(t) {
   await db.query(`insert into users(name, username, password_hash, role_id)
     select 'Authority Admin', 'authority-admin', 'hash', id from roles where name='Admin'`)
   for (const name of fs.readdirSync(path.join(root, 'migrations')).sort()) {
-    if (/^(029|030|031|032|033|034|035|036|037|038)_.*\.sql$/.test(name)) {
+    if (/^(029|030|031|032|033|034|035|036|037|038|039|040)_.*\.sql$/.test(name)) {
       await db.exec(fs.readFileSync(path.join(root, 'migrations', name), 'utf8'))
     }
   }
@@ -46,6 +46,47 @@ async function evaluate(db, at) {
 async function machine(db) {
   return (await db.query('select status from machines')).rows[0].status
 }
+
+test('break start, break end and grace end preserve exact absence boundaries', async (t) => {
+  const db = await database(t)
+  await db.query(`update sensor_watchdog_state set last_activity_received_at='2026-08-21T01:59:30Z',
+    absence_baseline_at='2026-08-21T01:59:30Z' where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  for (const [time, expected] of [
+    ['01:59:59', 'grace'], ['02:00:00', 'suspended'], ['02:15:00', 'suspended'],
+    ['02:24:59', 'suspended'], ['02:25:00', 'healthy'], ['02:25:59', 'grace'], ['02:26:00', 'downtime'],
+  ]) {
+    const at = `2026-08-21T${time}Z`
+    await db.query(`update sensor_watchdog_state set last_heartbeat_received_at=$1
+      where sensor_id=(select id from sensors where sensor_code='S-03')`, [at])
+    assert.equal((await evaluate(db, at)).detection_state, expected, time)
+  }
+  const rows = (await db.query('select started_at from downtime_events')).rows
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].started_at.toISOString(), '2026-08-21T02:26:00.000Z')
+})
+
+test('break and offline suspension keep an existing incident and reset recovery confirmation', async (t) => {
+  const db = await database(t)
+  await evaluate(db, '2026-08-21T00:01:00Z')
+  const observe = async (at) => db.query(`update sensor_watchdog_state set last_activity_received_at=$1,
+    last_heartbeat_received_at=$1 where sensor_id=(select id from sensors where sensor_code='S-03')`, [at])
+  await observe('2026-08-21T01:59:50Z')
+  await observe('2026-08-21T01:59:55Z')
+  await evaluate(db, '2026-08-21T02:00:00Z')
+  assert.equal(await machine(db), 'Downtime')
+  const state = async () => (await db.query(`select w.* from sensor_watchdog_state w
+    join sensors s on s.id=w.sensor_id where sensor_code='S-03'`)).rows[0]
+  assert.equal((await state()).recovery_observation_count, 0)
+  await observe('2026-08-21T02:25:00Z')
+  await evaluate(db, '2026-08-21T02:25:30Z')
+  assert.equal(await machine(db), 'Downtime')
+  await observe('2026-08-21T02:25:31Z')
+  await evaluate(db, '2026-08-21T02:31:00Z')
+  assert.equal((await state()).connectivity_state, 'offline')
+  assert.equal((await state()).recovery_observation_count, 0)
+  assert.equal(await machine(db), 'Downtime')
+  assert.equal((await db.query("select count(*)::int n from downtime_events where status='Open'")).rows[0].n, 1)
+})
 
 test('S-03 idle keeps the machine Idle despite active process and output sensors', async (t) => {
   const db = await database(t)
