@@ -81,3 +81,96 @@ test('fresh S-03 activity refreshes watchdog evidence after a short stop', async
   assert.ok(state.last_activity_received_at > new Date('2026-08-21T00:00:00Z'))
   assert.equal(await machine(db), 'Running')
 })
+
+for (const firstRecovery of ['S-01', 'S-03']) {
+  test(`overlapping causes retain one S-03 interval when ${firstRecovery} recovers first`, async (t) => {
+    const db = await database(t)
+    for (const code of ['S-01', 'S-04']) await event(db, code, 'fault', '2026-08-21T00:01:00Z')
+    assert.equal((await db.query('select count(*)::int n from downtime_events')).rows[0].n, 0)
+    await event(db, 'S-02', 'fault', '2026-08-21T00:02:00Z')
+    assert.equal(await machine(db), 'Downtime')
+    const { rows: [opened] } = await db.query('select id, started_at from downtime_events')
+    assert.equal(opened.started_at.toISOString(), '2026-08-21T00:02:00.000Z')
+    assert.equal((await db.query("select status from sensors where sensor_code='S-03'")).rows[0].status, 'Active')
+    const faultId = randomUUID()
+    await event(db, 'S-03', 'fault', '2026-08-21T00:03:00Z', faultId)
+    assert.equal((await event(db, 'S-03', 'fault', '2026-08-21T00:03:00Z', faultId)).duplicate, true)
+    assert.equal((await event(db, 'S-03', 'recovered', '2026-08-21T00:02:59Z')).stale, true)
+    await event(db, 'S-05', 'pulse', '2026-08-21T00:03:01Z')
+    assert.equal(await machine(db), 'Downtime')
+    const alert = async () => (await db.query(`select a.metadata from alerts a join sensors s on s.id=a.sensor_id
+      where s.sensor_code='S-03' and a.source_type='sensor'`)).rows[0].metadata
+    assert.deepEqual((await alert()).currentContributingSensors, ['S-03'])
+    assert.deepEqual((await alert()).contributingSensors, ['S-01', 'S-02', 'S-04'])
+    await event(db, firstRecovery, 'recovered', '2026-08-21T00:04:00Z')
+    assert.equal(await machine(db), 'Downtime')
+    const remaining = firstRecovery === 'S-03' ? ['S-01', 'S-02', 'S-04'] : ['S-03']
+    assert.deepEqual((await alert()).currentContributingSensors, remaining)
+    await event(db, firstRecovery === 'S-03' ? 'S-01' : 'S-03', 'recovered', '2026-08-21T00:05:00Z')
+    assert.equal(await machine(db), 'Running')
+    const { rows } = await db.query('select id, ended_at from downtime_events')
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].id, opened.id)
+    assert.equal(rows[0].ended_at.toISOString(), '2026-08-21T00:05:00.000Z')
+  })
+}
+
+test('a failed downtime audit rolls back the event, sensor, alert and machine transition', async (t) => {
+  const db = await database(t)
+  const before = await machine(db)
+  await db.exec(`create function fail_authority_audit() returns trigger language plpgsql as $$
+    begin if new.action='DOWNTIME_CREATED' then raise exception 'injected downtime audit failure'; end if;
+    return new; end $$;
+    create trigger fail_authority_audit before insert on audit_logs for each row execute function fail_authority_audit();`)
+  await assert.rejects(event(db, 'S-03', 'fault', '2026-08-21T00:01:00Z'), /injected downtime audit failure/)
+  assert.equal(await machine(db), before)
+  assert.equal((await db.query("select status from sensors where sensor_code='S-03'")).rows[0].status, 'Active')
+  for (const table of ['sensor_events', 'alerts', 'downtime_events']) {
+    assert.equal((await db.query(`select count(*)::int n from ${table}`)).rows[0].n, 0)
+  }
+})
+
+test('S-03 communication-only heartbeats cannot indefinitely delay its absence threshold', async (t) => {
+  const db = await database(t)
+  await db.query(`update sensor_watchdog_state set last_activity_received_at=null
+    where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  await evaluate(db, '2026-08-21T00:00:30Z')
+  await db.query(`update sensor_watchdog_state set last_heartbeat_received_at='2026-08-21T00:00:40Z'
+    where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  await evaluate(db, '2026-08-21T00:01:00Z')
+  assert.equal(await machine(db), 'Downtime')
+})
+
+test('S-03 watchdog recovery requires confirmation and keeps downtime until recovery duration completes', async (t) => {
+  const db = await database(t)
+  await evaluate(db, '2026-08-21T00:01:00Z')
+  await event(db, 'S-03', 'pulse', '2026-08-21T00:01:01Z')
+  assert.equal(await machine(db), 'Downtime')
+  await event(db, 'S-05', 'pulse', '2026-08-21T00:01:02Z')
+  assert.equal(await machine(db), 'Downtime')
+  await db.exec('alter table sensor_watchdog_state disable trigger track_watchdog_recovery_observation')
+  await db.query(`update sensor_watchdog_state set recovery_started_at='2026-08-21T00:01:05Z',
+    last_activity_received_at='2026-08-21T00:01:10Z',recovery_observation_count=2
+    where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  await db.exec('alter table sensor_watchdog_state enable trigger track_watchdog_recovery_observation')
+  await evaluate(db, '2026-08-21T00:01:34Z')
+  assert.equal(await machine(db), 'Downtime')
+  await evaluate(db, '2026-08-21T00:01:35Z')
+  assert.equal(await machine(db), 'Running')
+  assert.equal((await db.query("select count(*)::int n from downtime_events where status='Open'")).rows[0].n, 0)
+})
+
+test('migration 038 is repeatable and healthy S-03 evidence restores Idle to Running', async (t) => {
+  const db = await database(t)
+  await db.exec(fs.readFileSync(path.join(root, 'migrations/038_s03_machine_authority.sql'), 'utf8'))
+  await evaluate(db, '2026-08-21T00:00:59Z')
+  await db.query(`update sensor_watchdog_state set last_activity_received_at='2026-08-21T00:01:00Z'
+    where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  await evaluate(db, '2026-08-21T00:01:00Z')
+  assert.equal(await machine(db), 'Running')
+  const { rows: [permissions] } = await db.query(`select
+    has_function_privilege('authenticated','reconcile_machine_downtime(uuid,timestamptz,text,text,jsonb)','execute') as client,
+    has_function_privilege('service_role','evaluate_sensor_watchdog(uuid,timestamptz,text,integer)','execute') as service,
+    has_function_privilege('service_role','evaluate_sensor_watchdog_legacy(uuid,timestamptz,text,integer)','execute') as legacy`)
+  assert.deepEqual(permissions, { client: false, service: true, legacy: false })
+})
