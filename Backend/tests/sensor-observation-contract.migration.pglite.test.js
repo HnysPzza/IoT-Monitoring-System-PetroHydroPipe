@@ -17,12 +17,52 @@ async function database(t) {
   await db.query(`insert into users(name, username, password_hash, role_id)
     select 'Observation Admin', 'observation-admin', 'hash', id from roles where name='Admin'`)
   for (const name of fs.readdirSync(path.join(root, 'migrations')).sort()) {
-    if (/^(029|030|031|032|033|034|035|036|037|038)_.*\.sql$/.test(name)) {
+    if (/^(029|030|031|032|033|034|035|036|037|038|039)_.*\.sql$/.test(name)) {
       await db.exec(fs.readFileSync(path.join(root, 'migrations', name), 'utf8'))
     }
   }
   return db
 }
+
+test('reconnect starts absence measurement at confirmed receipt without inventing activity', async (t) => {
+  const db = await database(t)
+  const boot = randomUUID()
+  const heartbeat = async (sequence, id = randomUUID()) => (await db.query(`select r.* from sensors s
+    cross join lateral ingest_iot_heartbeat($1,s.id,s.machine_id,1,$2,$3,'2026-08-21T00:00:00Z',false) r
+    where sensor_code='S-03'`, [id, boot, sequence])).rows[0]
+  await heartbeat(1)
+  await db.query(`update sensor_watchdog_state set connectivity_state='offline', detection_state='suspended',
+    absence_baseline_at=null, last_activity_received_at='2026-08-21T00:00:00Z',
+    last_evaluated_at='2026-08-21T00:10:00Z' where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  assert.equal((await heartbeat(2)).connectivity_state, 'offline')
+  const id = randomUUID()
+  const confirmed = await heartbeat(3, id)
+  assert.equal(confirmed.connectivity_state, 'online')
+  const state = async () => (await db.query(`select w.* from sensor_watchdog_state w
+    join sensors s on s.id=w.sensor_id where sensor_code='S-03'`)).rows[0]
+  const before = await state()
+  assert.deepEqual(before.absence_baseline_at, confirmed.received_at)
+  assert.equal(before.last_activity_received_at.toISOString(), '2026-08-21T00:00:00.000Z')
+  assert.equal((await heartbeat(3, id)).duplicate, true)
+  assert.equal((await heartbeat(2)).stale, true)
+  assert.deepEqual(await state(), before)
+  await heartbeat(4)
+  assert.deepEqual((await state()).absence_baseline_at, before.absence_baseline_at)
+  const newBoot = await db.query(`select r.* from sensors s cross join lateral
+    ingest_iot_heartbeat($1,s.id,s.machine_id,2,$2,1,'2026-08-21T00:00:00Z',false) r
+    where sensor_code='S-03'`, [randomUUID(), randomUUID()])
+  assert.deepEqual((await state()).absence_baseline_at, newBoot.rows[0].received_at)
+  await db.query(`update sensors set status='Fault', fault_source='absence_watchdog' where sensor_code='S-03'`)
+  await db.query(`update sensor_watchdog_state set detection_state='downtime'
+    where sensor_id=(select id from sensors where sensor_code='S-03')`)
+  const incident = await state()
+  await db.query(`select r.* from sensors s cross join lateral
+    ingest_iot_heartbeat($1,s.id,s.machine_id,3,$2,1,'2026-08-21T00:00:00Z',false) r
+    where sensor_code='S-03'`, [randomUUID(), randomUUID()])
+  assert.deepEqual((await state()).absence_baseline_at, incident.absence_baseline_at)
+  assert.equal((await state()).detection_state, 'downtime')
+  assert.equal((await db.query("select fault_source from sensors where sensor_code='S-03'")).rows[0].fault_source, 'absence_watchdog')
+})
 
 async function event(db, code, id, at, type = 'downtime', signal = 'no_pulse') {
   return (await db.query(`select r.* from sensors s cross join lateral
