@@ -163,7 +163,7 @@ node --test --test-concurrency=1 tests/machine-authority.migration.pglite.test.j
 
 ### 5. Breaks, offline and recovery
 
-Status: completed and verified locally on 2026-09-10. Step 6 is not started.
+Status: completed and verified locally on 2026-09-10. Step 6 progress is recorded below.
 
 Scope clarification: the proposed 10-minute trigger minimum was withdrawn by the user. Existing trigger, recovery, heartbeat-cadence and break limits remain unchanged. No minimum-threshold migration was created.
 
@@ -195,11 +195,58 @@ Deployment boundary: migrations 039-041 are local drafts following 036-038. No h
 
 ### 6. All consumer consistency
 
+Status: completed and verified locally on 2026-09-10. Step 7 has not started.
+
 - Use identical fixtures across Live Feed, Machines, Overview, notifications, Audit, Downtime, Analytics and Reports.
 - Assert Idle, process Fault, active S-03 downtime, recovered downtime and Offline labels separately.
 - Process-only faults must not increase downtime totals. Grouped downtime must appear once under S-03.
 - Verify SSE transitions, reconnect/refetch and historical records; keep raw event details available without misleading summaries.
 - Gate: frontend tests and backend read-model tests agree on the same state; browser proof is recorded separately.
+
+Findings and implemented fixes:
+
+| Issue | Root cause | Smallest fix and failing regression |
+| --- | --- | --- |
+| Grace showed Idle in Live Feed but Running in Machines and Overview | Only Live Feed applied the existing monitoring presentation helper. | The shared frontend live service now applies that helper for all three consumers and retains the original value as `operationalStatus`. The material-grace component tests failed before this change. Physical S-03 input and machine status remain backend-owned. |
+| Offline was not visible on Machines and Overview sensor cards | These cards displayed only operational status, so communication loss was indistinguishable from a connected sensor. | Reuse the existing connection-label helper on both cards. Offline visibility tests failed before the change. Connection state remains separate from the last known operational state; Offline does not create or clear downtime. |
+| Watchdog downtime/recovery and connection audit events showed generic text | Their action codes had no readable-detail cases. | Add readable labels and descriptions for the four existing actions. Tests first reproduced the generic fallback. Downtime uses its S-03 owner; connection loss explicitly does not prove downtime, and reconnect does not prove physical recovery. Raw technical metadata remains available. |
+| Downtime records could remain stale after an event-stream interruption | Stream recovery stopped polling without immediately fetching missed changes. | Refetch on stream open and recovery using the existing guarded loader. Both tests failed to display the missed S-03 interval before the fix. Periodic reconciliation and stale-response protection remain in place. |
+
+Expected behavior checked with shared scenarios:
+
+- Material grace is Idle in Live Feed, Machines and Overview, including observe mode. It contributes no downtime.
+- One process fault stays a process warning. All three unresolved process faults show three Fault cards and one S-03 Downtime card; backend totals count one interval.
+- A direct S-03 fault remains Downtime while recovery confirmation is pending.
+- When grouped downtime resolves, two remaining process faults stay Fault without keeping S-03 down. The completed interval remains in history and totals; recovery does not erase it.
+- Offline is a connection label, not a replacement for fault/downtime state. A last-known Running label alongside Offline is not fresh proof of movement.
+- Notifications retain separate fault/downtime destinations and existing active/recovered colors. Historical audit actions and downtime records remain readable; this pass does not hide legacy records or restore force recovery.
+
+Verification and limits:
+
+- TDD: each of the four production fixes had an observed failing behavior test before implementation, followed by targeted passing runs. Existing correct ownership and totals received preservation tests; passing behavior was not changed unnecessarily.
+- Final frontend regression: **230 tests passed across 26 files**, zero failures. Coverage includes Live Feed, Machines, Overview, notifications/layout, Audit, Downtime, Analytics, Reports, event-stream behavior and status colors. The shared component matrix covers six scenarios across three modules (18 cases); separate audit/alert and reconnect tests cover their own contracts.
+- Final backend regression: **80 tests passed**, zero failures or skips. The shared six-scenario contract exercises real live, overview, downtime, analytics and report services with isolated data readers and a fixed clock. It checks zero process-only downtime, single S-03 ownership, active duration and retained recovered history. Adjacent tests cover stale/duplicate ingestion, alert publication failures, revisions, interval overlap and exports. These read-model checks do not independently execute database transition RPCs.
+- Frontend production build passed. Vite reported plugin timing information, not a build failure.
+- Chrome: **18 isolated fixture checks passed** across the real Live Feed, Machines and Overview components, including grace, grouped/direct downtime, pending recovery, remaining faults and Offline. API responses were intercepted only in a separate temporary browser context; no live simulation or database mutation ran. No new component console errors appeared; the initial unauthenticated refresh returned the expected 401. The temporary page was closed, leaving the original login page unchanged.
+- Bug-hunter follow-up checked sibling consumers, communication versus operational state, alert destinations, preserved history and missed-stream updates. Debugger tracing was used for the reproduced mismatches. No additional defect was reproduced in the completed checks; this is not a claim that every possible bug is excluded.
+- Validation used the current working tree, including earlier uncommitted sensor changes. Only Step 6 edits were staged and committed; unrelated work remains untouched. Hosted migration state, authenticated end-to-end browser flow, PostgreSQL concurrency and physical ESP32 behavior were not verified.
+
+Scoped commits: `c9dcb29` (shared presentation), `a6f6ae3` (connection visibility), `b887799` (audit descriptions), `b3a594d` (downtime reconnect), and `885c0e8` (shared backend contracts).
+
+Run from `Backend`:
+
+```powershell
+node --test --test-concurrency=1 tests/sensor-consumer-contract.test.js tests/iot.service.test.js tests/dashboard.service.test.js tests/analytics.service.test.js tests/reports.service.test.js tests/downtime.service.test.js tests/alerts.service.test.js tests/operationalMetrics.test.js tests/reports.export.serializer.test.js
+```
+
+Run from `Frontend`:
+
+```powershell
+npm.cmd test -- src/features/dashboard/live src/features/dashboard/machines src/features/dashboard/overview src/features/dashboard/layout src/features/dashboard/audit src/features/dashboard/downtime src/features/dashboard/analytics src/features/dashboard/reports src/test/sensor-consumers.test.jsx src/test/sensor-audit-contract.test.js src/test/downtime-reconnect.test.jsx src/shared/services/eventStream.test.js src/shared/utils/statusClasses.test.js
+npm.cmd run build
+```
+
+No Step 6 database migration was needed or applied. The user last confirmed hosted migration 038; application of 039-041 has not been verified here. Their readiness/release integration remains Step 8. Step 7 simulation work requires separate authorization.
 
 ### 7. Deterministic simulation
 
