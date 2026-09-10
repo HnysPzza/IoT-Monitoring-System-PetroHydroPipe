@@ -246,16 +246,25 @@ npm.cmd test -- src/features/dashboard/live src/features/dashboard/machines src/
 npm.cmd run build
 ```
 
-No Step 6 database migration was needed or applied. The user last confirmed hosted migration 038; application of 039-041 has not been verified here. Their readiness/release integration remains Step 8. Step 7 simulation work requires separate authorization.
+No Step 6 database migration was needed or applied. The user last confirmed hosted migration 038; application of 039-041 has not been verified here. Their readiness/release integration remains Step 8.
 
-### 7. Deterministic simulation
+### 7. Deterministic simulation — implemented locally
 
-- Provide simple scenario names: short material pause, material fault, three process faults, short machine stop, machine downtime, planned break, offline/reconnect and recover faults.
-- Reuse the existing centralized runner and simulator. Keep 9 reserved for Back and every suite selectable.
-- Assert actual API state, alerts and downtime results rather than printing an expected success message.
-- Use controlled clocks in isolated tests; live simulations must honor real configured timing, check baseline state and avoid clearing unrelated incidents.
-- Document authentication and data impact; never store a bearer token in source or output.
-- Gate: simulator contract tests pass, menu self-test passes, and live scenarios are run only against an explicitly selected safe baseline.
+Implemented:
+
+- Central runner now offers clear, no-write local scenarios: short material pause, material fault, short machine stop, planned break, and offline/reconnect. They use existing isolated PGlite clock tests, never contact the configured backend, and do not require `--allow-simulation`.
+- Existing writing scenarios are explicitly labeled `(live)`: random batch, active-fault recovery, one process fault, three process faults, direct S-03 downtime, and heartbeats. `9. Back` remains reserved; options after it remain selectable through `10` to `14`.
+- Live process-isolation and grouped verification now query `/api/alerts` after every S-01/S-02/S-04 fault and require a matching `metadata.processFault` alert. Direct and grouped S-03 downtime verification require a matching S-03 alert with the returned `metadata.downtimeId`.
+- Alert, downtime, and live-state reads use `IOT_SIM_BEARER_TOKEN` only at runtime. The token is neither printed nor stored in source. Live commands still create synthetic events, so they require an explicit safe baseline and `--allow-simulation` when run non-interactively.
+
+Verification:
+
+- `node --test tests/sensor-event-simulator.test.js`: **28 passed**, including missing process-fault and missing S-03 downtime alert regressions.
+- `node scripts/run-tests.js --self-test`: passed. It verifies local scenario commands, file resolution, `9. Back`, and menu choices beyond 9.
+- Each new local scenario passed: `simulate-short-material-pause`, `simulate-material-fault`, `simulate-short-machine-stop`, `simulate-planned-break`, and `simulate-offline-reconnect`.
+- No live simulator command, hosted migration, authenticated browser flow, or physical ESP32 measurement was run in this step. Those remain separate release evidence, not implied by local tests.
+
+Scoped commits: `2c02ecd` (reject incomplete live baseline), `27303fd` (existing command labels and Back behavior), `67233ea` (alert ownership verification), and `84b1eaa` (clear local scenarios).
 
 ### 8. Migration and release verification
 
@@ -272,6 +281,11 @@ From repository root:
 
 ```powershell
 node scripts/run-tests.js --self-test
+node scripts/run-tests.js --suite simulate-short-material-pause
+node scripts/run-tests.js --suite simulate-material-fault
+node scripts/run-tests.js --suite simulate-short-machine-stop
+node scripts/run-tests.js --suite simulate-planned-break
+node scripts/run-tests.js --suite simulate-offline-reconnect
 ```
 
 From Backend (isolated PGlite and simulator contract tests, not hosted simulation):
