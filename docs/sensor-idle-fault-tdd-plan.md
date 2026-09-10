@@ -260,6 +260,7 @@ Implemented:
 Verification:
 
 - `node --test tests/sensor-event-simulator.test.js`: **28 passed**, including missing process-fault and missing S-03 downtime alert regressions.
+- Serial Step 7 bundle: **77 passed**, 0 failed across grouped downtime, machine authority, process absence, sensor observation, and simulator contracts. This uses `--test-concurrency=1` to avoid the Node worker memory exhaustion seen in the unconstrained full backend run; that full parallel run is not claimed as passed.
 - `node scripts/run-tests.js --self-test`: passed. It verifies local scenario commands, file resolution, `9. Back`, and menu choices beyond 9.
 - Each new local scenario passed: `simulate-short-material-pause`, `simulate-material-fault`, `simulate-short-machine-stop`, `simulate-planned-break`, and `simulate-offline-reconnect`.
 - No live simulator command, hosted migration, authenticated browser flow, or physical ESP32 measurement was run in this step. Those remain separate release evidence, not implied by local tests.
