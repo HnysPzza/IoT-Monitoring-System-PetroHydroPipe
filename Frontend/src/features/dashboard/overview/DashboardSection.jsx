@@ -6,6 +6,7 @@ import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getLiveFeed } from '../live/liveService.js'
+import { connectivityLabel } from '../live/livePresentation.js'
 import DowntimeTrendChart, {
   getTrendRangeLabel,
   startOfDay,
@@ -671,6 +672,7 @@ export default function DashboardSection() {
                 <div className="overview-sensor-footer">
                   <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status}</span>
                   <span>{sensor.lastEventAt ? `Last event ${formatLiveDateTime(sensor.lastEventAt)}` : 'No recent event'}</span>
+                  <span>Connection: {connectivityLabel(sensor)}</span>
                 </div>
               </article>
             ))}

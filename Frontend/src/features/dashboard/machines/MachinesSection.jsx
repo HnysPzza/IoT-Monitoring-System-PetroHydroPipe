@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, Cpu, Factory, MapPin, RadioTower, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
+import { connectivityLabel } from '../live/livePresentation.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getMachines, getMachineSensors, updateMachineStatus, updateSensorStatus } from './machinesService.js'
@@ -623,6 +624,7 @@ export default function MachinesSection() {
                     <dt>Purpose</dt>
                     <dd>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</dd>
                   </div>
+                  <div><dt>Connection</dt><dd>{connectivityLabel(sensor)}</dd></div>
                   <div>
                     <dt>Updated</dt>
                     <dd>{formatShortDateTime(sensor.updatedAt)}</dd>

@@ -43,6 +43,7 @@ for (const [name, Component] of [['Live Feed', LiveSection], ['Machines', Machin
         sensorIdentities.forEach((identity, index) => {
           const card = screen.getByText(identity.code).closest('article')
           expect(within(card).getByText(scenario.expected[index], { selector: '.status-badge' })).toBeInTheDocument()
+          if (scenario.offlineCode === identity.code) expect(within(card).getByText(/Offline/)).toBeInTheDocument()
         })
       })
     }
