@@ -10,6 +10,7 @@ const { createInterface } = require('node:readline/promises')
 const root = path.resolve(__dirname, '..')
 const backend = path.join(root, 'Backend')
 const frontend = path.join(root, 'Frontend')
+const BACK_SELECTION = Symbol('back')
 
 const npm = (...args) => ({ command: 'npm', args, cwd: backend })
 const nodeTest = (...files) => ({ command: process.execPath, args: ['--test', ...files], cwd: backend })
@@ -117,58 +118,58 @@ const suites = Object.freeze({
     manual: true,
   },
   'simulate-demo-once': {
-    name: 'Simulate random ESP32 telemetry batch',
-    description: 'Writes one random demonstration batch to the configured backend; it is not a downtime-rule test.',
-    expected: 'Simulator completes one batch and may leave process faults for later recovery.',
+    name: 'Send random sensor events once',
+    description: 'Sends one random set of sensor events to the configured backend.',
+    expected: 'One batch is sent; it may create faults or downtime.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:demo-once')],
   },
   'simulate-recover-active-faults': {
-    name: 'Recover active S-01 through S-04 simulator faults',
-    description: 'Reads live state and sends recovered/active events only for currently faulted S-01 through S-04 sensors.',
-    expected: 'Faulted target sensors recover; the command makes no writes when none are faulted.',
+    name: 'Recover current sensor faults',
+    description: 'Finds faulted S-01 to S-04 sensors and sends recovery events for them.',
+    expected: 'Current process-sensor faults recover; no events are sent when none are faulted.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:recover-active-faults')],
   },
   'simulate-process-isolation': {
-    name: 'Verify S-01 process-isolation lifecycle',
-    description: 'Writes one S-01 process fault and its accepted recovery.',
-    expected: 'S-01 remains process-level, then recovers with no downtime record.',
+    name: 'Test one sensor fault',
+    description: 'Faults S-01, then sends its recovery event.',
+    expected: 'S-01 becomes a process fault and creates no downtime.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:process-isolation')],
   },
   'simulate-grouped-lifecycle': {
-    name: 'Verify grouped S-01/S-04/S-02 downtime lifecycle',
-    description: 'Writes sequential process faults, then recoveries, to verify S-03-owned group downtime.',
-    expected: 'First two remain Running, third opens S-03 downtime, and all recoveries are checked.',
+    name: 'Test three-sensor downtime rule',
+    description: 'Faults S-01, S-04, and S-02 one at a time, then recovers them.',
+    expected: 'The third fault opens S-03 downtime; recoveries close it.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:verify-grouped-lifecycle')],
   },
   'simulate-direct-s03-lifecycle': {
-    name: 'Verify direct S-03 downtime lifecycle',
-    description: 'Writes one S-03 fault, duplicate retry, stale recovery, and final recovery.',
-    expected: 'S-03 opens downtime directly; final recovery resolves it and restores Running.',
+    name: 'Test direct S-03 downtime',
+    description: 'Faults S-03, tests duplicate and stale events, then recovers it.',
+    expected: 'S-03 opens downtime directly; recovery closes it.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:verify-direct-s03-lifecycle')],
   },
   'simulate-demo-continuous': {
-    name: 'Run continuous ESP32 event simulation',
-    description: 'Continuously sends simulated sensor events until Ctrl+C.',
-    expected: 'Simulator continues until cancelled; configured backend may create event, downtime, and alert records.',
+    name: 'Send random sensor events continuously',
+    description: 'Keeps sending random sensor events until Ctrl+C.',
+    expected: 'Events continue until cancelled and may create faults or downtime.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:demo-continuous')],
   },
   'heartbeat-once': {
-    name: 'Simulate one heartbeat batch',
-    description: 'Sends one authenticated heartbeat batch to configured backend.',
-    expected: 'Simulator completes one heartbeat batch and updates configured device runtime state.',
+    name: 'Send one heartbeat batch',
+    description: 'Sends one authenticated heartbeat batch to the configured backend.',
+    expected: 'One heartbeat batch updates device runtime state.',
     simulation: true,
     commands: [npm('run', 'iot:heartbeat:once')],
   },
   heartbeat: {
-    name: 'Run continuous heartbeat simulation',
-    description: 'Continuously sends authenticated heartbeats until Ctrl+C.',
-    expected: 'Simulator continues until cancelled and updates configured device runtime state.',
+    name: 'Send heartbeats continuously',
+    description: 'Keeps sending authenticated heartbeats until Ctrl+C.',
+    expected: 'Heartbeats continue until cancelled.',
     simulation: true,
     commands: [npm('run', 'iot:heartbeat')],
   },
@@ -252,6 +253,13 @@ function suiteIdFromSelection(selection, available = menu) {
   if (value === '0') return null
   if (/^\d+$/.test(value)) return available[Number(value) - 1]
   return available.includes(value) && hasSuite(value) ? value : undefined
+}
+
+function submenuSelection(selection, available) {
+  const value = selection.trim().toLowerCase()
+  if (value === '9' || value === 'back') return BACK_SELECTION
+  if (/^\d+$/.test(value) && Number(value) > 9) return available[Number(value) - 2]
+  return suiteIdFromSelection(value, available)
 }
 
 function expandedCommands(suiteId, trail = new Set()) {
@@ -390,11 +398,12 @@ async function chooseSuite() {
 
   const available = categories[categoryId].suites
   console.log(`\n${categories[categoryId].name}`)
-  available.forEach((id, index) => console.log(`${String(index + 1).padStart(2)}. ${suites[id].name}`))
+  available.forEach((id, index) => console.log(`${String(index < 8 ? index + 1 : index + 2).padStart(2)}. ${suites[id].name}`))
+  console.log(' 9. Back')
   console.log(' 0. Exit')
   const answer = await prompt.question('\nChoose option: ')
   prompt.close()
-  return suiteIdFromSelection(answer, available)
+  return submenuSelection(answer, available)
 }
 
 function selfTest() {
@@ -412,6 +421,10 @@ function selfTest() {
   assert.equal(suiteIdFromSelection('health & whoami'), undefined)
   assert.equal(suiteIdFromSelection('999'), undefined)
   assert.equal(suiteIdFromSelection('0'), null)
+  assert.equal(submenuSelection('9', categories.simulations.suites), BACK_SELECTION)
+  assert.equal(submenuSelection('back', categories.tests.suites), BACK_SELECTION)
+  assert.equal(submenuSelection('10', categories.tests.suites), categories.tests.suites[8])
+  assert.equal(submenuSelection('11', categories.tests.suites), categories.tests.suites[9])
   assert.equal(expandedCommands('all').length, 3)
   assert.equal(expandedCommands('all').some((command) => command.env?.RUN_SUPABASE_INTEGRATION_TESTS), false)
   assert.equal(expandedCommands('hosted')[0].env.RUN_SUPABASE_INTEGRATION_TESTS, 'true')
@@ -473,6 +486,7 @@ async function main() {
   while (true) {
     const suiteId = await chooseSuite()
     if (suiteId === null) return 0
+    if (suiteId === BACK_SELECTION) continue
     if (!suiteId || !hasSuite(suiteId)) {
       console.error(`\nUnknown choice. Use numbers shown in the menu or 0 to exit.`)
       continue
