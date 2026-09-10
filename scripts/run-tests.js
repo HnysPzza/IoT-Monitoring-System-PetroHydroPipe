@@ -14,6 +14,12 @@ const BACK_SELECTION = Symbol('back')
 
 const npm = (...args) => ({ command: 'npm', args, cwd: backend })
 const nodeTest = (...files) => ({ command: process.execPath, args: ['--test', ...files], cwd: backend })
+const nodeTestNamed = (namePattern, ...files) => ({
+  command: process.execPath,
+  args: ['--test', '--test-name-pattern', namePattern, ...files],
+  cwd: backend,
+  testFiles: files,
+})
 
 const suites = Object.freeze({
   all: {
@@ -117,57 +123,102 @@ const suites = Object.freeze({
     expected: 'Liveness is 200; readiness is 200 or safe 503; shutdown logs start and completion.',
     manual: true,
   },
+  'simulate-short-material-pause': {
+    name: 'Test short material pause (local)',
+    description: 'Uses an isolated clock to confirm a process sensor returns from Idle to Active before its threshold. Does not contact configured backend.',
+    expected: 'Process sensor returns from Idle to Active before threshold.',
+    commands: [nodeTestNamed(
+      'confirmed healthy activity returns a process sensor from grace Idle to Active',
+      'tests/process-absence.migration.pglite.test.js',
+    )],
+  },
+  'simulate-material-fault': {
+    name: 'Test material fault (local)',
+    description: 'Uses an isolated clock to confirm S-01, S-02, and S-04 stay Idle before threshold, then become process Faults at threshold. Does not contact configured backend.',
+    expected: 'Process Fault alert only; no machine downtime.',
+    commands: [nodeTestNamed(
+      'is Idle before threshold and one process Fault at threshold',
+      'tests/process-absence.migration.pglite.test.js',
+    )],
+  },
+  'simulate-short-machine-stop': {
+    name: 'Test short machine stop (local)',
+    description: 'Uses an isolated clock to confirm S-03 is Idle during a short stop and opens one interval only at its threshold. Does not contact configured backend.',
+    expected: 'Short stop is Idle; threshold creates one S-03 downtime record.',
+    commands: [nodeTestNamed(
+      'S-03 short absence is Idle and confirmed absence opens one interval at the crossing',
+      'tests/machine-authority.migration.pglite.test.js',
+    )],
+  },
+  'simulate-planned-break': {
+    name: 'Test planned break (local)',
+    description: 'Uses an isolated clock to confirm break start, end, and post-break grace reset absence timing. Does not contact configured backend.',
+    expected: 'Break timing suspends absence; post-break grace restarts it.',
+    commands: [nodeTestNamed(
+      'break start, break end and grace end preserve exact absence boundaries',
+      'tests/machine-authority.migration.pglite.test.js',
+    )],
+  },
+  'simulate-offline-reconnect': {
+    name: 'Test offline and reconnect (local)',
+    description: 'Uses an isolated clock to confirm reconnect starts a new absence baseline without inventing activity. Does not contact configured backend.',
+    expected: 'Reconnect starts an absence baseline without inventing activity.',
+    commands: [nodeTestNamed(
+      'reconnect starts absence measurement at confirmed receipt without inventing activity',
+      'tests/sensor-observation-contract.migration.pglite.test.js',
+    )],
+  },
   'simulate-demo-once': {
-    name: 'Send random sensor events once',
+    name: 'Send random sensor events once (live)',
     description: 'Sends one random set of sensor events to the configured backend.',
     expected: 'One batch is sent; it may create faults or downtime.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:demo-once')],
   },
   'simulate-recover-active-faults': {
-    name: 'Recover current sensor faults',
+    name: 'Recover active sensor faults (live)',
     description: 'Finds faulted S-01 to S-04 sensors and sends recovery events for them.',
     expected: 'Current process-sensor faults recover; no events are sent when none are faulted.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:recover-active-faults')],
   },
   'simulate-process-isolation': {
-    name: 'Test one sensor fault',
+    name: 'Test one process fault (live)',
     description: 'Faults S-01, then sends its recovery event.',
     expected: 'S-01 becomes a process fault and creates no downtime.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:process-isolation')],
   },
   'simulate-grouped-lifecycle': {
-    name: 'Test three-sensor downtime rule',
+    name: 'Test three process faults (live)',
     description: 'Faults S-01, S-04, and S-02 one at a time, then recovers them.',
     expected: 'The third fault opens S-03 downtime; recoveries close it.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:verify-grouped-lifecycle')],
   },
   'simulate-direct-s03-lifecycle': {
-    name: 'Test direct S-03 downtime',
+    name: 'Test direct S-03 downtime (live)',
     description: 'Faults S-03, tests duplicate and stale events, then recovers it.',
     expected: 'S-03 opens downtime directly; recovery closes it.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:verify-direct-s03-lifecycle')],
   },
   'simulate-demo-continuous': {
-    name: 'Send random sensor events continuously',
+    name: 'Send random sensor events continuously (live)',
     description: 'Keeps sending random sensor events until Ctrl+C.',
     expected: 'Events continue until cancelled and may create faults or downtime.',
     simulation: true,
     commands: [npm('run', 'iot:simulate:demo-continuous')],
   },
   'heartbeat-once': {
-    name: 'Send one heartbeat batch',
+    name: 'Send one heartbeat batch (live)',
     description: 'Sends one authenticated heartbeat batch to the configured backend.',
     expected: 'One heartbeat batch updates device runtime state.',
     simulation: true,
     commands: [npm('run', 'iot:heartbeat:once')],
   },
   heartbeat: {
-    name: 'Send heartbeats continuously',
+    name: 'Send heartbeats continuously (live)',
     description: 'Keeps sending authenticated heartbeats until Ctrl+C.',
     expected: 'Heartbeats continue until cancelled.',
     simulation: true,
@@ -178,6 +229,7 @@ const suites = Object.freeze({
 const menu = Object.freeze([
   'all', 'backend', 'frontend', 'docs', 'deadlines', 'health',
   'shutdown', 'phase3', 'phase4', 'integration', 'hosted', 'manual',
+  'simulate-short-material-pause', 'simulate-material-fault', 'simulate-short-machine-stop', 'simulate-planned-break', 'simulate-offline-reconnect',
   'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
   'heartbeat-once', 'heartbeat',
 ])
@@ -193,7 +245,11 @@ const categories = Object.freeze({
   },
   simulations: {
     name: 'Simulations',
-    suites: ['simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous', 'heartbeat-once', 'heartbeat'],
+    suites: [
+      'simulate-short-material-pause', 'simulate-material-fault', 'simulate-short-machine-stop', 'simulate-planned-break', 'simulate-offline-reconnect',
+      'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
+      'heartbeat-once', 'heartbeat',
+    ],
   },
 })
 
@@ -415,7 +471,7 @@ function selfTest() {
   assert.throws(() => parseArgs(['--suite', 'health', '--suite=docs']), /only be provided once/)
   assert.equal(suiteIdFromSelection('6'), 'health')
   assert.equal(suiteIdFromSelection('health'), 'health')
-  assert.equal(suiteIdFromSelection('1', categories.simulations.suites), 'simulate-demo-once')
+  assert.equal(suiteIdFromSelection('1', categories.simulations.suites), 'simulate-short-material-pause')
   assert.equal(suiteIdFromSelection('health', categories.simulations.suites), undefined)
   assert.equal(suiteIdFromSelection('__proto__'), undefined)
   assert.equal(suiteIdFromSelection('health & whoami'), undefined)
@@ -423,6 +479,9 @@ function selfTest() {
   assert.equal(suiteIdFromSelection('0'), null)
   assert.equal(submenuSelection('9', categories.simulations.suites), BACK_SELECTION)
   assert.equal(submenuSelection('back', categories.tests.suites), BACK_SELECTION)
+  assert.equal(submenuSelection('8', categories.simulations.suites), 'simulate-process-isolation')
+  assert.equal(submenuSelection('10', categories.simulations.suites), 'simulate-direct-s03-lifecycle')
+  assert.equal(submenuSelection('14', categories.simulations.suites), 'heartbeat')
   assert.equal(submenuSelection('10', categories.tests.suites), categories.tests.suites[8])
   assert.equal(submenuSelection('11', categories.tests.suites), categories.tests.suites[9])
   assert.equal(expandedCommands('all').length, 3)
@@ -433,13 +492,36 @@ function selfTest() {
   assert.deepEqual(expandedCommands('simulate-process-isolation')[0].args, ['run', 'iot:simulate:process-isolation'])
   assert.deepEqual(expandedCommands('simulate-grouped-lifecycle')[0].args, ['run', 'iot:simulate:verify-grouped-lifecycle'])
   assert.deepEqual(expandedCommands('simulate-direct-s03-lifecycle')[0].args, ['run', 'iot:simulate:verify-direct-s03-lifecycle'])
+  assert.deepEqual(expandedCommands('simulate-short-material-pause')[0].args, [
+    '--test', '--test-name-pattern', 'confirmed healthy activity returns a process sensor from grace Idle to Active',
+    'tests/process-absence.migration.pglite.test.js',
+  ])
+  assert.deepEqual(expandedCommands('simulate-material-fault')[0].args, [
+    '--test', '--test-name-pattern', 'is Idle before threshold and one process Fault at threshold',
+    'tests/process-absence.migration.pglite.test.js',
+  ])
+  assert.deepEqual(expandedCommands('simulate-short-machine-stop')[0].args, [
+    '--test', '--test-name-pattern', 'S-03 short absence is Idle and confirmed absence opens one interval at the crossing',
+    'tests/machine-authority.migration.pglite.test.js',
+  ])
+  assert.deepEqual(expandedCommands('simulate-planned-break')[0].args, [
+    '--test', '--test-name-pattern', 'break start, break end and grace end preserve exact absence boundaries',
+    'tests/machine-authority.migration.pglite.test.js',
+  ])
+  assert.deepEqual(expandedCommands('simulate-offline-reconnect')[0].args, [
+    '--test', '--test-name-pattern', 'reconnect starts absence measurement at confirmed receipt without inventing activity',
+    'tests/sensor-observation-contract.migration.pglite.test.js',
+  ])
+  for (const id of ['simulate-short-material-pause', 'simulate-material-fault', 'simulate-short-machine-stop', 'simulate-planned-break', 'simulate-offline-reconnect']) {
+    assert.equal(suites[id].simulation, undefined)
+  }
   assert.deepEqual(expandedCommands('heartbeat')[0].args, ['run', 'iot:heartbeat'])
   for (const id of menu) {
     assert.ok(hasSuite(id), `Missing suite: ${id}`)
     for (const command of expandedCommands(id)) {
       assert.ok(fs.existsSync(command.cwd), `Missing working directory: ${command.cwd}`)
       if (command.command === process.execPath) {
-        for (const file of command.args.slice(1)) {
+        for (const file of command.testFiles || command.args.slice(1)) {
           assert.ok(fs.existsSync(path.join(command.cwd, file)), `Missing test file: ${file}`)
         }
       }
