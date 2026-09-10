@@ -3,6 +3,10 @@ import { cleanCode, formatDateTime as formatSharedDateTime } from '../../../shar
 import { getSignalLabel } from '../../../shared/utils/signalFormatters.js'
 
 const actionLabels = {
+  WATCHDOG_DOWNTIME_CREATED: 'Sensor monitoring confirmed downtime',
+  WATCHDOG_DOWNTIME_RESOLVED: 'Sensor monitoring confirmed recovery',
+  CONNECTIVITY_ALERT_CREATED: 'Sensor connection lost',
+  CONNECTIVITY_ALERT_RESOLVED: 'Sensor connection restored',
   LOGIN_SUCCESS: 'Successful login',
   LOGIN_FAILED: 'Failed login attempt',
   USER_CREATED: 'User account created',
@@ -206,6 +210,14 @@ export function getReadableDetails(log) {
   const eventType = cleanCode(metadata.eventType).toLowerCase()
 
   switch (log.action) {
+    case 'WATCHDOG_DOWNTIME_CREATED':
+      return `${getSensorName(metadata.ownerSensorCode) || sensor} downtime was confirmed after the configured absence threshold.`
+    case 'WATCHDOG_DOWNTIME_RESOLVED':
+      return `${getSensorName(metadata.ownerSensorCode) || sensor} recovered after the configured recovery confirmation.`
+    case 'CONNECTIVITY_ALERT_CREATED':
+      return `${sensor} is offline. Communication loss alone does not confirm downtime.`
+    case 'CONNECTIVITY_ALERT_RESOLVED':
+      return `${sensor} reconnected. Physical fault recovery is checked separately.`
     case 'LOGIN_SUCCESS':
       return `${username} logged in as ${role}.`
     case 'LOGIN_FAILED':
@@ -252,6 +264,9 @@ export function getReadableDetails(log) {
 }
 
 export function getReadableSource(log) {
+  if (log.action?.startsWith('WATCHDOG_') || log.action?.startsWith('CONNECTIVITY_')) {
+    return 'Sensor monitoring'
+  }
   if (log.action?.startsWith('ALERT_')) {
     return 'Alert system'
   }
