@@ -148,7 +148,11 @@ export default function DowntimeSection() {
         void loadDowntimeRecordsRef.current({ silent: true })
       },
       onFallback: startFallbackPolling,
-      onRecovery: stopFallbackPolling,
+      onOpen: () => { void loadDowntimeRecordsRef.current({ silent: true }) },
+      onRecovery: () => {
+        stopFallbackPolling()
+        void loadDowntimeRecordsRef.current({ silent: true })
+      },
     })
 
     return () => {
