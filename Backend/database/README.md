@@ -31,6 +31,17 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/022_require_reviewed_cause_before_resolve.sql` prevents unresolved S-03 causes from being silently finalized.
 - `migrations/023_route_no_pulse_through_watchdog.sql` prevents `no_pulse` observations from bypassing schedule-aware watchdog evaluation.
 - `migrations/025_prevent_s05_downtime.sql` keeps S-05 issue telemetry observational and blocks new S-05 downtime rows.
+- `migrations/032_grouped_downtime_rule.sql` makes S-03 the downtime authority, confirms one S-03-owned interval when unresolved S-01, S-02, and S-04 faults accumulate, and revokes the legacy manual-recovery RPC.
+- `migrations/033_repair_grouped_downtime_dispatch.sql` restores grouped event dispatch on upgraded databases and reconciles machine status from the grouped rule.
+- `migrations/034_route_output_telemetry_through_grouped_reconciliation.sql` keeps normal S-01/S-02/S-03/S-05 telemetry on the grouped reconciliation path and repairs any old any-fault machine status.
+- `migrations/035_fix_sensor_audit.sql` corrects watchdog recovery ownership, fails closed when S-03 authority is missing, and advances readiness to 35.
+- `migrations/036_preserve_direct_watchdog_threshold_time.sql` records direct S-03 downtime at its threshold crossing.
+- `migrations/037_process_absence_idle.sql` distinguishes process Idle from a confirmed absence fault.
+- `migrations/038_s03_machine_authority.sql` keeps S-03 as machine-running authority.
+- `migrations/039_reconnect_absence_baseline.sql` starts a fresh absence window after a confirmed reconnect.
+- `migrations/040_break_resume_baseline.sql` starts a fresh eligible window after break grace ends.
+- `migrations/041_preserve_watchdog_recovery_requirement.sql` prevents diagnostic events from bypassing watchdog recovery.
+- `migrations/042_finalize_sensor_idle_fault_release.sql` advances readiness to 42 and verifies the watchdog evaluator exists.
 
 ## Tables
 
@@ -54,11 +65,12 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 1. Open your Supabase project.
 2. Go to SQL Editor.
 3. Copy and run `schema.sql`.
-4. Provision the roles and exactly one active, unarchived Admin with a privately generated bcrypt password hash. `seed.sql` is credential-free and provides operational data only.
-5. Run migrations 029, 030, and 031 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `31` before starting the current backend.
-6. For existing databases, skip fresh-install steps 3 through 5 and apply only pending migration files in order through 031 from `Backend/database/migrations/`.
-7. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
-8. Confirm the configured rows:
+4. Copy and run the credential-free `seed.sql` to create the roles, M-01, and its five sensors.
+5. Provision exactly one active, unarchived Admin with a privately generated bcrypt password hash.
+6. Run migrations 029 through 042 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `42` before starting the current backend.
+7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 042 from `Backend/database/migrations/`.
+8. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
+9. Confirm the configured rows:
    - 5 roles
    - 1 admin user
    - 1 machine
@@ -357,11 +369,11 @@ Common simulator issues:
 
 1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
 2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
-3. Apply pending migrations through 031 before deploying the current backend, which requires readiness version 31. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
+3. Apply pending migrations through 042 before deploying the current backend, which requires readiness version 42. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
 4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
 5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
-For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply 029, 030, and 031 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
+For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 042 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
 Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
 
