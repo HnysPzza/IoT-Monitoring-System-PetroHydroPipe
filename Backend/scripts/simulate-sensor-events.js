@@ -188,6 +188,33 @@ async function readStateEndpoint(path, token) {
   return payload
 }
 
+async function readAlertSnapshot(token) {
+  const snapshot = await readStateEndpoint('/api/alerts', token)
+  if (!Array.isArray(snapshot?.alerts) || typeof snapshot.snapshotRevision !== 'string') {
+    throw new Error('Verification alert state is invalid.')
+  }
+  return snapshot.alerts
+}
+
+async function assertProcessFaultAlert(device, token) {
+  const alerts = await readAlertSnapshot(token)
+  const alert = alerts.find((candidate) => (
+    candidate?.sensor?.sensorCode === device.sensorCode
+      && candidate?.metadata?.processFault === true
+  ))
+  if (!alert) throw new Error(`Verification failed: ${device.sensorCode} process-fault alert is missing.`)
+}
+
+async function assertDowntimeAlert(downtimeId, token) {
+  const alerts = await readAlertSnapshot(token)
+  const alert = alerts.find((candidate) => (
+    candidate?.sensor?.sensorCode === 'S-03'
+      && candidate?.metadata?.downtimeId === downtimeId
+      && candidate?.metadata?.processFault !== true
+  ))
+  if (!alert) throw new Error('Verification failed: S-03 downtime alert is missing.')
+}
+
 function getBaselineIssue(live, downtime) {
   if (!live?.machine || !Array.isArray(live.sensors) || !Array.isArray(downtime?.records)) {
     return 'the live baseline response is invalid'
@@ -325,6 +352,7 @@ async function runProcessIsolationVerification() {
   const device = devices.find((candidate) => candidate.sensorCode === 'S-01')
   const fault = { eventType: 'fault', signal: 'fault' }
   const recovered = { eventType: 'recovered', signal: 'active' }
+  const token = liveReadToken()
 
   await assertCleanVerificationBaseline('preflight')
   console.log(`Verifying single-process isolation against ${BASE_URL}`)
@@ -333,6 +361,7 @@ async function runProcessIsolationVerification() {
     eventType: 'fault', stateApplied: true, duplicate: false, stale: false,
     machineStatus: 'Running', downtimeAction: null,
   })
+  await assertProcessFaultAlert(device, token)
 
   const recoveredEvent = await postEvent(device, recovered, 2)
   assertVerificationEvent('S-01 process recovery', device, recoveredEvent, {
@@ -354,6 +383,7 @@ async function runDirectS03Verification() {
   await assertCleanVerificationBaseline('preflight')
   const issue = { eventType: 'fault', signal: 'fault' }
   const recovered = { eventType: 'recovered', signal: 'active' }
+  const token = liveReadToken()
   const issueAt = nextRecordedAt()
   const issueEventId = randomUUID()
 
@@ -363,6 +393,7 @@ async function runDirectS03Verification() {
     eventType: 'fault', stateApplied: true, duplicate: false, stale: false,
     machineStatus: 'Downtime', downtimeAction: 'created',
   })
+  await assertDowntimeAlert(createdEvent.downtimeId, token)
 
   const duplicateEvent = await postEvent(device, issue, 1, { eventId: issueEventId, recordedAt: issueAt })
   assertVerificationEvent('duplicate retry', device, duplicateEvent, {
@@ -394,6 +425,7 @@ async function runGroupedVerificationLifecycle() {
     { sensorCode: 'S-02', event: { eventType: 'fault', signal: 'fault' }, label: 'third process fault', machineStatus: 'Downtime', downtimeAction: 'created' },
   ]
 
+  const token = liveReadToken()
   await assertCleanVerificationBaseline('preflight')
   console.log(`Verifying grouped downtime lifecycle against ${BASE_URL}`)
   let downtimeId = null
@@ -408,7 +440,11 @@ async function runGroupedVerificationLifecycle() {
       machineStatus: step.machineStatus,
       downtimeAction: step.downtimeAction,
     })
-    if (step.downtimeAction === 'created') downtimeId = savedEvent.downtimeId
+    await assertProcessFaultAlert(device, token)
+    if (step.downtimeAction === 'created') {
+      downtimeId = savedEvent.downtimeId
+      await assertDowntimeAlert(downtimeId, token)
+    }
   }
 
   const recoveries = [

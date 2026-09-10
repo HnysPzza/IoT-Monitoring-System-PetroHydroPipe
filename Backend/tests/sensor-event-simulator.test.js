@@ -19,6 +19,7 @@ function cleanVerificationBaseline(overrides = {}) {
   return {
     live: { ...live, ...(overrides.live || {}) },
     downtime: { ...downtime, ...(overrides.downtime || {}) },
+    alerts: overrides.alerts,
   }
 }
 
@@ -76,6 +77,46 @@ function directS03VerificationResponse(event, index, overrides = {}) {
   }
 }
 
+function simulatorAlert(sensorCode, metadata) {
+  const isDowntime = Boolean(metadata.downtimeId)
+  return {
+    id: `alert-${sensorCode}-${isDowntime ? 'downtime' : 'process'}`,
+    severity: isDowntime ? 'Critical' : 'Warning',
+    status: 'Active',
+    title: `${sensorCode} ${isDowntime ? 'downtime detected' : 'process issue detected'}`,
+    message: 'Simulator alert snapshot.',
+    sourceType: 'sensor',
+    machine: { id: 'machine-1', name: 'Spiral Mill 01' },
+    sensor: { id: `sensor-${sensorCode}`, sensorCode, label: sensorCode },
+    metadata,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    resolvedAt: null,
+    revision: '1',
+  }
+}
+
+function alertSnapshotForEvents(events, outcomes) {
+  const processAlerts = new Map()
+  let downtimeAlert = null
+
+  events.forEach((event, index) => {
+    const outcome = outcomes[index]
+    const sensorCode = event.metadata.sensorCode
+    if (event.eventType !== 'fault' || outcome?.stateApplied !== true) return
+
+    if (['S-01', 'S-02', 'S-04'].includes(sensorCode)) {
+      processAlerts.set(sensorCode, simulatorAlert(sensorCode, { processFault: true, sensorCode }))
+    }
+    if (outcome.downtimeAction === 'created' && outcome.downtimeSensorCode === 'S-03') {
+      downtimeAlert = simulatorAlert('S-03', { downtimeId: outcome.downtimeId })
+    }
+  })
+
+  return { alerts: [...processAlerts.values(), ...(downtimeAlert ? [downtimeAlert] : [])], snapshotRevision: '1' }
+}
+
 async function runSimulator(
   t,
   argumentsToAdd,
@@ -84,6 +125,7 @@ async function runSimulator(
   baseline = cleanVerificationBaseline(),
 ) {
   const receivedEvents = []
+  const receivedOutcomes = []
   const receivedRequests = []
   const server = http.createServer((request, response) => {
     let body = ''
@@ -92,7 +134,11 @@ async function runSimulator(
     request.on('end', () => {
       receivedRequests.push({ method: request.method, url: request.url, authorization: request.headers.authorization })
       if (request.method === 'GET') {
-        const payload = request.url.startsWith('/api/iot/live') ? baseline.live : baseline.downtime
+        const payload = request.url.startsWith('/api/iot/live')
+          ? baseline.live
+          : request.url.startsWith('/api/alerts')
+            ? baseline.alerts || alertSnapshotForEvents(receivedEvents, receivedOutcomes)
+            : baseline.downtime
         response.writeHead(200, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify(payload))
         return
@@ -100,8 +146,10 @@ async function runSimulator(
 
       const event = JSON.parse(body)
       receivedEvents.push(event)
+      const result = buildResponse(event, receivedEvents.length - 1)
+      receivedOutcomes.push(result.event)
       response.writeHead(201, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify(buildResponse(event, receivedEvents.length - 1)))
+      response.end(JSON.stringify(result))
     })
   })
   t.after(() => server.close())
@@ -181,7 +229,72 @@ test('process-isolation verifies one S-01 fault and its recovery', async (t) => 
     receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
     [['S-01', 'fault'], ['S-01', 'recovered']],
   )
-  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 4)
+  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 5)
+  assert.equal(receivedRequests.filter((request) => request.url === '/api/alerts').length, 1)
+})
+
+test('process-isolation rejects a missing S-01 process-fault alert', async (t) => {
+  const baseline = cleanVerificationBaseline({ alerts: { alerts: [], snapshotRevision: '0' } })
+  const result = await runSimulator(
+    t,
+    ['--once', '--process-isolation'],
+    0.999999,
+    noDowntimeVerificationResponse,
+    baseline,
+  )
+
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stderr, /S-01 process-fault alert is missing/)
+  assert.deepEqual(
+    result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
+    [['S-01', 'fault']],
+  )
+})
+
+test('grouped verification rejects a missing S-03 downtime alert', async (t) => {
+  const baseline = cleanVerificationBaseline({
+    alerts: {
+      alerts: ['S-01', 'S-02', 'S-04'].map((sensorCode) => simulatorAlert(sensorCode, { processFault: true, sensorCode })),
+      snapshotRevision: '0',
+    },
+  })
+  const result = await runSimulator(t, ['--verify-group'], 0.999999, groupedVerificationResponse, baseline)
+
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stderr, /S-03 downtime alert is missing/)
+  assert.deepEqual(
+    result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
+    [['S-01', 'fault'], ['S-04', 'fault'], ['S-02', 'fault']],
+  )
+})
+
+test('grouped verification rejects a missing S-04 process-fault alert', async (t) => {
+  const baseline = cleanVerificationBaseline({
+    alerts: {
+      alerts: [simulatorAlert('S-01', { processFault: true, sensorCode: 'S-01' })],
+      snapshotRevision: '0',
+    },
+  })
+  const result = await runSimulator(t, ['--verify-group'], 0.999999, groupedVerificationResponse, baseline)
+
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stderr, /S-04 process-fault alert is missing/)
+  assert.deepEqual(
+    result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
+    [['S-01', 'fault'], ['S-04', 'fault']],
+  )
+})
+
+test('direct S-03 verification rejects a missing downtime alert', async (t) => {
+  const baseline = cleanVerificationBaseline({ alerts: { alerts: [], snapshotRevision: '0' } })
+  const result = await runSimulator(t, ['--verify-sensor=S-03'], 0.999999, directS03VerificationResponse, baseline)
+
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stderr, /S-03 downtime alert is missing/)
+  assert.deepEqual(
+    result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
+    [['S-03', 'fault']],
+  )
 })
 
 test('verification refuses an incomplete sensor snapshot before sending any events', async (t) => {
@@ -408,7 +521,8 @@ test('direct S-03 verification proves downtime and recovery ownership', async (t
     [['S-03', 'fault'], ['S-03', 'fault'], ['S-03', 'recovered'], ['S-03', 'recovered']],
   )
   assert.deepEqual(receivedEvents[1], receivedEvents[0])
-  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 4)
+  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 5)
+  assert.equal(receivedRequests.filter((request) => request.url === '/api/alerts').length, 1)
   assert.ok(receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
 })
 
@@ -431,6 +545,7 @@ test('grouped verification uses a monotonic current-time event sequence', async 
   assert.ok(recordedAt.every((value) => value >= runStartedAt))
   assert.ok(recordedAt.every((value, index) => index === 0 || value > recordedAt[index - 1]))
   assert.ok(recordedAt.every((value) => value <= Date.now()))
-  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 4)
+  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 8)
+  assert.equal(receivedRequests.filter((request) => request.url === '/api/alerts').length, 4)
   assert.ok(receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
 })
