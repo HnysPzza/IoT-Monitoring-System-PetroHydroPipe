@@ -59,7 +59,15 @@ describe('LiveSection polling', () => {
 
     expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
     expect(screen.getByText('Idle — grace period')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Refresh live feed' }))
+    expect(screen.queryByRole('region', { name: 'Live feed controls' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filter sensors by status' })).not.toBeInTheDocument()
+    const refreshButton = screen.getByRole('button', { name: 'Refresh live feed' })
+    expect(refreshButton).toHaveClass('icon-button')
+    expect(refreshButton).toHaveTextContent('')
+    expect(refreshButton.closest('.live-hero-card')).not.toBeNull()
+    expect(refreshButton.nextElementSibling).toHaveTextContent('Watchdog observe')
+    expect(refreshButton.querySelector('svg')).toHaveAttribute('stroke-width', '2.4')
+    await user.click(refreshButton)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Live data is stale.*Slow connection/i)
     expect(screen.getByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()

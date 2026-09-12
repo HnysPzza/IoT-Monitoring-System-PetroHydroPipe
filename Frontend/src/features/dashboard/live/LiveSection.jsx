@@ -9,7 +9,6 @@ import { getLiveFeed } from './liveService.js'
 import { presentLiveSensors } from './livePresentation.js'
 
 const POLL_INTERVAL_MS = 15000
-const statusFilters = ['All', 'Running', 'Idle', 'Fault', 'Downtime']
 
 function StatusIcon({ status }) {
   if (status === 'Running') return <Wifi size={18} aria-hidden="true" />
@@ -20,7 +19,6 @@ function StatusIcon({ status }) {
 
 export default function LiveSection() {
   const { token } = useAuth()
-  const [statusFilter, setStatusFilter] = useState('All')
   const [machine, setMachine] = useState(null)
   const [sensors, setSensors] = useState([])
   const [monitoring, setMonitoring] = useState({ mode: 'unknown', capturedAt: null })
@@ -97,11 +95,6 @@ export default function LiveSection() {
     () => presentLiveSensors(sensors, monitoring.mode),
     [sensors, monitoring.mode],
   )
-  const filteredSensors = useMemo(
-    () => presentedSensors.filter((sensor) => statusFilter === 'All' || sensor.displayStatus === statusFilter),
-    [presentedSensors, statusFilter],
-  )
-
   if (isLoading && !machine) {
     return <div className="live-layout"><section className="section-card"><div className="skeleton skeleton-heading" /><div className="skeleton skeleton-panel" /></section></div>
   }
@@ -115,6 +108,9 @@ export default function LiveSection() {
           <div className="section-heading">
             <div><p className="section-eyebrow">Live feed</p><h2 id="live-title">{machine.name}</h2></div>
             <div className="live-heading-badges">
+              <button className="icon-button live-refresh-icon" type="button" aria-label="Refresh live feed" disabled={isRefreshing} onClick={() => loadLiveFeed()}>
+                <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={18} strokeWidth={2.4} aria-hidden="true" />
+              </button>
               <span className="status-badge status-inactive">Watchdog {monitoring.mode}</span>
               <span className={`status-badge ${getLiveStatusClass(machine.status)}`}><StatusIcon status={machine.status} />{machine.status}</span>
             </div>
@@ -130,20 +126,10 @@ export default function LiveSection() {
         <section className="section-card section-placeholder" aria-labelledby="live-empty-title"><div className="section-copy"><p className="section-eyebrow">No live source</p><h2 id="live-empty-title">Live feed is unavailable</h2><p>Check the machine connection and refresh the live feed.</p></div></section>
       )}
 
-      <section className="section-card live-controls-card" aria-label="Live feed controls">
-        <div className="live-filter-group" role="group" aria-label="Filter sensors by status">
-          {statusFilters.map((status) => <button key={status} className={`trend-mode-button ${statusFilter === status ? 'is-selected' : ''}`} type="button" aria-pressed={statusFilter === status} onClick={() => setStatusFilter(status)}>{status}</button>)}
-        </div>
-        <div className="live-refresh">
-          <span>Automatic refresh every 15 seconds</span>
-          <button className="btn btn-success table-action-button live-refresh-button" type="button" aria-label="Refresh live feed" disabled={isRefreshing} onClick={() => loadLiveFeed()}><RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />Refresh</button>
-        </div>
-      </section>
-
       <section className="live-sensor-grid" aria-label="Five inductive proximity sensor statuses">
-        {filteredSensors.length === 0 ? (
-          <section className="section-card section-placeholder" aria-labelledby="live-filter-empty-title"><div className="section-copy"><p className="section-eyebrow">No matching sensors</p><h2 id="live-filter-empty-title">No sensors match this filter</h2><p>Try another status filter or refresh the live feed.</p></div></section>
-        ) : filteredSensors.map((sensor) => (
+        {presentedSensors.length === 0 ? (
+          <section className="section-card section-placeholder" aria-labelledby="live-sensors-empty-title"><div className="section-copy"><p className="section-eyebrow">No live sensors</p><h2 id="live-sensors-empty-title">Sensor data is unavailable</h2><p>Refresh the live feed to try again.</p></div></section>
+        ) : presentedSensors.map((sensor) => (
           <article key={sensor.id} className={`machine-card live-sensor-card ${getLiveStatusClass(sensor.displayStatus)}`}>
             <div className="machine-card-header">
               <div><p className="machine-id">{sensor.sensorCode}</p><h3>{getSensorLabel(sensor.sensorCode, sensor.label)}</h3></div>

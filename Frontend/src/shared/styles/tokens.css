@@ -2845,7 +2845,6 @@ button:disabled {
 }
 
 .live-hero-card,
-.live-controls-card,
 .downtime-controls-card,
 .reports-controls-card,
 .machine-admin-hero,
@@ -3199,7 +3198,6 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.live-controls-card,
 .downtime-controls-card,
 .reports-controls {
   display: flex;
@@ -3207,16 +3205,6 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.live-filter-group {
-  display: inline-grid;
-  grid-template-columns: repeat(4, minmax(82px, 1fr));
-  gap: 6px;
-  padding: 5px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  background: var(--panel-bg);
 }
 
 .live-refresh {
@@ -3276,9 +3264,20 @@ button:disabled {
 
 .live-heading-badges {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.live-refresh-icon,
+.live-refresh-icon:hover:not(:disabled) {
+  color: #10B981;
+  background: transparent;
+}
+
+.live-refresh-icon:disabled {
+  opacity: 0.55;
 }
 
 .live-detection-state {
@@ -5561,7 +5560,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     padding: 20px;
   }
 
-  .live-controls-card,
   .downtime-controls-card,
   .reports-controls,
   .analytics-filter-row {
@@ -5569,7 +5567,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     flex-direction: column;
   }
 
-  .live-filter-group,
   .trend-mode-toggle,
   .analytics-range-fieldset,
   .analytics-range-toggle,
@@ -5768,10 +5765,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   .trend-mode-toggle,
   .trend-calendar-control {
     width: 100%;
-  }
-
-  .live-filter-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .trend-chart-panel {
