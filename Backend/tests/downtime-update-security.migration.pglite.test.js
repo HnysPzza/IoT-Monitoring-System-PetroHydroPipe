@@ -49,7 +49,7 @@ async function seedOpenDowntime(db) {
   )
 }
 
-test('migration 017 restores RPC updates without restoring direct table writes', async (t) => {
+test('migration 017 preserves RPC metadata updates without restoring direct table writes', async (t) => {
   const db = await createDatabase()
   t.after(() => db.close())
   await seedOpenDowntime(db)
@@ -75,8 +75,8 @@ test('migration 017 restores RPC updates without restoring direct table writes',
     /permission denied/i,
   )
   const rpcResult = await db.query(
-    'select * from public.update_downtime_record($1, null, null, false, true)',
-    [DOWNTIME_ID],
+    'select * from public.update_downtime_record($1, null, $2, true, false)',
+    [DOWNTIME_ID, 'reviewed'],
   )
   assert.deepEqual(rpcResult.rows, [{ downtime_id: DOWNTIME_ID }])
   await db.exec('reset role;')
@@ -92,11 +92,13 @@ test('migration 017 restores RPC updates without restoring direct table writes',
   await db.exec('reset role;')
 
   const resolved = await db.query(`
-    select status, ended_at is not null as has_ended_at, duration_seconds is not null as has_duration
+    select status, notes, ended_at is not null as has_ended_at, duration_seconds is not null as has_duration
     from public.downtime_events
     where id = $1
   `, [DOWNTIME_ID])
-  assert.deepEqual(resolved.rows, [{ status: 'Resolved', has_ended_at: true, has_duration: true }])
+  assert.deepEqual(resolved.rows, [{
+    status: 'Open', notes: 'reviewed', has_ended_at: false, has_duration: false,
+  }])
 })
 
 test('fresh schema keeps the downtime update RPC security-definer', async (t) => {
@@ -110,4 +112,17 @@ test('fresh schema keeps the downtime update RPC security-definer', async (t) =>
   `)
 
   assert.equal(functionState.rows[0].prosecdef, true)
+})
+
+test('fresh schema preserves the migration-028 manual resolution contract', async (t) => {
+  const db = await createDatabase()
+  t.after(() => db.close())
+  await seedOpenDowntime(db)
+
+  await db.exec('set role service_role;')
+  await db.query('select * from public.update_downtime_record($1, null, null, false, true)', [DOWNTIME_ID])
+  await db.exec('reset role;')
+
+  const state = await db.query('select status from public.downtime_events where id = $1', [DOWNTIME_ID])
+  assert.deepEqual(state.rows, [{ status: 'Resolved' }])
 })
