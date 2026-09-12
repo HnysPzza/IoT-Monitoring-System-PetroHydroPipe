@@ -4,6 +4,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
 } from './apiClient.js'
 import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
+import { beginSessionChange, setSessionRefresher } from './sessionRefresh.js'
 
 describe('apiRequest', () => {
   afterEach(() => {
@@ -149,5 +150,131 @@ describe('apiRequest', () => {
     await expect(apiRequest('/api/auth/login')).rejects.toMatchObject({ status: 401 })
     await expect(apiRequest('/api/protected', { token: 'valid-token' })).rejects.toMatchObject({ status: 403 })
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('apiRequest session refresh', () => {
+  it('notifies the active replacement session when its retry is unauthorized', async () => {
+    const expired = vi.fn()
+    setSessionRefresher(async () => {
+      setUnauthorizedHandler('replacement', expired)
+      return 'replacement'
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })))
+    await expect(apiRequest('/api/alerts', { token: 'original' })).rejects.toMatchObject({ status: 401 })
+    expect(expired).toHaveBeenCalledTimes(1)
+  })
+  it.each(['timeout', 'abort'])('honors %s while waiting for shared refresh', async (reason) => {
+    vi.useFakeTimers()
+    let resolveRefresh
+    setSessionRefresher(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })))
+    const controller = new AbortController()
+    let result
+    const request = apiRequest('/api/alerts', { token: 'old', timeoutMs: 100, signal: controller.signal })
+      .catch((error) => { result = error })
+    await vi.advanceTimersByTimeAsync(0)
+    if (reason === 'abort') controller.abort()
+    await vi.advanceTimersByTimeAsync(reason === 'timeout' ? 100 : 0)
+    try {
+      expect(result?.code).toBe(reason === 'timeout' ? 'REQUEST_TIMEOUT' : 'REQUEST_ABORTED')
+    } finally {
+      resolveRefresh(null)
+      await request
+    }
+  })
+  it('does not retry an old write after the session changes', async () => {
+    let resolveRequest
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveRequest = resolve }))
+      .mockResolvedValue(new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const refresher = vi.fn(async () => 'another-account-token')
+    setSessionRefresher(refresher)
+    const request = apiRequest('/api/users/target/archive', { token: 'old-account-token', method: 'PATCH' })
+    const assertion = expect(request).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
+    beginSessionChange()
+    resolveRequest(new Response('{}', { status: 401 }))
+    await assertion
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(refresher).not.toHaveBeenCalled()
+  })
+  afterEach(() => {
+    setUnauthorizedHandler(null, null)
+    setSessionRefresher(null)
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('sends credentials so the refresh cookie travels', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiRequest('/api/auth/refresh', { method: 'POST' })
+
+    expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
+  })
+
+  it('retries a 401 once with the refreshed token', async () => {
+    const unauthorized = new Response(JSON.stringify({
+      error: { code: 'UNAUTHENTICATED', message: 'Invalid or expired token.' },
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    const ok = new Response(JSON.stringify({ report: {} }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(ok)
+    vi.stubGlobal('fetch', fetchMock)
+    setSessionRefresher(async () => 'refreshed-token')
+
+    await expect(apiRequest('/api/reports/summary', { token: 'stale-token' })).resolves.toEqual({ report: {} })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer stale-token')
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer refreshed-token')
+  })
+
+  it('coalesces parallel 401s into one refresh call', async () => {
+    const unauthorized = () => new Response(JSON.stringify({
+      error: { code: 'UNAUTHENTICATED', message: 'Invalid or expired token.' },
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    const ok = new Response(null, { status: 204 })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValue(ok)
+      .mockResolvedValue(ok)
+    vi.stubGlobal('fetch', fetchMock)
+    const refresher = vi.fn(async () => 'refreshed-token')
+    setSessionRefresher(refresher)
+
+    await Promise.all([
+      apiRequest('/api/reports/summary', { token: 'stale-token' }),
+      apiRequest('/api/alerts', { token: 'stale-token' }),
+    ])
+
+    expect(refresher).toHaveBeenCalledTimes(1)
+  })
+
+  it('never refreshes auth endpoints and gives up after one retry', async () => {
+    const unauthorized = () => new Response(JSON.stringify({
+      error: { code: 'UNAUTHENTICATED', message: 'Invalid or expired token.' },
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    const fetchMock = vi.fn().mockResolvedValue(unauthorized())
+    vi.stubGlobal('fetch', fetchMock)
+    const refresher = vi.fn(async () => 'refreshed-token')
+    setSessionRefresher(refresher)
+
+    await expect(apiRequest('/api/reports/summary', { token: 'stale-token' })).rejects.toMatchObject({
+      status: 401,
+    })
+    await expect(apiRequest('/api/auth/login', { method: 'POST', body: {} })).rejects.toMatchObject({
+      status: 401,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(refresher).toHaveBeenCalledTimes(1)
   })
 })

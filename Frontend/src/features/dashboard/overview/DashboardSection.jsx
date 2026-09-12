@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useOutletContext } from 'react-router'
-import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
+import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
+import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import { getLiveFeed } from '../live/liveService.js'
+import { connectivityLabel } from '../live/livePresentation.js'
 import DowntimeTrendChart, {
   getTrendRangeLabel,
   startOfDay,
@@ -94,11 +96,37 @@ function SensorStatusIcon({ status }) {
     return <AlertTriangle size={16} aria-hidden="true" />
   }
 
+  if (status === 'Fault') {
+    return <Wrench size={16} aria-hidden="true" />
+  }
+
   if (status === 'Idle' || status === 'Unavailable') {
     return <PauseCircle size={16} aria-hidden="true" />
   }
 
   return <CircleCheck size={16} aria-hidden="true" />
+}
+
+function isRecoveryPendingAlert(alert) {
+  return alert?.status === 'Active' && alert.metadata?.recoveryPending === true
+}
+
+function orderOverviewAlerts(alerts) {
+  return [...alerts].sort(
+    (left, right) => Number(isRecoveryPendingAlert(left)) - Number(isRecoveryPendingAlert(right)),
+  )
+}
+
+function getOverviewAlertMessage(alert) {
+  return isRecoveryPendingAlert(alert)
+    ? 'This alert recovered. Acknowledgement required.'
+    : alert.message
+}
+
+function isDangerOverviewAlert(alert) {
+  return alert?.type === 'danger'
+    || alert?.severity === 'Critical'
+    || getAlertKind(alert) !== null
 }
 
 export default function DashboardSection() {
@@ -141,9 +169,14 @@ export default function DashboardSection() {
   const hasCurrentLive = liveRequestKey === liveKey
   const hasCurrentDowntimeChart = downtimeChartRequestKey === downtimeChartKey
   const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
-  const overviewAlerts = alertContext?.hasTrustedAlertList
-    ? alertContext.activeAlerts
-    : overviewData?.alerts || []
+  const trustedOverviewAlerts = alertContext?.unresolvedAlerts ?? alertContext?.activeAlerts ?? []
+  const overviewAlerts = orderOverviewAlerts(alertContext?.hasTrustedAlertList
+    ? trustedOverviewAlerts
+    : overviewData?.alerts || [])
+  const overviewAlertDestinations = Array.from(new Map(overviewAlerts.map((alert) => {
+    const destination = getAlertDestination(alert)
+    return [destination.to, destination]
+  })).values())
 
   useEffect(() => {
     const requestId = overviewRequestIdRef.current + 1
@@ -179,6 +212,8 @@ export default function DashboardSection() {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setOverviewRefresh((current) => current + 1)
+      setLiveRefresh((current) => current + 1)
+      setDowntimeChartRefresh((current) => current + 1)
     }, AUTO_REFRESH_MS)
     return () => window.clearInterval(intervalId)
   }, [overviewKey])
@@ -435,34 +470,25 @@ export default function DashboardSection() {
             const extraCount = overviewAlerts.length - 1
             return (
               <div
-                className={`notice dashboard-alert overview-alert-banner ${primaryAlert.type === 'danger' || primaryAlert.severity === 'Critical' ? 'notice-error' : ''}`}
+                className={`notice dashboard-alert overview-alert-banner ${isDangerOverviewAlert(primaryAlert) ? 'notice-error' : ''}`}
                 role="alert"
               >
                 <div className="overview-alert-lead">
                   <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
-                  <span className="overview-alert-message">{primaryAlert.message}</span>
+                  <span className="overview-alert-message">{getOverviewAlertMessage(primaryAlert)}</span>
                 </div>
-                {extraCount > 0 ? (
+                {extraCount > 0 ? <span className="overview-alert-count">+{extraCount} more unresolved alert{extraCount > 1 ? 's' : ''}</span> : null}
+                {overviewAlertDestinations.map((destination) => (
                   <Link
-                    to="/dashboard/downtime"
+                    key={destination.to}
+                    to={destination.to}
                     className="overview-alert-more-link"
-                    aria-label={`+${extraCount} more active alerts. View all on downtime page.`}
+                    aria-label={destination.label}
                   >
-                    <span className="overview-alert-count">+{extraCount} more active alert{extraCount > 1 ? 's' : ''}</span>
-                    <span className="meta-separator" aria-hidden="true">→</span>
-                    <span className="overview-alert-action-label">View all</span>
+                    <span className="overview-alert-action-label">{destination.label}</span>
                     <MoveRight size={13} aria-hidden="true" />
                   </Link>
-                ) : (
-                  <Link
-                    to="/dashboard/downtime"
-                    className="overview-alert-more-link single-link"
-                    aria-label="View downtime logs"
-                  >
-                    <span className="overview-alert-action-label">View all</span>
-                    <MoveRight size={13} aria-hidden="true" />
-                  </Link>
-                )}
+                ))}
               </div>
             )
           })()}
@@ -671,6 +697,7 @@ export default function DashboardSection() {
                 <div className="overview-sensor-footer">
                   <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status}</span>
                   <span>{sensor.lastEventAt ? `Last event ${formatLiveDateTime(sensor.lastEventAt)}` : 'No recent event'}</span>
+                  <span>Connection: {connectivityLabel(sensor)}</span>
                 </div>
               </article>
             ))}

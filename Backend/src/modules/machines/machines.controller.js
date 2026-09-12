@@ -10,30 +10,7 @@ async function listSensorsByMachine(req, res) {
   res.json({ sensors })
 }
 
-async function updateMachineStatus(req, res) {
-  const machine = await machinesService.updateMachineStatus({
-    machineId: req.validated.params.id,
-    status: req.validated.body.status,
-    actorUserId: req.user.sub,
-  })
-
-  res.json({ machine })
-}
-
-async function updateSensorStatus(req, res) {
-  const result = await machinesService.updateSensorStatus({
-    sensorId: req.validated.params.id,
-    status: req.validated.body.status,
-    overrideReason: req.validated.body.overrideReason,
-    actorUserId: req.user.sub,
-  })
-
-  res.json(result)
-}
-
 module.exports = {
   listMachines,
   listSensorsByMachine,
-  updateMachineStatus,
-  updateSensorStatus,
 }

@@ -5,7 +5,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 ## Files
 
 - `schema.sql` creates the first required tables, constraints, indexes, and timestamp triggers.
-- `seed.sql` inserts the base roles, one admin account, one machine, and five sensors.
+- `seed.sql` inserts base roles, one machine, and five sensors; it never creates or updates user accounts.
 - `device_key_setup.sql` updates the five sensors with bcrypt hashes for ESP32 device authentication.
 - `migrations/001_add_sensor_device_keys.sql` adds `sensors.device_key_hash` to an existing Phase 2 database.
 - `migrations/002_update_sensor_identity_labels.sql` aligns existing sensor labels with the Phase 9 identity map.
@@ -31,6 +31,17 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/022_require_reviewed_cause_before_resolve.sql` prevents unresolved S-03 causes from being silently finalized.
 - `migrations/023_route_no_pulse_through_watchdog.sql` prevents `no_pulse` observations from bypassing schedule-aware watchdog evaluation.
 - `migrations/025_prevent_s05_downtime.sql` keeps S-05 issue telemetry observational and blocks new S-05 downtime rows.
+- `migrations/032_grouped_downtime_rule.sql` makes S-03 the downtime authority, confirms one S-03-owned interval when unresolved S-01, S-02, and S-04 faults accumulate, and revokes the legacy manual-recovery RPC.
+- `migrations/033_repair_grouped_downtime_dispatch.sql` restores grouped event dispatch on upgraded databases and reconciles machine status from the grouped rule.
+- `migrations/034_route_output_telemetry_through_grouped_reconciliation.sql` keeps normal S-01/S-02/S-03/S-05 telemetry on the grouped reconciliation path and repairs any old any-fault machine status.
+- `migrations/035_fix_sensor_audit.sql` corrects watchdog recovery ownership, fails closed when S-03 authority is missing, and advances readiness to 35.
+- `migrations/036_preserve_direct_watchdog_threshold_time.sql` records direct S-03 downtime at its threshold crossing.
+- `migrations/037_process_absence_idle.sql` distinguishes process Idle from a confirmed absence fault.
+- `migrations/038_s03_machine_authority.sql` keeps S-03 as machine-running authority.
+- `migrations/039_reconnect_absence_baseline.sql` starts a fresh absence window after a confirmed reconnect.
+- `migrations/040_break_resume_baseline.sql` starts a fresh eligible window after break grace ends.
+- `migrations/041_preserve_watchdog_recovery_requirement.sql` prevents diagnostic events from bypassing watchdog recovery.
+- `migrations/042_finalize_sensor_idle_fault_release.sql` advances readiness to 42 and verifies the watchdog evaluator exists.
 
 ## Tables
 
@@ -54,10 +65,12 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 1. Open your Supabase project.
 2. Go to SQL Editor.
 3. Copy and run `schema.sql`.
-4. Copy and run `seed.sql`.
-5. For existing databases, run migration files in order from `Backend/database/migrations/`.
-6. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
-7. Confirm the seeded rows:
+4. Copy and run the credential-free `seed.sql` to create the roles, M-01, and its five sensors.
+5. Provision exactly one active, unarchived Admin with a privately generated bcrypt password hash.
+6. Run migrations 029 through 042 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `42` before starting the current backend.
+7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 042 from `Backend/database/migrations/`.
+8. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
+9. Confirm the configured rows:
    - 5 roles
    - 1 admin user
    - 1 machine
@@ -299,28 +312,40 @@ Use the backend simulator while the physical ESP32 devices are not built yet.
    npm run dev
    ```
 
-5. Send one randomized batch of 5 ESP32 events:
+5. Send one randomized demonstration batch of 5 ESP32 events:
 
    ```bash
-   npm run iot:simulate:once
+   npm run iot:simulate:demo-once
    ```
 
 6. Or keep sending randomized events on an interval:
 
    ```bash
-   npm run iot:simulate
+   npm run iot:simulate:demo-continuous
    ```
 
-7. For repeatable debugging, run deterministic mode:
+7. Verify that one S-01 process fault stays separate from downtime and then recovers:
 
    ```bash
-   npm run iot:simulate:once -- --deterministic
+   npm run iot:simulate:process-isolation
    ```
 
-8. To verify issue creation, duplicate retry handling, stale-event handling, and recovery on the dedicated S-04 simulator path:
+8. Verify direct S-03 downtime creation, duplicate retry handling, and stale recovery handling. This leaves the downtime open for inspection:
 
    ```bash
-   npm run iot:simulate:verify
+   npm run iot:simulate:verify-direct-s03-lifecycle
+   ```
+
+9. Verify grouped S-01/S-04/S-02 downtime creation. This leaves the three process faults active for inspection:
+
+   ```bash
+   npm run iot:simulate:verify-grouped-lifecycle
+   ```
+
+10. After inspecting either open scenario, recover its active faults:
+
+   ```bash
+   npm run iot:simulate:recover-active-faults
    ```
 
 The simulator uses the real ingestion endpoint:
@@ -331,7 +356,7 @@ POST /api/iot/events
 
 Every event body includes a client-generated UUID `eventId`. Retrying the same `eventId` returns the stored event without replaying sensor, machine, alert, or downtime transitions. Reusing it with conflicting content is rejected. Events whose NTP-synchronized `recordedAt` is stale or equal to the sensor watermark are retained in history with `stateApplied: false` and cannot overwrite current state. This timestamp watermark is interim; future firmware should add a per-sensor monotonic counter persisted across reboot, separate from the UUID event ID.
 
-It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one of S-01 through S-04 per batch to send a downtime/fault event. S-05 continues sending normal production activity and is rejected by downtime lifecycle verification. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
+It keeps event history in `sensor_events`, updates `sensors.status`, and updates `machines.status` only through the grouped rule. A single S-01, S-02, or S-04 fault remains a process issue; `iot:simulate:verify-grouped-lifecycle` sends the deterministic S-01 -> S-04 -> S-02 sequence. S-03 faults create downtime immediately; `iot:simulate:verify-direct-s03-lifecycle` checks that authority path. Those two commands require an authenticated read token, refuse a dirty baseline, verify the open state, and leave its fault active for `iot:simulate:recover-active-faults`. S-05 normal production activity also reconciles the grouped machine status, while S-05 downtime verification remains unsupported. Refresh `/dashboard/live` to see the latest backend data.
 
 Local simulator environment values:
 
@@ -343,26 +368,39 @@ IOT_SIM_S02_KEY=
 IOT_SIM_S03_KEY=
 IOT_SIM_S04_KEY=
 IOT_SIM_S05_KEY=
+IOT_SIM_BEARER_TOKEN=
 ```
 
 Common simulator issues:
 
 - `Missing simulator keys`: add the `IOT_SIM_S##_KEY` values to local `Backend/.env`.
 - `401 DEVICE_UNAUTHORIZED`: run the generated SQL hashes in Supabase, or confirm each key matches its ESP32 device ID.
+- `IOT_SIM_BEARER_TOKEN is required` or preflight `401`: provide a valid operator bearer token for verification reads.
 - Backend connection error: confirm `npm run dev` is running and `IOT_SIM_BASE_URL` points to the backend port.
 - No Live Feed changes: confirm the simulator received `201` responses and refresh `/dashboard/live`.
 
-## Seeded Admin
+## Auth Session Migration 027
 
-The seeded admin account is:
+1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
+2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
+3. Apply pending migrations through 042 before deploying the current backend, which requires readiness version 42. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
+4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
+5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
-```text
-username: admin
-email: admin@petrohydropipe.local
-temporary password: password123
-```
+For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 042 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
-The password is stored as a placeholder bcrypt hash for this setup phase. The real auth phase should replace this with a backend seed command or password reset flow.
+Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
+
+### Local Verification
+
+Run `node tests/helpers/auth-browser-server.js` from `Backend` for a disposable in-memory PostgreSQL-compatible auth API on port 3005. It uses the real auth routes, services, bcrypt, JWT, and cookies; only the Supabase transport and login audit writer are replaced. It never connects to Supabase. Dashboard APIs are intentionally absent and show unavailable states.
+
+Start the frontend with `VITE_API_BASE_URL=http://localhost:3005` on `localhost:5175`. Test credentials are `reviewadmin` or `reviewother`, password `Review-only-123!`; these accounts exist only in the disposable database. Stop the helper when finished.
+
+Run `node scripts/smoke-auth-session.js` with `AUTH_SMOKE_BASE_URL`, `AUTH_SMOKE_USERNAME`, and `AUTH_SMOKE_PASSWORD` set in the environment. **Use only a disposable account: the replay check revokes every refresh session for that account.**
+
+Chrome DevTools verification on 2026-09-05 passed login, reload restore, empty legacy token storage, non-readable refresh cookies, two-tab single refresh, logout during delayed refresh, cross-account stale-write rejection, bounded refresh waiting, and sign-out with an expiry banner after the replacement token is rejected. A React regression also covers rejection before the refreshed state commits. Auth transport used the local helper; stale-write, timeout, and protected-route rejection checks injected controlled responses. Hosted HTTPS and Supabase deployment checks remain required.
+
 
 ## Current Scope
 

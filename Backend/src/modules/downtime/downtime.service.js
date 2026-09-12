@@ -169,8 +169,9 @@ function getRecordWindow(records, asOf) {
   return { start, end }
 }
 
-async function calculateListMetrics(records, dateRange, asOf, lossEstimateBasis) {
+async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossEstimateBasis) {
   const recordMetrics = new Map()
+  const pageIds = new Set(pageRecords.map((record) => record.id))
   const machineTotals = []
   const recordsByMachine = new Map()
   records.forEach((record) => {
@@ -191,8 +192,9 @@ async function calculateListMetrics(records, dateRange, asOf, lossEstimateBasis)
       return new Date(record.started_at) < endedAt
     })
 
-    machineRecords.forEach((record) => {
-      if (!positiveRecords.includes(record)) {
+    machineRecords.filter((record) => pageIds.has(record.id)).forEach((record) => {
+      const endedAt = record.ended_at ? new Date(record.ended_at) : asOf
+      if (new Date(record.started_at) >= endedAt) {
         recordMetrics.set(record.id, {
           durationMinutes: 0,
           unplannedMinutes: 0,
@@ -234,6 +236,10 @@ async function listDowntime(filters = {}) {
   const from = (page - 1) * limit
   const dateRange = filters.date ? getBusinessDayRange(filters.date) : null
   const allRecords = await getAllFilteredRecords(filters, dateRange)
+  const ordered = [...allRecords].sort((left, right) => (
+    new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
+  ))
+  const pageRecords = ordered.slice(from, from + limit)
   const lossEstimateBasis = allRecords.length === 0
     ? null
     : await getOutputLossBasis({
@@ -243,12 +249,8 @@ async function listDowntime(filters = {}) {
     })
   const metrics = allRecords.length === 0
     ? { recordMetrics: new Map(), durationMinutes: 0, unplannedMinutes: 0, plannedExcludedMinutes: 0, estimatedLoss: 0 }
-    : await calculateListMetrics(allRecords, dateRange, asOf, lossEstimateBasis)
-  const ordered = [...allRecords].sort((left, right) => (
-    new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
-  ))
-  const records = ordered
-    .slice(from, from + limit)
+    : await calculateListMetrics(allRecords, pageRecords, dateRange, asOf, lossEstimateBasis)
+  const records = pageRecords
     .map((record) => toDowntimeRecord(record, metrics.recordMetrics.get(record.id)))
   const total = allRecords.length
   const totalPages = Math.max(1, Math.ceil(total / limit))
@@ -292,6 +294,10 @@ async function fetchDowntimeById(downtimeId) {
 }
 
 async function updateDowntime({ downtimeId, values, actorUserId }) {
+  if (values.status !== undefined) {
+    throw createDowntimeError(400, 'DOWNTIME_SENSOR_MANAGED', 'Downtime is resolved only by accepted sensor recovery.')
+  }
+
   const existing = await fetchDowntimeById(downtimeId)
   const existingRecord = toDowntimeRecord(existing)
 
@@ -301,18 +307,13 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
     }
   }
 
-  const resolvedCause = values.cause ?? existingRecord.cause
-  if (values.status === 'Resolved' && existingRecord.isCauseEditable && resolvedCause === 'Pending Cause Review') {
-    throw createDowntimeError(400, 'DOWNTIME_CAUSE_REQUIRED', 'Choose the downtime cause before resolving this record.')
-  }
-
   const { error } = await getSupabaseClient()
     .rpc('update_downtime_record', {
       p_downtime_id: downtimeId,
       p_cause: values.cause || null,
       p_notes: values.notes ?? null,
       p_has_notes: values.notes !== undefined,
-      p_resolve: values.status === 'Resolved',
+      p_resolve: false,
     })
     .single()
 

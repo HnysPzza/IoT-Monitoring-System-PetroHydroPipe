@@ -116,4 +116,37 @@ describe('AuditSection', () => {
     expect(screen.getByText('Maintenance confirmed normal operation')).toBeInTheDocument()
     expect(screen.queryByText('Technical details')).not.toBeInTheDocument()
   })
+
+  it('describes no-pulse sensor input as an observation instead of confirmed downtime', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [{
+        id: 'audit-no-pulse',
+        action: 'IOT_EVENT_RECEIVED',
+        entityType: 'sensor_event',
+        entityId: 'event-no-pulse',
+        createdAt: '2026-09-09T07:11:08.000Z',
+        actor: null,
+        metadata: {
+          deviceId: 'esp32-m01-s02',
+          sensorCode: 'S-02',
+          eventType: 'downtime',
+          signal: 'no_pulse',
+          watchdogObservation: true,
+        },
+      }],
+      pagination: { page: 1, limit: 25, total: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+
+    expect(await screen.findByText(/reported no pulse.*observation, not confirmed downtime/i)).toBeInTheDocument()
+    expect(screen.queryByText(/detected downtime/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /view details/i }))
+    await user.click(screen.getByRole('button', { name: /show technical details/i }))
+
+    expect(screen.getByText('No pulse observation (raw value: downtime)')).toBeInTheDocument()
+  })
 })

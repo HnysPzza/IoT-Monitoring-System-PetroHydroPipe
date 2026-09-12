@@ -12,35 +12,6 @@ values
 on conflict (name) do update
 set description = excluded.description;
 
--- First admin account for real backend login during development.
-insert into users (
-  role_id,
-  name,
-  username,
-  email,
-  password_hash,
-  status,
-  must_change_password
-)
-select
-  roles.id,
-  'admin',
-  'admin',
-  'admin@petrohydropipe.local',
-  -- Placeholder bcrypt hash for the temporary seed password: password123
-  -- Replace during the real auth phase or regenerate with the backend seed tool.
-  '$2b$10$PYl2gagd6YPknf9NDUWyo.r1fo3aAZyPmGr/PldpAoJlZGzoyZExO',
-  'Active',
-  true
-from roles
-where roles.name = 'Admin'
-on conflict (username) do update
-set
-  role_id = excluded.role_id,
-  name = excluded.name,
-  email = excluded.email,
-  status = excluded.status,
-  must_change_password = excluded.must_change_password;
 
 -- Current machine used by the first IoT monitoring milestone.
 insert into machines (machine_code, name, status, location)

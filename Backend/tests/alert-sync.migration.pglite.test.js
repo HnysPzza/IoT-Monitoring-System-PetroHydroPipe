@@ -56,6 +56,7 @@ grant execute on function public.get_alerts_snapshot() to service_role;
     + currentSchemaSql.slice(currentIntegrityEnd)
   )
     .replace('  last_applied_recorded_at timestamptz,\n', '')
+    .replace(/create trigger classify_sensor_event_staleness\s+before insert on public\.sensor_events\s+for each row execute function public\.classify_sensor_event_staleness\(\);/, '')
     .replace('  revision bigint not null,\n', '')
     .replace(
       /-- Transactional singleton serializes alert revisions in commit order\.\s+create table if not exists alert_revision_state \([\s\S]*?on conflict \(singleton\) do nothing;\s+/,

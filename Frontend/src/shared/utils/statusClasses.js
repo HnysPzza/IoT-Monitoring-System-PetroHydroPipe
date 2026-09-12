@@ -5,6 +5,7 @@ export function getMachineStatusClass(status) {
 }
 
 export function getLiveStatusClass(status) {
+  if (status === 'Fault') return 'status-downtime'
   return getMachineStatusClass(status)
 }
 

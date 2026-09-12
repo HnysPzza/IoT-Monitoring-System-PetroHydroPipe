@@ -1,8 +1,7 @@
 const usersService = require('./users.service')
 
 async function listUsers(req, res) {
-  const users = await usersService.listUsers()
-  res.json({ users })
+  res.json(await usersService.listUsers(req.validated.query))
 }
 
 async function listRoles(req, res) {
@@ -11,12 +10,11 @@ async function listRoles(req, res) {
 }
 
 async function createUser(req, res) {
-  // Service handles role validation, duplicate checks, and password hashing.
   const user = await usersService.createUser({
     ...req.validated.body,
     actorUserId: req.user.sub,
   })
-  res.status(201).json({ user })
+  res.status(201).json(user)
 }
 
 async function updateUserStatus(req, res) {

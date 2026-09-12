@@ -1,8 +1,11 @@
 import { createApiError } from '../errors/apiError.js'
 import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
+import { assertSessionCurrent, getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000
+
+const AUTH_COOKIE_PATH_PATTERN = /^\/api\/auth\//
 
 // Handles empty responses safely before trying to parse JSON.
 async function readJson(response) {
@@ -29,6 +32,8 @@ export async function apiRequest(path, {
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   signal,
 } = {}) {
+  const sessionContext = getSessionContext(token)
+  let activeToken = token
   const requestHeaders = {
     'Content-Type': 'application/json',
     ...headers,
@@ -67,11 +72,30 @@ export async function apiRequest(path, {
     try {
       response = await fetch(`${API_BASE_URL}${path}`, {
         method,
+        credentials: 'include',
         headers: requestHeaders,
         body: serializedBody,
         signal: controller.signal,
       })
-    } catch {
+
+      // An expired access token gets exactly one silent refresh and retry.
+      if (response.status === 401 && !AUTH_COOKIE_PATH_PATTERN.test(path)) {
+        assertSessionCurrent(sessionContext)
+        const refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
+
+        if (refreshedToken && refreshedToken !== token) {
+          activeToken = refreshedToken
+          response = await fetch(`${API_BASE_URL}${path}`, {
+            method,
+            credentials: 'include',
+            headers: { ...requestHeaders, Authorization: `Bearer ${refreshedToken}` },
+            body: serializedBody,
+            signal: controller.signal,
+          })
+        }
+      }
+    } catch (error) {
+      if (error.code === 'SESSION_CHANGED') throw error
       if (timedOut) {
         throw createApiError('The request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
       }
@@ -98,13 +122,13 @@ export async function apiRequest(path, {
         null,
         'MALFORMED_RESPONSE',
       )
-      notifyUnauthorized(error, { token, path })
+      notifyUnauthorized(error, { token: activeToken, path })
       throw error
     }
 
     if (!response.ok) {
       const error = createApiError(getErrorMessage(payload, fallbackError), response.status, payload)
-      notifyUnauthorized(error, { token, path })
+      notifyUnauthorized(error, { token: activeToken, path })
       throw error
     }
 

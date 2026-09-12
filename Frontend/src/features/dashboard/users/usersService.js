@@ -1,8 +1,12 @@
 import { apiRequest } from '../../../shared/services/apiClient.js'
 
 // Users endpoints are protected; every request receives the JWT from AuthContext.
-export function getUsers(token) {
-  return apiRequest('/api/users', { token })
+export function getUsers(token, query = {}, signal) {
+  return apiRequest(`/api/users?${new URLSearchParams(query)}`, { token, signal })
+}
+
+export function resendSetup(token, userId) {
+  return apiRequest(`/api/users/${userId}/resend-setup`, { token, method: 'POST' })
 }
 
 export function getRoles(token) {

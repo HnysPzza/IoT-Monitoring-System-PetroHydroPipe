@@ -6,7 +6,6 @@ export const initialUserForm = {
   username: '',
   email: '',
   role: '',
-  password: '',
 }
 
 export function normalizeUsername(username) {
@@ -43,17 +42,27 @@ export function validateAccount(values, accounts) {
     errors.role = 'Select a role.'
   }
 
-  if (!values.password) {
-    errors.password = 'Temporary password is required.'
-  } else if (values.password.length < 8) {
-    errors.password = 'Temporary password must be at least 8 characters.'
-  }
+  if (values.role === 'Admin') errors.role = 'The Admin account is protected.'
 
   return errors
 }
 
 export function formatDate(value) {
   return formatDateOnly(value)
+}
+
+export function getInitials(name, username) {
+  if (name && name.trim()) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    }
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  if (username && username.trim()) {
+    return username.trim().slice(0, 2).toUpperCase()
+  }
+  return 'U'
 }
 
 export { getAccountStatusClass }

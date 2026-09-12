@@ -6,6 +6,9 @@ const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentit
 const { recordAuditLog } = require('../audit/audit.service')
 const { publishIngestionTransitions } = require('../operations/transitionPublisher')
 
+const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
+const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
+
 function createIotError(status, code, message) {
   const error = new Error(message)
   error.status = status
@@ -21,10 +24,64 @@ function getMachineRecord(sensorRecord) {
   return sensorRecord.machines || null
 }
 
-function mapSensorStatusToLiveStatus(status) {
+function mapSensorStatusToLiveStatus(sensorCode, status, machineStatus) {
+  if (sensorCode === 'S-03' && machineStatus === 'Downtime') return 'Downtime'
   if (status === 'Active') return 'Running'
-  if (status === 'Fault') return 'Downtime'
+  if (status === 'Fault') return 'Fault'
   return 'Idle'
+}
+
+function getDowntimeOwnerSensorCode(processing) {
+  if (!processing.downtime_action) return null
+  return processing.downtime_sensor_code
+}
+
+function hasValidTransitionDescriptor(descriptor) {
+  if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) return false
+  if (descriptor.kind === 'alert') {
+    return ALERT_TRANSITION_ACTIONS.has(descriptor.action)
+      && typeof descriptor.record?.id === 'string' && descriptor.record.id.length > 0
+  }
+  if (descriptor.kind === 'downtime') {
+    return DOWNTIME_TRANSITION_ACTIONS.has(descriptor.action)
+      && typeof descriptor.id === 'string' && descriptor.id.length > 0
+      && descriptor.sensorCode === 'S-03'
+      && typeof descriptor.machineCode === 'string' && descriptor.machineCode.length > 0
+  }
+  return false
+}
+
+function validateSensorEventResult(data) {
+  const descriptors = data?.transition_descriptors
+  const hasBasicFields = typeof data?.sensor_event_id === 'string'
+    && typeof data.device_event_id === 'string'
+    && typeof data.event_type === 'string'
+    && data.event_value && typeof data.event_value === 'object'
+    && typeof data.recorded_at === 'string'
+    && typeof data.duplicate === 'boolean'
+    && typeof data.stale === 'boolean'
+    && typeof data.state_applied === 'boolean'
+    && Array.isArray(descriptors)
+    && descriptors.every(hasValidTransitionDescriptor)
+
+  const downtimeDescriptors = Array.isArray(descriptors)
+    ? descriptors.filter((descriptor) => descriptor.kind === 'downtime')
+    : []
+  const hasMatchingDowntime = data?.downtime_action
+    && data.downtime_sensor_code === 'S-03'
+    && typeof data.downtime_id === 'string'
+    && downtimeDescriptors.some((descriptor) => (
+      descriptor.action === data.downtime_action && descriptor.id === data.downtime_id
+    ))
+  const transitionsMatchState = data?.state_applied
+    ? (data.downtime_action ? hasMatchingDowntime : downtimeDescriptors.length === 0)
+    : descriptors?.length === 0
+
+  if (!hasBasicFields || !transitionsMatchState) {
+    throw createIotError(500, 'SENSOR_EVENT_RESULT_INVALID', 'Unable to process sensor event.')
+  }
+
+  return data
 }
 
 function toEventResponse(eventRecord, sensorRecord, processing = {}) {
@@ -41,6 +98,10 @@ function toEventResponse(eventRecord, sensorRecord, processing = {}) {
     duplicate: Boolean(processing.duplicate),
     stale: Boolean(processing.stale),
     stateApplied: Boolean(processing.state_applied),
+    machineStatus: processing.new_machine_status || machine?.status || null,
+    downtimeAction: processing.downtime_action || null,
+    downtimeId: processing.downtime_id || null,
+    downtimeSensorCode: getDowntimeOwnerSensorCode(processing),
   }
 }
 
@@ -101,7 +162,7 @@ function isMonitoringStateFresh(snapshotAt, lastEvaluatedAt) {
   return age >= 0 && age <= maximumAge
 }
 
-function toLiveSensorResponse(sensorRecord, snapshotAt) {
+function toLiveSensorResponse(sensorRecord, snapshotAt, machineStatus) {
   const stateFresh = isMonitoringStateFresh(snapshotAt, sensorRecord.watchdog?.last_evaluated_at)
 
   return {
@@ -109,7 +170,8 @@ function toLiveSensorResponse(sensorRecord, snapshotAt) {
     sensorCode: sensorRecord.sensor_code,
     label: getSensorLabel(sensorRecord.sensor_code, sensorRecord.label),
     esp32DeviceId: sensorRecord.esp32_device_id,
-    status: mapSensorStatusToLiveStatus(sensorRecord.status),
+    status: mapSensorStatusToLiveStatus(sensorRecord.sensor_code, sensorRecord.status, machineStatus),
+    physicalStatus: sensorRecord.status,
     signal: sensorRecord.latest_event?.signal || null,
     lastEventAt: sensorRecord.latest_event?.recorded_at || null,
     purpose: getSensorPurpose(sensorRecord.sensor_code),
@@ -228,7 +290,7 @@ async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
     throw createIotError(500, 'SENSOR_EVENT_PROCESSING_FAILED', 'Unable to process sensor event.')
   }
 
-  return data
+  return validateSensorEventResult(data)
 }
 
 function validateHeartbeatResult(data, heartbeatId) {
@@ -330,7 +392,7 @@ async function getLiveFeed() {
   }
 
   const { machine, sensors, snapshot_at: snapshotAt } = parsed.data
-  const liveSensors = sensors.map((sensor) => toLiveSensorResponse(sensor, snapshotAt))
+  const liveSensors = sensors.map((sensor) => toLiveSensorResponse(sensor, snapshotAt, machine.status))
   const lastEventAt = liveSensors.reduce(
     (latest, sensor) => (!latest || (sensor.lastEventAt && sensor.lastEventAt > latest) ? sensor.lastEventAt : latest),
     null,

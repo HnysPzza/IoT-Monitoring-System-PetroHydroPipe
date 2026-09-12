@@ -78,12 +78,15 @@ export default function DowntimeSection() {
   const [causeFilter, setCauseFilter] = useState('All')
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [notice, setNotice] = useState(null)
+  const [refreshError, setRefreshError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [updatingRecordId, setUpdatingRecordId] = useState('')
   const [expandedRecordId, setExpandedRecordId] = useState('')
   const [draftNotes, setDraftNotes] = useState({})
+  const requestIdRef = useRef(0)
 
   const loadDowntimeRecords = useCallback(async ({ silent = false } = {}) => {
+    const requestId = ++requestIdRef.current
     if (!silent) {
       setIsLoading(true)
       setNotice(null)
@@ -97,6 +100,8 @@ export default function DowntimeSection() {
         page,
         limit: 25,
       })
+      if (requestId !== requestIdRef.current) return
+      setRefreshError('')
       setRecords(payload.records || [])
       setSummary(payload.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 })
       setLossEstimateBasis(payload.lossEstimateBasis || null)
@@ -106,6 +111,8 @@ export default function DowntimeSection() {
         setDraftNotes({})
       }
     } catch (error) {
+      if (requestId !== requestIdRef.current) return
+      if (silent) setRefreshError(error.message || 'Unable to refresh downtime records.')
       if (!silent) {
         setNotice({ type: 'error', message: error.message || 'Unable to load downtime records.' })
         setRecords([])
@@ -114,7 +121,7 @@ export default function DowntimeSection() {
         setPagination({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       }
     } finally {
-      if (!silent) setIsLoading(false)
+      if (requestId === requestIdRef.current) setIsLoading(false)
     }
   }, [causeFilter, dateFilter, page, statusFilter, token])
   const loadDowntimeRecordsRef = useRef(loadDowntimeRecords)
@@ -122,6 +129,7 @@ export default function DowntimeSection() {
 
   useEffect(() => {
     loadDowntimeRecords()
+    return () => { requestIdRef.current += 1 }
   }, [loadDowntimeRecords])
 
   useEffect(() => {
@@ -148,12 +156,20 @@ export default function DowntimeSection() {
         void loadDowntimeRecordsRef.current({ silent: true })
       },
       onFallback: startFallbackPolling,
-      onRecovery: stopFallbackPolling,
+      onOpen: () => { void loadDowntimeRecordsRef.current({ silent: true }) },
+      onRecovery: () => {
+        stopFallbackPolling()
+        void loadDowntimeRecordsRef.current({ silent: true })
+      },
     })
+    const reconciliationId = window.setInterval(() => {
+      void loadDowntimeRecordsRef.current({ silent: true })
+    }, 60000)
 
     return () => {
       unsubscribe()
       stopFallbackPolling()
+      window.clearInterval(reconciliationId)
     }
   }, [token])
 
@@ -187,21 +203,6 @@ export default function DowntimeSection() {
     }
   }
 
-  async function resolveRecord(recordId) {
-    setUpdatingRecordId(recordId)
-    setNotice(null)
-
-    try {
-      const payload = await updateDowntimeRecord(token, recordId, { status: 'Resolved' })
-      setRecords((current) => current.map((record) => (record.id === payload.record.id ? payload.record : record)))
-      setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} downtime resolved.` })
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message || 'Unable to resolve downtime record.' })
-    } finally {
-      setUpdatingRecordId('')
-    }
-  }
-
   function toggleRecordDetails(record) {
     setExpandedRecordId((currentId) => {
       const nextId = currentId === record.id ? '' : record.id
@@ -219,6 +220,11 @@ export default function DowntimeSection() {
 
   return (
     <div className="downtime-layout">
+      {refreshError ? (
+        <div className="notice notice-error dashboard-alert" role="alert">
+          Downtime data is stale. {refreshError} Retrying automatically.
+        </div>
+      ) : null}
       {notice ? (
         <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>
           {notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
@@ -382,18 +388,7 @@ export default function DowntimeSection() {
                         </button>
                       </td>
                       <td data-label="Action">
-                        {canEditDowntime ? (
-                          <button
-                            className="btn btn-secondary table-action-button table-action-activate"
-                            type="button"
-                            disabled={record.status === 'Resolved' || record.needsCauseReview || updatingRecordId === record.id}
-                            title={record.needsCauseReview ? 'Choose a downtime cause before resolving.' : undefined}
-                            onClick={() => resolveRecord(record.id)}
-                          >
-                            <CheckCircle2 size={16} aria-hidden="true" />
-                            {updatingRecordId === record.id ? 'Saving' : 'Resolve'}
-                          </button>
-                        ) : <span className="table-muted">Read only</span>}
+                        <span className="table-muted">Sensor-managed</span>
                       </td>
                     </tr>
                     {expandedRecordId === record.id ? (

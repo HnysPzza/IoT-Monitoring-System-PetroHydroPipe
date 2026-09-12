@@ -10,12 +10,24 @@ const usernameSchema = z
 const createUserSchema = z.object({
   // Admin-created accounts are validated before reaching the service layer.
   body: z.object({
-    name: z.string().trim().min(1, 'Full name is required.'),
-    username: usernameSchema,
-    email: z.string().trim().email('Enter a valid email address.'),
-    role: z.string().trim().min(1, 'Role is required.'),
-    password: z.string().min(8, 'Temporary password must be at least 8 characters.'),
-  }),
+    name: z.string().trim().min(1, 'Full name is required.').max(120),
+    username: usernameSchema.max(80),
+    email: z.string().trim().email('Enter a valid email address.').max(254),
+    role: z.string().trim().min(1, 'Role is required.').max(80).refine((role) => role !== 'Admin', 'Admin cannot be assigned.'),
+  }).strict(),
+})
+
+const listUsersSchema = z.object({
+  query: z.object({
+    page: z.coerce.number().int().min(1).max(100000).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(10),
+    search: z.string().trim().max(100).default(''),
+    role: z.string().trim().max(80).default(''),
+    status: z.enum(['', 'Active', 'Inactive']).default(''),
+    onboarding: z.enum(['', 'Invited', 'Expired', 'Ready']).default(''),
+    sort: z.enum(['created', 'name', 'role', 'status']).default('created'),
+    direction: z.enum(['asc', 'desc']).default('desc'),
+  }).strict(),
 })
 
 const updateUserStatusSchema = z.object({
@@ -35,6 +47,7 @@ const archiveUserSchema = z.object({
 })
 
 module.exports = {
+  listUsersSchema,
   archiveUserSchema,
   createUserSchema,
   updateUserStatusSchema,

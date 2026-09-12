@@ -137,6 +137,17 @@ The backend uses three service-role-only PostgreSQL RPCs:
 - `acknowledge_alert` locks the alert, applies the acknowledgement/recovery lifecycle, writes audits, and returns an explicit outcome.
 - `get_alerts_snapshot` returns alert rows and the global snapshot watermark from one database statement.
 
+Machine downtime is evaluated in the same transaction by the shared backend rule:
+
+```text
+S-03 confirmed fault
+OR (S-01 fault AND S-02 fault AND S-04 fault)
+```
+
+An individual S-01, S-02, or S-04 fault remains a process issue. Confirmed process faults may arrive at different times; the third unresolved fault starts one downtime interval owned by S-03. A group-owned interval resolves on the first recovery among S-01, S-02, and S-04 unless S-03 remains faulted; an S-03 fault must clear separately. S-05 remains output-only.
+
+The Machine Module is read-only. It has no manual status selector or recovery override: operational state can change only through accepted sensor telemetry or qualified watchdog recovery.
+
 Stale or equal `recordedAt` values are retained as raw events but apply no operational transition. Alert revisions come from a locked singleton counter row held inside the transaction; they do not use a sequence. PostgreSQL `BIGINT` values are cast to canonical decimal strings before reaching JavaScript.
 
 ## 4. Database Design (Supabase / Postgres)

@@ -12,6 +12,9 @@ Frontend/node_modules/
 
 # Local agent skills
 .agents/
+*.zcode/
+*superpowers
+
 
 # Build output
 dist/
@@ -42,3 +45,6 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Scripts
+/scripts/

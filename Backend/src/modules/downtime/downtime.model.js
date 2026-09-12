@@ -27,9 +27,8 @@ const updateDowntimeSchema = z.object({
   }),
   body: z.object({
     cause: downtimeCauseSchema.optional(),
-    status: z.literal('Resolved').optional(),
     notes: z.string().trim().max(1000, 'Notes are too long.').optional(),
-  }).refine((body) => body.cause !== undefined || body.status !== undefined || body.notes !== undefined, {
+  }).strict().refine((body) => body.cause !== undefined || body.notes !== undefined, {
     message: 'At least one downtime field is required.',
   }),
 })

@@ -3,6 +3,10 @@ import { cleanCode, formatDateTime as formatSharedDateTime } from '../../../shar
 import { getSignalLabel } from '../../../shared/utils/signalFormatters.js'
 
 const actionLabels = {
+  WATCHDOG_DOWNTIME_CREATED: 'Sensor monitoring confirmed downtime',
+  WATCHDOG_DOWNTIME_RESOLVED: 'Sensor monitoring confirmed recovery',
+  CONNECTIVITY_ALERT_CREATED: 'Sensor connection lost',
+  CONNECTIVITY_ALERT_RESOLVED: 'Sensor connection restored',
   LOGIN_SUCCESS: 'Successful login',
   LOGIN_FAILED: 'Failed login attempt',
   USER_CREATED: 'User account created',
@@ -204,8 +208,17 @@ export function getReadableDetails(log) {
   const sensor = getSensorName(metadata.sensorCode) || 'Sensor'
   const signal = getSignalLabel(metadata.signal)
   const eventType = cleanCode(metadata.eventType).toLowerCase()
+  const isNoPulseObservation = metadata.eventType === 'downtime' && metadata.signal === 'no_pulse'
 
   switch (log.action) {
+    case 'WATCHDOG_DOWNTIME_CREATED':
+      return `${getSensorName(metadata.ownerSensorCode) || sensor} downtime was confirmed after the configured absence threshold.`
+    case 'WATCHDOG_DOWNTIME_RESOLVED':
+      return `${getSensorName(metadata.ownerSensorCode) || sensor} recovered after the configured recovery confirmation.`
+    case 'CONNECTIVITY_ALERT_CREATED':
+      return `${sensor} is offline. Communication loss alone does not confirm downtime.`
+    case 'CONNECTIVITY_ALERT_RESOLVED':
+      return `${sensor} reconnected. Physical fault recovery is checked separately.`
     case 'LOGIN_SUCCESS':
       return `${username} logged in as ${role}.`
     case 'LOGIN_FAILED':
@@ -233,6 +246,9 @@ export function getReadableDetails(log) {
     case 'SENSOR_MANUAL_RECOVERY_OVERRIDE':
       return `${sensor} was manually recovered because ${metadata.reason || 'an authorized override was recorded'}. ${getMachineName(log)} was recalculated to ${metadata.newMachineStatus || 'its derived status'}.`
     case 'IOT_EVENT_RECEIVED':
+      if (isNoPulseObservation) {
+        return `${sensor} reported no pulse. This is an observation, not confirmed downtime.`
+      }
       return `${sensor} detected ${eventType}. Signal: ${signal}.`
     case 'IOT_DEVICE_AUTH_FAILED':
       return `${metadata.deviceId || 'ESP32 device'} was rejected because ${loginFailureReasons[metadata.reason] || cleanCode(metadata.reason).toLowerCase()}.`
@@ -252,6 +268,9 @@ export function getReadableDetails(log) {
 }
 
 export function getReadableSource(log) {
+  if (log.action?.startsWith('WATCHDOG_') || log.action?.startsWith('CONNECTIVITY_')) {
+    return 'Sensor monitoring'
+  }
   if (log.action?.startsWith('ALERT_')) {
     return 'Alert system'
   }
@@ -286,9 +305,12 @@ export function getReadableDetailItems(log) {
 }
 
 export function getTechnicalDetailItems(log) {
-  const metadataItems = Object.entries(log.metadata || {}).map(([key, value]) => ({
+  const metadata = log.metadata || {}
+  const metadataItems = Object.entries(metadata).map(([key, value]) => ({
     label: technicalLabels[key] || cleanCode(key),
-    value: formatTechnicalValue(key, value),
+    value: key === 'eventType' && value === 'downtime' && metadata.signal === 'no_pulse'
+      ? 'No pulse observation (raw value: downtime)'
+      : formatTechnicalValue(key, value),
   }))
 
   return [

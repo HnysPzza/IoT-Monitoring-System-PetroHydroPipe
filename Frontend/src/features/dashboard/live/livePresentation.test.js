@@ -15,15 +15,27 @@ function sensor(overrides = {}) {
 }
 
 describe('live sensor presentation', () => {
-  it('maps grace, observe downtime, recovery, and offline connectivity separately', () => {
+  it('maps grace, observe threshold, and offline connectivity separately', () => {
     expect(presentLiveSensor(sensor({ monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'grace' } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Idle — grace period' })
     expect(presentLiveSensor(sensor({ monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'downtime' } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Idle — threshold observed', connectivityLabel: 'Offline' })
-    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'recovering' } }), 'enforce')).toMatchObject({ displayStatus: 'Downtime', stateLabel: 'Downtime — recovery confirmation' })
+  })
+
+  it('keeps enforced threshold and recovery as monitoring phases for every process sensor', () => {
+    for (const sensorCode of ['S-01', 'S-02', 'S-04']) {
+      expect(presentLiveSensor(sensor({ sensorCode, monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'downtime' } }), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled' })
+      expect(presentLiveSensor(sensor({ sensorCode, monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'downtime' } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Idle — threshold observed' })
+      expect(presentLiveSensor(sensor({ sensorCode, monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'downtime' } }), 'enforce')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring — threshold reached' })
+      expect(presentLiveSensor(sensor({ sensorCode, monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'recovering' } }), 'enforce')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring — recovery confirmation' })
+    }
   })
 
   it('gives confirmed operational downtime precedence and never assigns absence state to S-05', () => {
     expect(presentLiveSensor(sensor({ status: 'Downtime' }), 'observe').stateLabel).toBe('Confirmed operational downtime')
     expect(presentLiveSensor(sensor({ sensorCode: 'S-05', monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'downtime' } }), 'enforce')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Production output sensing' })
+  })
+
+  it('labels a process sensor fault without calling it downtime', () => {
+    expect(presentLiveSensor(sensor({ status: 'Fault' }), 'disabled')).toMatchObject({ displayStatus: 'Fault', stateLabel: 'Process sensor fault' })
   })
 
   it('labels disabled and stale monitoring without inventing downtime', () => {

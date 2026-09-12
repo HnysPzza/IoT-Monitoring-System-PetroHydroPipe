@@ -10,9 +10,12 @@
     "test:integration": "node --test tests/integration/*.test.js",
     "db:verify:downtime": "node scripts/verify-downtime-migration.js",
     "iot:keys": "node scripts/generate-device-keys.js",
-    "iot:simulate:once": "node scripts/simulate-sensor-events.js --once",
-    "iot:simulate:verify": "node scripts/simulate-sensor-events.js --verify-sensor=S-04",
-    "iot:simulate": "node scripts/simulate-sensor-events.js",
+    "iot:simulate:demo-once": "node scripts/simulate-sensor-events.js --once",
+    "iot:simulate:demo-continuous": "node scripts/simulate-sensor-events.js",
+    "iot:simulate:recover-active-faults": "node scripts/simulate-sensor-events.js --recover-active-faults",
+    "iot:simulate:process-isolation": "node scripts/simulate-sensor-events.js --process-isolation --once",
+    "iot:simulate:verify-grouped-lifecycle": "node scripts/simulate-sensor-events.js --verify-grouped-lifecycle",
+    "iot:simulate:verify-direct-s03-lifecycle": "node scripts/simulate-sensor-events.js --verify-direct-s03-lifecycle",
     "iot:heartbeat:once": "node scripts/simulate-heartbeats.js --once",
     "iot:heartbeat": "node scripts/simulate-heartbeats.js"
   },
@@ -21,6 +24,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@getbrevo/brevo": "^6.0.3",
     "@supabase/supabase-js": "^2.107.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -29,7 +33,8 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
-    "morgan": "^1.11.0",
+    "morgan": "^1.12.1",
+    "pdfkit": "^0.20.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {

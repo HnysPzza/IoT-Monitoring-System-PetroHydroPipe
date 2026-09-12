@@ -2,10 +2,11 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const env = require('../../config/env')
 const { getSupabaseClient } = require('../../database/client')
-const { recordAuditLog } = require('../audit/audit.service')
+const logger = require('../../utils/logger')
 
-const TOKEN_EXPIRES_IN = '8h'
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid username or password.'
+
+const TOKEN_EXPIRES_IN = `${env.ACCESS_TOKEN_EXPIRES_MINUTES}m`
 
 function createAuthError(status, code, message) {
   const error = new Error(message)
@@ -19,7 +20,7 @@ function getRoleName(userRecord) {
     return userRecord.roles[0]?.name || null
   }
 
-  return userRecord.roles?.name || null
+  return userRecord.roles?.name || userRecord.role || null
 }
 
 function toAuthUser(userRecord) {
@@ -42,6 +43,7 @@ function getSessionUserSelect() {
     email,
     status,
     must_change_password,
+    onboarding_state,
     deleted_at,
     roles (
       name
@@ -94,7 +96,7 @@ async function verifyPassword(password, passwordHash) {
   return bcrypt.compare(password, passwordHash)
 }
 
-function createAuthToken(userRecord) {
+function createAuthToken(userRecord, sessionId) {
   if (!env.JWT_SECRET) {
     throw createAuthError(500, 'JWT_NOT_CONFIGURED', 'JWT_SECRET is not configured.')
   }
@@ -104,6 +106,7 @@ function createAuthToken(userRecord) {
     {
       username: userRecord.username,
       role: getRoleName(userRecord),
+      ...(sessionId ? { sid: sessionId } : {}),
     },
     env.JWT_SECRET,
     {
@@ -113,16 +116,15 @@ function createAuthToken(userRecord) {
   )
 }
 
-async function updateLastLoginAt(userId) {
-  const supabase = getSupabaseClient()
-  const { error } = await supabase
-    .from('users')
-    .update({ last_login_at: new Date().toISOString() })
-    .eq('id', userId)
-
-  if (error) {
-    // Login should still succeed even if this audit-style timestamp update fails.
-    console.warn('Unable to update last_login_at for user.', { userId })
+async function recordLoginFailure({ userId, metadata }) {
+  try {
+    const { error } = await getSupabaseClient().from('audit_logs').insert({
+      user_id: userId, action: 'LOGIN_FAILED', entity_type: 'auth', metadata,
+    })
+    if (error) throw error
+  } catch {
+    logger.error('Failed to persist login security event.')
+    throw createAuthError(503, 'AUTH_AUDIT_UNAVAILABLE', 'Sign in is temporarily unavailable.')
   }
 }
 
@@ -131,11 +133,9 @@ async function login({ username, password }) {
   const userRecord = await findUserByUsername(username)
   const normalizedUsername = username.trim().toLowerCase()
 
-  if (!userRecord || userRecord.status !== 'Active' || userRecord.deleted_at) {
-    await recordAuditLog({
+  if (!userRecord || userRecord.status !== 'Active' || userRecord.deleted_at || userRecord.onboarding_state === 'Invited' || !userRecord.password_hash) {
+    await recordLoginFailure({
       userId: userRecord?.id || null,
-      action: 'LOGIN_FAILED',
-      entityType: 'auth',
       metadata: {
         username: normalizedUsername,
         reason: userRecord?.deleted_at ? 'archived_account' : userRecord?.status === 'Inactive' ? 'inactive_account' : 'invalid_credentials',
@@ -147,10 +147,8 @@ async function login({ username, password }) {
   const passwordMatches = await verifyPassword(password, userRecord.password_hash)
 
   if (!passwordMatches) {
-    await recordAuditLog({
+    await recordLoginFailure({
       userId: userRecord.id,
-      action: 'LOGIN_FAILED',
-      entityType: 'auth',
       metadata: {
         username: normalizedUsername,
         reason: 'invalid_credentials',
@@ -159,25 +157,16 @@ async function login({ username, password }) {
     throw createAuthError(401, 'INVALID_CREDENTIALS', INVALID_CREDENTIALS_MESSAGE)
   }
 
-  const token = createAuthToken(userRecord)
-  await updateLastLoginAt(userRecord.id)
-  await recordAuditLog({
-    userId: userRecord.id,
-    action: 'LOGIN_SUCCESS',
-    entityType: 'auth',
-    metadata: {
-      username: userRecord.username,
-      role: getRoleName(userRecord),
-    },
-  })
-
   return {
-    token,
+    verifiedPasswordHash: userRecord.password_hash,
     user: toAuthUser(userRecord),
   }
 }
 
 async function getAuthenticatedUser(tokenPayload, options = {}) {
+  if (typeof tokenPayload.sid !== 'string' || !/^[0-9a-f-]{36}$/i.test(tokenPayload.sid)) {
+    throw createAuthError(401, 'UNAUTHENTICATED', 'Sign in again to start a verified session.')
+  }
   // /me refreshes the safe user shape from the database using the JWT subject.
   const userRecord = await findUserById(tokenPayload.sub, options)
 
@@ -192,6 +181,16 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (userRecord.status !== 'Active') {
     throw createAuthError(403, 'ACCOUNT_INACTIVE', 'User account is inactive.')
   }
+
+  if (userRecord.onboarding_state === 'Invited') {
+    throw createAuthError(403, 'ACCOUNT_SETUP_REQUIRED', 'Finish account setup before signing in.')
+  }
+  let query = getSupabaseClient().from('auth_sessions').select('id').eq('id', tokenPayload.sid)
+    .eq('user_id', userRecord.id).is('revoked_at', null).gt('expires_at', new Date().toISOString())
+  if (options.signal) query = query.abortSignal(options.signal)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to verify session.')
+  if (!data) throw createAuthError(401, 'UNAUTHENTICATED', 'Session has ended. Sign in again.')
 
   return toAuthUser(userRecord)
 }

@@ -33,6 +33,46 @@ function downtimeRecord(overrides = {}) {
 }
 
 describe('DowntimeSection', () => {
+  it('F05 exposes failed background reads and reconciles while the stream is connected', async () => {
+    const timer = vi.spyOn(window, 'setInterval')
+    getDowntimeRecords.mockResolvedValueOnce({ records: [downtimeRecord()] })
+      .mockRejectedValueOnce(new Error('Read failed'))
+      .mockResolvedValue({ records: [downtimeRecord({ displayLabel: 'Fresh result' })] })
+    const view = renderWithAuth(<DowntimeSection />)
+    await screen.findByText('S-03 08:42 AM')
+    await act(async () => { subscribeToDowntime.mock.calls[0][1].onEvent({ payload: { downtime: { id: 'new' } } }) })
+    expect(screen.getByRole('alert')).toHaveTextContent('Downtime data is stale')
+    expect(screen.getByText('S-03 08:42 AM')).toBeInTheDocument()
+    await act(async () => { timer.mock.calls.find(([, delay]) => delay === 60000)[0]() })
+    expect(screen.getByText('Fresh result')).toBeInTheDocument()
+    expect(screen.queryByText(/Downtime data is stale/)).not.toBeInTheDocument()
+    view.unmount()
+    timer.mockRestore()
+  })
+  it('F04 review keeps the current filter when an old request completes', async () => {
+    const user = userEvent.setup()
+    let resolveOld
+    getDowntimeRecords.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve }))
+      .mockResolvedValue({ records: [downtimeRecord({ displayLabel: 'Resolved result', status: 'Resolved', isOpen: false })] })
+    renderWithAuth(<DowntimeSection />)
+    await user.click(screen.getByRole('button', { name: 'Resolved', exact: true }))
+    await screen.findByText('Resolved result')
+    await act(async () => { resolveOld({ records: [downtimeRecord({ displayLabel: 'Old open result' })] }) })
+    expect(screen.queryByText('Old open result')).not.toBeInTheDocument()
+    expect(screen.getByText('Resolved result')).toBeInTheDocument()
+  })
+  it('F04 ignores an older response arriving after a realtime refresh', async () => {
+    let resolveOld
+    const old = new Promise((resolve) => { resolveOld = resolve })
+    getDowntimeRecords.mockReturnValueOnce(old).mockResolvedValue({ records: [downtimeRecord({ displayLabel: 'Current record' })] })
+    renderWithAuth(<DowntimeSection />)
+    await act(async () => {
+      subscribeToDowntime.mock.calls[0][1].onEvent({ payload: { downtime: { id: 'new' } } })
+    })
+    await act(async () => { resolveOld({ records: [downtimeRecord({ displayLabel: 'Old record' })] }) })
+    expect(screen.queryByText('Old record')).not.toBeInTheDocument()
+    expect(screen.getByText('Current record')).toBeInTheDocument()
+  })
   beforeEach(() => {
     getDowntimeRecords.mockReset()
     subscribeToDowntime.mockReset()
@@ -97,7 +137,8 @@ describe('DowntimeSection', () => {
     expect(await screen.findByText('S-03 08:42 AM')).toBeInTheDocument()
     expect(screen.getByText('S-03 - Machine Main Sensor')).toBeInTheDocument()
     expect(screen.getByText('Needs cause review')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Resolve$/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^Resolve$/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Sensor-managed')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /view details/i }))
 
@@ -130,7 +171,7 @@ describe('DowntimeSection', () => {
       },
     })
 
-    expect(await screen.findByText('Read only')).toBeInTheDocument()
+    expect(await screen.findByText('Sensor-managed')).toBeInTheDocument()
     expect(screen.getByLabelText('Cause for S-03 08:42 AM')).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'View details' }))
@@ -226,7 +267,8 @@ describe('DowntimeSection', () => {
     await act(async () => {
       streamHandlers.onFallback()
     })
-    const pollingId = setIntervalSpy.mock.results[0].value
+    const pollingIndex = setIntervalSpy.mock.calls.findIndex(([, delay]) => delay === 10000)
+    const pollingId = setIntervalSpy.mock.results[pollingIndex].value
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 10000)
 
     await act(async () => {
@@ -267,21 +309,13 @@ describe('DowntimeSection', () => {
     expect(await screen.findByText(/notes saved/i)).toBeInTheDocument()
   })
 
-  it('reloads records when filters change and resolves a downtime record', async () => {
+  it('reloads records when filters change without offering manual resolution', async () => {
     const user = userEvent.setup()
-    const resolvedRecord = downtimeRecord({
-      cause: 'Misalignment',
-      needsCauseReview: false,
-      status: 'Resolved',
-      isOpen: false,
-      endedAt: '2026-06-11T00:54:00.000Z',
-    })
 
     getDowntimeRecords.mockResolvedValue({
       records: [downtimeRecord({ cause: 'Misalignment', needsCauseReview: false })],
       summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
     })
-    updateDowntimeRecord.mockResolvedValue({ record: resolvedRecord })
 
     renderWithAuth(<DowntimeSection />)
 
@@ -291,17 +325,8 @@ describe('DowntimeSection', () => {
     await waitFor(() => {
       expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ status: 'Resolved' }))
     })
-
-    await user.click(screen.getByRole('button', { name: /^Resolve$/i }))
-
-    await waitFor(() => {
-      expect(updateDowntimeRecord).toHaveBeenCalledWith(
-        'test-token',
-        '55555555-5555-4555-8555-555555555555',
-        { status: 'Resolved' },
-      )
-    })
-    expect(await screen.findByText(/downtime resolved/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Resolve$/i })).not.toBeInTheDocument()
+    expect(updateDowntimeRecord).not.toHaveBeenCalled()
   })
 
   it('locks cause editing when the backend assigns the cause from the sensor', async () => {

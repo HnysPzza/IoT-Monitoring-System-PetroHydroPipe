@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, Wifi, WifiOff, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
-import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
+import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
@@ -9,11 +9,12 @@ import { getLiveFeed } from './liveService.js'
 import { presentLiveSensors } from './livePresentation.js'
 
 const POLL_INTERVAL_MS = 15000
-const statusFilters = ['All', 'Running', 'Idle', 'Downtime']
+const statusFilters = ['All', 'Running', 'Idle', 'Fault', 'Downtime']
 
 function StatusIcon({ status }) {
   if (status === 'Running') return <Wifi size={18} aria-hidden="true" />
   if (status === 'Downtime') return <AlertTriangle size={18} aria-hidden="true" />
+  if (status === 'Fault') return <Wrench size={18} aria-hidden="true" />
   return <PauseCircle size={18} aria-hidden="true" />
 }
 
@@ -154,7 +155,7 @@ export default function LiveSection() {
               <div><dt>Last Event</dt><dd>{formatLiveDateTime(sensor.lastEventAt)}</dd></div>
               <div><dt>Connection</dt><dd className={sensor.monitoring?.connectivityState === 'offline' ? 'live-offline' : ''}>{sensor.monitoring?.connectivityState === 'online' ? <CheckCircle2 size={14} aria-hidden="true" /> : null}{sensor.monitoring?.connectivityState === 'offline' ? <WifiOff size={14} aria-hidden="true" /> : null}<span className="live-connectivity-label">{sensor.connectivityLabel}</span></dd></div>
             </dl>
-            <div className="live-purpose-row">{sensor.displayStatus === 'Downtime' ? <Wrench size={16} aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}<span>{sensor.purpose}</span></div>
+            <div className="live-purpose-row">{sensor.displayStatus === 'Downtime' ? <Wrench size={16} aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}<span>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</span></div>
           </article>
         ))}
       </section>

@@ -199,17 +199,80 @@ test('migration 016 and fresh schema protect every base table from client roles'
   assert.match(migration, /commit;/i)
 })
 
-test('migration 018 and fresh schema define the guarded manual recovery override', () => {
+test('migration 018 defines the guarded manual recovery override', () => {
   const migration = read('database/migrations/018_add_manual_sensor_recovery_override.sql')
+
+  assert.match(migration, /function public\.override_sensor_recovery/i)
+  assert.match(migration, /p_reason text/i)
+  assert.match(migration, /SENSOR_MANUAL_RECOVERY_OVERRIDE/i)
+  assert.match(migration, /recoveryPending/i)
+  assert.match(migration, /security definer/i)
+  assert.match(migration, /revoke execute[\s\S]*anon, authenticated/i)
+  assert.match(migration, /grant execute[\s\S]*service_role/i)
+})
+
+test('migration 032 disables the legacy manual recovery override', () => {
+  const migration = read('database/migrations/032_grouped_downtime_rule.sql')
+
+  assert.match(
+    migration,
+    /revoke all on function public\.override_sensor_recovery\(uuid,uuid,text\)\s+from public, anon, authenticated, service_role;/i,
+  )
+})
+
+test('migration 032 defines the shared grouped downtime predicate and keeps it backend-only', () => {
+  const migration = read('database/migrations/032_grouped_downtime_rule.sql')
+
+  assert.match(migration, /fault_source/i)
+  assert.match(migration, /function public\.reconcile_machine_downtime/i)
+  assert.match(migration, /S-03 fault OR S-01\/S-02\/S-04 all faulted/i)
+  assert.match(migration, /function public\.sync_process_sensor_alert/i)
+  assert.match(migration, /function public\.evaluate_sensor_watchdog/i)
+  assert.match(migration, /return 32/i)
+  assert.match(migration, /revoke all on function public\.reconcile_machine_downtime[\s\S]*service_role/i)
+  assert.match(migration, /grant execute on function public\.ingest_iot_sensor_event[\s\S]*service_role/i)
+})
+
+test('migration 033 restores the grouped event dispatcher and advances readiness', () => {
+  const migration = read('database/migrations/033_repair_grouped_downtime_dispatch.sql')
+
+  assert.match(migration, /create or replace function public\.ingest_iot_sensor_event/i)
+  assert.match(migration, /from public\.ingest_iot_grouped_sensor_event/i)
+  assert.match(migration, /MACHINE_STATUS_RECONCILED/)
+  assert.match(migration, /return 33/i)
+})
+
+test('migration 034 routes supported telemetry through grouped reconciliation', () => {
+  const migration = read('database/migrations/034_route_output_telemetry_through_grouped_reconciliation.sql')
+
+  assert.match(migration, /v_sensor\.sensor_code not in \('S-01', 'S-02', 'S-03', 'S-04', 'S-05'\)/i)
+  assert.match(migration, /v_sensor_code = 'S-05' and p_event_type in \('pulse', 'idle', 'recovered'\)/i)
+  assert.match(migration, /v_fault_source = 'absence_watchdog' and p_event_type in \('pulse', 'recovered'\)/i)
+  assert.match(migration, /v_detection_state in \('downtime', 'recovering'\)/i)
+  assert.match(migration, /v_sensor_code in \('S-01', 'S-02', 'S-03', 'S-04'\)\s+and p_event_type in \('pulse', 'idle', 'fault', 'recovered'\)/i)
+  assert.match(migration, /from public\.ingest_iot_grouped_sensor_event/i)
+  assert.doesNotMatch(migration, /return query select \* from public\.ingest_iot_sensor_event_legacy_031/i)
+  assert.match(migration, /S-05 faults must use observational ingestion/i)
+  assert.match(migration, /MACHINE_STATUS_RECONCILED/i)
+  assert.match(migration, /return 34/i)
+})
+
+test('migration 035 retains the corrected sensor authority contract', () => {
+  const migration = read('database/migrations/035_fix_sensor_audit.sql')
+
+  assert.match(migration, /new\.detection_state not in \('healthy', 'disabled'\)/i)
+  assert.match(migration, /v_sensor\.fault_source = 'explicit'/i)
+  assert.match(migration, /S-03 downtime authority sensor is missing/i)
+  assert.match(migration, /Required machine sensor identities are missing/i)
+
+  assert.match(migration, /return 35/i)
+})
+
+test('canonical schema stays at the documented migration-028 baseline', () => {
   const schema = read('database/schema.sql')
 
-  for (const content of [migration, schema]) {
-    assert.match(content, /function public\.override_sensor_recovery/i)
-    assert.match(content, /p_reason text/i)
-    assert.match(content, /SENSOR_MANUAL_RECOVERY_OVERRIDE/i)
-    assert.match(content, /recoveryPending/i)
-    assert.match(content, /security definer/i)
-    assert.match(content, /revoke execute[\s\S]*anon, authenticated/i)
-    assert.match(content, /grant execute[\s\S]*service_role/i)
-  }
+  assert.match(schema, /return 28/i)
+  assert.doesNotMatch(schema, /alter table public\.sensors add column if not exists fault_source/i)
+  assert.doesNotMatch(schema, /Sensor-managed downtime must be resolved by accepted sensor recovery/i)
+  assert.doesNotMatch(schema, /return 35/i)
 })

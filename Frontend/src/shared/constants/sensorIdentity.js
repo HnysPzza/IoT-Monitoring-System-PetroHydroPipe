@@ -18,7 +18,7 @@ export function getSensorLabel(sensorCode, fallback = 'Sensor') {
   return getSensorIdentity(sensorCode)?.label || fallback
 }
 
-export function getSensorPurpose(sensorCode, fallback = 'Monitoring point for Spiral Mill 01.') {
+export function getSensorPurpose(sensorCode, fallback = 'Spiral Mill 01 sensor.') {
   return getSensorIdentity(sensorCode)?.purpose || fallback
 }
 

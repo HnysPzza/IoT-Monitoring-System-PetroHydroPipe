@@ -111,8 +111,10 @@ Phase 2 backend status: per-machine sensor thresholds and same-day shift schedul
 
 Two persistent records have separate responsibilities:
 
-- `downtime_events` is the persisted observed and operator-reviewed downtime record. Authorized operators can update supported cause/notes fields and manually resolve the downtime record through its API.
+- `downtime_events` is the persisted observed and operator-reviewed downtime record. Authorized operators can update supported cause and notes fields, while accepted sensor recovery resolves the record.
 - `alerts` is the operator workflow for acknowledgement and recovery visibility.
+
+Downtime confirmation follows one machine-level rule: an explicit or watchdog-confirmed S-03 fault confirms downtime immediately; otherwise, unresolved faults on S-01, S-02, and S-04 together confirm one S-03-owned downtime interval. A single process/material fault remains a process issue, and the three process faults may accumulate at different times before the third one opens the interval.
 
 The alert states are `Active`, `Acknowledged`, and `Resolved`:
 
@@ -122,7 +124,7 @@ The alert states are `Active`, `Acknowledged`, and `Resolved`:
 - Acknowledgement during an ongoing fault changes `Active` to `Acknowledged`.
 - Acknowledgement after recovery changes `Active` plus `recoveryPending` to `Resolved`.
 
-An operator cannot mark the alert as `Resolved` while the sensor fault persists. This prevents the alert dashboard from showing a false recovery even though the separately managed downtime record supports authorized review and manual resolution.
+An operator cannot mark the alert as `Resolved` while the sensor fault persists. This prevents the alert dashboard from showing a false recovery; downtime records are also resolved only by accepted sensor recovery.
 
 IoT application requirements:
 

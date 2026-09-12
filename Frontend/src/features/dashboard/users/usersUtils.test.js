@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { validateAccount } from './usersUtils.js'
+import { getInitials, validateAccount } from './usersUtils.js'
+
+describe('getInitials', () => {
+  it('extracts two-letter initials from full name or falls back to username', () => {
+    expect(getInitials('Karl Laroa')).toBe('KL')
+    expect(getInitials('Operator One Two')).toBe('OT')
+    expect(getInitials('admin')).toBe('AD')
+    expect(getInitials('', 'supervisor')).toBe('SU')
+    expect(getInitials('', '')).toBe('U')
+  })
+})
 
 describe('validateAccount', () => {
   it('returns field errors for missing or invalid account values', () => {
@@ -18,7 +28,7 @@ describe('validateAccount', () => {
     expect(errors.username).toMatch(/lowercase/)
     expect(errors.email).toBe('Enter a valid email address.')
     expect(errors.role).toBe('Select a role.')
-    expect(errors.password).toMatch(/at least 8/)
+    expect(errors.password).toBeUndefined()
   })
 
   it('blocks duplicate username and email before submit', () => {

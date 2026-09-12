@@ -31,12 +31,25 @@ function loadAppWithMocks(mocks = {}) {
   if (!mocks['src/modules/auth/auth.service.js']) {
     mockModule('src/modules/auth/auth.service.js', {
       login: async () => ({}),
+      createAuthToken: () => 'test-access-token',
       getAuthenticatedUser: async (tokenPayload) => ({
         id: tokenPayload.sub,
         name: tokenPayload.username,
         username: tokenPayload.username,
         role: tokenPayload.role,
         mustChangePassword: false,
+      }),
+    })
+  }
+
+  if (!mocks['src/modules/auth/refreshTokens.service.js']) {
+    mockModule('src/modules/auth/refreshTokens.service.js', {
+      issueRefreshToken: async () => ({ rawToken: 'test-refresh-token', sessionId: 'test-session' }),
+      revokeRefreshToken: async () => {},
+      revokeAllForUser: async () => {},
+      rotateRefreshToken: async () => ({
+        rawToken: 'test-rotated-token',
+        user: { id: 'user-1', username: 'admin', name: 'Admin', role: 'Admin' },
       }),
     })
   }

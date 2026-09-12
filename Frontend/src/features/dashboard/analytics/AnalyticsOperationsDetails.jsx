@@ -121,8 +121,12 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
   }, [snapshot])
 
   const totalDowntimeMinutes = snapshot.selected.summary.downtimeMinutes
+  const totalDowntimeEvents = snapshot.selected.summary.downtimeEventCount
   const causeCoverage = snapshot.selected.causeCoverage
   const hasObservedDowntime = totalDowntimeMinutes !== null && totalDowntimeMinutes !== undefined
+  const hasSubMinuteDowntimeEvents = hasObservedDowntime
+    && totalDowntimeMinutes === 0
+    && totalDowntimeEvents > 0
   const totalSensorDowntimeMinutes = downtimeSensors.reduce((total, sensor) => total + sensor.durationMinutes, 0)
   const downtimeDistribution = downtimeSensors.map((sensor, index) => ({
     ...sensor,
@@ -189,12 +193,14 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 />
               </svg>
             </div>
-            <div className="analytics-cause-empty" role="status" aria-label={hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}>
-              <strong>{hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}</strong>
-              <span>{hasObservedDowntime ? '0 min recorded' : 'Not observed'}</span>
-              <p>{hasObservedDowntime
-                ? 'No sensor downtime records fall within the selected date range yet.'
-                : 'This range has no observed downtime period yet.'}</p>
+            <div className="analytics-cause-empty" role="status" aria-label={hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}>
+              <strong>{hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}</strong>
+              <span>{hasSubMinuteDowntimeEvents ? `${totalDowntimeEvents} recorded event${totalDowntimeEvents === 1 ? '' : 's'}` : hasObservedDowntime ? '0 min recorded' : 'Not observed'}</span>
+              <p>{hasSubMinuteDowntimeEvents
+                ? 'Recorded downtime rounds to 0 min in this view.'
+                : hasObservedDowntime
+                  ? 'No sensor downtime records fall within the selected date range yet.'
+                  : 'This range has no observed downtime period yet.'}</p>
             </div>
           </div>
         ) : (
@@ -244,7 +250,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     dominantBaseline="central"
                     fill="var(--c-text)"
                     style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontFamily: "'Inter', sans-serif",
                       fontSize: '1.15rem',
                       fontWeight: 700,
                       letterSpacing: '-0.02em',
@@ -352,13 +358,13 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     dataKey="sensorCode"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'var(--c-text-2)', fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" }}
+                    tick={{ fill: 'var(--c-text-2)', fontSize: 12, fontFamily: "'Inter', sans-serif" }}
                   />
                   <YAxis
                     allowDecimals={false}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'var(--c-text-3)', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" }}
+                    tick={{ fill: 'var(--c-text-3)', fontSize: 11, fontFamily: "'Inter', sans-serif" }}
                   />
                   <Tooltip
                     content={<SensorTooltip />}
