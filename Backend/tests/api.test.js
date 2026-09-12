@@ -453,13 +453,17 @@ test('admin can list, create, and archive users through mocked service', async (
   })
 })
 
-test('machine routes allow admin status update and block production supervisor', async () => {
+test('machine routes are read-only and block production supervisor', async () => {
+  let machineUpdateCalls = 0
   const sensorUpdateCalls = []
   const app = loadAppWithMocks({
     'src/modules/machines/machines.service.js': {
       listMachines: async () => [{ id: machineId, machineCode: 'M-01', name: 'Spiral Mill 01', status: 'Idle' }],
       listSensorsByMachine: async () => [{ id: sensorId, sensorCode: 'S-01', status: 'Active' }],
-      updateMachineStatus: async ({ machineId: targetMachineId, status }) => ({ id: targetMachineId, status }),
+      updateMachineStatus: async ({ machineId: targetMachineId, status }) => {
+        machineUpdateCalls += 1
+        return { id: targetMachineId, status }
+      },
       updateSensorStatus: async (values) => {
         sensorUpdateCalls.push(values)
         return {
@@ -479,32 +483,25 @@ test('machine routes allow admin status update and block production supervisor',
     assert.equal(blocked.response.status, 403)
     assertError(blocked.body, 'FORBIDDEN')
 
-    const updated = await requestJson(baseUrl, `/api/machines/${machineId}/status`, {
+    const machineStatusPatch = await requestJson(baseUrl, `/api/machines/${machineId}/status`, {
       method: 'PATCH',
       headers: authHeader(),
       body: { status: 'Running' },
     })
 
-    assert.equal(updated.response.status, 200)
-    assert.equal(updated.body.machine.status, 'Running')
+    assert.equal(machineStatusPatch.response.status, 404)
+    assertError(machineStatusPatch.body, 'NOT_FOUND')
 
-    const missingReason = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
-      method: 'PATCH',
-      headers: authHeader(),
-      body: { status: 'Active' },
-    })
-    assert.equal(missingReason.response.status, 400)
-    assertError(missingReason.body, 'VALIDATION_ERROR')
-
-    const recovered = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
+    const sensorStatusPatch = await requestJson(baseUrl, `/api/machines/sensors/${sensorId}/status`, {
       method: 'PATCH',
       headers: authHeader(),
       body: { status: 'Active', overrideReason: 'Maintenance confirmed normal operation' },
     })
-    assert.equal(recovered.response.status, 200)
-    assert.equal(recovered.body.sensor.status, 'Active')
-    assert.equal(recovered.body.machine.status, 'Running')
-    assert.equal(sensorUpdateCalls[0].overrideReason, 'Maintenance confirmed normal operation')
+
+    assert.equal(sensorStatusPatch.response.status, 404)
+    assertError(sensorStatusPatch.body, 'NOT_FOUND')
+    assert.equal(machineUpdateCalls, 0)
+    assert.deepEqual(sensorUpdateCalls, [])
   })
 })
 
@@ -818,17 +815,19 @@ test('dashboard overview route returns backend summary for allowed roles', async
   })
 })
 
-test('downtime routes list and update records', async () => {
+test('downtime routes list records and reject manual status changes', async () => {
   const downtimeId = '55555555-5555-4555-8555-555555555555'
+  const downtimeUpdates = []
   const app = loadAppWithMocks({
     'src/modules/downtime/downtime.service.js': {
       listDowntime: async () => ({
         records: [{ id: downtimeId, status: 'Open', cause: 'Pending Cause Review' }],
         summary: { open: 1, resolved: 0, minutes: 10, loss: 23 },
       }),
-      updateDowntime: async ({ downtimeId: targetId, values }) => ({
-        record: { id: targetId, status: values.status || 'Open', cause: values.cause || 'Pending Cause Review' },
-      }),
+      updateDowntime: async ({ downtimeId: targetId, values }) => {
+        downtimeUpdates.push(values)
+        return { record: { id: targetId, status: 'Open', cause: values.cause || 'Pending Cause Review' } }
+      },
       subscribeToDowntimeEvents: (listener) => {
         setImmediate(() => {
           listener({
@@ -868,15 +867,15 @@ test('downtime routes list and update records', async () => {
     assert.equal(stream.status, 200)
     assert.match(Buffer.from(value).toString('utf8'), /event: heartbeat|event: downtime\.created/)
 
-    const updated = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+    const forcedResolve = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',
       headers: authHeader('Production Supervisor'),
       body: { status: 'Resolved' },
     })
 
-    assert.equal(updated.response.status, 200)
-    assert.equal(updated.response.headers.get('cache-control'), 'no-store')
-    assert.equal(updated.body.record.status, 'Resolved')
+    assert.equal(forcedResolve.response.status, 400)
+    assertError(forcedResolve.body, 'VALIDATION_ERROR')
+    assert.equal(downtimeUpdates.length, 0)
 
     const clearNotes = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',

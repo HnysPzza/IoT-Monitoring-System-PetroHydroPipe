@@ -55,7 +55,7 @@ function createProcessingResult(eventType, signal, overrides = {}) {
       ? 'resolved'
       : null
 
-  return {
+  const result = {
     sensor_event_id: `event-${eventType}`,
     device_event_id: EVENT_ID,
     event_type: eventType,
@@ -68,6 +68,7 @@ function createProcessingResult(eventType, signal, overrides = {}) {
     new_machine_status: eventType === 'fault' ? 'Downtime' : 'Running',
     downtime_action: downtimeAction,
     downtime_id: downtimeAction ? 'downtime-1' : null,
+    downtime_sensor_code: downtimeAction ? 'S-03' : null,
     downtime_started_at: downtimeAction ? '2026-06-11T00:00:00.000Z' : null,
     downtime_ended_at: downtimeAction === 'resolved' ? '2026-06-11T00:10:00.000Z' : null,
     downtime_duration_seconds: downtimeAction === 'resolved' ? 600 : null,
@@ -82,6 +83,25 @@ function createProcessingResult(eventType, signal, overrides = {}) {
       : null,
     ...overrides,
   }
+
+  if (!Object.hasOwn(overrides, 'transition_descriptors')) {
+    result.transition_descriptors = result.state_applied
+      ? [
+        ...(result.downtime_action ? [{
+          kind: 'downtime',
+          action: result.downtime_action,
+          id: result.downtime_id,
+          sensorCode: result.downtime_sensor_code,
+          machineCode: 'M-01',
+        }] : []),
+        ...(result.alert_action && result.alert_record ? [{
+          kind: 'alert', action: result.alert_action, record: result.alert_record,
+        }] : []),
+      ]
+      : []
+  }
+
+  return result
 }
 
 function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls }) {
@@ -222,11 +242,68 @@ test('explicit faults publish committed downtime and alert transitions from one 
     downtime: {
       id: 'downtime-1',
       status: 'Open',
-      sensorCode: 'S-01',
+      sensorCode: 'S-03',
       machineCode: 'M-01',
     },
   }])
   assert.equal(result.event.eventId, EVENT_ID)
+})
+
+test('grouped downtime responses and SSE transitions identify S-03 as the owner', async () => {
+  const result = await createTestEvent('fault', 'fault', {
+    processingOverrides: {
+      downtime_id: 'downtime-group',
+      downtime_sensor_code: 'S-03',
+    },
+  })
+
+  assert.equal(result.event.downtimeAction, 'created')
+  assert.equal(result.event.downtimeSensorCode, 'S-03')
+  assert.equal(result.downtimeEvents[0].downtime.sensorCode, 'S-03')
+})
+
+test('ingestion publishes every committed descriptor in database order', async () => {
+  const processAlert = { id: 'alert-s02', status: 'Active', revision: '3' }
+  const downtimeAlert = { id: 'alert-s03', status: 'Active', revision: '4' }
+  const result = await createTestEvent('fault', 'fault', {
+    processingOverrides: {
+      downtime_id: 'downtime-group',
+      downtime_sensor_code: 'S-03',
+      alert_action: 'created',
+      alert_record: downtimeAlert,
+      transition_descriptors: [
+        { kind: 'alert', action: 'created', record: processAlert },
+        { kind: 'downtime', action: 'created', id: 'downtime-group', sensorCode: 'S-03', machineCode: 'M-01' },
+        { kind: 'alert', action: 'created', record: downtimeAlert },
+      ],
+    },
+  })
+
+  assert.deepEqual(result.alertEvents, [
+    { action: 'created', alert: processAlert },
+    { action: 'created', alert: downtimeAlert },
+  ])
+  assert.deepEqual(result.downtimeEvents, [{
+    type: 'downtime.created',
+    downtime: { id: 'downtime-group', status: 'Open', sensorCode: 'S-03', machineCode: 'M-01' },
+  }])
+  assert.equal(result.event.downtimeSensorCode, 'S-03')
+})
+
+test('malformed ingestion transition descriptors fail closed', async () => {
+  const iotService = loadIotService({
+    eventType: 'fault',
+    signal: 'fault',
+    processingOverrides: { transition_descriptors: null },
+  })
+
+  await assert.rejects(
+    () => iotService.createSensorEvent({
+      sensor: createSensorRecord(),
+      payload: { eventId: EVENT_ID, eventType: 'fault', signal: 'fault' },
+    }),
+    { code: 'SENSOR_EVENT_RESULT_INVALID', status: 500 },
+  )
 })
 
 test('no-pulse observations never publish downtime or alert transitions', async () => {
@@ -461,6 +538,27 @@ test('live feed masks watchdog states when monitoring is disabled or stale', asy
   const stale = await loadLiveFeedService({ data: snapshot }).getLiveFeed()
   assert.equal(stale.sensors[0].monitoring.stateFresh, false)
   assert.equal(stale.sensors[0].monitoring.detectionState, null)
+})
+
+test('live feed keeps a single process sensor fault distinct from downtime', async () => {
+  const snapshot = liveSnapshot()
+  snapshot.sensors[0].status = 'Fault'
+  const feed = await loadLiveFeedService({ data: snapshot }).getLiveFeed()
+
+  assert.equal(feed.machine.status, 'Running')
+  assert.equal(feed.sensors[0].status, 'Fault')
+})
+
+test('live feed keeps S-03 physical input separate from machine downtime authority', async () => {
+  const snapshot = liveSnapshot({ machine: { ...liveSnapshot().machine, status: 'Downtime' } })
+  snapshot.sensors[2].status = 'Active'
+
+  const feed = await loadLiveFeedService({ data: snapshot }).getLiveFeed()
+  const s03 = feed.sensors.find((sensor) => sensor.sensorCode === 'S-03')
+
+  assert.equal(feed.machine.status, 'Downtime')
+  assert.equal(s03.status, 'Downtime')
+  assert.equal(s03.physicalStatus, 'Active')
 })
 
 test('live feed fails closed on database and malformed snapshot results', async () => {

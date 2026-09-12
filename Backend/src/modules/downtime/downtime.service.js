@@ -294,6 +294,10 @@ async function fetchDowntimeById(downtimeId) {
 }
 
 async function updateDowntime({ downtimeId, values, actorUserId }) {
+  if (values.status !== undefined) {
+    throw createDowntimeError(400, 'DOWNTIME_SENSOR_MANAGED', 'Downtime is resolved only by accepted sensor recovery.')
+  }
+
   const existing = await fetchDowntimeById(downtimeId)
   const existingRecord = toDowntimeRecord(existing)
 
@@ -303,18 +307,13 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
     }
   }
 
-  const resolvedCause = values.cause ?? existingRecord.cause
-  if (values.status === 'Resolved' && existingRecord.isCauseEditable && resolvedCause === 'Pending Cause Review') {
-    throw createDowntimeError(400, 'DOWNTIME_CAUSE_REQUIRED', 'Choose the downtime cause before resolving this record.')
-  }
-
   const { error } = await getSupabaseClient()
     .rpc('update_downtime_record', {
       p_downtime_id: downtimeId,
       p_cause: values.cause || null,
       p_notes: values.notes ?? null,
       p_has_notes: values.notes !== undefined,
-      p_resolve: values.status === 'Resolved',
+      p_resolve: false,
     })
     .single()
 

@@ -62,29 +62,13 @@ function publishTransitionDescriptors(descriptors) {
   }, 0)
 }
 
-function publishIngestionTransitions({ sensor, machine, processing }) {
-  const descriptors = []
-
-  if (processing.downtime_action) {
-    descriptors.push({
-      kind: 'downtime',
-      action: processing.downtime_action,
-      id: processing.downtime_id,
-      sensorCode: sensor.sensor_code,
-      machineCode: machine.machine_code,
-    })
+function publishIngestionTransitions({ processing }) {
+  if (!Array.isArray(processing.transition_descriptors)) {
+    logger.error('INGESTION_TRANSITION_DESCRIPTORS_INVALID')
+    return 0
   }
 
-  if (Boolean(processing.alert_action) !== Boolean(processing.alert_record)) {
-    logger.error('ALERT_SSE_TRANSITION_INVALID', {
-      alertId: processing.alert_record?.id || null,
-      action: processing.alert_action || null,
-    })
-  } else if (processing.alert_action) {
-    descriptors.push({ kind: 'alert', action: processing.alert_action, record: processing.alert_record })
-  }
-
-  return publishTransitionDescriptors(descriptors)
+  return publishTransitionDescriptors(processing.transition_descriptors)
 }
 
 module.exports = {
