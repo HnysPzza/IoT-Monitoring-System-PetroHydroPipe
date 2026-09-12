@@ -28,9 +28,6 @@ function groupedVerificationResponse(event, index, overrides = {}) {
     { downtimeAction: null, downtimeSensorCode: null, machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false },
     { downtimeAction: null, downtimeSensorCode: null, machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false },
     { downtimeAction: 'created', downtimeId: 'downtime-group', downtimeSensorCode: 'S-03', machineStatus: 'Downtime', stateApplied: true, duplicate: false, stale: false },
-    { downtimeAction: 'resolved', downtimeId: 'downtime-group', downtimeSensorCode: 'S-03', machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false },
-    { downtimeAction: null, downtimeSensorCode: null, machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false },
-    { downtimeAction: null, downtimeSensorCode: null, machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false },
   ]
   return {
     event: {
@@ -65,7 +62,6 @@ function directS03VerificationResponse(event, index, overrides = {}) {
     { downtimeAction: 'created', downtimeId: 'downtime-direct', downtimeSensorCode: 'S-03', machineStatus: 'Downtime', stateApplied: true, duplicate: false, stale: false },
     { downtimeAction: null, downtimeId: null, downtimeSensorCode: null, machineStatus: 'Downtime', stateApplied: false, duplicate: true, stale: false },
     { downtimeAction: null, downtimeId: null, downtimeSensorCode: null, machineStatus: 'Downtime', stateApplied: false, duplicate: false, stale: true },
-    { downtimeAction: 'resolved', downtimeId: 'downtime-direct', downtimeSensorCode: 'S-03', machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false },
   ]
   return {
     event: {
@@ -344,6 +340,26 @@ test('recovery mode closes only currently faulted S-01 through S-04 sensors', as
   assert.ok(receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
 })
 
+test('recovery mode resolves an open direct S-03 downtime', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  const sensor = baseline.live.sensors.find((candidate) => candidate.sensorCode === 'S-03')
+  baseline.live.machine.status = 'Downtime'
+  sensor.status = 'Downtime'
+  sensor.physicalStatus = 'Fault'
+  baseline.downtime = { records: [{ status: 'Open' }], summary: { open: 1 } }
+
+  const result = await runSimulator(t, ['--recover-active-faults'], 0.999999, (event) => {
+    sensor.status = 'Running'
+    sensor.physicalStatus = 'Active'
+    baseline.live.machine.status = 'Running'
+    baseline.downtime = { records: [], summary: { open: 0 } }
+    return noDowntimeVerificationResponse(event)
+  }, baseline)
+
+  assert.equal(result.exitCode, 0, result.stderr)
+  assert.deepEqual(result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]), [['S-03', 'recovered']])
+})
+
 test('recovery mode is a no-op when no S-01 through S-04 sensor is faulted', async (t) => {
   const { exitCode, receivedEvents, receivedRequests, stderr } = await runSimulator(t, ['--recover-active-faults'])
 
@@ -481,18 +497,20 @@ test('grouped verification rejects an unapplied third process fault', async (t) 
   assert.match(stderr, /third process fault was not applied/)
 })
 
-test('grouped verification checks every recovery event', async (t) => {
-  const { exitCode, stderr } = await runSimulator(
+test('grouped verification leaves the verified fault group active for recovery mode', async (t) => {
+  const { exitCode, receivedEvents, stderr, stdout } = await runSimulator(
     t,
     ['--verify-group'],
     0.999999,
-    (event, index) => groupedVerificationResponse(event, index, {
-      4: { stateApplied: false },
-    }),
+    groupedVerificationResponse,
   )
 
-  assert.equal(exitCode, 1)
-  assert.match(stderr, /S-04 recovery was not applied/)
+  assert.equal(exitCode, 0, stderr)
+  assert.deepEqual(
+    receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
+    [['S-01', 'fault'], ['S-04', 'fault'], ['S-02', 'fault']],
+  )
+  assert.match(stdout, /run recover-active-faults when ready/)
 })
 
 test('simulator rejects unknown command options before sending events', async (t) => {
@@ -507,7 +525,7 @@ test('simulator rejects unknown command options before sending events', async (t
   assert.equal(receivedRequests.length, 0)
 })
 
-test('direct S-03 verification proves downtime and recovery ownership', async (t) => {
+test('direct S-03 verification leaves downtime open for recovery mode', async (t) => {
   const { exitCode, receivedEvents, receivedRequests, stderr } = await runSimulator(
     t,
     ['--verify-sensor=S-03'],
@@ -518,10 +536,10 @@ test('direct S-03 verification proves downtime and recovery ownership', async (t
   assert.equal(exitCode, 0, stderr)
   assert.deepEqual(
     receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
-    [['S-03', 'fault'], ['S-03', 'fault'], ['S-03', 'recovered'], ['S-03', 'recovered']],
+    [['S-03', 'fault'], ['S-03', 'fault'], ['S-03', 'recovered']],
   )
   assert.deepEqual(receivedEvents[1], receivedEvents[0])
-  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 5)
+  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 3)
   assert.equal(receivedRequests.filter((request) => request.url === '/api/alerts').length, 1)
   assert.ok(receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
 })
@@ -538,14 +556,14 @@ test('grouped verification uses a monotonic current-time event sequence', async 
   assert.equal(exitCode, 0, stderr)
   assert.deepEqual(
     receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]),
-    [['S-01', 'fault'], ['S-04', 'fault'], ['S-02', 'fault'], ['S-01', 'recovered'], ['S-04', 'recovered'], ['S-02', 'recovered']],
+    [['S-01', 'fault'], ['S-04', 'fault'], ['S-02', 'fault']],
   )
 
   const recordedAt = receivedEvents.map((event) => new Date(event.recordedAt).getTime())
   assert.ok(recordedAt.every((value) => value >= runStartedAt))
   assert.ok(recordedAt.every((value, index) => index === 0 || value > recordedAt[index - 1]))
   assert.ok(recordedAt.every((value) => value <= Date.now()))
-  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 8)
+  assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 6)
   assert.equal(receivedRequests.filter((request) => request.url === '/api/alerts').length, 4)
   assert.ok(receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
 })

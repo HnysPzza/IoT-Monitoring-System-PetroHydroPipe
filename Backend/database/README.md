@@ -312,28 +312,40 @@ Use the backend simulator while the physical ESP32 devices are not built yet.
    npm run dev
    ```
 
-5. Send one randomized batch of 5 ESP32 events:
+5. Send one randomized demonstration batch of 5 ESP32 events:
 
    ```bash
-   npm run iot:simulate:once
+   npm run iot:simulate:demo-once
    ```
 
 6. Or keep sending randomized events on an interval:
 
    ```bash
-   npm run iot:simulate
+   npm run iot:simulate:demo-continuous
    ```
 
-7. For repeatable debugging, run deterministic mode:
+7. Verify that one S-01 process fault stays separate from downtime and then recovers:
 
    ```bash
-   npm run iot:simulate:once -- --deterministic
+   npm run iot:simulate:process-isolation
    ```
 
-8. To verify issue creation, duplicate retry handling, stale-event handling, and recovery on the dedicated S-04 simulator path:
+8. Verify direct S-03 downtime creation, duplicate retry handling, and stale recovery handling. This leaves the downtime open for inspection:
 
    ```bash
-   npm run iot:simulate:verify
+   npm run iot:simulate:verify-direct-s03-lifecycle
+   ```
+
+9. Verify grouped S-01/S-04/S-02 downtime creation. This leaves the three process faults active for inspection:
+
+   ```bash
+   npm run iot:simulate:verify-grouped-lifecycle
+   ```
+
+10. After inspecting either open scenario, recover its active faults:
+
+   ```bash
+   npm run iot:simulate:recover-active-faults
    ```
 
 The simulator uses the real ingestion endpoint:
@@ -344,7 +356,7 @@ POST /api/iot/events
 
 Every event body includes a client-generated UUID `eventId`. Retrying the same `eventId` returns the stored event without replaying sensor, machine, alert, or downtime transitions. Reusing it with conflicting content is rejected. Events whose NTP-synchronized `recordedAt` is stale or equal to the sensor watermark are retained in history with `stateApplied: false` and cannot overwrite current state. This timestamp watermark is interim; future firmware should add a per-sensor monotonic counter persisted across reboot, separate from the UUID event ID.
 
-It keeps event history in `sensor_events`, updates `sensors.status`, updates `machines.status`, and randomly chooses one of S-01 through S-04 per batch to send a downtime/fault event. S-05 continues sending normal production activity and is rejected by downtime lifecycle verification. Non-issue sensors send active/recovery events often enough to clear old simulator alerts. Refresh `/dashboard/live` to see the latest backend data.
+It keeps event history in `sensor_events`, updates `sensors.status`, and updates `machines.status` only through the grouped rule. A single S-01, S-02, or S-04 fault remains a process issue; `iot:simulate:verify-grouped-lifecycle` sends the deterministic S-01 -> S-04 -> S-02 sequence. S-03 faults create downtime immediately; `iot:simulate:verify-direct-s03-lifecycle` checks that authority path. Those two commands require an authenticated read token, refuse a dirty baseline, verify the open state, and leave its fault active for `iot:simulate:recover-active-faults`. S-05 normal production activity also reconciles the grouped machine status, while S-05 downtime verification remains unsupported. Refresh `/dashboard/live` to see the latest backend data.
 
 Local simulator environment values:
 
@@ -356,12 +368,14 @@ IOT_SIM_S02_KEY=
 IOT_SIM_S03_KEY=
 IOT_SIM_S04_KEY=
 IOT_SIM_S05_KEY=
+IOT_SIM_BEARER_TOKEN=
 ```
 
 Common simulator issues:
 
 - `Missing simulator keys`: add the `IOT_SIM_S##_KEY` values to local `Backend/.env`.
 - `401 DEVICE_UNAUTHORIZED`: run the generated SQL hashes in Supabase, or confirm each key matches its ESP32 device ID.
+- `IOT_SIM_BEARER_TOKEN is required` or preflight `401`: provide a valid operator bearer token for verification reads.
 - Backend connection error: confirm `npm run dev` is running and `IOT_SIM_BASE_URL` points to the backend port.
 - No Live Feed changes: confirm the simulator received `201` responses and refresh `/dashboard/live`.
 

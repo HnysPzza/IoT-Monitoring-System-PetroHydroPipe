@@ -409,13 +409,7 @@ async function runDirectS03Verification() {
     machineStatus: 'Downtime', downtimeAction: null,
   })
 
-  const recoveredEvent = await postEvent(device, recovered, 4)
-  assertVerificationEvent('S-03 recovery', device, recoveredEvent, {
-    eventType: 'recovered', stateApplied: true, duplicate: false, stale: false,
-    machineStatus: 'Running', downtimeAction: 'resolved', downtimeId: createdEvent.downtimeId,
-  })
-  await assertCleanVerificationBaseline('final state')
-  console.log('Verified direct S-03 lifecycle: created, duplicate ignored, stale recovery ignored, recovered.')
+  console.log('Verified direct S-03 downtime: created, duplicate ignored, stale recovery ignored; leave it open and run recover-active-faults when ready.')
 }
 
 async function runGroupedVerificationLifecycle() {
@@ -447,26 +441,7 @@ async function runGroupedVerificationLifecycle() {
     }
   }
 
-  const recoveries = [
-    { sensorCode: 'S-01', label: 'S-01 recovery', downtimeAction: 'resolved' },
-    { sensorCode: 'S-04', label: 'S-04 recovery', downtimeAction: null },
-    { sensorCode: 'S-02', label: 'S-02 recovery', downtimeAction: null },
-  ]
-  for (const [index, step] of recoveries.entries()) {
-    const device = devices.find((candidate) => candidate.sensorCode === step.sensorCode)
-    const savedEvent = await postEvent(device, { eventType: 'recovered', signal: 'active' }, index + 4)
-    assertVerificationEvent(step.label, device, savedEvent, {
-      eventType: 'recovered',
-      stateApplied: true,
-      duplicate: false,
-      stale: false,
-      machineStatus: 'Running',
-      downtimeAction: step.downtimeAction,
-      ...(step.downtimeAction ? { downtimeId } : {}),
-    })
-  }
-  await assertCleanVerificationBaseline('final state')
-  console.log('Verified grouped lifecycle: two process faults stayed process-level, the third opened S-03, all recoveries completed.')
+  console.log('Verified grouped downtime: two process faults stayed process-level, the third opened S-03; leave faults active and run recover-active-faults when ready.')
 }
 
 function windowlessInterval(callback, intervalMs) {

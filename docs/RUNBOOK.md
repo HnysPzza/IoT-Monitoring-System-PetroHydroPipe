@@ -179,23 +179,41 @@ Expected: `0 fail`. Never target an unreviewed production database.
 
 ```bash
 cd Backend
-npm run iot:simulate:once
+npm run iot:simulate:demo-once
 ```
 
-The simulator randomly chooses which of the 5 sensors reports a downtime/fault event in each batch. Use deterministic mode when you need a repeatable debug sequence:
+The simulator randomly chooses which of the 5 sensors reports a process or machine fault in each batch. This is a demonstration batch, not a downtime-rule test. Verify one S-01 process fault stays separate from downtime and then recovers:
 
 ```bash
-npm run iot:simulate:once -- --deterministic
+npm run iot:simulate:process-isolation
+```
+
+To verify direct S-03 downtime, duplicate retry, and stale recovery while leaving downtime open:
+
+```bash
+npm run iot:simulate:verify-direct-s03-lifecycle
+```
+
+To verify the grouped rule against the real ingestion endpoint, send faults for S-01, S-04, and S-02 in sequence. The first two remain process-level; the third opens one S-03-owned downtime record and leaves its process faults active:
+
+```bash
+npm run iot:simulate:verify-grouped-lifecycle
+```
+
+After inspecting either open scenario, recover its active faults:
+
+```bash
+npm run iot:simulate:recover-active-faults
 ```
 
 To verify realtime alerts, keep the dashboard open and run the loop simulator:
 
 ```bash
 cd Backend
-npm run iot:simulate
+npm run iot:simulate:demo-continuous
 ```
 
-The selected issue sensor should appear in the dashboard notification bell. The simulator sends the new issue before recovery events so the bell can show the newest issue quickly. Later active/recovered events mark previous simulator alerts as recovered; if a recovered alert was not acknowledged yet, it stays visible until a user acknowledges it.
+The selected issue sensor should appear in the dashboard notification bell. A process fault alone is not machine downtime. The direct and grouped downtime modes require `IOT_SIM_BEARER_TOKEN`, read a clean baseline, verify the open state, and leave it active for `iot:simulate:recover-active-faults`. Hosted simulator runs write operational records, so use a disposable environment and review the persisted owner/status after verification.
 
 ## Phase 3 Heartbeat and Watchdog Checks
 
