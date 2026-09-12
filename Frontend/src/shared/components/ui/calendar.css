@@ -218,6 +218,71 @@
   box-shadow: 0 6px 16px rgba(22, 119, 255, 0.22);
 }
 
+.shadcn-calendar-day.is-selected-week .shadcn-calendar-day-button {
+  border-color: rgba(22, 119, 255, 0.4);
+  color: var(--c-primary);
+  background: rgba(22, 119, 255, 0.14);
+}
+
+.trend-month-picker {
+  display: grid;
+  width: 264px;
+  gap: 10px;
+  padding: 2px;
+}
+
+.trend-month-picker-heading {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  text-align: center;
+}
+
+.trend-month-picker-heading button,
+.trend-month-grid button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--c-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.trend-month-picker-heading button:hover:not(:disabled),
+.trend-month-grid button:hover:not(:disabled) {
+  border-color: var(--subtle-border);
+  background: var(--hover-bg);
+}
+
+.trend-month-picker-heading button:focus-visible,
+.trend-month-grid button:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 1px;
+}
+
+.trend-month-picker-heading button:disabled,
+.trend-month-grid button:disabled {
+  color: var(--c-text-3);
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.trend-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.trend-month-grid button.is-selected {
+  border-color: var(--c-primary);
+  color: #FFFFFF;
+  background: var(--c-primary);
+}
+
 .shadcn-calendar-day.is-outside .shadcn-calendar-day-button {
   color: var(--c-text-3);
   opacity: 0.52;

@@ -46,7 +46,7 @@ describe('TrendCalendarControl', () => {
     expect(trigger).toHaveFocus()
   }, 15000)
 
-  it('normalizes a monthly selection to the first local day of the month', async () => {
+  it('offers months only and returns the first local day of the selected month', async () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar({
       mode: 'month',
@@ -54,9 +54,28 @@ describe('TrendCalendarControl', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /selected period/i }))
-    await user.click(await screen.findByRole('button', { name: /july 8th, 2026/i }))
+    expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
 
-    expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 1))
+    expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 5, 1))
+  })
+
+  it('selects a whole Monday-Sunday week from any date in that week', async () => {
+    const user = userEvent.setup()
+    const { onDateChange } = renderCalendar({
+      mode: 'week',
+      rangeLabel: 'Jul 13, 2026 - Jul 19, 2026',
+    })
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    const monday = await screen.findByRole('button', { name: /july 13th, 2026/i })
+    const sunday = screen.getByRole('button', { name: /july 19th, 2026/i })
+    expect(monday.closest('td')).toHaveClass('is-selected-week')
+    expect(sunday.closest('td')).toHaveClass('is-selected-week')
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('Select chart week')
+    await user.click(screen.getByRole('button', { name: /july 14th, 2026/i }))
+
+    expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 13))
   })
 
   it('disables future dates and returns focus on Escape', async () => {

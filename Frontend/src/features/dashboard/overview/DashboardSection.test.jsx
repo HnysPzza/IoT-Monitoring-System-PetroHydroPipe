@@ -342,18 +342,18 @@ describe('DashboardSection', () => {
       await waitFor(() => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
           'test-token',
-          { trendMode: 'week', date: '2026-07-14' },
+          { trendMode: 'week', date: '2026-07-13' },
         )
       })
 
       await user.click(screen.getByRole('button', { name: 'Monthly' }))
       await user.click(screen.getByRole('button', { name: /selected period/i }))
-      await user.click(await screen.findByRole('button', { name: /july 8th, 2026/i }))
+      await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
 
       await waitFor(() => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
           'test-token',
-          { trendMode: 'month', date: '2026-07' },
+          { trendMode: 'month', date: '2026-06' },
         )
       })
     } finally {
