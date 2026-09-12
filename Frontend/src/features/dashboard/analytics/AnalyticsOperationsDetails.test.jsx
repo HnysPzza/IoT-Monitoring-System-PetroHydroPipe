@@ -73,6 +73,20 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.getByRole('status', { name: 'No sensor downtime recorded' })).toHaveTextContent('0 min recorded')
   })
 
+  it('discloses zero-minute downtime records instead of calling them absent', () => {
+    renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
+      downtimeSensors: analyticsTestFixture.selected.downtimeSensors.map((sensor) => ({
+        ...sensor,
+        eventCount: sensor.sensorCode === 'S-03' ? 2 : 0,
+        durationMinutes: 0,
+      })),
+      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 0, downtimeEventCount: 2 },
+    })} />)
+
+    expect(screen.getByRole('status', { name: 'Downtime recorded under one minute' })).toHaveTextContent('2 recorded events')
+    expect(screen.getByText('Recorded downtime rounds to 0 min in this view.')).toBeInTheDocument()
+  })
+
   it('discloses downtime excluded while cause review remains pending', () => {
     renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
       downtimeCauses: [],

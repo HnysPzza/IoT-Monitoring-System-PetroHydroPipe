@@ -24,6 +24,7 @@ import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useTheme } from '../../../shared/hooks/useTheme.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
+import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import {
   applyLiveAlertDelta,
   areAlertDeltasEquivalent,
@@ -147,6 +148,13 @@ export default function AdminDashboard() {
   const pageMeta = dashboardPageMeta[location.pathname] || dashboardPageMeta['/dashboard']
   const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
   const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
+  const unresolvedAlerts = alerts.filter((alert) => (
+    alert.status === 'Active' || alert.status === 'Acknowledged'
+  ))
+  const alertDestinations = Array.from(new Map(alerts.map((alert) => {
+    const destination = getAlertDestination(alert)
+    return [destination.to, destination]
+  })).values())
   const activeAlertCount = activeAlerts.length
   const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
 
@@ -715,13 +723,14 @@ export default function AdminDashboard() {
                       const isAcked = alert.status === 'Acknowledged'
                       const isRecoveryPending = alert.status === 'Active' && Boolean(alert.metadata?.recoveryPending)
                       const statusLabel = getAlertStatusLabel(alert)
+                      const alertKind = getAlertKind(alert)
                       const rowStateClass = isRecoveryPending
                         ? 'is-recovered'
                         : isAcked
                           ? 'is-acknowledged'
                           : 'is-active'
                       return (
-                        <li key={alert.id} className={`alert-row ${rowStateClass}`}>
+                        <li key={alert.id} className={`alert-row ${rowStateClass} ${alertKind?.className || ''}`}>
                           <div className="alert-row-indicator">
                             {isRecoveryPending ? (
                               <History size={14} className="alert-icon-recovered" aria-hidden="true" />
@@ -732,9 +741,14 @@ export default function AdminDashboard() {
                             )}
                           </div>
                           <div className="alert-row-body">
-                            <p className="alert-row-primary">
-                              {alert.title || alert.message}
-                            </p>
+                            <div className="alert-row-heading">
+                              <p className="alert-row-primary">
+                                {alert.title || alert.message}
+                              </p>
+                              {alertKind ? (
+                                <span className={`alert-kind-tag ${alertKind.className}`}>{alertKind.label}</span>
+                              ) : null}
+                            </div>
                             {alert.title && alert.message && alert.title !== alert.message ? (
                               <p className="alert-row-message">{alert.message}</p>
                             ) : null}
@@ -773,14 +787,22 @@ export default function AdminDashboard() {
                   </div>
                 ) : null}
                 <div className="alerts-popover-footer">
-                  <NavLink
-                    to="/dashboard/downtime"
-                    className="alerts-footer-link"
-                    onClick={() => setIsAlertsOpen(false)}
-                  >
-                    <span>View all downtime logs</span>
-                    <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
-                  </NavLink>
+                  {alertDestinations.length > 0 ? alertDestinations.map((destination) => (
+                    <NavLink
+                      key={destination.to}
+                      to={destination.to}
+                      className="alerts-footer-link"
+                      onClick={() => setIsAlertsOpen(false)}
+                    >
+                      <span>{destination.label}</span>
+                      <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
+                    </NavLink>
+                  )) : (
+                    <NavLink to="/dashboard/downtime" className="alerts-footer-link" onClick={() => setIsAlertsOpen(false)}>
+                      <span>View downtime records</span>
+                      <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
+                    </NavLink>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -789,7 +811,7 @@ export default function AdminDashboard() {
 
         <section className="dashboard-content">
           {/* Nested /dashboard routes render here. */}
-          <Outlet context={{ activeAlerts, hasTrustedAlertList }} />
+          <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList }} />
         </section>
       </div>
     </main>

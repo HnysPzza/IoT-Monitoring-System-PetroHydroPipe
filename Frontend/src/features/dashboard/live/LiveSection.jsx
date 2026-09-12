@@ -9,11 +9,12 @@ import { getLiveFeed } from './liveService.js'
 import { presentLiveSensors } from './livePresentation.js'
 
 const POLL_INTERVAL_MS = 15000
-const statusFilters = ['All', 'Running', 'Idle', 'Downtime']
+const statusFilters = ['All', 'Running', 'Idle', 'Fault', 'Downtime']
 
 function StatusIcon({ status }) {
   if (status === 'Running') return <Wifi size={18} aria-hidden="true" />
   if (status === 'Downtime') return <AlertTriangle size={18} aria-hidden="true" />
+  if (status === 'Fault') return <Wrench size={18} aria-hidden="true" />
   return <PauseCircle size={18} aria-hidden="true" />
 }
 

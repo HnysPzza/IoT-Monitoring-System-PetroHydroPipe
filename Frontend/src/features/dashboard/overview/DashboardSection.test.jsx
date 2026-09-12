@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { useState } from 'react'
@@ -109,7 +109,67 @@ function RealtimeAlertHarness() {
   )
 }
 
+function MixedAlertHarness() {
+  return (
+    <Outlet context={{
+      hasTrustedAlertList: true,
+      activeAlerts: [
+        {
+          id: 'recovered-group-alert',
+          severity: 'Critical',
+          status: 'Active',
+          message: 'S-01, S-02, and S-04 remained faulted; machine downtime confirmed.',
+          metadata: { recoveryPending: true },
+        },
+        {
+          id: 'active-process-alert',
+          severity: 'Warning',
+          status: 'Active',
+          message: 'S-04 reported an explicit physical fault.',
+        },
+      ],
+    }} />
+  )
+}
+
+function AlertDestinationHarness({ activeAlerts }) {
+  return <Outlet context={{ activeAlerts, hasTrustedAlertList: true }} />
+}
+
+function AcknowledgedFaultHarness() {
+  return (
+    <Outlet context={{
+      activeAlerts: [],
+      hasTrustedAlertList: true,
+      unresolvedAlerts: [{
+        id: 'acknowledged-process-fault',
+        severity: 'Warning',
+        status: 'Acknowledged',
+        message: 'S-01 reported an explicit physical fault.',
+        metadata: { processFault: true },
+      }],
+    }} />
+  )
+}
+
 describe('DashboardSection', () => {
+  it('F03 refreshes live sensor state on the overview cadence', async () => {
+    const timer = vi.spyOn(window, 'setInterval')
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    const view = renderWithAuth(<DashboardSection />)
+    await screen.findByText('Production Output')
+    const next = livePayload()
+    next.machine.status = 'Downtime'
+    getLiveFeed.mockResolvedValue(next)
+    await act(async () => { timer.mock.calls.find(([, delay]) => delay === 60000)[0]() })
+    expect(await screen.findByText('Downtime')).toBeInTheDocument()
+    expect(getLiveFeed).toHaveBeenCalledTimes(2)
+    expect(getDashboardDowntimeImpact).toHaveBeenCalledTimes(2)
+    view.unmount()
+    timer.mockRestore()
+  })
   beforeEach(() => {
     getDashboardOverview.mockReset()
     getDashboardDowntimeImpact.mockReset()
@@ -137,6 +197,78 @@ describe('DashboardSection', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('S-04 Outside Filler Wire has no pulse.')
     expect(getDashboardOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('prioritizes a current fault over a recovered alert awaiting acknowledgement', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<MixedAlertHarness />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('S-04 reported an explicit physical fault.')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('machine downtime confirmed')
+  })
+
+  it('keeps an acknowledged unresolved fault banner visible and red after reload', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<AcknowledgedFaultHarness />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('S-01 reported an explicit physical fault.')
+    expect(banner).toHaveClass('notice-error')
+  })
+
+  it('F09 links process faults and downtime alerts to their matching records', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<AlertDestinationHarness activeAlerts={[
+          { id: 'process-fault', severity: 'Warning', status: 'Active', message: 'S-01 reported a physical fault.', metadata: { processFault: true, downtimeId: 'legacy-downtime-1' } },
+          { id: 'downtime', severity: 'Critical', status: 'Active', message: 'Machine downtime confirmed.', metadata: { downtimeId: 'downtime-1' } },
+        ]} />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(await screen.findByRole('link', { name: 'View live sensor status' })).toHaveAttribute('href', '/dashboard/live')
+    expect(screen.getByRole('link', { name: 'View downtime records' })).toHaveAttribute('href', '/dashboard/downtime')
+  })
+
+  it('renders a fault live sensor with fault styling and icon', async () => {
+    const live = livePayload()
+    live.sensors[0].status = 'Fault'
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(live)
+
+    renderWithAuth(<DashboardSection />)
+
+    const badge = await screen.findByText('Fault')
+    const card = badge.closest('article')
+    expect(badge).toHaveClass('status-downtime')
+    expect(card).toHaveClass('status-downtime')
+    expect(card.querySelector('svg.lucide-wrench')).not.toBeNull()
   })
 
   it('refreshes production bucket states while the page remains open', async () => {

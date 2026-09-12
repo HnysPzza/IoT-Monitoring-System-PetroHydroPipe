@@ -121,8 +121,12 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
   }, [snapshot])
 
   const totalDowntimeMinutes = snapshot.selected.summary.downtimeMinutes
+  const totalDowntimeEvents = snapshot.selected.summary.downtimeEventCount
   const causeCoverage = snapshot.selected.causeCoverage
   const hasObservedDowntime = totalDowntimeMinutes !== null && totalDowntimeMinutes !== undefined
+  const hasSubMinuteDowntimeEvents = hasObservedDowntime
+    && totalDowntimeMinutes === 0
+    && totalDowntimeEvents > 0
   const totalSensorDowntimeMinutes = downtimeSensors.reduce((total, sensor) => total + sensor.durationMinutes, 0)
   const downtimeDistribution = downtimeSensors.map((sensor, index) => ({
     ...sensor,
@@ -189,12 +193,14 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 />
               </svg>
             </div>
-            <div className="analytics-cause-empty" role="status" aria-label={hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}>
-              <strong>{hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}</strong>
-              <span>{hasObservedDowntime ? '0 min recorded' : 'Not observed'}</span>
-              <p>{hasObservedDowntime
-                ? 'No sensor downtime records fall within the selected date range yet.'
-                : 'This range has no observed downtime period yet.'}</p>
+            <div className="analytics-cause-empty" role="status" aria-label={hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}>
+              <strong>{hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : hasObservedDowntime ? 'No sensor downtime recorded' : 'Downtime not observed'}</strong>
+              <span>{hasSubMinuteDowntimeEvents ? `${totalDowntimeEvents} recorded event${totalDowntimeEvents === 1 ? '' : 's'}` : hasObservedDowntime ? '0 min recorded' : 'Not observed'}</span>
+              <p>{hasSubMinuteDowntimeEvents
+                ? 'Recorded downtime rounds to 0 min in this view.'
+                : hasObservedDowntime
+                  ? 'No sensor downtime records fall within the selected date range yet.'
+                  : 'This range has no observed downtime period yet.'}</p>
             </div>
           </div>
         ) : (

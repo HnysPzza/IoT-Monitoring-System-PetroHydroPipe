@@ -915,6 +915,70 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
   })
 
+  it('distinguishes downtime notifications from sensor fault notifications', async () => {
+    const user = userEvent.setup()
+    const downtimeAlert = {
+      ...activeAlert(),
+      id: 'downtime-alert',
+      revision: '1',
+      title: 'Machine Main Sensor downtime detected',
+      metadata: { downtimeId: 'downtime-1' },
+    }
+    const sensorFaultAlert = {
+      ...activeAlert(),
+      id: 'sensor-fault-alert',
+      revision: '2',
+      title: 'Raw Material & Coil Joint process issue detected',
+      metadata: { processFault: true, downtimeId: 'legacy-downtime-1' },
+    }
+
+    getAlerts.mockResolvedValue(alertSnapshot([downtimeAlert, sensorFaultAlert], '2'))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    await user.click(await screen.findByRole('button', { name: /open alerts, 2 active/i }))
+
+    expect(screen.getByText('Downtime', { selector: '.alert-kind-tag' })).toBeInTheDocument()
+    expect(screen.getByText('Sensor fault', { selector: '.alert-kind-tag' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View downtime records' })).toHaveAttribute('href', '/dashboard/downtime')
+    expect(screen.getByRole('link', { name: 'View live sensor status' })).toHaveAttribute('href', '/dashboard/live')
+  })
+
+  it('applies downtime and sensor fault colors through alert row classes', async () => {
+    const user = userEvent.setup()
+    const activeDowntimeAlert = {
+      ...activeAlert(),
+      id: 'active-downtime-alert',
+      revision: '1',
+      title: 'Active downtime alert',
+      metadata: { downtimeId: 'downtime-1' },
+    }
+    const recoveredDowntimeAlert = {
+      ...activeAlert(),
+      id: 'recovered-downtime-alert',
+      revision: '2',
+      title: 'Recovered downtime alert',
+      metadata: { downtimeId: 'downtime-2', recoveryPending: true },
+    }
+    const sensorFaultAlert = {
+      ...activeAlert(),
+      id: 'sensor-fault-alert',
+      revision: '3',
+      title: 'Sensor fault alert',
+      metadata: { processFault: true },
+    }
+
+    getAlerts.mockResolvedValue(alertSnapshot([activeDowntimeAlert, recoveredDowntimeAlert, sensorFaultAlert], '3'))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    await user.click(await screen.findByRole('button', { name: /open alerts, 3 active/i }))
+
+    expect(screen.getByText('Active downtime alert').closest('.alert-row')).toHaveClass('is-downtime', 'is-active')
+    expect(screen.getByText('Recovered downtime alert').closest('.alert-row')).toHaveClass('is-downtime', 'is-recovered')
+    expect(screen.getByText('Sensor fault alert').closest('.alert-row')).toHaveClass('is-sensor-fault', 'is-active')
+  })
+
   it('closes the alerts dialog with Escape and returns focus to the bell', async () => {
     const user = userEvent.setup()
 

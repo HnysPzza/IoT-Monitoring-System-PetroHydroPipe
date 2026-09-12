@@ -1735,6 +1735,11 @@ button:disabled {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
 }
 
+.alert-row.is-sensor-fault .alert-dot-active {
+  background: #F97316;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+}
+
 .alert-icon-recovered {
   color: #10B981;
   flex-shrink: 0;
@@ -1753,14 +1758,30 @@ button:disabled {
   color: #F87171;
 }
 
+.alert-row.is-sensor-fault .alert-icon-acked {
+  color: #F97316;
+}
+
+:root[data-theme='dark'] .alert-row.is-sensor-fault .alert-icon-acked {
+  color: #FB923C;
+}
+
 .alert-row-body {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
+.alert-row-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .alert-row-primary {
   margin: 0;
+  min-width: 0;
   font-size: 0.80rem;
   font-weight: 600;
   color: #0F172A;
@@ -1770,6 +1791,55 @@ button:disabled {
 
 :root[data-theme='dark'] .alert-row-primary {
   color: #F8FAFC;
+}
+
+.alert-kind-tag {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.alert-row.is-downtime:not(.is-recovered) .alert-kind-tag {
+  color: #B91C1C;
+  background: #FEE2E2;
+  border-color: #FECACA;
+}
+
+.alert-row.is-downtime.is-recovered .alert-kind-tag {
+  color: #047857;
+  background: #D1FAE5;
+  border-color: #A7F3D0;
+}
+
+.alert-row.is-sensor-fault .alert-kind-tag {
+  color: #C2410C;
+  background: #FFEDD5;
+  border-color: #FED7AA;
+}
+
+:root[data-theme='dark'] .alert-row.is-downtime:not(.is-recovered) .alert-kind-tag {
+  color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+:root[data-theme='dark'] .alert-row.is-downtime.is-recovered .alert-kind-tag {
+  color: #6EE7B7;
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+:root[data-theme='dark'] .alert-row.is-sensor-fault .alert-kind-tag {
+  color: #FDBA74;
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(251, 146, 60, 0.35);
 }
 
 .alert-row-message {
@@ -1815,6 +1885,10 @@ button:disabled {
   color: #DC2626;
 }
 
+.alert-row.is-sensor-fault.is-active .alert-status-text {
+  color: #C2410C;
+}
+
 .alert-row.is-acknowledged .alert-status-text {
   color: #DC2626;
 }
@@ -1825,6 +1899,10 @@ button:disabled {
 
 :root[data-theme='dark'] .alert-row.is-active .alert-status-text {
   color: #F87171;
+}
+
+:root[data-theme='dark'] .alert-row.is-sensor-fault.is-active .alert-status-text {
+  color: #FB923C;
 }
 
 :root[data-theme='dark'] .alert-row.is-acknowledged .alert-status-text {
@@ -1903,6 +1981,18 @@ button:disabled {
   border-color: rgba(239, 68, 68, 0.3);
 }
 
+.alert-row.is-sensor-fault .alert-acked-tag {
+  color: #C2410C;
+  background: #FFEDD5;
+  border-color: #FED7AA;
+}
+
+:root[data-theme='dark'] .alert-row.is-sensor-fault .alert-acked-tag {
+  color: #FDBA74;
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(251, 146, 60, 0.35);
+}
+
 .alerts-empty-state {
   padding: 20px 16px;
   text-align: center;
@@ -1916,8 +2006,9 @@ button:disabled {
 
 .alerts-popover-footer {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   padding: 6px 8px;
   border-top: 1px solid #F1F5F9;
   background: #F8FAFC;

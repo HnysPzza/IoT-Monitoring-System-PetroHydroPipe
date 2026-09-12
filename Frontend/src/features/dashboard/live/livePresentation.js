@@ -18,6 +18,9 @@ export function presentLiveSensor(sensor, mode) {
   if (operationalStatus === 'Downtime') {
     return { ...result, stateLabel: 'Confirmed operational downtime' }
   }
+  if (operationalStatus === 'Fault') {
+    return { ...result, stateLabel: 'Process sensor fault' }
+  }
   if (sensor.sensorCode === 'S-05') {
     return { ...result, stateLabel: 'Production output sensing' }
   }
@@ -32,13 +35,13 @@ export function presentLiveSensor(sensor, mode) {
     return { ...result, displayStatus: 'Idle', stateLabel: 'Idle — grace period' }
   }
   if (monitoring.detectionState === 'recovering') {
-    return { ...result, displayStatus: 'Downtime', stateLabel: 'Downtime — recovery confirmation' }
+    return { ...result, displayStatus: 'Idle', stateLabel: 'Monitoring — recovery confirmation' }
   }
   if (monitoring.detectionState === 'downtime') {
     if (mode === 'observe') {
       return { ...result, displayStatus: 'Idle', stateLabel: 'Idle — threshold observed' }
     }
-    return { ...result, displayStatus: 'Downtime', stateLabel: 'Downtime — threshold enforced' }
+    return { ...result, displayStatus: 'Idle', stateLabel: 'Monitoring — threshold reached' }
   }
   if (monitoring.detectionState === 'suspended') {
     return { ...result, stateLabel: 'Monitoring paused for schedule' }
