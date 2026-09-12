@@ -143,4 +143,3 @@ test('contentTypeFor maps each export format to its MIME type', () => {
   assert.equal(contentTypeFor('csv'), 'text/csv; charset=utf-8')
   assert.equal(contentTypeFor('pdf'), 'application/pdf')
 })
-

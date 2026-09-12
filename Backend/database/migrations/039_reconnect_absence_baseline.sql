@@ -131,5 +131,3 @@ grant execute on function public.ingest_iot_heartbeat(uuid, uuid, uuid, bigint, 
 to service_role;
 
 commit;
-
-

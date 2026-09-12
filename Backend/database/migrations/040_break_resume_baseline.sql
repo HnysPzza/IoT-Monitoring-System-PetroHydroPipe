@@ -253,5 +253,3 @@ revoke all on function public.evaluate_sensor_watchdog_legacy(uuid,timestamptz,t
   from public, anon, authenticated, service_role;
 
 commit;
-
-
