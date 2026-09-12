@@ -261,6 +261,19 @@ test('current report clips events and availability to elapsed eligible time', as
   assert.equal(fakeSupabase.rpcCalls[0].args.p_ended_at, report.observedEndAt)
 })
 
+test('current report uses the minimum valid aggregation bucket during its first hour', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-31T00:30:00+08:00') })
+  const fakeSupabase = createFakeSupabase()
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-31' })
+
+  assert.equal(report.periodState, 'partial')
+  assert.equal(fakeSupabase.rpcCalls[0].args.p_started_at, '2026-08-30T16:00:00.000Z')
+  assert.equal(fakeSupabase.rpcCalls[0].args.p_ended_at, '2026-08-30T16:30:00.000Z')
+  assert.equal(fakeSupabase.rpcCalls[0].args.p_bucket_seconds, 3600)
+})
+
 test('future report returns unobserved values without querying operational records', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-31T12:00:00+08:00') })
   const fakeSupabase = createFakeSupabase()

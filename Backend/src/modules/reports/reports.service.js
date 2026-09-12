@@ -110,7 +110,7 @@ async function getMachine() {
 }
 
 async function getEventSummary(machineId, window) {
-  const bucketSeconds = Math.floor((window.end.getTime() - window.start.getTime()) / 1000)
+  const bucketSeconds = Math.max(3600, Math.floor((window.end.getTime() - window.start.getTime()) / 1000))
   const rows = await aggregateSensorEvents(machineId, window, bucketSeconds)
   const totals = rows.reduce((result, row) => {
     result[row.sensor_code] = (result[row.sensor_code] || 0) + Number(row.event_count || 0)
