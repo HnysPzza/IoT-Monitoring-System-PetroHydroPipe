@@ -3,7 +3,7 @@
 **System**: IoT-Based Pipe Manufacturing Machine Monitoring System
 **Source**: `Sir Rumsie Activity.docx` — 10 threat scenarios
 **Method**: Every claim below was verified directly against the codebase (Backend, Frontend, database schema/migrations).
-**Last updated**: September 7, 2026
+**Last updated**: September 12, 2026
 
 Each asset follows the same pattern: the threat, what's already working, what's missing, and the fix.
 
@@ -13,7 +13,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ## Status at a Glance
 
-1. Administrator Credentials — 🟡 Code implemented; migrations 030/031 pending
+1. Administrator Credentials — ✅ Fully implemented for development; deployment verification pending
 2. ESP32 Sensor Nodes & Firmware — ⚠️ Hardware gate
 3. IoT Telemetry Ingestion — ✅ Complete for development; deployment verification pending
 4. Machine Downtime Records (S-03) — 🟡 Near-complete
@@ -26,7 +26,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ---
 
-## 1. Administrator Credentials — 🟡 Code implemented; migrations 030/031 pending
+## 1. Administrator Credentials — ✅ Fully implemented for development; deployment verification pending
 
 **Inherent risk**: 4 × 5 = 20 (Critical — highest in the document)
 **Threat**: Brute-force login, credential guessing, or stolen passwords reaching the management interface.
@@ -47,7 +47,8 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 **Verification and remaining gates**
 - Focused regressions cover password categories/boundaries, legacy login compatibility, limiter isolation, safe errors, session race ordering, login audit rollback, and account-free seed reapplication.
 - September 7: 396 backend tests passed, and four real PostgreSQL connection tests passed, including both login/password-change race orderings. Browser geometry checks confirmed the legacy form fits 1366x768, 390x844, and 375x667 viewports without page scrolling.
-- Apply 030 then 031 after 029, and deploy the matching backend. Readiness must report 31. These migrations have not been applied to the configured Supabase database by this implementation.
+- Development database verification: migrations 030 and 031 are applied after 029; `get_backend_readiness()` returns 31, and the database has exactly one active, ready, non-archived Admin.
+- When hosting begins, deploy the matching backend and verify HTTPS, proxy topology, cookies, and shared rate-limit enforcement.
 - Do not infer password strength from an existing bcrypt hash. The new policy applies when setting or changing passwords; existing passwords are not automatically reset.
 - Process-local rate limiting remains appropriate for one backend process. Verify HTTPS, proxy topology, cookies, and shared rate-limit enforcement before multi-instance deployment.
 - For fresh installations, provision exactly one private Admin before 029; operational seed data provides no default account.
@@ -104,14 +105,22 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 **What's working**
 - Downtime causes are locked to a fixed enum and, for S-03, locked at the database level (a trigger rejects cause changes for non-S-03 sensors).
-- Resolving a downtime requires a reviewed cause (migration 022).
+- Operators can review supported cause and notes fields without controlling sensor-managed recovery.
 - Base tables are SELECT-only for the backend role — there is no delete or update path to exploit from the client side.
+- Migration `032_grouped_downtime_rule.sql` now applies one backend-owned predicate: S-03 fault immediately confirms downtime, or unresolved faults on S-01, S-02, and S-04 together confirm one S-03-owned downtime interval.
+- A single process fault remains a process issue. Process faults can accumulate at different times; the third outstanding fault starts downtime at its own event time. Watchdog-confirmed process faults use the same rule.
+- Migration `034_route_output_telemetry_through_grouped_reconciliation.sql` fixes the normal-telemetry fallback so a process-only fault cannot revive the legacy any-fault machine-downtime status.
+- Migrations 035 through 042 preserve audit ownership, threshold timing, Idle classification, S-03 authority, reconnect and break baselines, watchdog recovery, and release readiness 42.
+- Direct event, watchdog, recovery, duplicate, stale, alert, API response, SSE owner, and simulator regressions are covered by focused local tests. S-05 remains output-only.
+- The Machine Module is read-only: it cannot force machine or sensor status, and migration 032 revokes the legacy manual-recovery RPC from the backend role. Only accepted sensor telemetry or qualified watchdog recovery can clear a condition.
 
 **What's missing**
 - The audit log for downtime cause updates is written by the Express layer *after* the database RPC returns. If the process dies in that instant, the change commits without an audit entry. (Contrast: operational-settings audits are inserted inside the database transaction.)
+- This review did not independently verify the hosted migration state. The intended database still needs a backup, forward-only migration review through 042, and an end-to-end verification run; the physical S-03 movement sensor/interface still needs machine-floor validation.
 
 **The fix**
 - Move the downtime audit insert into the `update_downtime_record` stored procedure so the mutation and its audit commit atomically.
+- Apply each unapplied forward migration through 042 in order, restart the matching backend, confirm readiness 42, and run the named direct-S-03 and grouped simulators before treating the grouped rule as production evidence. Validate the S-03 target, electrical isolation/level shifting, polarity, debounce, and fail-safe behavior on the real machine.
 
 ---
 
@@ -185,7 +194,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 - Chrome DevTools passes login, reload restore, no localStorage token, unreadable refresh cookie, two-tab single refresh, logout during delayed refresh, account-switch protection, bounded refresh timeout, and replacement-token failure handling.
 
 **Remaining gates and residual risk**
-- When hosting begins, do not rerun 026 after 027; migration 027 intentionally revokes legacy refresh sessions. Deploy the matching backend/frontend and apply all pending migrations through 031 and confirm `/api/health/ready` succeeds with database readiness version 31.
+- When hosting begins, do not rerun 026 after 027; migration 027 intentionally revokes legacy refresh sessions. Deploy the matching backend/frontend, apply each unapplied forward migration through 042 in order, and confirm `/api/health/ready` succeeds with database readiness version 42.
 - Hosted HTTPS, proxy behavior, Supabase RPC/table privileges, CORS origin, cookie attributes, and the live disposable-account smoke test are deferred deployment checks. Local browser verification used a disposable in-memory database and cannot prove hosted configuration.
 - Protected requests now check JWT `sid` against `auth_sessions`. Logout and password changes revoke sessions server-side; old JWTs without `sid` are rejected. Existing SSE connections revalidate periodically, and requests already executing are not cancelled by revocation.
 - Refresh rows expire but are not automatically deleted. Schedule a database cleanup of expired rows before long-running production use. Browsers without Web Locks or BroadcastChannel retain only per-tab refresh coordination. The refresh limiter is process-local; use a shared store before scaling the backend to multiple instances.
@@ -268,7 +277,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 
 ## Fix Priority
 
-1. **Administrator credentials** — code implemented with regression coverage; apply pending migrations 030/031 and verify readiness 31 before closing the database gate (Asset 1).
+1. **Administrator credentials** — ✅ Complete for development with regression coverage, migrations 030/031 applied, and readiness 31 verified. Deployment verification remains pending (Asset 1).
 2. **Token storage and lifetime** — ✅ DEVELOPMENT COMPLETE September 5, 2026 (Asset 7): session-lineage revocation, account-serialized RPCs, identity-bound retries, bounded refresh waits, replacement-token error handling, and migrations 026/027 complete. Perform hosted readiness and HTTPS verification only when deployment begins.
 3. **Stale pulse flag** — ✅ COMPLETE for development. Migration 028 is applied, 371 backend tests and the PostgreSQL concurrency test passed. Existing unclassified history requires separate review (Assets 3 and 5); deployment verification remains pending.
 4. **Cutter-cycle cross-correlation** — reject pulses while the mill is stopped (Asset 5).
