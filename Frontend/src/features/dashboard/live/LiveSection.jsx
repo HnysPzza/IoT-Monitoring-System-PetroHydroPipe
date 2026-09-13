@@ -4,7 +4,7 @@ import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
-import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
+import { getLiveStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getLiveFeed } from './liveService.js'
 import { presentLiveSensors } from './livePresentation.js'
 
@@ -130,10 +130,10 @@ export default function LiveSection() {
         {presentedSensors.length === 0 ? (
           <section className="section-card section-placeholder" aria-labelledby="live-sensors-empty-title"><div className="section-copy"><p className="section-eyebrow">No live sensors</p><h2 id="live-sensors-empty-title">Sensor data is unavailable</h2><p>Refresh the live feed to try again.</p></div></section>
         ) : presentedSensors.map((sensor) => (
-          <article key={sensor.id} className={`machine-card live-sensor-card ${getLiveStatusClass(sensor.displayStatus)}`}>
+          <article key={sensor.id} className={`machine-card live-sensor-card ${getSensorStatusClass(sensor.displayStatus)}`}>
             <div className="machine-card-header">
               <div><p className="machine-id">{sensor.sensorCode}</p><h3>{getSensorLabel(sensor.sensorCode, sensor.label)}</h3></div>
-              <span className={`status-badge ${getLiveStatusClass(sensor.displayStatus)}`}><StatusIcon status={sensor.displayStatus} />{sensor.displayStatus}</span>
+              <span className={`status-badge ${getSensorStatusClass(sensor.displayStatus)}`}><StatusIcon status={sensor.displayStatus} />{sensor.displayStatus}</span>
             </div>
             <p className="live-detection-state">{sensor.stateLabel}</p>
             <dl className="machine-meta live-sensor-meta">

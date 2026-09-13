@@ -133,6 +133,21 @@ describe('MachinesSection live snapshot', () => {
     expect(screen.queryByRole('button', { name: 'Reconcile recovery' })).not.toBeInTheDocument()
   })
 
+  it('renders a sensor fault in orange instead of the red downtime style', async () => {
+    const faultSensor = livePayload().sensors[0]
+    getLiveFeed.mockResolvedValue(livePayload({
+      machine: { status: 'Running' },
+      sensors: [{ ...faultSensor, status: 'Fault' }],
+    }))
+
+    renderWithAuth(<MachinesSection />)
+
+    const faultBadge = await screen.findByText('Fault')
+    expect(faultBadge).toHaveClass('status-badge', 'status-fault')
+    expect(faultBadge).not.toHaveClass('status-downtime')
+    expect(faultBadge.closest('.admin-sensor-card')).toHaveClass('status-fault')
+  })
+
   it('counts returned sensors without claiming they are connected', async () => {
     getLiveFeed.mockResolvedValue(livePayload())
 

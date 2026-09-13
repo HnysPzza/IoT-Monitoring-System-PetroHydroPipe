@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, Cpu, Factory, MapPin, RadioTower, RotateCw } f
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
-import { getMachineStatusClass } from '../../../shared/utils/statusClasses.js'
+import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getLiveFeed } from '../live/liveService.js'
 import { connectivityLabel } from '../live/livePresentation.js'
 
@@ -185,7 +185,7 @@ export default function MachinesSection() {
         {sensors.length === 0 ? <p className="table-muted">No sensors were returned by the live monitoring source.</p> : (
           <div className="admin-sensor-grid">
             {sensors.map((sensor) => {
-              const statusClass = sensor.status === 'Fault' ? 'status-downtime' : getMachineStatusClass(sensor.status)
+              const statusClass = getSensorStatusClass(sensor.status)
               return (
                 <article key={sensor.id} className={`machine-card admin-sensor-card ${statusClass}`}>
                   <div className="machine-card-header">

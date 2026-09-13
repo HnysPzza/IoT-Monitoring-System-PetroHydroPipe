@@ -74,6 +74,19 @@ describe('LiveSection polling', () => {
     expect(screen.getByText('Idle — grace period')).toBeInTheDocument()
   })
 
+  it('renders a sensor fault in orange instead of the red downtime style', async () => {
+    const faultPayload = payload()
+    faultPayload.sensors[0].status = 'Fault'
+    getLiveFeed.mockResolvedValue(faultPayload)
+
+    renderWithAuth(<LiveSection />)
+
+    const faultBadge = await screen.findByText('Fault')
+    expect(faultBadge).toHaveClass('status-badge', 'status-fault')
+    expect(faultBadge).not.toHaveClass('status-downtime')
+    expect(faultBadge.closest('.live-sensor-card')).toHaveClass('status-fault')
+  })
+
   it('does not overlap automatic polling requests', async () => {
     vi.useFakeTimers()
     const pending = deferred()

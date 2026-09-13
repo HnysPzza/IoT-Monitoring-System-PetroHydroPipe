@@ -10,8 +10,9 @@ export function getLiveStatusClass(status) {
 }
 
 export function getSensorStatusClass(status) {
-  if (status === 'Active') return 'status-running'
-  if (status === 'Fault') return 'status-downtime'
+  if (status === 'Active' || status === 'Running') return 'status-running'
+  if (status === 'Downtime') return 'status-downtime'
+  if (status === 'Fault') return 'status-fault'
   return 'status-idle'
 }
 
