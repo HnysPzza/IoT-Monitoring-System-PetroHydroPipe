@@ -19,7 +19,7 @@ const actionLabels = {
   SENSOR_STATUS_UPDATED: 'Sensor status changed',
   SENSOR_MANUAL_RECOVERY_OVERRIDE: 'Manual sensor recovery override',
   IOT_EVENT_RECEIVED: 'Sensor event received',
-  IOT_DEVICE_AUTH_FAILED: 'ESP32 device rejected',
+  IOT_DEVICE_AUTH_FAILED: 'Sensor device rejected',
   IOT_MACHINE_STATUS_UPDATED: 'Machine status updated by sensor data',
   ALERT_CREATED: 'Alert created',
   ALERT_ACKNOWLEDGED: 'Alert acknowledged',
@@ -32,13 +32,13 @@ export const auditActionOptions = [
 ]
 
 const entityLabels = {
-  auth: 'Authentication',
+  auth: 'Login',
   user: 'User account',
   machine: 'Machine',
   sensor: 'Sensor',
-  iot_device: 'ESP32 device',
-  sensor_event: 'Sensor event',
-  downtime: 'Downtime record',
+  iot_device: 'Sensor device',
+  sensor_event: 'Sensor activity',
+  downtime: 'Downtime',
 }
 
 export const auditEntityOptions = [
@@ -52,39 +52,6 @@ const loginFailureReasons = {
   archived_account: 'the account has been archived',
 }
 
-const technicalLabels = {
-  alertId: 'Alert ID',
-  acknowledgedAfterRecovery: 'Acknowledged after recovery',
-  cause: 'Cause',
-  deviceId: 'ESP32 device',
-  entityId: 'Entity ID',
-  eventId: 'Event ID',
-  eventType: 'Event type',
-  machineCode: 'Machine code',
-  machineName: 'Machine',
-  newMachineStatus: 'New machine status',
-  newSensorStatus: 'New sensor status',
-  newStatus: 'New status',
-  reason: 'Reason',
-  previousMachineStatus: 'Previous machine status',
-  previousSensorStatus: 'Previous sensor status',
-  recordedAt: 'Recorded at',
-  recoveredAt: 'Recovered at',
-  recoveryEventId: 'Recovery event ID',
-  recoveryEventType: 'Recovery event type',
-  recoveryPending: 'Recovery pending',
-  recoverySignal: 'Recovery signal',
-  sensorCode: 'Sensor',
-  sensorLabel: 'Sensor label',
-  signal: 'Signal',
-  source: 'Source',
-  status: 'Status',
-  targetRole: 'Target role',
-  targetUsername: 'Target username',
-  title: 'Alert title',
-  username: 'Username',
-}
-
 function getSensorName(sensorCode) {
   if (!sensorCode) {
     return null
@@ -95,54 +62,6 @@ function getSensorName(sensorCode) {
 
 function getMachineName(log) {
   return log.metadata?.machineName || log.metadata?.machineCode || 'Spiral Mill 01'
-}
-
-function formatMaybeDate(value) {
-  if (typeof value !== 'string') {
-    return null
-  }
-
-  const timestamp = Date.parse(value)
-
-  if (Number.isNaN(timestamp) || !value.includes('T')) {
-    return null
-  }
-
-  return formatDateTime(value)
-}
-
-function formatTechnicalValue(key, value) {
-  if (value === null || value === undefined || value === '') {
-    return 'None'
-  }
-
-  if (typeof value === 'boolean') {
-    return value ? 'Yes' : 'No'
-  }
-
-  if (Array.isArray(value)) {
-    return value.length > 0 ? value.map((item) => formatTechnicalValue(key, item)).join(', ') : 'None'
-  }
-
-  if (typeof value === 'object') {
-    return Object.entries(value)
-      .map(([nestedKey, nestedValue]) => `${cleanCode(nestedKey)}: ${formatTechnicalValue(nestedKey, nestedValue)}`)
-      .join('; ')
-  }
-
-  if (key.toLowerCase().includes('at')) {
-    return formatMaybeDate(value) || String(value)
-  }
-
-  if (key.toLowerCase().includes('signal')) {
-    return getSignalLabel(value)
-  }
-
-  if (key.toLowerCase().includes('eventtype')) {
-    return cleanCode(value)
-  }
-
-  return String(value)
 }
 
 export function formatDateTime(value) {
@@ -159,20 +78,23 @@ export function getReadableEntity(log) {
 
 export function getReadableActor(log) {
   if (log.actor) {
-    const name = log.actor.name || log.actor.username || 'User'
-    return log.actor.role ? `${name} (${log.actor.role})` : name
+    return log.actor.role || 'User'
   }
 
-  if (log.metadata?.deviceId) {
-    return log.metadata.deviceId
+  if (isSensorActivity(log)) {
+    return 'Sensors'
   }
 
-  return 'System / device'
+  if (log.entityType === 'auth') {
+    return 'User'
+  }
+
+  return 'System'
 }
 
 export function getReadableTarget(log) {
   if (log.entityType === 'auth') {
-    return log.metadata?.username || 'Login'
+    return 'Login'
   }
 
   if (log.entityType === 'user') {
@@ -188,7 +110,7 @@ export function getReadableTarget(log) {
   }
 
   if (log.entityType === 'iot_device') {
-    return log.metadata?.deviceId || 'ESP32 device'
+    return 'Sensor device'
   }
 
   if (log.entityType === 'sensor_event') {
@@ -200,8 +122,6 @@ export function getReadableTarget(log) {
 
 export function getReadableDetails(log) {
   const metadata = log.metadata || {}
-  const username = metadata.username || 'User'
-  const role = metadata.role || 'assigned role'
   const targetUser = metadata.targetUsername || 'User account'
   const targetRole = metadata.targetRole ? ` as ${metadata.targetRole}` : ''
   const status = metadata.newStatus || 'updated'
@@ -220,9 +140,9 @@ export function getReadableDetails(log) {
     case 'CONNECTIVITY_ALERT_RESOLVED':
       return `${sensor} reconnected. Physical fault recovery is checked separately.`
     case 'LOGIN_SUCCESS':
-      return `${username} logged in as ${role}.`
+      return 'Login was successful.'
     case 'LOGIN_FAILED':
-      return `Login failed for ${username} because ${loginFailureReasons[metadata.reason] || 'the request was rejected'}.`
+      return `Login failed because ${loginFailureReasons[metadata.reason] || 'the request was rejected'}.`
     case 'USER_CREATED':
       return `${targetUser} was created${targetRole}.`
     case 'USER_STATUS_UPDATED':
@@ -251,7 +171,7 @@ export function getReadableDetails(log) {
       }
       return `${sensor} detected ${eventType}. Signal: ${signal}.`
     case 'IOT_DEVICE_AUTH_FAILED':
-      return `${metadata.deviceId || 'ESP32 device'} was rejected because ${loginFailureReasons[metadata.reason] || cleanCode(metadata.reason).toLowerCase()}.`
+      return `A sensor device was rejected because ${loginFailureReasons[metadata.reason] || cleanCode(metadata.reason).toLowerCase()}.`
     case 'IOT_MACHINE_STATUS_UPDATED':
       return `${getMachineName(log)} changed to ${status} from ESP32 sensor data.`
     case 'ALERT_CREATED':
@@ -268,23 +188,16 @@ export function getReadableDetails(log) {
 }
 
 export function getReadableSource(log) {
-  if (log.action?.startsWith('WATCHDOG_') || log.action?.startsWith('CONNECTIVITY_')) {
-    return 'Sensor monitoring'
-  }
-  if (log.action?.startsWith('ALERT_')) {
-    return 'Alert system'
-  }
-
-  if (log.action?.startsWith('IOT_') || log.metadata?.deviceId || log.metadata?.source === 'esp32_event') {
-    return 'ESP32 sensor data'
+  if (isSensorActivity(log)) {
+    return 'Sensors'
   }
 
   if (log.entityType === 'auth') {
-    return 'Login system'
+    return 'Login'
   }
 
   if (log.actor) {
-    return 'Dashboard user'
+    return 'Dashboard'
   }
 
   return 'System'
@@ -298,26 +211,15 @@ export function getReadableDetailItems(log) {
       : []),
     { label: 'Who did it', value: getReadableActor(log) },
     { label: 'Affected item', value: getReadableTarget(log) },
-    { label: 'Result', value: getReadableAction(log) },
     { label: 'Source', value: getReadableSource(log) },
-    { label: 'Time recorded', value: formatDateTime(log.createdAt) },
+    { label: 'Time', value: formatDateTime(log.createdAt) },
   ]
 }
 
-export function getTechnicalDetailItems(log) {
-  const metadata = log.metadata || {}
-  const metadataItems = Object.entries(metadata).map(([key, value]) => ({
-    label: technicalLabels[key] || cleanCode(key),
-    value: key === 'eventType' && value === 'downtime' && metadata.signal === 'no_pulse'
-      ? 'No pulse observation (raw value: downtime)'
-      : formatTechnicalValue(key, value),
-  }))
-
-  return [
-    { label: 'Log ID', value: log.id },
-    { label: 'Action code', value: log.action },
-    { label: 'Entity type', value: log.entityType || 'None' },
-    { label: 'Entity ID', value: log.entityId || 'None' },
-    ...metadataItems,
-  ]
+function isSensorActivity(log) {
+  return log.action?.startsWith('WATCHDOG_')
+    || log.action?.startsWith('CONNECTIVITY_')
+    || log.action?.startsWith('IOT_')
+    || log.metadata?.deviceId
+    || log.metadata?.source === 'esp32_event'
 }

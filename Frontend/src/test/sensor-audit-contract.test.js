@@ -7,7 +7,7 @@ describe('sensor audit and alert ownership', () => {
   it('explains timed downtime and recovery under S-03 instead of generic system actions', () => {
     const created = { action: 'WATCHDOG_DOWNTIME_CREATED', entityType: 'downtime', metadata: { sensorCode: 'S-02', ownerSensorCode: 'S-03' } }
     expect(getReadableDetails(created)).toMatch(/S-03.*downtime/i)
-    expect(getReadableSource(created)).toBe('Sensor monitoring')
+    expect(getReadableSource(created)).toBe('Sensors')
     expect(getReadableDetails({ ...created, action: 'WATCHDOG_DOWNTIME_RESOLVED' })).toMatch(/S-03.*recovered/i)
   })
 

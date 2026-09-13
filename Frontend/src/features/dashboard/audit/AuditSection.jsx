@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, History, RotateCw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, CheckCircle2, History, RotateCw, X } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getAuditLogs } from './auditService.js'
 import {
@@ -7,19 +7,16 @@ import {
   auditEntityOptions,
   formatDateTime,
   getReadableAction,
-  getReadableActor,
   getReadableDetails,
   getReadableDetailItems,
-  getReadableEntity,
-  getReadableSource,
   getReadableTarget,
-  getTechnicalDetailItems,
 } from './auditFormatters.js'
 
 const AUDIT_PAGE_SIZE = 25
 
 export default function AuditSection() {
   const { token } = useAuth()
+  const detailsDialogRef = useRef(null)
   const [actionFilter, setActionFilter] = useState('All')
   const [entityFilter, setEntityFilter] = useState('All')
   const [dateFilter, setDateFilter] = useState('')
@@ -36,8 +33,7 @@ export default function AuditSection() {
   const [notice, setNotice] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [expandedLogId, setExpandedLogId] = useState(null)
-  const [technicalLogId, setTechnicalLogId] = useState(null)
+  const [selectedLog, setSelectedLog] = useState(null)
 
   async function loadAuditLogs({ silent = false } = {}) {
     if (silent) {
@@ -66,8 +62,9 @@ export default function AuditSection() {
         hasNextPage: false,
         hasPreviousPage: page > 1,
       })
-      setExpandedLogId(null)
-      setTechnicalLogId(null)
+      if (detailsDialogRef.current?.open) {
+        detailsDialogRef.current.close()
+      }
     } catch (error) {
       setNotice({ type: 'error', message: error.message || 'Unable to load audit logs.' })
       setLogs([])
@@ -96,9 +93,13 @@ export default function AuditSection() {
     setPage(1)
   }
 
-  function toggleExpandedLog(logId) {
-    setTechnicalLogId(null)
-    setExpandedLogId((currentId) => (currentId === logId ? null : logId))
+  function openDetails(log) {
+    setSelectedLog(log)
+    detailsDialogRef.current?.showModal()
+  }
+
+  function closeDetails() {
+    detailsDialogRef.current?.close()
   }
 
   return (
@@ -114,7 +115,7 @@ export default function AuditSection() {
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Accountability</p>
-            <h2 id="audit-title">Audit activity log</h2>
+            <h2 id="audit-title">Audit log</h2>
           </div>
           <span className="section-chip">
             <History size={16} aria-hidden="true" />
@@ -124,7 +125,7 @@ export default function AuditSection() {
 
         <div className="reports-controls">
           <label className="filter-field" htmlFor="audit-action-filter">
-            <span>Action type</span>
+            <span>Activity</span>
             <select
               id="audit-action-filter"
               name="auditAction"
@@ -138,7 +139,7 @@ export default function AuditSection() {
             </select>
           </label>
           <label className="filter-field" htmlFor="audit-entity-filter">
-            <span>Entity type</span>
+            <span>Area</span>
             <select
               id="audit-entity-filter"
               name="auditEntity"
@@ -187,87 +188,33 @@ export default function AuditSection() {
                 <tr>
                   <th scope="col">Date/Time</th>
                   <th scope="col">Action</th>
-                  <th scope="col">Who did it</th>
                   <th scope="col">Affected item</th>
-                  <th scope="col">Result / Details</th>
-                  <th scope="col">Source</th>
+                  <th scope="col">Summary</th>
                   <th scope="col">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {logs.length === 0 ? (
                   <tr>
-                    <td colSpan="7">No audit records match the selected filters.</td>
+                    <td colSpan="5">No audit records match the selected filters.</td>
                   </tr>
                 ) : (
                   logs.map((log) => (
-                    <Fragment key={log.id}>
-                      <tr className={expandedLogId === log.id ? 'is-expanded' : ''}>
-                        <td>{formatDateTime(log.createdAt)}</td>
-                        <td>
-                          <span className="audit-action-label">{getReadableAction(log)}</span>
-                          <span className="audit-entity-label">{getReadableEntity(log)}</span>
-                        </td>
-                        <td>{getReadableActor(log)}</td>
-                        <td>{getReadableTarget(log)}</td>
-                        <td>{getReadableDetails(log)}</td>
-                        <td>{getReadableSource(log)}</td>
-                        <td>
-                          <button
-                            className="btn btn-secondary table-action-button audit-details-button"
-                            type="button"
-                            aria-expanded={expandedLogId === log.id}
-                            aria-controls={`audit-details-${log.id}`}
-                            onClick={() => toggleExpandedLog(log.id)}
-                          >
-                            {expandedLogId === log.id ? 'Hide details' : 'View details'}
-                          </button>
-                        </td>
-                      </tr>
-                      {expandedLogId === log.id ? (
-                        <tr className="audit-details-row">
-                          <td colSpan="7">
-                            <div id={`audit-details-${log.id}`} className="audit-details-panel" aria-live="polite">
-                              <div>
-                                <p className="audit-details-heading">Readable details</p>
-                                <dl className="audit-details-grid">
-                                  {getReadableDetailItems(log).map((item) => (
-                                    <div key={item.label}>
-                                      <dt>{item.label}</dt>
-                                      <dd>{item.value}</dd>
-                                    </div>
-                                  ))}
-                                </dl>
-                              </div>
-                              <div className="audit-technical-toggle-row">
-                                <button
-                                  className="btn btn-secondary table-action-button audit-details-button"
-                                  type="button"
-                                  aria-expanded={technicalLogId === log.id}
-                                  aria-controls={`audit-technical-${log.id}`}
-                                  onClick={() => setTechnicalLogId((currentId) => (currentId === log.id ? null : log.id))}
-                                >
-                                  {technicalLogId === log.id ? 'Hide technical details' : 'Show technical details'}
-                                </button>
-                              </div>
-                              {technicalLogId === log.id ? (
-                                <div id={`audit-technical-${log.id}`} className="audit-technical-panel">
-                                  <p>Technical details</p>
-                                  <dl>
-                                    {getTechnicalDetailItems(log).map((item) => (
-                                      <div key={item.label}>
-                                        <dt>{item.label}</dt>
-                                        <dd>{item.value}</dd>
-                                      </div>
-                                    ))}
-                                  </dl>
-                                </div>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
+                    <tr key={log.id}>
+                      <td>{formatDateTime(log.createdAt)}</td>
+                      <td><span className="audit-action-label">{getReadableAction(log)}</span></td>
+                      <td>{getReadableTarget(log)}</td>
+                      <td>{getReadableDetails(log)}</td>
+                      <td>
+                        <button
+                          className="btn btn-secondary table-action-button audit-details-button"
+                          type="button"
+                          onClick={() => openDetails(log)}
+                        >
+                          View details
+                        </button>
+                      </td>
+                    </tr>
                   ))
                 )}
               </tbody>
@@ -294,6 +241,37 @@ export default function AuditSection() {
           </div>
         )}
       </section>
+
+      <dialog
+        ref={detailsDialogRef}
+        className="audit-details-dialog"
+        aria-labelledby="audit-details-title"
+        aria-describedby="audit-details-description"
+        onClose={() => setSelectedLog(null)}
+      >
+        {selectedLog ? (
+          <div className="audit-dialog-content">
+            <div className="audit-dialog-heading">
+              <div>
+                <p className="section-eyebrow">Activity summary</p>
+                <h2 id="audit-details-title">Audit details</h2>
+                <p id="audit-details-description">A clear summary of this activity.</p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close audit details" onClick={closeDetails}>
+                <X size={20} aria-hidden="true" />
+              </button>
+            </div>
+            <dl className="audit-dialog-details">
+              {getReadableDetailItems(selectedLog).map((item) => (
+                <div key={item.label}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+      </dialog>
     </div>
   )
 }

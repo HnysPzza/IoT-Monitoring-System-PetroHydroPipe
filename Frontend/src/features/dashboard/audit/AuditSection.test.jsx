@@ -1,6 +1,6 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AuditSection from './AuditSection.jsx'
 import { getAuditLogs } from './auditService.js'
@@ -8,6 +8,19 @@ import { getAuditLogs } from './auditService.js'
 vi.mock('./auditService.js', () => ({
   getAuditLogs: vi.fn(),
 }))
+
+const originalShowModal = HTMLDialogElement.prototype.showModal
+const originalClose = HTMLDialogElement.prototype.close
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+})
+
+afterAll(() => {
+  HTMLDialogElement.prototype.showModal = originalShowModal
+  HTMLDialogElement.prototype.close = originalClose
+})
 
 describe('AuditSection', () => {
   beforeEach(() => {
@@ -29,7 +42,8 @@ describe('AuditSection', () => {
 
     renderWithAuth(<AuditSection />)
 
-    expect(await screen.findByText(/successful login/i)).toBeInTheDocument()
+    expect(await screen.findByText('Login was successful.')).toBeInTheDocument()
+    expect(screen.queryByText(/admin logged in/i)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /next/i }))
 
@@ -41,7 +55,7 @@ describe('AuditSection', () => {
     })
   })
 
-  it('shows readable inline details before technical audit data', async () => {
+  it('uses a simplified table and shows readable details in a modal', async () => {
     const user = userEvent.setup()
 
     getAuditLogs.mockResolvedValue({
@@ -66,26 +80,26 @@ describe('AuditSection', () => {
 
     renderWithAuth(<AuditSection />)
 
+    expect(await screen.findByRole('columnheader', { name: 'Summary' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Who did it' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Source' })).not.toBeInTheDocument()
+
     const detailsButton = await screen.findByRole('button', { name: /view details/i })
 
     await user.click(detailsButton)
 
-    expect(screen.getByText('Readable details')).toBeInTheDocument()
-    expect(screen.getByText('What happened')).toBeInTheDocument()
-    expect(screen.getAllByText(/outside filler wire downtime detected was created/i).length).toBeGreaterThan(1)
-    expect(screen.queryByText('Action code')).not.toBeInTheDocument()
-    expect(screen.queryByText('event-1')).not.toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).getByText('What happened')).toBeInTheDocument()
+    expect(within(dialog).getByText(/outside filler wire downtime detected was created/i)).toBeInTheDocument()
+    expect(within(dialog).getByText('Who did it')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('System')).toHaveLength(2)
+    expect(within(dialog).getByText('Source')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Action code')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('event-1')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /show technical details/i }))
-
-    expect(screen.getByText('Action code')).toBeInTheDocument()
-    expect(screen.getByText('ALERT_CREATED')).toBeInTheDocument()
-    expect(screen.getByText('Event ID')).toBeInTheDocument()
-    expect(screen.getByText('event-1')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /hide details/i }))
-
-    expect(screen.queryByText('Readable details')).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /close audit details/i }))
+    expect(screen.queryByRole('dialog', { name: 'Audit details' })).not.toBeInTheDocument()
   })
 
   it('shows manual recovery reason in readable details', async () => {
@@ -112,9 +126,12 @@ describe('AuditSection', () => {
     renderWithAuth(<AuditSection />)
     await user.click(await screen.findByRole('button', { name: /view details/i }))
 
-    expect(screen.getByText('Override reason')).toBeInTheDocument()
-    expect(screen.getByText('Maintenance confirmed normal operation')).toBeInTheDocument()
-    expect(screen.queryByText('Technical details')).not.toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).getByText('Override reason')).toBeInTheDocument()
+    expect(within(dialog).getByText('Maintenance confirmed normal operation')).toBeInTheDocument()
+    expect(within(dialog).getByText('Admin')).toBeInTheDocument()
+    expect(within(dialog).queryByText('admin')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument()
   })
 
   it('describes no-pulse sensor input as an observation instead of confirmed downtime', async () => {
@@ -145,8 +162,9 @@ describe('AuditSection', () => {
     expect(screen.queryByText(/detected downtime/i)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /view details/i }))
-    await user.click(screen.getByRole('button', { name: /show technical details/i }))
-
-    expect(screen.getByText('No pulse observation (raw value: downtime)')).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).getAllByText('Sensors')).toHaveLength(2)
+    expect(within(dialog).getByText(/reported no pulse.*observation, not confirmed downtime/i)).toBeInTheDocument()
+    expect(within(dialog).queryByText('No pulse observation (raw value: downtime)')).not.toBeInTheDocument()
   })
 })
