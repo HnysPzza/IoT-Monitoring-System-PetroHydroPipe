@@ -98,6 +98,16 @@ describe('AdminDashboard alerts', () => {
     expect(screen.queryByText('Analyze', { selector: '.sidebar-nav-heading' })).not.toBeInTheDocument()
   })
 
+  it('places Analytics immediately above Reports in the sidebar', () => {
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const sidebarLinks = [...screen.getByRole('navigation', { name: 'Dashboard sections' }).querySelectorAll('a')]
+    const labels = sidebarLinks.map((link) => link.textContent.trim())
+    expect(labels.indexOf('Analytics')).toBe(labels.indexOf('Reports') - 1)
+  })
+
   it('renders the requested Lucide icons while keeping Reports on BarChart3', () => {
     getAlerts.mockReturnValue(new Promise(() => { }))
 

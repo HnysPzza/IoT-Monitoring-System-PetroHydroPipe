@@ -25,20 +25,20 @@ export const navItems = [
     subtitle: 'Review stoppages, causes, and intervention history.',
   },
   {
-    label: 'Reports',
-    to: '/dashboard/reports',
-    icon: 'bar-chart-3',
-    group: 'analyze',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Managing Director'],
-    subtitle: 'Generate and export production summaries.',
-  },
-  {
     label: 'Analytics',
     to: '/dashboard/analytics',
     icon: 'chart-no-axes-combined',
     group: 'analyze',
     roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director'],
     subtitle: 'Explore production, downtime, and process trends.',
+  },
+  {
+    label: 'Reports',
+    to: '/dashboard/reports',
+    icon: 'bar-chart-3',
+    group: 'analyze',
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Managing Director'],
+    subtitle: 'Generate and export production summaries.',
   },
   {
     label: 'Audit Log',

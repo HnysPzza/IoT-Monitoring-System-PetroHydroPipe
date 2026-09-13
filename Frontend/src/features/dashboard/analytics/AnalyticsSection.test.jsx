@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -7,15 +7,6 @@ import { analyticsTestFixture } from './analyticsTestFixtures.js'
 
 vi.mock('./AnalyticsOperationsDetails.jsx', () => ({
   default: () => <div data-testid="analytics-operations-details" />,
-}))
-
-vi.mock('./AnalyticsDateRangePicker.jsx', () => ({
-  default: ({ onChange }) => (
-    <div>
-      <button type="button" onClick={() => onChange({ startDate: '2026-08-15', endDate: '' })}>Choose partial range</button>
-      <button type="button" onClick={() => onChange({ startDate: '2026-08-15', endDate: '2026-08-17' })}>Choose complete range</button>
-    </div>
-  ),
 }))
 
 function createDeferred() {
@@ -114,20 +105,15 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('does not request Analytics while a custom range is incomplete and requests exact dates once complete', async () => {
+  it('keeps the filter row compact without custom calendar controls or a bucket container', async () => {
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
-    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    const { container } = renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
-    await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
-    fireEvent.click(await screen.findByRole('button', { name: 'Choose partial range' }))
-    expect(loadAnalytics).toHaveBeenCalledTimes(2)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Choose complete range' }))
-    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith('test-token', {
-      period: 'custom', startDate: '2026-08-15', endDate: '2026-08-17',
-    }, { signal: expect.any(AbortSignal) }))
+    expect(screen.queryByRole('button', { name: 'Custom' })).not.toBeInTheDocument()
+    expect(container.querySelector('.analytics-custom-dates')).not.toBeInTheDocument()
+    expect(container.querySelector('.analytics-bucket-summary')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh data' })).toBeInTheDocument()
   })
 
   it('switches the trend explorer metric from an interactive KPI card', async () => {
@@ -176,7 +162,6 @@ describe('AnalyticsSection recorded-data states', () => {
       { period: 'all' },
       { signal: expect.any(AbortSignal) },
     ))
-    expect(screen.getByText('weekly')).toBeInTheDocument()
     expect(screen.queryByText('Prior period')).not.toBeInTheDocument()
     expect(screen.queryByText(/All recorded history:/i)).not.toBeInTheDocument()
   })

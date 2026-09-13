@@ -1,20 +1,17 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, AlertTriangle, Boxes, CalendarDays, Clock3, Gauge, RotateCw, TrendingDown } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, AlertTriangle, Boxes, Clock3, Gauge, RotateCw, TrendingDown } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getAnalyticsKpis } from './analyticsPresentation.js'
-import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
+import { getAnalyticsSnapshot, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
-import './analytics-date-range-picker.css'
 
-const AnalyticsDateRangePicker = lazy(() => import('./AnalyticsDateRangePicker.jsx'))
 const AUTO_REFRESH_MS = 60 * 1000
 
 const rangePresets = [
   { id: 'this-week', label: 'This week' },
   { id: 'this-month', label: 'This month' },
   { id: 'all', label: 'All time' },
-  { id: 'custom', label: 'Custom' },
 ]
 
 const kpiIcons = {
@@ -23,12 +20,6 @@ const kpiIcons = {
   production: Boxes,
   'process-events': Activity,
   'estimated-loss': TrendingDown,
-}
-
-function addDateDays(dateValue, amount) {
-  const date = new Date(`${dateValue}T00:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + amount)
-  return date.toISOString().slice(0, 10)
 }
 
 function getRangeValidation(options) {
@@ -44,10 +35,7 @@ function getRangeValidation(options) {
 
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
   const { token } = useAuth()
-  const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
   const [period, setPeriod] = useState('this-week')
-  const [customStartDate, setCustomStartDate] = useState(() => addDateDays(currentManilaDate, -6))
-  const [customEndDate, setCustomEndDate] = useState(currentManilaDate)
   const [trendMetric, setTrendMetric] = useState('downtime')
   const [snapshot, setSnapshot] = useState(null)
   const [loadState, setLoadState] = useState('loading')
@@ -56,11 +44,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const requestControllerRef = useRef(null)
   const successfulSnapshotRef = useRef(null)
 
-  const requestOptions = useMemo(() => (
-    period === 'custom'
-      ? { period, startDate: customStartDate, endDate: customEndDate }
-      : { period }
-  ), [customEndDate, customStartDate, period])
+  const requestOptions = useMemo(() => ({ period }), [period])
   const { range, errorMessage: rangeErrorMessage } = useMemo(
     () => getRangeValidation(requestOptions),
     [requestOptions],
@@ -109,11 +93,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     }
   }, [loadAnalytics, range, requestKey, requestOptions, token])
 
-  const handleCustomDateRangeChange = useCallback(({ startDate, endDate }) => {
-    setCustomStartDate(startDate)
-    setCustomEndDate(endDate)
-  }, [])
-
   useEffect(() => {
     if (!range) {
       // A delayed API response must not overwrite validation after
@@ -154,7 +133,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </div>
         </div>
 
-        <div className={`analytics-filter-row ${period === 'custom' ? 'analytics-filter-row--custom' : ''}`}>
+        <div className="analytics-filter-row">
           <fieldset className="analytics-range-fieldset">
             <legend className="sr-only">Date range</legend>
             <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
@@ -171,29 +150,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
               ))}
             </div>
           </fieldset>
-
-          {period === 'custom' ? (
-            <div className="analytics-custom-dates">
-              <Suspense
-                fallback={(
-                  <div className="analytics-custom-date-picker-loading" role="status" aria-live="polite">
-                    Loading custom date range picker...
-                  </div>
-                )}
-              >
-                <AnalyticsDateRangePicker
-                  startDate={customStartDate}
-                  endDate={customEndDate}
-                  onChange={handleCustomDateRangeChange}
-                />
-              </Suspense>
-            </div>
-          ) : null}
-
-          <div className="analytics-bucket-summary" aria-live="polite">
-            <CalendarDays size={17} aria-hidden="true" />
-            <strong>{snapshot?.selected?.range?.bucket || (range?.range === 'all' ? 'Automatic' : range?.bucket) || 'Fix dates'}</strong>
-          </div>
 
           <button
             className="btn btn-success analytics-refresh-button"

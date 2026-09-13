@@ -2288,48 +2288,9 @@ button:disabled {
 }
 
 .trend-mode-toggle.analytics-range-toggle {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   width: 100%;
   min-width: 0;
-}
-
-.analytics-custom-dates {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  width: 100%;
-}
-
-.analytics-custom-dates .filter-field {
-  min-width: 0;
-  width: 100%;
-}
-
-.analytics-bucket-summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 8px;
-  align-items: center;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  color: var(--c-text-2);
-  background: var(--panel-bg);
-  font-size: 0.74rem;
-}
-
-.analytics-bucket-summary svg {
-  grid-row: span 2;
-  color: var(--c-accent);
-}
-
-.analytics-bucket-summary strong {
-  color: var(--c-text);
-  font-family: 'Inter', sans-serif;
-  font-size: 0.8rem;
-  text-transform: capitalize;
 }
 
 .analytics-refresh-button {
@@ -2733,10 +2694,6 @@ button:disabled {
     gap: 12px;
   }
 
-  .analytics-custom-dates {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .analytics-trend-summary-row {
     flex-direction: row;
     align-items: center;
@@ -2766,11 +2723,6 @@ button:disabled {
 
   .trend-mode-toggle.analytics-range-toggle {
     min-width: 360px;
-  }
-
-  .analytics-bucket-summary {
-    width: auto;
-    min-width: 185px;
   }
 
   .analytics-refresh-button {
@@ -5622,10 +5574,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     width: 100%;
   }
 
-  .analytics-custom-dates {
-    width: 100%;
-  }
-
   .analytics-operations-layout {
     grid-template-columns: 1fr;
   }
@@ -5655,8 +5603,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
   .analytics-range-fieldset,
   .analytics-range-toggle,
-  .analytics-custom-dates .filter-field,
-  .analytics-bucket-summary,
   .analytics-metric-field,
   .analytics-metric-controls,
   .analytics-metric-toggle {
@@ -5666,11 +5612,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
   .analytics-metric-toggle {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .analytics-custom-dates {
-    display: grid;
-    grid-template-columns: 1fr;
   }
 
   .analytics-trend-card .section-heading {
