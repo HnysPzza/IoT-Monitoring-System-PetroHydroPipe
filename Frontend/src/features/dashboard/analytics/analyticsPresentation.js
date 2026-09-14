@@ -8,6 +8,9 @@ export const analyticsTrendMetrics = [
   { id: 'estimated-loss', label: 'Estimated loss', unit: 'pieces', shortUnit: 'pcs', metricKey: 'estimatedLossPieces', description: 'Estimated output during unplanned downtime using the current server-calculated production rate.' },
 ]
 
+export const primaryAnalyticsKpiIds = ['downtime', 'production', 'estimated-loss']
+export const secondaryAnalyticsKpiIds = ['availability', 'process-events']
+
 export function getAnalyticsTrendMetric(metricId) {
   return analyticsTrendMetrics.find((metric) => metric.id === metricId) || analyticsTrendMetrics[0]
 }
@@ -18,8 +21,49 @@ function formatMetricValue(value, unit) {
   return `${formatNumber(value)}${unit ? ` ${unit}` : ''}`
 }
 
+function roundDeltaPercent(value) {
+  return Number(value.toFixed(1))
+}
+
+function getDeltaSentiment(metricId, direction) {
+  if (metricId === 'process-events' || direction === 'flat' || direction === 'unknown') return 'neutral'
+  const favorableDirection = ['availability', 'production'].includes(metricId) ? 'up' : 'down'
+  return direction === favorableDirection ? 'positive' : 'negative'
+}
+
+export function getAnalyticsKpiDelta(metricId, selectedSummary, comparisonSummary) {
+  if (!comparisonSummary) {
+    return { delta: null, deltaPercent: null, direction: 'unknown', sentiment: 'neutral', label: 'No prior period' }
+  }
+
+  const metric = getAnalyticsTrendMetric(metricId)
+  const currentValue = selectedSummary?.[metric.metricKey]
+  const priorValue = comparisonSummary[metric.metricKey]
+  if (currentValue === null || currentValue === undefined || priorValue === null || priorValue === undefined) {
+    return { delta: null, deltaPercent: null, direction: 'unknown', sentiment: 'neutral', label: 'Not observed' }
+  }
+
+  const delta = Number(currentValue) - Number(priorValue)
+  const direction = delta > 0.001 ? 'up' : delta < -0.001 ? 'down' : 'flat'
+  if (Number(priorValue) === 0) {
+    if (direction === 'flat') return { delta, deltaPercent: 0, direction, sentiment: getDeltaSentiment(metricId, direction), label: '0.0%' }
+    return { delta, deltaPercent: null, direction, sentiment: getDeltaSentiment(metricId, direction), label: 'No baseline' }
+  }
+
+  const deltaPercent = roundDeltaPercent((delta / Math.abs(Number(priorValue))) * 100)
+  const sign = deltaPercent > 0 ? '+' : ''
+  return {
+    delta,
+    deltaPercent,
+    direction,
+    sentiment: getDeltaSentiment(metricId, direction),
+    label: `${sign}${deltaPercent.toFixed(1)}%`,
+  }
+}
+
 export function getAnalyticsKpis(snapshot) {
   const summary = snapshot.selected.summary
+  const comparisonSummary = snapshot.comparison?.summary
   const eventCount = summary.downtimeEventCount
   const downtimeEventHelper = eventCount === null || eventCount === undefined
     ? 'Event count not observed'
@@ -31,18 +75,23 @@ export function getAnalyticsKpis(snapshot) {
       ? 'Last 30 completed days'
       : 'Configured fallback'
 
-  return [
+  const definitions = [
     { id: 'downtime', label: 'Downtime', value: formatMetricValue(summary.downtimeMinutes, 'min'), helper: downtimeEventHelper },
-    { id: 'availability', label: 'Availability', value: formatMetricValue(summary.availabilityPercent, 'percent'), helper: 'Server-calculated operational availability' },
     { id: 'production', label: 'Output', value: formatMetricValue(summary.outputPieces, 'pcs'), helper: 'Recorded S-05 output pulses' },
+    { id: 'estimated-loss', label: 'Estimated loss', value: formatMetricValue(summary.estimatedLossPieces, 'pcs'), helper: `${lossBasisLabel}: ${formatNumber(lossBasis.ratePiecesPerMinute)} pcs/min` },
+    { id: 'availability', label: 'Availability', value: formatMetricValue(summary.availabilityPercent, 'percent'), helper: 'Server-calculated operational availability' },
     { id: 'process-events', label: 'Process events', value: formatMetricValue(summary.processEventCount, ''), helper: 'Recorded S-01, S-02, and S-04 pulses' },
-    {
-      id: 'estimated-loss',
-      label: 'Estimated loss',
-      value: formatMetricValue(summary.estimatedLossPieces, 'pcs'),
-      helper: `${lossBasisLabel}: ${formatNumber(lossBasis.ratePiecesPerMinute)} pcs/min`,
-    },
   ]
+
+  return definitions.map((item) => ({
+    ...item,
+    delta: getAnalyticsKpiDelta(item.id, summary, comparisonSummary),
+    isPrimary: primaryAnalyticsKpiIds.includes(item.id),
+    sparkline: (snapshot.selected.trends || []).map((point) => ({
+      key: point.key,
+      value: point.metrics?.[getAnalyticsTrendMetric(item.id).metricKey] ?? null,
+    })),
+  }))
 }
 
 export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {

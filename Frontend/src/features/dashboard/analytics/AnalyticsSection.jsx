@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, AlertTriangle, Boxes, Clock3, Gauge, RotateCw, TrendingDown } from 'lucide-react'
+import { AlertTriangle, Info, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
-import { getAnalyticsKpis } from './analyticsPresentation.js'
-import { getAnalyticsSnapshot, resolveAnalyticsRange } from './analyticsService.js'
+import { getAnalyticsKpis, secondaryAnalyticsKpiIds } from './analyticsPresentation.js'
+import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
+import AnalyticsDateRangePicker from './AnalyticsDateRangePicker.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
+import AnalyticsKpiCard from './AnalyticsKpiCard.jsx'
+import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 
 const AUTO_REFRESH_MS = 60 * 1000
 
@@ -14,12 +17,10 @@ const rangePresets = [
   { id: 'all', label: 'All time' },
 ]
 
-const kpiIcons = {
-  downtime: Clock3,
-  availability: Gauge,
-  production: Boxes,
-  'process-events': Activity,
-  'estimated-loss': TrendingDown,
+function addDateDays(dateValue, amount) {
+  const date = new Date(`${dateValue}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + amount)
+  return date.toISOString().slice(0, 10)
 }
 
 function getRangeValidation(options) {
@@ -35,8 +36,12 @@ function getRangeValidation(options) {
 
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
   const { token } = useAuth()
+  const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
   const [period, setPeriod] = useState('this-week')
+  const [customStartDate, setCustomStartDate] = useState(() => addDateDays(currentManilaDate, -6))
+  const [customEndDate, setCustomEndDate] = useState(currentManilaDate)
   const [trendMetric, setTrendMetric] = useState('downtime')
+  const [isCaveatOpen, setIsCaveatOpen] = useState(false)
   const [snapshot, setSnapshot] = useState(null)
   const [loadState, setLoadState] = useState('loading')
   const [errorMessage, setErrorMessage] = useState('')
@@ -44,7 +49,11 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const requestControllerRef = useRef(null)
   const successfulSnapshotRef = useRef(null)
 
-  const requestOptions = useMemo(() => ({ period }), [period])
+  const requestOptions = useMemo(() => (
+    period === 'custom'
+      ? { period, startDate: customStartDate, endDate: customEndDate }
+      : { period }
+  ), [customEndDate, customStartDate, period])
   const { range, errorMessage: rangeErrorMessage } = useMemo(
     () => getRangeValidation(requestOptions),
     [requestOptions],
@@ -123,44 +132,74 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
+  const primaryKpis = kpis.filter((kpi) => kpi.isPrimary)
+  const secondaryKpis = kpis.filter((kpi) => secondaryAnalyticsKpiIds.includes(kpi.id))
+  const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
+
+  const handleCustomDateRangeChange = useCallback(({ startDate, endDate }) => {
+    setCustomStartDate(startDate)
+    setCustomEndDate(endDate)
+    setPeriod('custom')
+  }, [])
 
   return (
     <div className="reports-layout analytics-layout">
       <section className="section-card analytics-controls-card" aria-labelledby="analytics-controls-title">
-        <div className="section-heading">
-          <div>
+        <div className="analytics-header-row">
+          <div className="analytics-title-group">
             <h2 id="analytics-controls-title">Analytics</h2>
-          </div>
-        </div>
-
-        <div className="analytics-filter-row">
-          <fieldset className="analytics-range-fieldset">
-            <legend className="sr-only">Date range</legend>
-            <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
-              {rangePresets.map((preset) => (
+            <Popover open={isCaveatOpen} onOpenChange={setIsCaveatOpen}>
+              <PopoverTrigger asChild>
                 <button
-                  key={preset.id}
-                  className={`trend-mode-button ${period === preset.id ? 'is-selected' : ''}`}
+                  className="analytics-info-trigger"
                   type="button"
-                  aria-pressed={period === preset.id}
-                  onClick={() => setPeriod(preset.id)}
+                  aria-label="Analytics data coverage information"
+                  aria-haspopup="dialog"
+                  aria-expanded={isCaveatOpen}
                 >
-                  {preset.label}
+                  <Info size={16} aria-hidden="true" />
                 </button>
-              ))}
-            </div>
-          </fieldset>
+              </PopoverTrigger>
+              <PopoverContent className="analytics-caveat-popover" aria-label="Analytics data coverage information">
+                {coverageMessage}
+              </PopoverContent>
+            </Popover>
+          </div>
 
-          <button
-            className="btn btn-success analytics-refresh-button"
-            type="button"
-            aria-label="Refresh data"
-            disabled={!range || loadState === 'loading' || loadState === 'refreshing'}
-            onClick={loadSnapshot}
-          >
-            <RotateCw className={loadState === 'refreshing' ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            Refresh
-          </button>
+          <div className="analytics-header-controls">
+            <fieldset className="analytics-range-fieldset">
+              <legend className="sr-only">Date range</legend>
+              <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
+                {rangePresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    className={`trend-mode-button ${period === preset.id ? 'is-selected' : ''}`}
+                    type="button"
+                    aria-pressed={period === preset.id}
+                    onClick={() => setPeriod(preset.id)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <AnalyticsDateRangePicker
+              startDate={customStartDate}
+              endDate={customEndDate}
+              maxDate={currentManilaDate}
+              onChange={handleCustomDateRangeChange}
+              isActive={period === 'custom'}
+            />
+            <button
+              className="btn analytics-refresh-button"
+              type="button"
+              aria-label="Refresh data"
+              disabled={!range || loadState === 'loading' || loadState === 'refreshing'}
+              onClick={loadSnapshot}
+            >
+              <RotateCw className={loadState === 'refreshing' ? 'spin-icon' : ''} size={17} aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </section>
 
@@ -212,35 +251,26 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
       {snapshot && range && loadState !== 'error' && loadState !== 'validation' ? (
         <>
-          {!snapshot.coverage.historicalHeartbeatAvailable ? (
-            <div className="notice notice-error dashboard-alert" role="status" aria-live="polite">
-              <AlertTriangle size={16} aria-hidden="true" />
-              <span>{snapshot.coverage.message}</span>
-            </div>
-          ) : null}
+          <section className="analytics-kpi-grid analytics-primary-kpi-grid" aria-label="Primary Analytics summary">
+            {primaryKpis.map((kpi) => (
+              <AnalyticsKpiCard
+                key={kpi.id}
+                kpi={kpi}
+                selectedMetric={trendMetric}
+                onSelect={setTrendMetric}
+              />
+            ))}
+          </section>
 
-          <section className="analytics-kpi-grid" aria-label="Analytics summary">
-            {kpis.map((kpi) => {
-              const Icon = kpiIcons[kpi.id]
-              const isSelected = trendMetric === kpi.id
-
-              return (
-                <button
-                  key={kpi.id}
-                  className={`section-card analytics-kpi-card ${isSelected ? 'is-selected' : ''}`}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => setTrendMetric(kpi.id)}
-                >
-                  <div className="analytics-kpi-heading">
-                    <span className="stat-label">{kpi.label}</span>
-                    <Icon size={18} aria-hidden="true" />
-                  </div>
-                  <p className="stat-value">{kpi.value}</p>
-                  <p className="stat-helper">{kpi.helper}</p>
-                </button>
-              )
-            })}
+          <section className="analytics-secondary-kpi-row" aria-label="Secondary Analytics summary">
+            {secondaryKpis.map((kpi) => (
+              <AnalyticsKpiCard
+                key={kpi.id}
+                kpi={kpi}
+                selectedMetric={trendMetric}
+                onSelect={setTrendMetric}
+              />
+            ))}
           </section>
 
           <AnalyticsTrendExplorer

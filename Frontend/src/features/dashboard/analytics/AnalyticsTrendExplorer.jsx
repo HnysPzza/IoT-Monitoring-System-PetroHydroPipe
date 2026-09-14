@@ -45,7 +45,7 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
     <section className="section-card analytics-trend-card industrial-chart-card" aria-labelledby="analytics-trend-title">
       <div className="section-heading">
         <div>
-          <h2 id="analytics-trend-title">Operational trend</h2>
+          <h2 id="analytics-trend-title">{metric.label} trend</h2>
         </div>
 
         {/* Accessible fallback select for screen readers and automation */}

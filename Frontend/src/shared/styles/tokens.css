@@ -2269,18 +2269,81 @@ button:disabled {
   line-height: 1.55;
 }
 
-/* Filter Controls - Mobile First */
-.analytics-filter-row {
+/* Analytics header and metric cards - Mobile First */
+.analytics-controls-card {
+  gap: 0;
+  padding: 14px 16px;
+}
+
+.section-card.analytics-controls-card {
+  padding: 14px 16px;
+}
+
+.analytics-header-row,
+.analytics-title-group,
+.analytics-header-controls {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
+  align-items: center;
+}
+
+.analytics-header-row {
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+}
+
+.analytics-title-group {
+  min-width: 0;
+  gap: 8px;
+}
+
+.analytics-title-group h2 {
+  margin: 0;
+}
+
+.analytics-info-trigger {
+  display: inline-grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--c-text-2);
+  background: transparent;
+}
+
+.analytics-info-trigger:hover,
+.analytics-info-trigger[aria-expanded='true'] {
+  border-color: var(--subtle-border);
+  color: var(--c-text);
+  background: var(--hover-bg);
+}
+
+.analytics-info-trigger:focus-visible,
+.analytics-refresh-button:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.analytics-caveat-popover {
+  max-width: min(320px, calc(100vw - 24px));
+  color: var(--c-text-2);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.analytics-header-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .analytics-range-fieldset {
-  display: grid;
-  gap: 6px;
-  width: 100%;
+  display: flex;
+  width: auto;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -2289,35 +2352,48 @@ button:disabled {
 
 .trend-mode-toggle.analytics-range-toggle {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: 100%;
+  width: auto;
   min-width: 0;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.analytics-controls-card .trend-mode-button {
+  min-height: 44px;
+  white-space: nowrap;
+  border-color: var(--subtle-border);
+  color: var(--c-text-2);
+  background: transparent;
+}
+
+.analytics-controls-card .trend-mode-button:hover:not(:disabled),
+.analytics-controls-card .trend-mode-button.is-selected {
+  border-color: color-mix(in srgb, var(--c-primary) 58%, var(--subtle-border));
+  color: var(--c-text);
+  background: var(--hover-bg);
 }
 
 .analytics-refresh-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 44px;
   min-height: 44px;
-  width: 100%;
-  padding: 0 18px;
+  min-width: 44px;
+  padding: 0;
   border-radius: 8px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: #FFFFFF;
-  background: #047857;
-  border: 1px solid #065F46;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--c-success, #10B981) 22%, transparent);
-  transition:
-    background-color 0.18s var(--ease-std),
-    transform 0.15s var(--ease-std),
-    box-shadow 0.18s var(--ease-std);
+  color: var(--c-text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background-color 0.18s var(--ease-std), color 0.18s var(--ease-std);
 }
 
 .analytics-refresh-button:hover:not(:disabled) {
-  background: #065F46;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--c-success, #10B981) 35%, transparent);
+  color: var(--c-text);
+  background: var(--hover-bg);
+  transform: none;
 }
 
 .analytics-refresh-button:disabled {
@@ -2331,14 +2407,17 @@ button:disabled {
 .analytics-kpi-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .analytics-kpi-card {
+  position: relative;
+  overflow: hidden;
   display: grid;
   align-content: center;
   gap: 6px;
-  min-height: 94px;
+  min-width: 0;
+  min-height: 132px;
   padding: 14px 16px;
   border: 1px solid var(--subtle-border);
   border-radius: 8px;
@@ -2378,9 +2457,7 @@ button:disabled {
 .analytics-kpi-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  color: var(--c-accent);
 }
 
 .analytics-kpi-heading .stat-label {
@@ -2399,6 +2476,92 @@ button:disabled {
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
   letter-spacing: -0.02em;
+}
+
+.analytics-kpi-value-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analytics-kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--c-text-2);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-kpi-delta.is-positive {
+  color: var(--c-success);
+}
+
+.analytics-kpi-delta.is-negative {
+  color: var(--c-danger);
+}
+
+.analytics-kpi-delta.is-neutral {
+  color: var(--c-text-2);
+}
+
+.analytics-kpi-sparkline {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 48px;
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.analytics-kpi-sparkline svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.analytics-kpi-sparkline-area {
+  fill: var(--c-accent);
+}
+
+.analytics-kpi-sparkline-line {
+  fill: none;
+  stroke: var(--c-accent);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.analytics-secondary-kpi-row {
+  display: flex;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--subtle-border);
+}
+
+.analytics-secondary-kpi-card {
+  flex: 1 1 0;
+  min-height: 84px;
+  padding: 10px 14px;
+}
+
+.analytics-kpi-card.analytics-primary-kpi-card {
+  padding: 14px 16px;
+}
+
+.analytics-kpi-card.analytics-secondary-kpi-card {
+  padding: 10px 14px;
+}
+
+.analytics-secondary-kpi-card .stat-value {
+  font-size: 1.35rem;
+}
+
+.analytics-secondary-kpi-card .analytics-kpi-heading .stat-label {
+  font-size: 0.7rem;
 }
 
 /* Trend Explorer Context & Chart - Mobile First */
@@ -2708,32 +2871,15 @@ button:disabled {
 
 /* Desktop Up (>= 860px) */
 @media (min-width: 860px) {
-  .analytics-filter-row {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: end;
-    gap: 14px;
-  }
-
-  .analytics-range-fieldset,
-  .analytics-range-toggle {
-    width: auto;
-    min-width: 260px;
-  }
-
-  .trend-mode-toggle.analytics-range-toggle {
-    min-width: 360px;
-  }
-
-  .analytics-refresh-button {
-    width: auto;
+  .analytics-header-controls {
+    flex-wrap: nowrap;
   }
 }
 
 /* Large Desktop Up (>= 1100px) */
 @media (min-width: 1100px) {
   .analytics-kpi-grid {
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
   }
 
@@ -2751,7 +2897,6 @@ button:disabled {
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 
-  .analytics-controls-card,
   .analytics-trend-card,
   .analytics-detail-card {
     gap: 18px;
@@ -5558,8 +5703,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   }
 
   .downtime-controls-card,
-  .reports-controls,
-  .analytics-filter-row {
+  .reports-controls {
     align-items: stretch;
     flex-direction: column;
   }
@@ -5569,9 +5713,30 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   .analytics-range-toggle,
   .filter-field,
   .reports-action,
-  .analytics-refresh-button,
   .audit-refresh-button {
     width: 100%;
+  }
+
+  .analytics-header-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .analytics-header-controls {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .analytics-header-controls .analytics-range-fieldset,
+  .analytics-header-controls .analytics-range-toggle,
+  .analytics-header-controls .analytics-date-range-picker {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .analytics-header-controls .analytics-refresh-button {
+    flex: 0 0 44px;
+    width: 44px;
   }
 
   .analytics-operations-layout {
@@ -5592,8 +5757,32 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 @media (max-width: 640px) {
+  .analytics-header-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    width: 100%;
+  }
+
+  .analytics-header-controls .analytics-range-fieldset {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .analytics-header-controls .analytics-range-toggle {
+    width: 100%;
+  }
+
+  .analytics-header-controls .analytics-date-range-picker {
+    width: 100%;
+    min-width: 0;
+  }
+
   .analytics-kpi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .analytics-secondary-kpi-row {
+    flex-direction: column;
   }
 
   .analytics-controls-card,

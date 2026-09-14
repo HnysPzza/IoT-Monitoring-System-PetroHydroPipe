@@ -14,17 +14,73 @@ import {
 } from './analyticsPresentation.js'
 
 describe('Analytics presentation helpers', () => {
+  it('orders KPI cards by primary and secondary hierarchy with period deltas', () => {
+    const kpis = getAnalyticsKpis(analyticsTestFixture)
+
+    expect(kpis.map((item) => item.id)).toEqual([
+      'downtime', 'production', 'estimated-loss', 'availability', 'process-events',
+    ])
+    expect(kpis.find((item) => item.id === 'downtime')).toMatchObject({
+      delta: { deltaPercent: 30, direction: 'up', sentiment: 'negative' },
+    })
+    expect(kpis.find((item) => item.id === 'downtime')?.sparkline).toHaveLength(7)
+    expect(kpis.find((item) => item.id === 'production')).toMatchObject({
+      delta: { deltaPercent: 8.2, direction: 'up', sentiment: 'positive' },
+    })
+    expect(kpis.find((item) => item.id === 'estimated-loss')).toMatchObject({
+      delta: { deltaPercent: 30, direction: 'up', sentiment: 'negative' },
+    })
+    expect(kpis.find((item) => item.id === 'availability')).toMatchObject({
+      delta: { deltaPercent: -2.2, direction: 'down', sentiment: 'negative' },
+    })
+    expect(kpis.find((item) => item.id === 'process-events')).toMatchObject({
+      delta: { deltaPercent: 0, direction: 'flat', sentiment: 'neutral' },
+    })
+  })
+
+  it('does not invent a percentage when prior-period data is unavailable or has a zero baseline', () => {
+    const kpis = getAnalyticsKpis({
+      ...analyticsTestFixture,
+      comparison: null,
+      comparisonMode: 'none',
+      selectionMode: 'all',
+      selected: {
+        ...analyticsTestFixture.selected,
+        summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 5 },
+      },
+    })
+
+    expect(kpis.find((item) => item.id === 'downtime')?.delta).toMatchObject({
+      deltaPercent: null, direction: 'unknown', sentiment: 'neutral', label: 'No prior period',
+    })
+
+    const zeroBaseline = getAnalyticsKpis({
+      ...analyticsTestFixture,
+      selected: {
+        ...analyticsTestFixture.selected,
+        summary: { ...analyticsTestFixture.selected.summary, processEventCount: 5 },
+      },
+      comparison: {
+        ...analyticsTestFixture.comparison,
+        summary: { ...analyticsTestFixture.comparison.summary, processEventCount: 0 },
+      },
+    })
+    expect(zeroBaseline.find((item) => item.id === 'process-events')?.delta).toMatchObject({
+      deltaPercent: null, direction: 'up', sentiment: 'neutral', label: 'No baseline',
+    })
+  })
+
   it('formats backend-provided summaries without recomputing operational metrics', () => {
     expect(getAnalyticsKpis(analyticsTestFixture)).toEqual([
       expect.objectContaining({ id: 'downtime', value: '130 min', helper: '5 recorded events' }),
-      expect.objectContaining({ id: 'availability', value: '91%' }),
       expect.objectContaining({ id: 'production', value: '595 pcs' }),
-      expect.objectContaining({ id: 'process-events', value: '5' }),
       expect.objectContaining({
         id: 'estimated-loss',
         value: '6.5 pcs',
         helper: 'Configured fallback: 0.05 pcs/min',
       }),
+      expect.objectContaining({ id: 'availability', value: '91%' }),
+      expect.objectContaining({ id: 'process-events', value: '5' }),
     ])
     expect(formatAnalyticsTrendValue(91, { unit: 'percent' })).toBe('91%')
   })

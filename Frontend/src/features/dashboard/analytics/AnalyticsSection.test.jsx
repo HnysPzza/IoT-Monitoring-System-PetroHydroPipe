@@ -17,13 +17,24 @@ function createDeferred() {
 }
 
 describe('AnalyticsSection recorded-data states', () => {
+  it('renders compact header controls with Custom range and icon-only Refresh', async () => {
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
+    const { container } = renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(container.querySelector('.analytics-header-row')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Custom date range' })).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(screen.getByRole('button', { name: 'Refresh data' })).toHaveTextContent('')
+    expect(screen.getByRole('button', { name: 'Analytics data coverage information' })).toBeInTheDocument()
+  })
+
   it('refreshes server-owned bucket states while the page remains open', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
 
     try {
       renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
-      expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Downtime trend' })).toBeInTheDocument()
       expect(loadAnalytics).toHaveBeenCalledTimes(1)
 
       await vi.advanceTimersByTimeAsync(60 * 1000)
@@ -33,7 +44,8 @@ describe('AnalyticsSection recorded-data states', () => {
     }
   })
 
-  it('shows loading and the backend data-coverage warning', async () => {
+  it('moves the backend data-coverage caveat into the Analytics info popover', async () => {
+    const user = userEvent.setup()
     const deferred = createDeferred()
     const loadAnalytics = vi.fn(() => deferred.promise)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
@@ -43,7 +55,9 @@ describe('AnalyticsSection recorded-data states', () => {
 
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
     expect(screen.queryByText('Recorded system data')).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
+    expect(screen.queryByText(/Historical sensor heartbeat coverage is not stored/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Analytics data coverage information' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
     expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
     expect(loadAnalytics).toHaveBeenCalledWith(
       'test-token',
@@ -105,53 +119,20 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('keeps the filter row compact without custom calendar controls or a bucket container', async () => {
+  it('keeps the header compact with All time and a Custom calendar', async () => {
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     const { container } = renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
-    expect(screen.queryByRole('button', { name: 'Custom' })).not.toBeInTheDocument()
-    expect(container.querySelector('.analytics-custom-dates')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Custom date range' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All time' })).toBeInTheDocument()
     expect(container.querySelector('.analytics-bucket-summary')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh data' })).toBeInTheDocument()
   })
 
-  it('switches the trend explorer metric from an interactive KPI card', async () => {
+  it('loads all recorded history when All time is selected', async () => {
     const user = userEvent.setup()
-    renderWithAuth(<AnalyticsSection loadAnalytics={vi.fn().mockResolvedValue(analyticsTestFixture)} />)
-    expect(await screen.findByRole('heading', { name: 'Operational trend' })).toBeInTheDocument()
-
-    const availabilityCard = screen.getByRole('button', {
-      name: /Availability.*Server-calculated operational availability/i,
-    })
-    await user.click(availabilityCard)
-    expect(availabilityCard).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/Availability - daily buckets/i)).toBeInTheDocument()
-  })
-
-  it('offers all recorded history as a backend-owned range choice', async () => {
-    const user = userEvent.setup()
-    const allTimeFixture = {
-      ...analyticsTestFixture,
-      selectionMode: 'all',
-      comparisonMode: 'none',
-      comparisonClipped: false,
-      comparison: null,
-      trendAlignment: { ...analyticsTestFixture.trendAlignment, comparisonBucketCount: 0 },
-      selected: {
-        ...analyticsTestFixture.selected,
-        range: {
-          ...analyticsTestFixture.selected.range,
-          requestedStartDate: '2026-06-01',
-          requestedEndDate: '2026-08-15',
-          daysInclusive: 76,
-          bucket: 'weekly',
-        },
-      },
-    }
-    const loadAnalytics = vi.fn()
-      .mockResolvedValueOnce(analyticsTestFixture)
-      .mockResolvedValueOnce(allTimeFixture)
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
@@ -162,7 +143,31 @@ describe('AnalyticsSection recorded-data states', () => {
       { period: 'all' },
       { signal: expect.any(AbortSignal) },
     ))
-    expect(screen.queryByText('Prior period')).not.toBeInTheDocument()
-    expect(screen.queryByText(/All recorded history:/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All time' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('switches the trend explorer metric from an interactive KPI card', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<AnalyticsSection loadAnalytics={vi.fn().mockResolvedValue(analyticsTestFixture)} />)
+    expect(await screen.findByRole('heading', { name: 'Downtime trend' })).toBeInTheDocument()
+
+    const availabilityCard = screen.getByRole('button', {
+      name: /Availability.*Server-calculated operational availability/i,
+    })
+    await user.click(availabilityCard)
+    expect(availabilityCard).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/Availability - daily buckets/i)).toBeInTheDocument()
+  })
+
+  it('opens the custom date-range picker from the header', async () => {
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Custom date range' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Custom date range' })).toHaveAttribute('aria-expanded', 'true')
+    expect(loadAnalytics).toHaveBeenCalledTimes(1)
   })
 })

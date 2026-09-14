@@ -1,0 +1,88 @@
+.analytics-date-range-picker {
+  display: inline-flex;
+  min-width: min(100%, 236px);
+}
+
+.analytics-custom-trigger {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 15px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 10px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
+  color: var(--c-text-2);
+  background: transparent;
+  text-align: left;
+  transition: border-color 160ms var(--ease-std), background 160ms var(--ease-std), color 160ms var(--ease-std);
+}
+
+.analytics-custom-trigger:hover,
+.analytics-custom-trigger[data-state='open'],
+.analytics-custom-trigger.is-selected {
+  border-color: color-mix(in srgb, var(--c-primary) 52%, var(--subtle-border));
+  color: var(--c-text);
+  background: var(--hover-bg);
+}
+
+.analytics-custom-trigger:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.analytics-custom-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.analytics-custom-kicker {
+  color: var(--c-text-2);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.analytics-custom-value {
+  overflow: hidden;
+  color: var(--c-text);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-custom-chevron {
+  color: var(--c-text-2);
+  transition: transform 160ms var(--ease-std);
+}
+
+.analytics-custom-trigger[data-state='open'] .analytics-custom-chevron {
+  transform: rotate(180deg);
+}
+
+.analytics-date-range-popover {
+  max-width: calc(100vw - 24px);
+}
+
+.analytics-date-range-calendar {
+  --calendar-cell-size: 36px;
+}
+
+@media (max-width: 699px) {
+  .analytics-date-range-picker {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analytics-custom-trigger,
+  .analytics-custom-chevron {
+    transition: none;
+  }
+}
