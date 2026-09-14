@@ -158,6 +158,22 @@ test('Analytics combines every cause into exactly five sensor downtime rows rank
   ])
 })
 
+test('Analytics combines the same downtime cause across sensors into one cause row', async () => {
+  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies({
+    downtimeRows: [
+      { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-01' } },
+      { id: 'd2', started_at: '2026-08-03T01:00:00.000Z', ended_at: '2026-08-03T02:00:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-02' } },
+    ],
+  })
+
+  const result = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, dependencies)
+
+  assert.deepEqual(result.selected.downtimeCauses, [
+    { cause: 'Consumable Shortage', eventCount: 2, durationMinutes: 120, estimatedLossPieces: 6 },
+  ])
+})
+
 test('Analytics excludes pending cause review until an admin assigns the operational cause', async () => {
   const { getAnalytics } = require('../src/modules/analytics/analytics.service')
   const pendingRecord = {

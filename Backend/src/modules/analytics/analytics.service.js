@@ -304,18 +304,31 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, l
       ? 100
       : Math.round((reviewedMetrics.durationSeconds / totalMetrics.durationSeconds) * 100),
   }
-  const downtimeCauses = attributeMachineDowntime({
+  const downtimeCausesByName = new Map()
+  attributeMachineDowntime({
     records: reviewedDowntimeRows,
     window: observedWindow,
     settingsHistory,
     asOf,
     lossRatePiecesPerMinute,
-  }).map((row) => ({
-    cause: row.cause,
-    eventCount: row.events,
-    durationMinutes: row.durationMinutes,
-    estimatedLossPieces: row.estimatedLoss,
-  }))
+  }).forEach((row) => {
+    const current = downtimeCausesByName.get(row.cause) || {
+      cause: row.cause,
+      eventCount: 0,
+      durationMinutes: 0,
+      estimatedLossPieces: 0,
+    }
+    current.eventCount += row.events
+    current.durationMinutes += row.durationMinutes
+    current.estimatedLossPieces += row.estimatedLoss
+    downtimeCausesByName.set(row.cause, current)
+  })
+  const downtimeCauses = [...downtimeCausesByName.values()]
+    .map((row) => ({
+      ...row,
+      estimatedLossPieces: Number(row.estimatedLossPieces.toFixed(2)),
+    }))
+    .sort((left, right) => right.durationMinutes - left.durationMinutes)
   const downtimeSensors = buildDowntimeSensors(
     downtimeRows,
     machine.sensors,
