@@ -231,6 +231,13 @@
   padding: 2px;
 }
 
+.trend-week-picker {
+  display: grid;
+  width: 264px;
+  gap: 10px;
+  padding: 2px;
+}
+
 .trend-month-picker-heading {
   display: grid;
   grid-template-columns: 36px 1fr 36px;
@@ -238,8 +245,17 @@
   text-align: center;
 }
 
+.trend-week-picker-heading {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  text-align: center;
+}
+
 .trend-month-picker-heading button,
-.trend-month-grid button {
+.trend-month-grid button,
+.trend-week-picker-heading button,
+.trend-week-grid button {
   min-width: 44px;
   min-height: 44px;
   border: 1px solid transparent;
@@ -253,19 +269,25 @@
 }
 
 .trend-month-picker-heading button:hover:not(:disabled),
-.trend-month-grid button:hover:not(:disabled) {
+.trend-month-grid button:hover:not(:disabled),
+.trend-week-picker-heading button:hover:not(:disabled),
+.trend-week-grid button:hover:not(:disabled) {
   border-color: var(--subtle-border);
   background: var(--hover-bg);
 }
 
 .trend-month-picker-heading button:focus-visible,
-.trend-month-grid button:focus-visible {
+.trend-month-grid button:focus-visible,
+.trend-week-picker-heading button:focus-visible,
+.trend-week-grid button:focus-visible {
   outline: 2px solid var(--c-primary);
   outline-offset: 1px;
 }
 
 .trend-month-picker-heading button:disabled,
-.trend-month-grid button:disabled {
+.trend-month-grid button:disabled,
+.trend-week-picker-heading button:disabled,
+.trend-week-grid button:disabled {
   color: var(--c-text-3);
   opacity: 0.35;
   cursor: not-allowed;
@@ -278,6 +300,23 @@
 }
 
 .trend-month-grid button.is-selected {
+  border-color: var(--c-primary);
+  color: #FFFFFF;
+  background: var(--c-primary);
+}
+
+.trend-week-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.trend-week-grid button {
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.trend-week-grid button.is-selected {
   border-color: var(--c-primary);
   color: #FFFFFF;
   background: var(--c-primary);

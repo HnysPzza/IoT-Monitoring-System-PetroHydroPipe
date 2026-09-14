@@ -55,12 +55,13 @@ describe('TrendCalendarControl', () => {
 
     await user.click(screen.getByRole('button', { name: /selected period/i }))
     expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /july 8th, 2026/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
 
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 5, 1))
   })
 
-  it('selects a whole Monday-Sunday week from any date in that week', async () => {
+  it('offers whole weeks instead of individual day choices', async () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar({
       mode: 'week',
@@ -68,14 +69,13 @@ describe('TrendCalendarControl', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /selected period/i }))
-    const monday = await screen.findByRole('button', { name: /july 13th, 2026/i })
-    const sunday = screen.getByRole('button', { name: /july 19th, 2026/i })
-    expect(monday.closest('td')).toHaveClass('is-selected-week')
-    expect(sunday.closest('td')).toHaveClass('is-selected-week')
     expect(screen.getByRole('dialog')).toHaveAccessibleName('Select chart week')
-    await user.click(screen.getByRole('button', { name: /july 14th, 2026/i }))
+    expect(screen.queryByRole('button', { name: /july 14th, 2026/i })).not.toBeInTheDocument()
+    const selectedWeek = screen.getByRole('button', { name: /select week jul 13, 2026 - jul 19, 2026/i })
+    expect(selectedWeek).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i }))
 
-    expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 13))
+    expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 6))
   })
 
   it('disables future dates and returns focus on Escape', async () => {
@@ -87,7 +87,7 @@ describe('TrendCalendarControl', () => {
 
     const trigger = screen.getByRole('button', { name: /selected period/i })
     await user.click(trigger)
-    expect(await screen.findByRole('button', { name: /july 21st, 2026/i })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: /select week jul 27, 2026 - aug 2, 2026/i })).toBeDisabled()
     await user.keyboard('{Escape}')
 
     expect(trigger).toHaveFocus()

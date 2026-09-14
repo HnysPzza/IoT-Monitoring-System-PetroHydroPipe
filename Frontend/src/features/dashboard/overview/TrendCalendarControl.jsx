@@ -19,6 +19,40 @@ export function normalizeCalendarSelection(mode, date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
+function addDays(date, amount) {
+  const nextDate = new Date(date)
+  nextDate.setDate(nextDate.getDate() + amount)
+  return nextDate
+}
+
+function startOfWeek(date) {
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  monday.setDate(monday.getDate() - (monday.getDay() || 7) + 1)
+  return monday
+}
+
+function formatWeekDate(date) {
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatWeekLabel(weekStart) {
+  return `${formatWeekDate(weekStart)} - ${formatWeekDate(addDays(weekStart, 6))}`
+}
+
+function getMonthWeeks(date) {
+  const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
+  const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  const weeks = []
+  let weekStart = startOfWeek(monthStart)
+
+  while (weekStart <= monthEnd) {
+    weeks.push(weekStart)
+    weekStart = addDays(weekStart, 7)
+  }
+
+  return weeks
+}
+
 function MonthPicker({ selectedDate, maxDate, onSelect }) {
   const [year, setYear] = useState(selectedDate.getFullYear())
   const months = Array.from({ length: 12 }, (_, month) => new Date(year, month, 1))
@@ -62,6 +96,53 @@ function MonthPicker({ selectedDate, maxDate, onSelect }) {
   )
 }
 
+function WeekPicker({ selectedDate, maxDate, onSelect }) {
+  const [viewDate, setViewDate] = useState(() => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1))
+  const weeks = getMonthWeeks(viewDate)
+  const selectedWeekStart = startOfWeek(selectedDate)
+  const nextMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)
+  const monthLabel = viewDate.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+
+  return (
+    <div className="trend-week-picker">
+      <div className="trend-week-picker-heading">
+        <button type="button" aria-label="Previous month" onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
+          <ChevronLeft size={16} aria-hidden="true" />
+        </button>
+        <strong>{monthLabel}</strong>
+        <button
+          type="button"
+          aria-label="Next month"
+          disabled={nextMonth > maxDate}
+          onClick={() => setViewDate(nextMonth)}
+        >
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="trend-week-grid">
+        {weeks.map((week) => {
+          const isSelected = week.getTime() === selectedWeekStart.getTime()
+          const weekLabel = formatWeekLabel(week)
+
+          return (
+            <button
+              key={week.toISOString()}
+              type="button"
+              className={isSelected ? 'is-selected' : ''}
+              aria-label={`Select week ${weekLabel}`}
+              aria-pressed={isSelected}
+              disabled={week > maxDate}
+              onClick={() => onSelect(week)}
+            >
+              {weekLabel}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function TrendCalendarControl({ mode, selectedDate, maxDate, rangeLabel, onDateChange }) {
   const [isOpen, setIsOpen] = useState(false)
   const accessibleLabel = mode === 'month'
@@ -76,10 +157,6 @@ export default function TrendCalendarControl({ mode, selectedDate, maxDate, rang
     onDateChange(normalizeCalendarSelection(mode, date))
     setIsOpen(false)
   }
-
-  const selectedWeekStart = normalizeCalendarSelection('week', selectedDate)
-  const selectedWeekEnd = new Date(selectedWeekStart)
-  selectedWeekEnd.setDate(selectedWeekEnd.getDate() + 6)
 
   return (
     <div className="trend-calendar-control">
@@ -103,18 +180,16 @@ export default function TrendCalendarControl({ mode, selectedDate, maxDate, rang
         <PopoverContent aria-label={accessibleLabel}>
           {mode === 'month' ? (
             <MonthPicker selectedDate={selectedDate} maxDate={maxDate} onSelect={handleSelect} />
+          ) : mode === 'week' ? (
+            <WeekPicker selectedDate={selectedDate} maxDate={maxDate} onSelect={handleSelect} />
           ) : (
             <Suspense fallback={<div className="shadcn-calendar-loading" role="status">Loading calendar</div>}>
               <Calendar
-                mode={mode === 'week' ? undefined : 'single'}
-                selected={mode === 'week' ? undefined : selectedDate}
+                mode="single"
+                selected={selectedDate}
                 defaultMonth={selectedDate}
-                modifiers={mode === 'week' ? { selected: { from: selectedWeekStart, to: selectedWeekEnd } } : undefined}
-                modifiersClassNames={mode === 'week' ? { selected: 'is-selected-week' } : undefined}
-                onSelect={mode === 'week' ? undefined : handleSelect}
-                onDayClick={mode === 'week' ? (date, modifiers) => !modifiers.disabled && handleSelect(date) : undefined}
+                onSelect={handleSelect}
                 disabled={{ after: maxDate }}
-                weekStartsOn={1}
                 autoFocus
               />
             </Suspense>
