@@ -84,6 +84,7 @@ test('Analytics compares a partial Manila range with the matching elapsed preced
   assert.equal(result.selected.summary.availabilityPercent, 100)
   assert.equal(result.selected.trends.at(-1).periodState, 'future')
   assert.equal(result.selected.trends.at(-1).metrics.availabilityPercent, null)
+  assert.equal(Object.hasOwn(result.selected, 'downtimeSensors'), false)
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 86400), true)
   assert.equal(result.coverage.historicalHeartbeatAvailable, false)
   assert.deepEqual(result.lossEstimateBasis, LOSS_BASIS)
@@ -124,13 +125,9 @@ test('Analytics unions concurrent downtime and keeps zero-eligible availability 
   assert.equal(result.selected.summary.estimatedLossPieces, 4.5)
   assert.equal(result.selected.trends[0].metrics.availabilityPercent, null)
   assert.equal(result.selected.downtimeCauses.some((row) => row.cause === 'Concurrent causes'), true)
-  assert.deepEqual(result.selected.downtimeSensors.slice(0, 2).map(({ sensorCode, durationMinutes }) => ({ sensorCode, durationMinutes })), [
-    { sensorCode: 'S-01', durationMinutes: 60 },
-    { sensorCode: 'S-02', durationMinutes: 60 },
-  ])
 })
 
-test('Analytics combines every cause into exactly five sensor downtime rows ranked by duration', async () => {
+test('Analytics combines every downtime cause across sensors into ranked cause rows', async () => {
   const { getAnalytics } = require('../src/modules/analytics/analytics.service')
   const { dependencies } = createDependencies({
     downtimeRows: [
@@ -149,13 +146,6 @@ test('Analytics combines every cause into exactly five sensor downtime rows rank
     'Misalignment',
     'Manual Cutting',
   ]))
-  assert.deepEqual(result.selected.downtimeSensors, [
-    { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2, durationMinutes: 120 },
-    { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1, durationMinutes: 60 },
-    { sensorCode: 'S-05', sensorLabel: 'Production Output Cutting', eventCount: 1, durationMinutes: 30 },
-    { sensorCode: 'S-03', sensorLabel: 'Machine Main Sensor', eventCount: 0, durationMinutes: 0 },
-    { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 0, durationMinutes: 0 },
-  ])
 })
 
 test('Analytics combines the same downtime cause across sensors into one cause row', async () => {
@@ -195,7 +185,6 @@ test('Analytics excludes pending cause review until an admin assigns the operati
   const pendingResult = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, pendingDependencies)
 
   assert.equal(pendingResult.selected.summary.downtimeMinutes, 120)
-  assert.equal(pendingResult.selected.downtimeSensors.find((row) => row.sensorCode === 'S-03').durationMinutes, 60)
   assert.deepEqual(pendingResult.selected.downtimeCauses.map((row) => row.cause), ['Corrective Maintenance'])
   assert.deepEqual(pendingResult.selected.causeCoverage, {
     reviewedDurationMinutes: 60,
@@ -235,7 +224,6 @@ test('Analytics uses calendar-month buckets for ranges longer than 93 days', asy
     selectedBucketCount: result.selected.trends.length,
     comparisonBucketCount: result.comparison.trends.length,
   })
-  assert.equal(result.selected.downtimeSensors.length, 5)
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
 })
 
@@ -269,7 +257,6 @@ test('Analytics all-time range starts on the first contributing record and bypas
   assert.equal(result.selected.range.requestedEndDate, '2026-08-03')
   assert.equal(result.selected.range.daysInclusive, 932)
   assert.equal(result.selected.range.bucket, 'monthly')
-  assert.equal(result.selected.downtimeSensors.length, 5)
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
   assert.equal(aggregationCalls.length, 1)
 })
