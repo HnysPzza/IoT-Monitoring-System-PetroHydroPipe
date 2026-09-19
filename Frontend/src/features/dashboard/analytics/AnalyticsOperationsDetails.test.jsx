@@ -70,7 +70,7 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.getByRole('list', { name: 'Downtime cause distribution' })).not.toHaveTextContent('50%')
   })
 
-  it('discloses downtime excluded while cause review remains pending', () => {
+  it('keeps the cause card compact while cause review remains pending', () => {
     renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
       downtimeCauses: [],
       causeCoverage: {
@@ -81,8 +81,7 @@ describe('AnalyticsOperationsDetails', () => {
       },
     })} />)
 
-    expect(screen.getByRole('status')).toHaveTextContent('1 downtime event is awaiting cause review')
-    expect(screen.getByRole('status')).toHaveTextContent('1 hr remains excluded from cause percentages')
+    expect(screen.queryByText('1 downtime event is awaiting cause review. 1 hr remains excluded from cause percentages.')).not.toBeInTheDocument()
     expect(screen.getByText('No reviewed downtime causes are available for this range.')).toBeInTheDocument()
   })
 

@@ -133,16 +133,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           </span>
         </div>
 
-        {causeCoverage.pendingReviewEventCount > 0 ? (
-          <div className="notice dashboard-alert" role="status">
-            <Clock3 size={16} aria-hidden="true" />
-            <span>
-              {causeCoverage.pendingReviewEventCount} downtime {causeCoverage.pendingReviewEventCount === 1 ? 'event is' : 'events are'} awaiting cause review.
-              {' '}{formatDuration(causeCoverage.pendingReviewDurationMinutes)} remains excluded from cause percentages.
-            </span>
-          </div>
-        ) : null}
-
         {hasRenderableCauseData ? (
           <div className="analytics-downtime-cause-chart">
             <p className="analytics-downtime-cause-caption">Top causes by duration</p>
@@ -183,9 +173,9 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           <div className="analytics-cause-content analytics-cause-content--empty">
             <div className="analytics-downtime-cause-empty-chart analytics-chart-empty" aria-hidden="true">
               <svg viewBox="0 0 100 60" className="analytics-empty-downtime-causes" focusable="false" preserveAspectRatio="none">
-                <rect x="8" y="8" width="84" height="8" rx="4" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
-                <rect x="8" y="26" width="66" height="8" rx="4" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
-                <rect x="8" y="44" width="48" height="8" rx="4" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="8" y="8" width="84" height="8" rx="4" fill="var(--c-text-3)" fillOpacity="0.18" />
+                <rect x="8" y="26" width="66" height="8" rx="4" fill="var(--c-text-3)" fillOpacity="0.18" />
+                <rect x="8" y="44" width="48" height="8" rx="4" fill="var(--c-text-3)" fillOpacity="0.18" />
               </svg>
             </div>
             <div
