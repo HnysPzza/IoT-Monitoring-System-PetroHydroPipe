@@ -180,24 +180,33 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
             </ul>
           </div>
         ) : (
-          <div
-            className="analytics-cause-empty"
-            {...(!hasObservedDowntime || hasSubMinuteDowntimeEvents
-              ? {
-                role: 'status',
-                'aria-label': hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : 'Downtime not observed',
-              }
-              : {})}
-          >
-            <strong>{hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : !hasObservedDowntime ? 'Downtime not observed' : causeCoverage.pendingReviewEventCount > 0 ? 'No reviewed downtime causes' : 'No downtime causes recorded'}</strong>
-            <span>{hasSubMinuteDowntimeEvents ? `${totalDowntimeEvents} recorded event${totalDowntimeEvents === 1 ? '' : 's'}` : !hasObservedDowntime ? 'Not observed' : '0 min recorded'}</span>
-            <p>{hasSubMinuteDowntimeEvents
-              ? 'Recorded downtime rounds to 0 min in this view.'
-              : !hasObservedDowntime
-                ? 'This range has no observed downtime period yet.'
-                : causeCoverage.pendingReviewEventCount > 0
-                  ? 'No reviewed downtime causes are available for this range.'
-                  : 'No downtime causes recorded for this range.'}</p>
+          <div className="analytics-cause-content analytics-cause-content--empty">
+            <div className="analytics-downtime-cause-empty-chart analytics-chart-empty" aria-hidden="true">
+              <svg viewBox="0 0 100 60" className="analytics-empty-downtime-causes" focusable="false" preserveAspectRatio="none">
+                <rect x="8" y="8" width="84" height="8" rx="4" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="8" y="26" width="66" height="8" rx="4" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="8" y="44" width="48" height="8" rx="4" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+              </svg>
+            </div>
+            <div
+              className="analytics-cause-empty"
+              {...(!hasObservedDowntime || hasSubMinuteDowntimeEvents
+                ? {
+                  role: 'status',
+                  'aria-label': hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : 'Downtime not observed',
+                }
+                : {})}
+            >
+              <strong>{hasSubMinuteDowntimeEvents ? 'Downtime recorded under one minute' : !hasObservedDowntime ? 'Downtime not observed' : causeCoverage.pendingReviewEventCount > 0 ? 'No reviewed downtime causes' : 'No downtime causes recorded'}</strong>
+              <span>{hasSubMinuteDowntimeEvents ? `${totalDowntimeEvents} recorded event${totalDowntimeEvents === 1 ? '' : 's'}` : !hasObservedDowntime ? 'Not observed' : '0 min recorded'}</span>
+              <p>{hasSubMinuteDowntimeEvents
+                ? 'Recorded downtime rounds to 0 min in this view.'
+                : !hasObservedDowntime
+                  ? 'This range has no observed downtime period yet.'
+                  : causeCoverage.pendingReviewEventCount > 0
+                    ? 'No reviewed downtime causes are available for this range.'
+                    : 'No downtime causes recorded for this range.'}</p>
+            </div>
           </div>
         )}
 

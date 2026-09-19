@@ -87,7 +87,7 @@ describe('AnalyticsOperationsDetails', () => {
   })
 
   it('discloses zero-minute downtime records instead of calling them absent', () => {
-    renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
+    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
       downtimeCauses: [{ cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 0, estimatedLossPieces: 0 }],
       summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 0, downtimeEventCount: 2 },
       causeCoverage: {
@@ -98,6 +98,7 @@ describe('AnalyticsOperationsDetails', () => {
       },
     })} />)
 
+    expect(container.querySelector('.analytics-empty-downtime-causes')).toBeInTheDocument()
     expect(screen.getByRole('status', { name: 'Downtime recorded under one minute' })).toHaveTextContent('2 recorded events')
     expect(screen.getByText('Recorded downtime rounds to 0 min in this view.')).toBeInTheDocument()
   })
