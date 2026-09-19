@@ -108,6 +108,7 @@ test('Analytics preserves measured zero but returns null for a future-only selec
     processEventCount: null,
     estimatedLossPieces: null,
   })
+  assert.equal(Object.hasOwn(future.selected, 'downtimeSensors'), false)
   assert.equal(future.selected.trends.every((point) => point.periodState === 'future'), true)
 })
 
