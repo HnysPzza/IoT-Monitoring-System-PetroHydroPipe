@@ -15,7 +15,6 @@ const SUMMARY_METRICS = [
   'estimatedLossPieces',
 ]
 const TREND_METRICS = SUMMARY_METRICS.filter((metric) => metric !== 'downtimeEventCount')
-const DOWNTIME_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-03', 'S-04', 'S-05'])
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
 
 function parseDateInput(value, fieldName = 'date') {
@@ -200,15 +199,6 @@ function isPeriod(value) {
       && Number.isInteger(cause.eventCount) && cause.eventCount >= 0
       && Number.isFinite(cause.durationMinutes) && cause.durationMinutes >= 0
       && Number.isFinite(cause.estimatedLossPieces) && cause.estimatedLossPieces >= 0
-    ))
-    && Array.isArray(value.downtimeSensors)
-    && (value.range.periodState === 'future'
-      ? value.downtimeSensors.length === 0
-      : hasExactSensorCodes(value.downtimeSensors, DOWNTIME_SENSOR_CODES))
-    && value.downtimeSensors.every((sensor) => (
-      typeof sensor.sensorLabel === 'string' && sensor.sensorLabel.trim().length > 0
-      && Number.isInteger(sensor.eventCount) && sensor.eventCount >= 0
-      && Number.isFinite(sensor.durationMinutes) && sensor.durationMinutes >= 0
     ))
     && Array.isArray(value.processSensors)
     && hasExactSensorCodes(value.processSensors, PROCESS_SENSOR_CODES)

@@ -3,11 +3,9 @@ import { analyticsTestFixture } from './analyticsTestFixtures.js'
 import {
   buildAnalyticsTrend,
   formatAnalyticsTrendValue,
-  formatCompactDuration,
   getAnalyticsKpis,
   getAnalyticsTrendSummary,
   getDowntimeCauseBreakdown,
-  getDowntimeSensorBreakdown,
   getProcessSensorBreakdown,
   getTrendEvaluation,
   getVisibleAnalyticsTrendPoints,
@@ -157,17 +155,9 @@ describe('Analytics presentation helpers', () => {
     expect(getAnalyticsTrendSummary(trend)).toBe('5 events across 5 observed buckets; 1 bucket is unobserved.')
   })
 
-  it('returns the server-provided downtime cause and sensor aggregations unchanged', () => {
+  it('returns the server-provided downtime cause and process sensor aggregations unchanged', () => {
     expect(getDowntimeCauseBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.downtimeCauses)
-    expect(getDowntimeSensorBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.downtimeSensors)
     expect(getProcessSensorBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.processSensors)
-  })
-
-  it('formats compact duration for donut chart centers', () => {
-    expect(formatCompactDuration(0)).toBe('0m')
-    expect(formatCompactDuration(43)).toBe('43m')
-    expect(formatCompactDuration(60)).toBe('1h')
-    expect(formatCompactDuration(130)).toBe('2h 10m')
   })
 
   it('evaluates only observed trend points', () => {

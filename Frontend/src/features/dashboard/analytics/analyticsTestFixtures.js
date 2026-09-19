@@ -30,14 +30,6 @@ const comparisonTrends = selectedTrends.map((trend, index) => ({
   },
 }))
 
-const downtimeSensors = [
-  { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2, durationMinutes: 61 },
-  { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1, durationMinutes: 38 },
-  { sensorCode: 'S-05', sensorLabel: 'Production Output Cutting', eventCount: 2, durationMinutes: 31 },
-  { sensorCode: 'S-03', sensorLabel: 'Machine Main Sensor', eventCount: 0, durationMinutes: 0 },
-  { sensorCode: 'S-04', sensorLabel: 'Outside Filler Wire', eventCount: 0, durationMinutes: 0 },
-]
-
 const processSensors = [
   { sensorCode: 'S-01', sensorLabel: 'Raw Material & Coil Joint', eventCount: 2 },
   { sensorCode: 'S-02', sensorLabel: 'Inside Filler Wire', eventCount: 1 },
@@ -86,7 +78,6 @@ export const analyticsTestFixture = {
       { cause: 'Consumable Shortage', eventCount: 1, durationMinutes: 38, estimatedLossPieces: 1.9 },
       { cause: 'Manual Cutting', eventCount: 2, durationMinutes: 31, estimatedLossPieces: 1.55 },
     ],
-    downtimeSensors,
     processSensors,
   },
   comparison: {
@@ -104,7 +95,7 @@ export const analyticsTestFixture = {
       pendingReviewEventCount: 0, coveragePercent: 100,
     },
     trends: comparisonTrends,
-    downtimeCauses: [], downtimeSensors, processSensors,
+    downtimeCauses: [], processSensors,
   },
 }
 

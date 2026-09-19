@@ -1,7 +1,7 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
-import AnalyticsOperationsDetails, { getDonutDisplayMinutes } from './AnalyticsOperationsDetails.jsx'
+import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import { analyticsTestFixture } from './analyticsTestFixtures.js'
 
 vi.mock('recharts', async () => {
@@ -22,69 +22,52 @@ function withSelected(overrides) {
 }
 
 describe('AnalyticsOperationsDetails', () => {
-  it('renders five backend-ranked downtime sensors and maintenance causes', () => {
+  it('renders compact downtime causes beside process event distribution', () => {
     const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
-    const legend = screen.getByRole('list', { name: 'Sensor downtime distribution' })
+    const causeCard = screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')
+    const causes = within(causeCard).getByRole('list', { name: 'Downtime cause distribution' })
 
-    expect(container.querySelector('.analytics-cause-chart')).toHaveAttribute('aria-hidden', 'true')
-    expect(screen.getByRole('heading', { name: 'Downtime by sensor' })).toBeInTheDocument()
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(5)
-    expect(within(legend).getByText('S-01 — Raw Material & Coil Joint')).toBeInTheDocument()
-    expect(within(within(legend).getByText('S-01 — Raw Material & Coil Joint').closest('li')).getByText('2 downtime events')).toBeInTheDocument()
-    expect(within(legend).queryByText(/maintenance events/i)).not.toBeInTheDocument()
-    expect(within(legend).getByText(/1 hr 1 min - 47% of sensor downtime/i)).toBeInTheDocument()
+    expect(within(causes).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(causes).getByText('Corrective Maintenance')).toBeInTheDocument()
+    expect(within(causes).getByText('47%')).toBeInTheDocument()
+    expect(container.querySelectorAll('.analytics-operations-layout > section')).toHaveLength(2)
+    expect(screen.getByRole('heading', { name: 'Event distribution' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Downtime by sensor' })).not.toBeInTheDocument()
+  })
+
+  it('aggregates causes after the top three into one compact row', () => {
+    const snapshot = withSelected({
+      downtimeCauses: [
+        ...analyticsTestFixture.selected.downtimeCauses,
+        { cause: 'Hydraulic Failure', eventCount: 2, durationMinutes: 20, estimatedLossPieces: 1 },
+        { cause: 'Other', eventCount: 1, durationMinutes: 10, estimatedLossPieces: 0.5 },
+      ],
+      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 160 },
+      causeCoverage: { ...analyticsTestFixture.selected.causeCoverage, reviewedDurationMinutes: 160 },
+    })
+    renderWithAuth(<AnalyticsOperationsDetails snapshot={snapshot} />)
 
     const causes = screen.getByRole('list', { name: 'Downtime cause distribution' })
-    expect(screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')).not.toBe(
-      screen.getByRole('heading', { name: 'Downtime by sensor' }).closest('section'),
-    )
-    expect(screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')).toHaveClass('analytics-cause-detail-card')
-    const maintenanceCause = within(causes).getByText('Corrective Maintenance').closest('li')
-    expect(maintenanceCause).toHaveTextContent(/2 downtime events/i)
-    expect(maintenanceCause).toHaveTextContent(/3\.05 pcs estimated loss/i)
+    const remaining = within(causes).getByRole('listitem', { name: /Remaining causes/i })
+    expect(within(causes).getAllByRole('listitem')).toHaveLength(4)
+    expect(remaining).toHaveTextContent('19%')
+    expect(remaining).toHaveAttribute('aria-label', expect.stringContaining('3 downtime events'))
   })
 
-  it('applies legend hover and focus state to the matching donut sector', async () => {
-    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
-    const legend = screen.getByRole('list', { name: 'Sensor downtime distribution' })
-    const first = within(legend).getByText('S-01 — Raw Material & Coil Joint').closest('li')
-    const second = within(legend).getByText('S-02 — Inside Filler Wire').closest('li')
-
-    fireEvent.mouseEnter(first)
-    expect(first).toHaveClass('is-hovered')
-    await waitFor(() => expect(container.querySelector('.analytics-donut-active-sector')).toBeInTheDocument())
-    fireEvent.mouseEnter(second)
-    expect(first).not.toHaveClass('is-hovered')
-    expect(second).toHaveClass('is-hovered')
-
-    fireEvent.mouseLeave(second)
-    await waitFor(() => expect(container.querySelector('.analytics-donut-active-sector')).not.toBeInTheDocument())
-    fireEvent.focus(first)
-    expect(first).toHaveClass('is-hovered')
-    await waitFor(() => expect(container.querySelector('.analytics-donut-active-sector')).toBeInTheDocument())
-  })
-
-  it('shows an honest empty state when all five sensors have zero downtime', () => {
-    const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
-      downtimeSensors: analyticsTestFixture.selected.downtimeSensors.map((sensor) => ({ ...sensor, eventCount: 0, durationMinutes: 0 })),
-      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 0, downtimeEventCount: 0 },
-    })} />)
-    expect(container.querySelector('.analytics-empty-donut')).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'No sensor downtime recorded' })).toHaveTextContent('0 min recorded')
-  })
-
-  it('discloses zero-minute downtime records instead of calling them absent', () => {
+  it('uses reviewed downtime as cause percentage denominator', () => {
     renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
-      downtimeSensors: analyticsTestFixture.selected.downtimeSensors.map((sensor) => ({
-        ...sensor,
-        eventCount: sensor.sensorCode === 'S-03' ? 2 : 0,
-        durationMinutes: 0,
-      })),
-      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 0, downtimeEventCount: 2 },
+      downtimeCauses: [{ cause: 'Corrective Maintenance', eventCount: 1, durationMinutes: 60, estimatedLossPieces: 3 }],
+      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 120, downtimeEventCount: 2 },
+      causeCoverage: {
+        reviewedDurationMinutes: 60,
+        pendingReviewDurationMinutes: 60,
+        pendingReviewEventCount: 1,
+        coveragePercent: 50,
+      },
     })} />)
 
-    expect(screen.getByRole('status', { name: 'Downtime recorded under one minute' })).toHaveTextContent('2 recorded events')
-    expect(screen.getByText('Recorded downtime rounds to 0 min in this view.')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Downtime cause distribution' })).toHaveTextContent('100%')
+    expect(screen.getByRole('list', { name: 'Downtime cause distribution' })).not.toHaveTextContent('50%')
   })
 
   it('discloses downtime excluded while cause review remains pending', () => {
@@ -103,33 +86,20 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.getByText('No reviewed downtime causes are available for this range.')).toBeInTheDocument()
   })
 
-  it('calculates donut percentages from sensor readings rather than unioned machine downtime', () => {
+  it('discloses zero-minute downtime records instead of calling them absent', () => {
     renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
-      downtimeSensors: analyticsTestFixture.selected.downtimeSensors.map((sensor) => ({
-        ...sensor,
-        durationMinutes: sensor.sensorCode === 'S-01' ? 60 : sensor.sensorCode === 'S-02' ? 40 : 0,
-      })),
-      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 75 },
+      downtimeCauses: [{ cause: 'Corrective Maintenance', eventCount: 2, durationMinutes: 0, estimatedLossPieces: 0 }],
+      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 0, downtimeEventCount: 2 },
+      causeCoverage: {
+        reviewedDurationMinutes: 0,
+        pendingReviewDurationMinutes: 0,
+        pendingReviewEventCount: 0,
+        coveragePercent: 100,
+      },
     })} />)
 
-    const legend = screen.getByRole('list', { name: 'Sensor downtime distribution' })
-    expect(within(legend).getByText(/1 hr - 60% of sensor downtime/i)).toBeInTheDocument()
-  })
-
-  it('shows a non-zero sensor duration below one percent as less than one percent', () => {
-    renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
-      downtimeSensors: analyticsTestFixture.selected.downtimeSensors.map((sensor) => ({
-        ...sensor,
-        durationMinutes: sensor.sensorCode === 'S-01' ? 999 : sensor.sensorCode === 'S-02' ? 1 : 0,
-      })),
-      summary: { ...analyticsTestFixture.selected.summary, downtimeMinutes: 1000 },
-    })} />)
-
-    const legend = screen.getByRole('list', { name: 'Sensor downtime distribution' })
-    expect(within(legend).getByText(/1 min - <1% of sensor downtime/i)).toBeInTheDocument()
-    expect(screen.getByText('Non-zero shares below 1% use a minimum visible slice.')).toBeInTheDocument()
-    expect(getDonutDisplayMinutes(1, 1000)).toBe(10)
-    expect(getDonutDisplayMinutes(0, 1000)).toBe(0)
+    expect(screen.getByRole('status', { name: 'Downtime recorded under one minute' })).toHaveTextContent('2 recorded events')
+    expect(screen.getByText('Recorded downtime rounds to 0 min in this view.')).toBeInTheDocument()
   })
 
   it('renders only server-authorized process sensors with labels and a decorative chart', () => {
@@ -154,7 +124,6 @@ describe('AnalyticsOperationsDetails', () => {
 
   it('keeps future downtime and process summaries unobserved instead of coercing them to zero', () => {
     renderWithAuth(<AnalyticsOperationsDetails snapshot={withSelected({
-      downtimeSensors: [],
       processSensors: [],
       summary: {
         ...analyticsTestFixture.selected.summary,
