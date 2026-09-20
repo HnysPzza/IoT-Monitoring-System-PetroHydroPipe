@@ -22,14 +22,18 @@ function withSelected(overrides) {
 }
 
 describe('AnalyticsOperationsDetails', () => {
-  it('renders compact downtime causes beside process event distribution', () => {
+  it('renders aligned downtime bars beside process event distribution', () => {
     const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
     const causeCard = screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')
     const causes = within(causeCard).getByRole('list', { name: 'Downtime cause distribution' })
+    const causeChart = causeCard.querySelector('.analytics-downtime-cause-chart')
 
     expect(within(causes).getAllByRole('listitem')).toHaveLength(3)
     expect(within(causes).getByText('Corrective Maintenance')).toBeInTheDocument()
-    expect(within(causes).getByText('47%')).toBeInTheDocument()
+    expect(within(causes).getByText(/47%/)).toBeInTheDocument()
+    expect(causeChart).toHaveAttribute('aria-hidden', 'true')
+    expect(causeChart.parentElement).toHaveClass('analytics-cause-content')
+    expect(causeCard.querySelector('.analytics-downtime-cause-track')).not.toBeInTheDocument()
     expect(container.querySelectorAll('.analytics-operations-layout > section')).toHaveLength(2)
     expect(screen.getByRole('heading', { name: 'Event distribution' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Downtime by sensor' })).not.toBeInTheDocument()
@@ -97,7 +101,9 @@ describe('AnalyticsOperationsDetails', () => {
       },
     })} />)
 
-    expect(container.querySelector('.analytics-empty-downtime-causes')).toBeInTheDocument()
+    const emptyCauseChart = container.querySelector('.analytics-empty-downtime-causes')
+    expect(emptyCauseChart).toBeInTheDocument()
+    expect(emptyCauseChart.querySelector('rect')).toHaveAttribute('stroke-dasharray', '4 4')
     expect(screen.getByRole('status', { name: 'Downtime recorded under one minute' })).toHaveTextContent('2 recorded events')
     expect(screen.getByText('Recorded downtime rounds to 0 min in this view.')).toBeInTheDocument()
   })

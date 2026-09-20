@@ -134,9 +134,35 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         </div>
 
         {hasRenderableCauseData ? (
-          <div className="analytics-downtime-cause-chart">
-            <p className="analytics-downtime-cause-caption">Top causes by duration</p>
-            <ul className="analytics-downtime-cause-list" aria-label="Downtime cause distribution">
+          <div className="analytics-cause-content">
+            <div className="analytics-downtime-cause-chart" aria-hidden="true">
+              <ResponsiveContainer width="100%" height={220} minWidth={0}>
+                <BarChart
+                  layout="vertical"
+                  data={causeDistribution}
+                  margin={{ top: 14, right: 10, left: 0, bottom: 14 }}
+                  barCategoryGap="24%"
+                  accessibilityLayer={false}
+                >
+                  <XAxis type="number" domain={[0, 100]} hide />
+                  <YAxis type="category" dataKey="cause" hide />
+                  <Bar
+                    dataKey="percentage"
+                    barSize={8}
+                    radius={[0, 4, 4, 0]}
+                    animationDuration={500}
+                    isAnimationActive={true}
+                    rootTabIndex={-1}
+                  >
+                    {causeDistribution.map((cause) => (
+                      <Cell key={cause.cause} fill={cause.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
               {causeDistribution.map((cause) => {
                 const details = cause.cause === 'Remaining causes'
                   ? `${cause.remainingCauseCount} causes, ${cause.eventCount} downtime events, ${formatDuration(cause.durationMinutes)} total, ${formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime`
@@ -145,25 +171,16 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 return (
                   <li
                     key={cause.cause}
-                    className="analytics-downtime-cause-row"
+                    className="analytics-cause-legend-item analytics-downtime-cause-legend-item"
                     aria-label={`${cause.cause}: ${details}`}
                   >
-                    <div className="analytics-downtime-cause-row-heading">
-                      <span className="analytics-downtime-cause-name">{cause.cause}</span>
-                      <span className="analytics-downtime-cause-percentage">
-                        {formatDowntimePercentage(cause.percentage, cause.durationMinutes)}
+                    <span className="analytics-cause-swatch" style={{ backgroundColor: cause.color }} aria-hidden="true" />
+                    <span className="analytics-cause-copy">
+                      <span className="analytics-cause-name">{cause.cause}</span>
+                      <span className="analytics-cause-meta">
+                        {formatDuration(cause.durationMinutes)} - {formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime
                       </span>
-                    </div>
-                    <div className="analytics-downtime-cause-track" aria-hidden="true">
-                      <span
-                        className="analytics-downtime-cause-fill"
-                        style={{
-                          width: `${cause.durationMinutes > 0 ? Math.max(cause.percentage, 1) : 0}%`,
-                          backgroundColor: cause.color,
-                        }}
-                      />
-                    </div>
-                    <span className="sr-only">{details}</span>
+                    </span>
                   </li>
                 )
               })}
@@ -173,9 +190,9 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           <div className="analytics-cause-content analytics-cause-content--empty">
             <div className="analytics-downtime-cause-empty-chart analytics-chart-empty" aria-hidden="true">
               <svg viewBox="0 0 100 60" className="analytics-empty-downtime-causes" focusable="false" preserveAspectRatio="none">
-                <rect x="8" y="10" width="84" height="4" rx="2" fill="var(--c-text-3)" fillOpacity="0.18" />
-                <rect x="8" y="28" width="66" height="4" rx="2" fill="var(--c-text-3)" fillOpacity="0.18" />
-                <rect x="8" y="46" width="48" height="4" rx="2" fill="var(--c-text-3)" fillOpacity="0.18" />
+                <rect x="8" y="10" width="84" height="4" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="8" y="28" width="66" height="4" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
+                <rect x="8" y="46" width="48" height="4" rx="2" fill="none" stroke="var(--c-text-3)" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="4 4" />
               </svg>
             </div>
             <div
