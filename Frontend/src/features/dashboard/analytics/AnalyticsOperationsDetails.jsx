@@ -107,6 +107,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       ? Math.round((cause.durationMinutes / reviewedDurationMinutes) * 100)
       : 0,
   }))
+  const maxCauseDurationMinutes = Math.max(...causeDistribution.map((cause) => cause.durationMinutes), 0)
   const hasRenderableCauseData = hasObservedDowntime && causeDistribution.length > 0 && reviewedDurationMinutes > 0
 
   const totalProcessEvents = snapshot.selected.summary.processEventCount
@@ -134,57 +135,49 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
         </div>
 
         {hasRenderableCauseData ? (
-          <div className="analytics-cause-content">
-            <div className="analytics-downtime-cause-chart" aria-hidden="true">
-              <ResponsiveContainer width="100%" height={220} minWidth={0}>
-                <BarChart
-                  layout="vertical"
-                  data={causeDistribution}
-                  margin={{ top: 14, right: 10, left: 0, bottom: 14 }}
-                  barCategoryGap="24%"
-                  accessibilityLayer={false}
-                >
-                  <XAxis type="number" domain={[0, 100]} hide />
-                  <YAxis type="category" dataKey="cause" hide />
-                  <Bar
-                    dataKey="percentage"
-                    barSize={8}
-                    radius={[0, 4, 4, 0]}
-                    animationDuration={500}
-                    isAnimationActive={true}
-                    rootTabIndex={-1}
-                  >
-                    {causeDistribution.map((cause) => (
-                      <Cell key={cause.cause} fill={cause.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          <div className="analytics-downtime-cause-plot">
+            <div className="analytics-downtime-cause-plot-heading" aria-hidden="true">
+              <span>Cause</span>
+              <span>Duration / share</span>
             </div>
 
-            <ul className="analytics-cause-legend" aria-label="Downtime cause distribution">
+            <ul className="analytics-downtime-cause-rows" aria-label="Downtime cause distribution">
               {causeDistribution.map((cause) => {
                 const details = cause.cause === 'Remaining causes'
                   ? `${cause.remainingCauseCount} causes, ${cause.eventCount} downtime events, ${formatDuration(cause.durationMinutes)} total, ${formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime`
                   : `${cause.eventCount} downtime ${cause.eventCount === 1 ? 'event' : 'events'}, ${formatDuration(cause.durationMinutes)} total, ${formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime`
+                const barWidth = maxCauseDurationMinutes > 0
+                  ? Math.max((cause.durationMinutes / maxCauseDurationMinutes) * 100, cause.durationMinutes > 0 ? 1 : 0)
+                  : 0
 
                 return (
                   <li
                     key={cause.cause}
-                    className="analytics-cause-legend-item analytics-downtime-cause-legend-item"
+                    className="analytics-downtime-cause-row"
                     aria-label={`${cause.cause}: ${details}`}
                   >
-                    <span className="analytics-cause-swatch" style={{ backgroundColor: cause.color }} aria-hidden="true" />
-                    <span className="analytics-cause-copy">
-                      <span className="analytics-cause-name">{cause.cause}</span>
-                      <span className="analytics-cause-meta">
-                        {formatDuration(cause.durationMinutes)} - {formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime
-                      </span>
+                    <span className="analytics-downtime-cause-name">{cause.cause}</span>
+                    <span className="analytics-downtime-cause-bar-track" aria-hidden="true">
+                      <span
+                        className="analytics-downtime-cause-bar-fill"
+                        style={{ width: `${barWidth}%`, backgroundColor: cause.color }}
+                      />
+                    </span>
+                    <span className="analytics-downtime-cause-value">
+                      {formatDuration(cause.durationMinutes)} · {formatDowntimePercentage(cause.percentage, cause.durationMinutes)}
                     </span>
                   </li>
                 )
               })}
             </ul>
+
+            <div className="analytics-downtime-cause-axis" aria-hidden="true">
+              <div className="analytics-downtime-cause-axis-scale">
+                <span>0</span>
+                <span>{formatDuration(Math.round(maxCauseDurationMinutes / 2))}</span>
+                <span>{formatDuration(maxCauseDurationMinutes)}</span>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="analytics-cause-content analytics-cause-content--empty">
