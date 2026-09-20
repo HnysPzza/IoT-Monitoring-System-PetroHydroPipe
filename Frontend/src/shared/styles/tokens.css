@@ -2891,8 +2891,7 @@ button:disabled {
   }
 }
 
-.analytics-sensor-chart,
-.analytics-downtime-cause-chart {
+.analytics-sensor-chart {
   min-width: 0;
   height: 220px;
   min-height: 220px;
@@ -2902,13 +2901,15 @@ button:disabled {
 }
 
 .analytics-downtime-cause-plot {
+  display: grid;
   min-width: 0;
+  gap: 8px;
 }
 
 .analytics-downtime-cause-plot-heading {
   display: grid;
   min-width: 0;
-  grid-template-columns: 124px minmax(0, 1fr) 56px;
+  grid-template-columns: 124px minmax(0, 1fr) 40px;
   align-items: center;
   column-gap: 12px;
   color: var(--c-text-3);
@@ -2926,6 +2927,83 @@ button:disabled {
 .analytics-downtime-cause-plot-heading span:last-child {
   grid-column: 3;
   text-align: right;
+}
+
+.analytics-downtime-cause-chart {
+  display: flex;
+  min-width: 0;
+  height: 168px;
+  align-items: center;
+}
+
+.analytics-downtime-cause-rows {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+}
+
+.analytics-downtime-cause-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 124px minmax(0, 1fr) 40px;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 18px;
+}
+
+.analytics-downtime-cause-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--c-text);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-downtime-cause-bar-cell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  height: 18px;
+}
+
+.analytics-downtime-cause-bar {
+  display: block;
+  width: 0;
+  height: 10px;
+  min-width: 4px;
+  border-radius: 999px;
+  cursor: help;
+  outline: none;
+}
+
+.analytics-downtime-cause-bar.is-zero {
+  min-width: 0;
+}
+
+.analytics-downtime-cause-bar:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 3px;
+}
+
+.analytics-downtime-cause-share {
+  color: var(--c-text-2);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.analytics-downtime-cause-hint {
+  margin: 0;
+  color: var(--c-text-3);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.64rem;
+  line-height: 1.3;
 }
 
 .analytics-sensor-tooltip {
@@ -4033,10 +4111,29 @@ button:disabled {
 }
 
 .industrial-tooltip.analytics-downtime-cause-tooltip {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  z-index: 2;
   min-width: 150px;
   max-width: 220px;
   gap: 3px;
   padding: 7px 9px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-50% + 4px));
+  transition:
+    opacity 0.12s var(--ease-std),
+    transform 0.12s var(--ease-std),
+    visibility 0.12s var(--ease-std);
+  visibility: hidden;
+}
+
+.analytics-downtime-cause-bar:hover + .analytics-downtime-cause-tooltip,
+.analytics-downtime-cause-bar:focus-visible + .analytics-downtime-cause-tooltip {
+  opacity: 1;
+  transform: translateY(-50%);
+  visibility: visible;
 }
 
 .recharts-tooltip-card strong,

@@ -34,10 +34,17 @@ describe('AnalyticsOperationsDetails', () => {
     expect(causeChart).toHaveAttribute('aria-label', 'Downtime by cause chart')
     expect(within(causeCard).getByText('Duration')).toBeInTheDocument()
     expect(within(causeCard).getByText('Share')).toBeInTheDocument()
-    expect(causeChart.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3)
-    expect(causeChart).not.toHaveTextContent(/\d+ hr/)
+    expect(causeChart.querySelectorAll('.analytics-downtime-cause-row')).toHaveLength(3)
+    const bars = causeChart.querySelectorAll('.analytics-downtime-cause-bar')
+    expect(bars).toHaveLength(3)
+    expect(Number.parseFloat(bars[0].style.width)).toBeCloseTo((61 / 130) * 100, 2)
+    expect(causeChart.querySelectorAll('.analytics-downtime-cause-share')).toHaveLength(3)
+    expect(causeChart.querySelector('.recharts-cartesian-grid')).not.toBeInTheDocument()
+    expect(causeChart.querySelector('.recharts-xAxis')).not.toBeInTheDocument()
+    expect(causeChart.querySelector('.recharts-yAxis')).not.toBeInTheDocument()
     expect(causeChart).toHaveTextContent('47%')
-    expect(causeChart.querySelector('.recharts-tooltip-wrapper')).toBeInTheDocument()
+    expect(causeChart.querySelectorAll('.analytics-downtime-cause-tooltip')).toHaveLength(3)
+    expect(within(causeCard).getByText('Hover a bar for duration and event details.')).toBeInTheDocument()
     expect(causeCard.querySelector('.analytics-downtime-cause-track')).not.toBeInTheDocument()
     expect(causeCard.querySelector('.analytics-downtime-cause-bar-track')).not.toBeInTheDocument()
     expect(container.querySelectorAll('.analytics-operations-layout > section')).toHaveLength(2)
@@ -59,9 +66,11 @@ describe('AnalyticsOperationsDetails', () => {
 
     const causes = screen.getByRole('list', { name: 'Downtime cause distribution' })
     const remaining = within(causes).getByRole('listitem', { name: /Remaining causes/i })
+    const remainingBar = document.querySelectorAll('.analytics-downtime-cause-bar')[3]
     expect(within(causes).getAllByRole('listitem')).toHaveLength(4)
     expect(remaining).toHaveTextContent('19%')
     expect(remaining).toHaveAttribute('aria-label', expect.stringContaining('3 downtime events'))
+    expect(remainingBar.style.backgroundColor).toBe('var(--c-text-3)')
   })
 
   it('uses reviewed downtime as cause percentage denominator', () => {

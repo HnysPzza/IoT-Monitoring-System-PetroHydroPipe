@@ -5,7 +5,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -58,13 +57,11 @@ function SensorTooltip({ active, payload }) {
   )
 }
 
-function CauseTooltip({ active, payload }) {
-  const cause = payload?.[0]?.payload
-
-  if (!active || !cause) return null
+function CauseTooltip({ cause }) {
+  if (!cause) return null
 
   return (
-    <div className="recharts-tooltip-card industrial-tooltip analytics-sensor-tooltip analytics-downtime-cause-tooltip" role="status">
+    <div className="recharts-tooltip-card industrial-tooltip analytics-sensor-tooltip analytics-downtime-cause-tooltip" role="tooltip" aria-hidden="true">
       <strong>{cause.cause}</strong>
       <span>{cause.eventCount} {cause.eventCount === 1 ? 'downtime event' : 'downtime events'} · {formatDuration(cause.durationMinutes)}</span>
       <span>{cause.percentageLabel} of reviewed downtime</span>
@@ -119,15 +116,20 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
     const percentage = reviewedDurationMinutes > 0
       ? Math.round((cause.durationMinutes / reviewedDurationMinutes) * 100)
       : 0
+    const barWidthPercent = reviewedDurationMinutes > 0
+      ? Math.min((cause.durationMinutes / reviewedDurationMinutes) * 100, 100)
+      : 0
 
     return {
       ...cause,
-      color: CAUSE_COLORS[index % CAUSE_COLORS.length],
+      color: cause.cause === 'Remaining causes'
+        ? 'var(--c-text-3)'
+        : CAUSE_COLORS[index % CAUSE_COLORS.length],
       percentage,
+      barWidthPercent,
       percentageLabel: formatDowntimePercentage(percentage, cause.durationMinutes),
     }
   })
-  const maxCauseDurationMinutes = Math.max(...causeDistribution.map((cause) => cause.durationMinutes), 1)
   const hasRenderableCauseData = hasObservedDowntime && causeDistribution.length > 0 && reviewedDurationMinutes > 0
 
   const totalProcessEvents = snapshot.selected.summary.processEventCount
@@ -163,61 +165,26 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
             </div>
 
             <div className="analytics-downtime-cause-chart" role="img" aria-label="Downtime by cause chart">
-              <ResponsiveContainer width="100%" height={220} minWidth={0}>
-                <BarChart
-                  layout="vertical"
-                  data={causeDistribution}
-                  margin={{ top: 26, right: 48, left: 8, bottom: 8 }}
-                  barCategoryGap="24%"
-                  accessibilityLayer={false}
-                >
-                  <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 7" horizontal={false} />
-                  <XAxis
-                    type="number"
-                    dataKey="durationMinutes"
-                    domain={[0, maxCauseDurationMinutes]}
-                    allowDecimals={false}
-                    orientation="top"
-                    tickLine={false}
-                    axisLine={{ stroke: 'var(--subtle-border)' }}
-                    tick={{ fill: 'var(--c-text-3)', fontSize: 9, fontFamily: "'Inter', sans-serif" }}
-                    tickFormatter={(minutes) => minutes < 60 ? `${minutes}` : `${Math.round(minutes / 60)}`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="cause"
-                    width={124}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: 'var(--c-text)', fontSize: 11, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}
-                  />
-                  <Tooltip
-                    content={<CauseTooltip />}
-                    cursor={{ fill: 'color-mix(in srgb, var(--c-accent) 6%, transparent)', radius: 4 }}
-                    wrapperStyle={{ outline: 'none' }}
-                  />
-                  <Bar
-                    dataKey="durationMinutes"
-                    barSize={14}
-                    radius={[0, 4, 4, 0]}
-                    isAnimationActive={false}
-                    rootTabIndex={-1}
-                  >
-                    {causeDistribution.map((cause) => (
-                      <Cell key={cause.cause} fill={cause.color} />
-                    ))}
-                    <LabelList
-                      dataKey="percentageLabel"
-                      position="right"
-                      offset={8}
-                      fill="var(--c-text-2)"
-                      fontSize={11}
-                      fontFamily="'Inter', sans-serif"
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="analytics-downtime-cause-rows">
+                {causeDistribution.map((cause) => (
+                  <div className="analytics-downtime-cause-row" key={cause.cause}>
+                    <span className="analytics-downtime-cause-label" title={cause.cause}>{cause.cause}</span>
+                    <div className="analytics-downtime-cause-bar-cell">
+                      <span
+                        className={`analytics-downtime-cause-bar${cause.durationMinutes > 0 ? '' : ' is-zero'}`}
+                        style={{ width: `${cause.barWidthPercent}%`, backgroundColor: cause.color }}
+                        role="img"
+                        tabIndex={0}
+                        aria-label={`${cause.cause}: ${formatDuration(cause.durationMinutes)}, ${cause.percentageLabel} of reviewed downtime`}
+                      />
+                      <CauseTooltip cause={cause} />
+                    </div>
+                    <span className="analytics-downtime-cause-share">{cause.percentageLabel}</span>
+                  </div>
+                ))}
+              </div>
             </div>
+            <p className="analytics-downtime-cause-hint">Hover a bar for duration and event details.</p>
 
             <ul className="analytics-downtime-cause-accessible-list sr-only" aria-label="Downtime cause distribution">
               {causeDistribution.map((cause) => {
