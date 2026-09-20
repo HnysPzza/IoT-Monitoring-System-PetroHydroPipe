@@ -2952,7 +2952,7 @@ button:disabled {
 }
 
 .analytics-downtime-cause-track {
-  height: 10px;
+  height: 8px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--subtle-border);

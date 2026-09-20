@@ -173,9 +173,9 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           <div className="analytics-cause-content analytics-cause-content--empty">
             <div className="analytics-downtime-cause-empty-chart analytics-chart-empty" aria-hidden="true">
               <svg viewBox="0 0 100 60" className="analytics-empty-downtime-causes" focusable="false" preserveAspectRatio="none">
-                <rect x="8" y="8" width="84" height="8" rx="4" fill="var(--c-text-3)" fillOpacity="0.18" />
-                <rect x="8" y="26" width="66" height="8" rx="4" fill="var(--c-text-3)" fillOpacity="0.18" />
-                <rect x="8" y="44" width="48" height="8" rx="4" fill="var(--c-text-3)" fillOpacity="0.18" />
+                <rect x="8" y="10" width="84" height="4" rx="2" fill="var(--c-text-3)" fillOpacity="0.18" />
+                <rect x="8" y="28" width="66" height="4" rx="2" fill="var(--c-text-3)" fillOpacity="0.18" />
+                <rect x="8" y="46" width="48" height="4" rx="2" fill="var(--c-text-3)" fillOpacity="0.18" />
               </svg>
             </div>
             <div
