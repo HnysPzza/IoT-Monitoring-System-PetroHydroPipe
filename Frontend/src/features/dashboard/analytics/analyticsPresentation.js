@@ -158,24 +158,12 @@ export function getAnalyticsTrendSummary(trend) {
   return `${observedSummary}${stateSuffix}.`
 }
 
-export function getDowntimeSensorBreakdown(snapshot) {
-  return snapshot.selected.downtimeSensors || []
-}
-
 export function getDowntimeCauseBreakdown(snapshot) {
   return snapshot.selected.downtimeCauses || []
 }
 
 export function getProcessSensorBreakdown(snapshot) {
   return snapshot.selected.processSensors || []
-}
-
-export function formatCompactDuration(minutes) {
-  const numMinutes = Number(minutes) || 0
-  if (numMinutes < 60) return `${numMinutes}m`
-  const hours = Math.floor(numMinutes / 60)
-  const remaining = numMinutes % 60
-  return remaining ? `${hours}h ${remaining}m` : `${hours}h`
 }
 
 function neutralEvaluation(label = 'Steady pace') {

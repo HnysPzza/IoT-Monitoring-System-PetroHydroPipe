@@ -173,38 +173,10 @@ function buildProcessSensors(rows, configuredSensors) {
   return [...totals.values()].sort((left, right) => left.sensorCode.localeCompare(right.sensorCode))
 }
 
-function getRecordSensorCode(record) {
-  const sensor = Array.isArray(record.sensors) ? record.sensors[0] : record.sensors
-  return sensor?.sensor_code || null
-}
-
 function overlapsWindow(record, window, asOf) {
   const start = new Date(record.started_at)
   const end = record.ended_at ? new Date(record.ended_at) : asOf
   return start < window.end && end > window.start
-}
-
-function buildDowntimeSensors(records, configuredSensors, window, settingsHistory, asOf, lossRatePiecesPerMinute) {
-  return configuredSensors.map((sensor) => {
-    const sensorRecords = records.filter((record) => (
-      getRecordSensorCode(record) === sensor.sensor_code && overlapsWindow(record, window, asOf)
-    ))
-    const metrics = calculateMachineMetrics({
-      records: sensorRecords,
-      window,
-      settingsHistory,
-      asOf,
-      lossRatePiecesPerMinute,
-    })
-    return {
-      sensorCode: sensor.sensor_code,
-      sensorLabel: sensor.label,
-      eventCount: sensorRecords.length,
-      durationMinutes: metrics.durationMinutes,
-    }
-  }).sort((left, right) => (
-    right.durationMinutes - left.durationMinutes || left.sensorCode.localeCompare(right.sensorCode)
-  ))
 }
 
 function buildMetrics(
@@ -249,7 +221,6 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, l
         metrics: emptySummary(),
       })),
       downtimeCauses: [],
-      downtimeSensors: [],
       processSensors: buildProcessSensors([], machine.sensors),
     }
   }
@@ -329,14 +300,6 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, l
       estimatedLossPieces: Number(row.estimatedLossPieces.toFixed(2)),
     }))
     .sort((left, right) => right.durationMinutes - left.durationMinutes)
-  const downtimeSensors = buildDowntimeSensors(
-    downtimeRows,
-    machine.sensors,
-    observedWindow,
-    settingsHistory,
-    asOf,
-    lossRatePiecesPerMinute,
-  )
   const trends = buildBuckets(range, bucketConfig, asOf).map((bucket) => {
     if (bucket.periodState === 'future') {
       return {
@@ -372,7 +335,6 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, l
     causeCoverage,
     trends,
     downtimeCauses,
-    downtimeSensors,
     processSensors: buildProcessSensors(eventRows, machine.sensors),
   }
 }

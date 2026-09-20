@@ -86,8 +86,6 @@ for (const scenario of scenarios) {
     assert.equal(report.metrics.durationMinutes, minutes)
     assert.ok(downtime.records.every((row) => row.sensor === 'S-03'))
     assert.ok(report.rows.every((row) => row.sensor === 'S-03'))
-    assert.equal(analytics.selected.downtimeSensors.find((row) => row.sensorCode === 'S-03').eventCount, count)
-    assert.ok(analytics.selected.downtimeSensors.filter((row) => row.sensorCode !== 'S-03')
-      .every((row) => row.eventCount === 0 && row.durationMinutes === 0))
+    assert.equal(Object.hasOwn(analytics.selected, 'downtimeSensors'), false)
   })
 }
