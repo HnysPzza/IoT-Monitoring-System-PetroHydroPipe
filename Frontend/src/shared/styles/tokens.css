@@ -2891,8 +2891,10 @@ button:disabled {
   }
 }
 
-.analytics-sensor-chart {
+.analytics-sensor-chart,
+.analytics-downtime-cause-chart {
   min-width: 0;
+  height: 220px;
   min-height: 220px;
   display: flex;
   align-items: center;
@@ -2906,13 +2908,14 @@ button:disabled {
 .analytics-downtime-cause-plot-heading {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(120px, 0.85fr) minmax(0, 2fr) minmax(56px, 0.45fr);
+  grid-template-columns: 124px minmax(0, 1fr) 56px;
   align-items: center;
   column-gap: 12px;
   color: var(--c-text-3);
-  font-size: 0.64rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.06em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -2923,14 +2926,6 @@ button:disabled {
 .analytics-downtime-cause-plot-heading span:last-child {
   grid-column: 3;
   text-align: right;
-}
-
-.analytics-downtime-cause-chart {
-  min-width: 0;
-  min-height: 220px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .analytics-sensor-tooltip {
@@ -4035,6 +4030,13 @@ button:disabled {
 
 .industrial-tooltip {
   min-width: 190px;
+}
+
+.industrial-tooltip.analytics-downtime-cause-tooltip {
+  min-width: 150px;
+  max-width: 220px;
+  gap: 3px;
+  padding: 7px 9px;
 }
 
 .recharts-tooltip-card strong,

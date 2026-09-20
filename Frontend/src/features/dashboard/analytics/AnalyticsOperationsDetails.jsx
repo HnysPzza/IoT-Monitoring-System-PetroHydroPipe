@@ -58,6 +58,20 @@ function SensorTooltip({ active, payload }) {
   )
 }
 
+function CauseTooltip({ active, payload }) {
+  const cause = payload?.[0]?.payload
+
+  if (!active || !cause) return null
+
+  return (
+    <div className="recharts-tooltip-card industrial-tooltip analytics-sensor-tooltip analytics-downtime-cause-tooltip" role="status">
+      <strong>{cause.cause}</strong>
+      <span>{cause.eventCount} {cause.eventCount === 1 ? 'downtime event' : 'downtime events'} · {formatDuration(cause.durationMinutes)}</span>
+      <span>{cause.percentageLabel} of reviewed downtime</span>
+    </div>
+  )
+}
+
 export default function AnalyticsOperationsDetails({ snapshot }) {
   const [activeSensorIndex, setActiveSensorIndex] = useState(null)
   const downtimeCauses = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
@@ -166,8 +180,8 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     orientation="top"
                     tickLine={false}
                     axisLine={{ stroke: 'var(--subtle-border)' }}
-                    tick={{ fill: 'var(--c-text-3)', fontSize: 10, fontFamily: "'Inter', sans-serif" }}
-                    tickFormatter={(minutes) => minutes >= 60 ? `${Math.round(minutes / 60)} hr` : `${minutes} min`}
+                    tick={{ fill: 'var(--c-text-3)', fontSize: 9, fontFamily: "'Inter', sans-serif" }}
+                    tickFormatter={(minutes) => minutes < 60 ? `${minutes}` : `${Math.round(minutes / 60)}`}
                   />
                   <YAxis
                     type="category"
@@ -177,10 +191,15 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                     axisLine={false}
                     tick={{ fill: 'var(--c-text)', fontSize: 11, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}
                   />
+                  <Tooltip
+                    content={<CauseTooltip />}
+                    cursor={{ fill: 'color-mix(in srgb, var(--c-accent) 6%, transparent)', radius: 4 }}
+                    wrapperStyle={{ outline: 'none' }}
+                  />
                   <Bar
                     dataKey="durationMinutes"
-                    barSize={8}
-                    radius={0}
+                    barSize={14}
+                    radius={[0, 4, 4, 0]}
                     isAnimationActive={false}
                     rootTabIndex={-1}
                   >
