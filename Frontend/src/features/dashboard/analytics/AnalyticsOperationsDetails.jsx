@@ -16,11 +16,10 @@ import {
 } from './analyticsPresentation.js'
 
 const CAUSE_COLORS = [
-  'var(--chart-current)',
-  'var(--chart-previous)',
-  'var(--chart-target)',
-  'var(--chart-warning)',
-  'var(--chart-danger)',
+  '#1D6FD0',
+  '#0E8A60',
+  '#C2600F',
+  '#94A3B8',
 ]
 
 const SENSOR_COLORS = [
@@ -122,9 +121,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
 
     return {
       ...cause,
-      color: cause.cause === 'Remaining causes'
-        ? 'var(--c-text-3)'
-        : CAUSE_COLORS[index % CAUSE_COLORS.length],
+      color: CAUSE_COLORS[Math.min(index, CAUSE_COLORS.length - 1)],
       percentage,
       barWidthPercent,
       percentageLabel: formatDowntimePercentage(percentage, cause.durationMinutes),
@@ -158,11 +155,7 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
 
         {hasRenderableCauseData ? (
           <div className="analytics-downtime-cause-plot">
-            <div className="analytics-downtime-cause-plot-heading" aria-hidden="true">
-              <span>Cause</span>
-              <span>Duration</span>
-              <span>Share</span>
-            </div>
+            <p className="analytics-downtime-cause-subtitle">Top causes by duration</p>
 
             <div className="analytics-downtime-cause-chart" role="img" aria-label="Downtime by cause chart">
               <div className="analytics-downtime-cause-rows">

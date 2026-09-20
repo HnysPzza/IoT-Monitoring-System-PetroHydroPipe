@@ -2877,13 +2877,17 @@ button:disabled {
 
   .analytics-operations-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
+    align-items: stretch;
     gap: 20px;
   }
 
   .analytics-trend-card,
   .analytics-detail-card {
     gap: 18px;
+  }
+
+  .analytics-detail-card {
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .analytics-trend-chart {
@@ -2901,62 +2905,53 @@ button:disabled {
 }
 
 .analytics-downtime-cause-plot {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   gap: 8px;
 }
 
-.analytics-downtime-cause-plot-heading {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 124px minmax(0, 1fr) 40px;
-  align-items: center;
-  column-gap: 12px;
-  color: var(--c-text-3);
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.analytics-downtime-cause-plot-heading span:nth-child(2) {
-  grid-column: 2;
-}
-
-.analytics-downtime-cause-plot-heading span:last-child {
-  grid-column: 3;
-  text-align: right;
+.analytics-downtime-cause-subtitle {
+  margin: 0;
+  color: #64748B;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.3;
 }
 
 .analytics-downtime-cause-chart {
   display: flex;
+  flex: 1 1 0;
   min-width: 0;
-  height: 168px;
-  align-items: center;
+  min-height: 132px;
+  align-items: stretch;
 }
 
 .analytics-downtime-cause-rows {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-evenly;
+  min-height: 0;
   width: 100%;
-  gap: 10px;
 }
 
 .analytics-downtime-cause-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 124px minmax(0, 1fr) 40px;
+  grid-template-columns: 130px minmax(0, 1fr) 40px;
   align-items: center;
-  column-gap: 12px;
+  gap: 16px;
   min-height: 18px;
 }
 
 .analytics-downtime-cause-label {
   min-width: 0;
   overflow: hidden;
-  color: var(--c-text);
-  font-size: 0.68rem;
-  font-weight: 600;
+  color: #334155;
+  font-size: 0.8125rem;
+  font-weight: 500;
   line-height: 1.2;
   text-align: left;
   text-overflow: ellipsis;
@@ -2974,9 +2969,9 @@ button:disabled {
 .analytics-downtime-cause-bar {
   display: block;
   width: 0;
-  height: 10px;
-  min-width: 4px;
-  border-radius: 999px;
+  height: 15px;
+  min-width: 8px;
+  border-radius: 8px;
   cursor: help;
   outline: none;
 }
@@ -2991,9 +2986,9 @@ button:disabled {
 }
 
 .analytics-downtime-cause-share {
-  color: var(--c-text-2);
+  color: #94A3B8;
   font-family: 'Inter', sans-serif;
-  font-size: 0.68rem;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
