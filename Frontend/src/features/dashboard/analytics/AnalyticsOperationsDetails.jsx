@@ -5,6 +5,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -100,14 +101,19 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       },
     ]
   }, [downtimeCauses])
-  const causeDistribution = causeChartRows.map((cause, index) => ({
-    ...cause,
-    color: CAUSE_COLORS[index % CAUSE_COLORS.length],
-    percentage: reviewedDurationMinutes > 0
+  const causeDistribution = causeChartRows.map((cause, index) => {
+    const percentage = reviewedDurationMinutes > 0
       ? Math.round((cause.durationMinutes / reviewedDurationMinutes) * 100)
-      : 0,
-  }))
-  const maxCauseDurationMinutes = Math.max(...causeDistribution.map((cause) => cause.durationMinutes), 0)
+      : 0
+
+    return {
+      ...cause,
+      color: CAUSE_COLORS[index % CAUSE_COLORS.length],
+      percentage,
+      percentageLabel: formatDowntimePercentage(percentage, cause.durationMinutes),
+    }
+  })
+  const maxCauseDurationMinutes = Math.max(...causeDistribution.map((cause) => cause.durationMinutes), 1)
   const hasRenderableCauseData = hasObservedDowntime && causeDistribution.length > 0 && reviewedDurationMinutes > 0
 
   const totalProcessEvents = snapshot.selected.summary.processEventCount
@@ -138,46 +144,79 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
           <div className="analytics-downtime-cause-plot">
             <div className="analytics-downtime-cause-plot-heading" aria-hidden="true">
               <span>Cause</span>
-              <span>Duration / share</span>
+              <span>Duration</span>
+              <span>Share</span>
             </div>
 
-            <ul className="analytics-downtime-cause-rows" aria-label="Downtime cause distribution">
+            <div className="analytics-downtime-cause-chart" role="img" aria-label="Downtime by cause chart">
+              <ResponsiveContainer width="100%" height={220} minWidth={0}>
+                <BarChart
+                  layout="vertical"
+                  data={causeDistribution}
+                  margin={{ top: 26, right: 48, left: 8, bottom: 8 }}
+                  barCategoryGap="24%"
+                  accessibilityLayer={false}
+                >
+                  <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 7" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    dataKey="durationMinutes"
+                    domain={[0, maxCauseDurationMinutes]}
+                    allowDecimals={false}
+                    orientation="top"
+                    tickLine={false}
+                    axisLine={{ stroke: 'var(--subtle-border)' }}
+                    tick={{ fill: 'var(--c-text-3)', fontSize: 10, fontFamily: "'Inter', sans-serif" }}
+                    tickFormatter={(minutes) => minutes >= 60 ? `${Math.round(minutes / 60)} hr` : `${minutes} min`}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="cause"
+                    width={124}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: 'var(--c-text)', fontSize: 11, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}
+                  />
+                  <Bar
+                    dataKey="durationMinutes"
+                    barSize={8}
+                    radius={0}
+                    isAnimationActive={false}
+                    rootTabIndex={-1}
+                  >
+                    {causeDistribution.map((cause) => (
+                      <Cell key={cause.cause} fill={cause.color} />
+                    ))}
+                    <LabelList
+                      dataKey="percentageLabel"
+                      position="right"
+                      offset={8}
+                      fill="var(--c-text-2)"
+                      fontSize={11}
+                      fontFamily="'Inter', sans-serif"
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <ul className="analytics-downtime-cause-accessible-list sr-only" aria-label="Downtime cause distribution">
               {causeDistribution.map((cause) => {
                 const details = cause.cause === 'Remaining causes'
                   ? `${cause.remainingCauseCount} causes, ${cause.eventCount} downtime events, ${formatDuration(cause.durationMinutes)} total, ${formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime`
                   : `${cause.eventCount} downtime ${cause.eventCount === 1 ? 'event' : 'events'}, ${formatDuration(cause.durationMinutes)} total, ${formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime`
-                const barWidth = maxCauseDurationMinutes > 0
-                  ? Math.max((cause.durationMinutes / maxCauseDurationMinutes) * 100, cause.durationMinutes > 0 ? 1 : 0)
-                  : 0
 
                 return (
                   <li
                     key={cause.cause}
-                    className="analytics-downtime-cause-row"
                     aria-label={`${cause.cause}: ${details}`}
                   >
-                    <span className="analytics-downtime-cause-name">{cause.cause}</span>
-                    <span className="analytics-downtime-cause-bar-track" aria-hidden="true">
-                      <span
-                        className="analytics-downtime-cause-bar-fill"
-                        style={{ width: `${barWidth}%`, backgroundColor: cause.color }}
-                      />
-                    </span>
-                    <span className="analytics-downtime-cause-value">
-                      {formatDuration(cause.durationMinutes)} · {formatDowntimePercentage(cause.percentage, cause.durationMinutes)}
-                    </span>
+                    {cause.cause}: {formatDuration(cause.durationMinutes)} · {formatDowntimePercentage(cause.percentage, cause.durationMinutes)} of reviewed downtime
                   </li>
                 )
               })}
             </ul>
 
-            <div className="analytics-downtime-cause-axis" aria-hidden="true">
-              <div className="analytics-downtime-cause-axis-scale">
-                <span>0</span>
-                <span>{formatDuration(Math.round(maxCauseDurationMinutes / 2))}</span>
-                <span>{formatDuration(maxCauseDurationMinutes)}</span>
-              </div>
-            </div>
           </div>
         ) : (
           <div className="analytics-cause-content analytics-cause-content--empty">

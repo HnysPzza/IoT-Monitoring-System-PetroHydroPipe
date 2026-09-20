@@ -22,22 +22,22 @@ function withSelected(overrides) {
 }
 
 describe('AnalyticsOperationsDetails', () => {
-  it('renders aligned downtime bars beside process event distribution', () => {
+  it('renders a compact horizontal downtime bar chart with duration and share labels', () => {
     const { container } = renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
     const causeCard = screen.getByRole('heading', { name: 'Downtime by cause' }).closest('section')
     const causes = within(causeCard).getByRole('list', { name: 'Downtime cause distribution' })
-    const causePlot = causeCard.querySelector('.analytics-downtime-cause-plot')
+    const causeChart = causeCard.querySelector('.analytics-downtime-cause-chart')
 
     expect(within(causes).getAllByRole('listitem')).toHaveLength(3)
-    expect(within(causes).getByText('Corrective Maintenance')).toBeInTheDocument()
+    expect(within(causes).getByText(/Corrective Maintenance/)).toBeInTheDocument()
     expect(within(causes).getByText(/47%/)).toBeInTheDocument()
-    expect(causePlot).toBeInTheDocument()
-    expect(within(causePlot).getByText('Cause')).toBeInTheDocument()
-    expect(within(causePlot).getByText('Duration / share')).toBeInTheDocument()
-    expect(causePlot.querySelectorAll('.analytics-downtime-cause-bar-fill')).toHaveLength(3)
-    expect(causePlot.querySelector('.analytics-downtime-cause-bar-fill')).toHaveStyle({ width: '100%' })
+    expect(causeChart).toHaveAttribute('aria-label', 'Downtime by cause chart')
+    expect(within(causeCard).getByText('Duration')).toBeInTheDocument()
+    expect(within(causeCard).getByText('Share')).toBeInTheDocument()
+    expect(causeChart.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3)
+    expect(causeChart).toHaveTextContent('47%')
     expect(causeCard.querySelector('.analytics-downtime-cause-track')).not.toBeInTheDocument()
-    expect(causeCard.querySelector('.analytics-cause-legend')).not.toBeInTheDocument()
+    expect(causeCard.querySelector('.analytics-downtime-cause-bar-track')).not.toBeInTheDocument()
     expect(container.querySelectorAll('.analytics-operations-layout > section')).toHaveLength(2)
     expect(screen.getByRole('heading', { name: 'Event distribution' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Downtime by sensor' })).not.toBeInTheDocument()
