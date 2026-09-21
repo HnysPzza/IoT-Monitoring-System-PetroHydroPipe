@@ -99,3 +99,19 @@ test('downtime update rolls back when audit actor cannot satisfy its foreign key
   )
   assert.equal(audits.rows[0].count, 0)
 })
+
+test('repeating the same downtime update does not duplicate its audit', async (t) => {
+  const db = await createDatabase(t)
+  const update = `select * from public.update_downtime_record($1, $2, $3, $4, $5, $6)`
+  const values = [DOWNTIME_ID, 'Misalignment', 'Reviewed by operator.', true, false, ACTOR_ID]
+
+  await db.query(update, values)
+  await db.query(update, values)
+
+  const audits = await db.query(
+    `select count(*)::integer as count from public.audit_logs
+     where entity_id = $1 and action = 'DOWNTIME_UPDATED'`,
+    [DOWNTIME_ID],
+  )
+  assert.equal(audits.rows[0].count, 1)
+})
