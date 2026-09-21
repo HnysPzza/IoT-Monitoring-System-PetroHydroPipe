@@ -367,8 +367,10 @@ test('manual sensor cause and notes are updated through the database RPC', async
 
   assert.equal(result.record.cause, 'Misalignment')
   assert.equal(result.record.notes, 'Operator confirmed roller tracking issue.')
-  assert.equal(calls.find((call) => call.operation === 'rpc').functionName, 'update_downtime_record')
-  assert.equal(auditLogs[0].action, 'DOWNTIME_UPDATED')
+  const rpcCall = calls.find((call) => call.operation === 'rpc')
+  assert.equal(rpcCall.functionName, 'update_downtime_record')
+  assert.equal(rpcCall.args.p_actor_user_id, 'user-1')
+  assert.deepEqual(auditLogs, [])
 })
 
 test('notes can be cleared without changing the cause', async () => {
