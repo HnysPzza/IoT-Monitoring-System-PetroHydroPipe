@@ -55,9 +55,9 @@ Expected: `0 fail`.
 
 ### Telemetry staleness migration 028
 
-Apply pending migrations 028 through 042 in order before deploying the current backend, which requires readiness version 42. Migration 029 requires exactly one active, unarchived Admin. Existing installations use only pending migrations, not the complete schema or old migration replays.
+Apply pending migrations 028 through 043 in order before deploying the current backend, which requires readiness version 43. Migration 029 requires exactly one active, unarchived Admin. Existing installations use only pending migrations, not the complete schema or old migration replays.
 
-For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 042. Do not replay migrations 001 through 028 over the fresh baseline.
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 043. Do not replay migrations 001 through 028 over the fresh baseline.
 
 The migration runs in one transaction with a two-second lock timeout. If it fails to acquire locks, allow the transaction to roll back and retry during a quiet ingestion window. It does not delete raw events, rewrite historical timestamps, or change sensor roles.
 
@@ -81,7 +81,7 @@ select public.get_backend_readiness();
 select stale, count(*) from public.sensor_events group by stale;
 ```
 
-Expected readiness after the required migration 042: `42`. This matches the current backend and allows `/api/health/ready` to return 200. A passing readiness check is a schema check, not a historical-data or hardware certification.
+Expected readiness after the required migration 043: `43`. This matches the current backend and allows `/api/health/ready` to return 200. A passing readiness check is a schema check, not a historical-data or hardware certification.
 
 ### Health and readiness (historical migration 024 checks)
 
