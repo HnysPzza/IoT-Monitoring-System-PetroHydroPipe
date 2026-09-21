@@ -42,6 +42,14 @@ begin
     raise exception using errcode = '23514', message = 'Choose the downtime cause before resolving this record.';
   end if;
 
+  if (p_cause is null or p_cause is not distinct from v_downtime.cause)
+    and (p_has_notes is not true or p_notes is not distinct from v_downtime.notes)
+    and (p_resolve is not true or v_downtime.status = 'Resolved')
+  then
+    return query select p_downtime_id;
+    return;
+  end if;
+
   v_ended_at := case
     when p_resolve and v_downtime.status = 'Open' then now()
     else v_downtime.ended_at
