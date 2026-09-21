@@ -1381,7 +1381,8 @@ create or replace function public.update_downtime_record(
   p_cause text,
   p_notes text,
   p_has_notes boolean,
-  p_resolve boolean
+  p_resolve boolean,
+  p_actor_user_id uuid
 )
 returns table (downtime_id uuid)
 language plpgsql
@@ -1390,6 +1391,7 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_downtime public.downtime_events%rowtype;
+  v_updated public.downtime_events%rowtype;
   v_sensor_code text;
   v_ended_at timestamptz;
 begin
@@ -1432,10 +1434,47 @@ begin
         then greatest(0, round(extract(epoch from (v_ended_at - started_at)))::integer)
       else duration_seconds
     end
-  where id = p_downtime_id;
+  where id = p_downtime_id
+  returning * into v_updated;
+
+  insert into public.audit_logs (user_id, action, entity_type, entity_id, metadata)
+  values (
+    p_actor_user_id,
+    'DOWNTIME_UPDATED',
+    'downtime',
+    v_updated.id,
+    jsonb_build_object(
+      'cause', v_updated.cause,
+      'status', v_updated.status,
+      'previousStatus', v_downtime.status,
+      'sensorCode', v_sensor_code
+    )
+  );
 
   return query select p_downtime_id;
 end;
+$$;
+
+create or replace function public.update_downtime_record(
+  p_downtime_id uuid,
+  p_cause text,
+  p_notes text,
+  p_has_notes boolean,
+  p_resolve boolean
+)
+returns table (downtime_id uuid)
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  select * from public.update_downtime_record(
+    p_downtime_id,
+    p_cause,
+    p_notes,
+    p_has_notes,
+    p_resolve,
+    null::uuid
+  );
 $$;
 
 revoke all on table public.alert_revision_state from public, anon, authenticated;
@@ -1483,6 +1522,11 @@ to service_role;
 revoke execute on function public.get_downtime_summary(text, text, timestamptz, timestamptz)
 from public, anon, authenticated;
 grant execute on function public.get_downtime_summary(text, text, timestamptz, timestamptz)
+to service_role;
+
+revoke execute on function public.update_downtime_record(uuid, text, text, boolean, boolean, uuid)
+from public, anon, authenticated;
+grant execute on function public.update_downtime_record(uuid, text, text, boolean, boolean, uuid)
 to service_role;
 
 revoke execute on function public.update_downtime_record(uuid, text, text, boolean, boolean)
@@ -2632,7 +2676,7 @@ begin
     or to_regprocedure('public.get_machine_live_snapshot(text)') is null
     or to_regprocedure('public.ingest_iot_sensor_event(uuid,uuid,uuid,text,jsonb,timestamptz)') is null
     or to_regprocedure('public.ingest_iot_heartbeat(uuid,uuid,uuid,bigint,uuid,bigint,timestamptz,boolean)') is null
-    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean)') is null
+    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean,uuid)') is null
     or to_regprocedure('public.aggregate_analytics_sensor_events(uuid,timestamptz,timestamptz,integer)') is null then
     raise exception using
       errcode = '55000',
@@ -2789,7 +2833,7 @@ begin
     or to_regprocedure('public.get_machine_live_snapshot(text)') is null
     or to_regprocedure('public.ingest_iot_sensor_event(uuid,uuid,uuid,text,jsonb,timestamptz)') is null
     or to_regprocedure('public.ingest_iot_heartbeat(uuid,uuid,uuid,bigint,uuid,bigint,timestamptz,boolean)') is null
-    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean)') is null
+    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean,uuid)') is null
     or to_regprocedure('public.aggregate_analytics_sensor_events(uuid,timestamptz,timestamptz,integer)') is null
     or to_regclass('public.refresh_tokens') is null
     or to_regclass('public.auth_sessions') is null

@@ -276,3 +276,22 @@ test('canonical schema stays at the documented migration-028 baseline', () => {
   assert.doesNotMatch(schema, /Sensor-managed downtime must be resolved by accepted sensor recovery/i)
   assert.doesNotMatch(schema, /return 35/i)
 })
+
+test('migration 043 makes downtime updates and audit logging atomic', () => {
+  const migration = read('database/migrations/043_atomic_downtime_update_audit.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /p_actor_user_id uuid/i)
+    assert.match(content, /for update/i)
+    assert.match(content, /returning \* into v_updated/i)
+    assert.match(content, /insert into public\.audit_logs/i)
+    assert.match(content, /'DOWNTIME_UPDATED'/i)
+    assert.match(content, /set search_path = pg_catalog, public/i)
+    assert.match(content, /revoke execute[\s\S]*from public, anon, authenticated/i)
+    assert.match(content, /grant execute[\s\S]*to service_role/i)
+  }
+
+  assert.match(migration, /return 43/i)
+  assert.match(migration, /update_downtime_record\(uuid, text, text, boolean, boolean, uuid\)/i)
+})

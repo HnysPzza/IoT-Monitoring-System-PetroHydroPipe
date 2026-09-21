@@ -4,7 +4,7 @@ const path = require('node:path')
 const test = require('node:test')
 
 const databaseRoot = path.resolve(__dirname, '../database')
-const releaseSchemaVersion = 42
+const releaseSchemaVersion = 43
 const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
   .filter((name) => {
     const match = /^(\d{3})_.*\.sql$/.exec(name)
@@ -28,7 +28,7 @@ async function database(t) {
   return db
 }
 
-test('full sensor idle-fault migration chain reports release readiness version 42', async (t) => {
+test('full sensor idle-fault migration chain reports release readiness version 43', async (t) => {
   const db = await database(t)
 
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
