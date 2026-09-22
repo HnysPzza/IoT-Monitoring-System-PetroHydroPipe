@@ -99,7 +99,7 @@ test('toCsv falls back to Not available for missing metadata values', () => {
   assert.ok(csv.includes('"Loss Rate Pieces Per Minute","Not available"'))
 })
 
-test('toXlsx creates a formal management workbook with typed summary sections', async () => {
+test('toXlsx creates a clean management workbook with typed summary sections', async () => {
   const buffer = await toXlsx(createReport())
   const files = unzipSync(new Uint8Array(buffer))
   const workbookXml = strFromU8(files['xl/workbook.xml'])
@@ -110,11 +110,16 @@ test('toXlsx creates a formal management workbook with typed summary sections', 
   assert.match(workbookXml, /Management Summary/)
   assert.doesNotMatch(workbookXml, /<workbookPr|<fileVersion/)
   assert.match(workbookXml, /<definedNames\/><calcPr /)
+  assert.match(sheetXml, /MANAGEMENT REPORT/)
+  assert.match(sheetXml, /Dunggoan, Danao City, Cebu, Philippines 6004/)
+  assert.match(sheetXml, /Exported \(PHT\)/)
   assert.match(sheetXml, /Production Count/)
   assert.match(sheetXml, /DOWNTIME DETAIL/)
   assert.match(sheetXml, /Corrective Maintenance/)
   assert.match(sheetXml, /<dimension ref="A1:E\d+"\/>/)
   assert.doesNotMatch(sheetXml, /<autoFilter|<mergeCells|<pane /)
+  assert.match(sheetXml, /<drawing r="rId1"\/>/)
+  assert.ok(files['xl/media/image1.png'])
   assert.match(stylesXml, /dd mmm yyyy/)
   assert.match(stylesXml, /0\.0%/)
 })
