@@ -55,9 +55,9 @@ Expected: `0 fail`.
 
 ### Telemetry staleness migration 028
 
-Apply pending migrations 028 through 042 in order before deploying the current backend, which requires readiness version 42. Migration 029 requires exactly one active, unarchived Admin. Existing installations use only pending migrations, not the complete schema or old migration replays.
+Apply pending migrations 028 through 044 in order before deploying the current backend, which requires readiness version 44. Migration 029 requires exactly one active, unarchived Admin. Existing installations use only pending migrations, not the complete schema or old migration replays.
 
-For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 042. Do not replay migrations 001 through 028 over the fresh baseline.
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 044. Do not replay migrations 001 through 028 over the fresh baseline.
 
 The migration runs in one transaction with a two-second lock timeout. If it fails to acquire locks, allow the transaction to roll back and retry during a quiet ingestion window. It does not delete raw events, rewrite historical timestamps, or change sensor roles.
 
@@ -81,7 +81,21 @@ select public.get_backend_readiness();
 select stale, count(*) from public.sensor_events group by stale;
 ```
 
-Expected readiness after the required migration 042: `42`. This matches the current backend and allows `/api/health/ready` to return 200. A passing readiness check is a schema check, not a historical-data or hardware certification.
+Expected readiness after the required migration 044: `44`. This matches the current backend and allows `/api/health/ready` to return 200. A passing readiness check is a schema check, not a historical-data or hardware certification.
+
+### S-05 output validation migration 044
+
+Migration 044 keeps every S-05 pulse as raw evidence but classifies whether it is eligible to count. A pulse is accepted only when the latest non-stale S-03 evidence at or before its recorded time is `pulse` or `recovered`, no S-03 downtime overlaps that time, and the pulse is outside the 100 ms server debounce floor. Stationary, downtime, stale, and rapid-bounce pulses receive an explicit rejection reason.
+
+Rejected S-05 pulses do not update sensor state or watermark, create downtime or alerts, appear as the live latest event, or contribute to shared analytics, reports, or estimated output loss. Historical rows from before migration 044 retain `NULL` classification and remain included; do not retroactively label them without independent evidence.
+
+The 100 ms debounce floor is provisional until the physical cutter and firmware are measured and calibrated. Run the focused local check from `Backend`:
+
+```powershell
+node --test --test-concurrency=1 tests/s05-output-validation.migration.pglite.test.js
+```
+
+This local check proves the SQL contract and routing guards only. It does not prove hosted Supabase permissions, firmware debounce, electrical behavior, or production-machine correlation.
 
 ### Health and readiness (historical migration 024 checks)
 

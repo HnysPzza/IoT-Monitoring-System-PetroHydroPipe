@@ -65,6 +65,21 @@ create table if not exists sensor_events (
   event_value jsonb not null default '{}'::jsonb,
   recorded_at timestamptz not null,
   stale boolean,
+  output_accepted boolean,
+  output_rejection_reason text,
+  constraint sensor_events_output_classification check (
+    (output_accepted is null and output_rejection_reason is null)
+    or (output_accepted and output_rejection_reason is null)
+    or (
+      not output_accepted
+      and output_rejection_reason in (
+        'stale_event',
+        'machine_stationary',
+        'machine_downtime',
+        'server_debounce'
+      )
+    )
+  ),
   created_at timestamptz not null default now()
 );
 
@@ -1381,7 +1396,8 @@ create or replace function public.update_downtime_record(
   p_cause text,
   p_notes text,
   p_has_notes boolean,
-  p_resolve boolean
+  p_resolve boolean,
+  p_actor_user_id uuid
 )
 returns table (downtime_id uuid)
 language plpgsql
@@ -1390,6 +1406,7 @@ set search_path = pg_catalog, public
 as $$
 declare
   v_downtime public.downtime_events%rowtype;
+  v_updated public.downtime_events%rowtype;
   v_sensor_code text;
   v_ended_at timestamptz;
 begin
@@ -1416,6 +1433,14 @@ begin
     raise exception using errcode = '23514', message = 'Choose the downtime cause before resolving this record.';
   end if;
 
+  if (p_cause is null or p_cause is not distinct from v_downtime.cause)
+    and (p_has_notes is not true or p_notes is not distinct from v_downtime.notes)
+    and (p_resolve is not true or v_downtime.status = 'Resolved')
+  then
+    return query select p_downtime_id;
+    return;
+  end if;
+
   v_ended_at := case
     when p_resolve and v_downtime.status = 'Open' then now()
     else v_downtime.ended_at
@@ -1432,10 +1457,47 @@ begin
         then greatest(0, round(extract(epoch from (v_ended_at - started_at)))::integer)
       else duration_seconds
     end
-  where id = p_downtime_id;
+  where id = p_downtime_id
+  returning * into v_updated;
+
+  insert into public.audit_logs (user_id, action, entity_type, entity_id, metadata)
+  values (
+    p_actor_user_id,
+    'DOWNTIME_UPDATED',
+    'downtime',
+    v_updated.id,
+    jsonb_build_object(
+      'cause', v_updated.cause,
+      'status', v_updated.status,
+      'previousStatus', v_downtime.status,
+      'sensorCode', v_sensor_code
+    )
+  );
 
   return query select p_downtime_id;
 end;
+$$;
+
+create or replace function public.update_downtime_record(
+  p_downtime_id uuid,
+  p_cause text,
+  p_notes text,
+  p_has_notes boolean,
+  p_resolve boolean
+)
+returns table (downtime_id uuid)
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  select * from public.update_downtime_record(
+    p_downtime_id,
+    p_cause,
+    p_notes,
+    p_has_notes,
+    p_resolve,
+    null::uuid
+  );
 $$;
 
 revoke all on table public.alert_revision_state from public, anon, authenticated;
@@ -1483,6 +1545,11 @@ to service_role;
 revoke execute on function public.get_downtime_summary(text, text, timestamptz, timestamptz)
 from public, anon, authenticated;
 grant execute on function public.get_downtime_summary(text, text, timestamptz, timestamptz)
+to service_role;
+
+revoke execute on function public.update_downtime_record(uuid, text, text, boolean, boolean, uuid)
+from public, anon, authenticated;
+grant execute on function public.update_downtime_record(uuid, text, text, boolean, boolean, uuid)
 to service_role;
 
 revoke execute on function public.update_downtime_record(uuid, text, text, boolean, boolean)
@@ -2371,6 +2438,7 @@ begin
         from public.sensor_events event
         where event.sensor_id = sensor.id
           and event.stale is not true
+          and (sensor.sensor_code <> 'S-05' or event.output_accepted is not false)
         order by event.recorded_at desc, event.id desc
         limit 1
       ) latest_event on true
@@ -2573,6 +2641,7 @@ begin
     and event.recorded_at >= p_started_at
     and event.recorded_at < p_ended_at
     and sensor.sensor_code in ('S-01', 'S-02', 'S-04', 'S-05')
+    and (sensor.sensor_code <> 'S-05' or event.output_accepted is not false)
   group by 1, sensor.sensor_code, sensor.label
   order by 1, sensor.sensor_code;
 end;
@@ -2602,6 +2671,7 @@ as $$
       and event.event_type = 'pulse'
       and event.stale is not true
       and sensor.sensor_code in ('S-01', 'S-02', 'S-04', 'S-05')
+      and (sensor.sensor_code <> 'S-05' or event.output_accepted is not false)
 
     union all
 
@@ -2632,7 +2702,7 @@ begin
     or to_regprocedure('public.get_machine_live_snapshot(text)') is null
     or to_regprocedure('public.ingest_iot_sensor_event(uuid,uuid,uuid,text,jsonb,timestamptz)') is null
     or to_regprocedure('public.ingest_iot_heartbeat(uuid,uuid,uuid,bigint,uuid,bigint,timestamptz,boolean)') is null
-    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean)') is null
+    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean,uuid)') is null
     or to_regprocedure('public.aggregate_analytics_sensor_events(uuid,timestamptz,timestamptz,integer)') is null then
     raise exception using
       errcode = '55000',
@@ -2789,7 +2859,7 @@ begin
     or to_regprocedure('public.get_machine_live_snapshot(text)') is null
     or to_regprocedure('public.ingest_iot_sensor_event(uuid,uuid,uuid,text,jsonb,timestamptz)') is null
     or to_regprocedure('public.ingest_iot_heartbeat(uuid,uuid,uuid,bigint,uuid,bigint,timestamptz,boolean)') is null
-    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean)') is null
+    or to_regprocedure('public.update_downtime_record(uuid,text,text,boolean,boolean,uuid)') is null
     or to_regprocedure('public.aggregate_analytics_sensor_events(uuid,timestamptz,timestamptz,integer)') is null
     or to_regclass('public.refresh_tokens') is null
     or to_regclass('public.auth_sessions') is null

@@ -4,7 +4,6 @@ const env = require('../../config/env')
 const { formatBusinessTime, getBusinessDayRange } = require('../../shared/businessTime')
 const { calculateMachineMetrics, calculateRecordMetrics } = require('../../shared/operationalMetrics')
 const logger = require('../../utils/logger')
-const { recordAuditLog } = require('../audit/audit.service')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
@@ -314,6 +313,7 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
       p_notes: values.notes ?? null,
       p_has_notes: values.notes !== undefined,
       p_resolve: false,
+      p_actor_user_id: actorUserId,
     })
     .single()
 
@@ -334,18 +334,6 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
   }
 
   const record = toDowntimeRecord(await fetchDowntimeById(downtimeId))
-  await recordAuditLog({
-    userId: actorUserId,
-    action: 'DOWNTIME_UPDATED',
-    entityType: 'downtime',
-    entityId: record.id,
-    metadata: {
-      cause: record.cause,
-      status: record.status,
-      previousStatus: existing.status,
-      sensorCode: record.sensor,
-    },
-  })
 
   publishDowntimeEvent('downtime.updated', {
     id: record.id,

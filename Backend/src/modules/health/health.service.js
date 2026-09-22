@@ -1,7 +1,7 @@
 const env = require('../../config/env')
 const { getSupabaseClient } = require('../../database/client')
 
-const EXPECTED_SCHEMA_VERSION = 42
+const EXPECTED_SCHEMA_VERSION = 44
 
 async function checkReadiness() {
   const controller = new AbortController()

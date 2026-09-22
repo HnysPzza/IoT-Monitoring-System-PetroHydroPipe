@@ -281,7 +281,7 @@ test('the complete current schema executes in a clean PostgreSQL database', asyn
     await db.exec('create role anon; create role authenticated; create role service_role;')
     await db.exec(currentSchemaSql)
     const functions = await db.query(`
-      select routine_name
+      select distinct routine_name
       from information_schema.routines
       where routine_schema = 'public'
         and routine_name in (

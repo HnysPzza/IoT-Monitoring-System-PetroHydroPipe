@@ -276,3 +276,43 @@ test('canonical schema stays at the documented migration-028 baseline', () => {
   assert.doesNotMatch(schema, /Sensor-managed downtime must be resolved by accepted sensor recovery/i)
   assert.doesNotMatch(schema, /return 35/i)
 })
+
+test('migration 043 makes downtime updates and audit logging atomic', () => {
+  const migration = read('database/migrations/043_atomic_downtime_update_audit.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /p_actor_user_id uuid/i)
+    assert.match(content, /for update/i)
+    assert.match(content, /returning \* into v_updated/i)
+    assert.match(content, /insert into public\.audit_logs/i)
+    assert.match(content, /'DOWNTIME_UPDATED'/i)
+    assert.match(content, /set search_path = pg_catalog, public/i)
+    assert.match(content, /revoke execute[\s\S]*from public, anon, authenticated/i)
+    assert.match(content, /grant execute[\s\S]*to service_role/i)
+  }
+
+  assert.match(migration, /return 43/i)
+  assert.match(migration, /update_downtime_record\(uuid, text, text, boolean, boolean, uuid\)/i)
+})
+
+test('migration 044 classifies S-05 output before shared aggregation', () => {
+  const migration = read('database/migrations/044_validate_s05_output_pulses.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /output_accepted boolean/i)
+    assert.match(content, /output_rejection_reason text/i)
+    assert.match(content, /output_accepted is null\s+and output_rejection_reason is null/i)
+    assert.match(content, /machine_stationary/i)
+    assert.match(content, /machine_downtime/i)
+    assert.match(content, /server_debounce/i)
+    assert.match(content, /output_accepted is not false/i)
+  }
+
+  assert.match(migration, /v_sensor_code <> 'S-05'[\s\S]*v_fault_source = 'absence_watchdog'/i)
+  assert.match(migration, /v_sensor_code <> 'S-05'[\s\S]*v_detection_state in \('downtime', 'recovering'\)/i)
+  assert.match(migration, /return 44/i)
+  assert.match(migration, /revoke (?:all|execute)[\s\S]*from public, anon, authenticated/i)
+  assert.match(migration, /grant execute[\s\S]*to service_role/i)
+})

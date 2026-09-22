@@ -210,6 +210,8 @@ Future device events use these meanings:
 
 S-05 absence detection remains prohibited because silence from the output counter does not prove downtime. If S-05 submits a `no_pulse` observation, it remains raw history and cannot create operational downtime or an alert. No device-facing settings or schedule-sync endpoint is planned before hardware exists. Existing `POST /api/iot/events` and `POST /api/iot/heartbeats` contracts are sufficient for future nodes.
 
+Migration `044` adds a separate output-evidence boundary for S-05 `pulse` events. The grouped ingestion RPC retains each pulse, then accepts it only when the latest non-stale S-03 evidence at or before the pulse is `pulse` or `recovered`, no S-03 downtime overlaps the pulse time, and the pulse is outside the provisional 100 ms server debounce floor. Rejected pulses remain forensic rows with a reason, but do not advance S-05 state, live snapshot selection, or any shared output aggregation. Historical rows before migration 044 remain unclassified (`NULL`) and are not silently rewritten. Physical cutter timing, firmware debounce, and electrical behavior still require hardware calibration.
+
 Phase 3 operational flow:
 
 ```text
@@ -290,7 +292,7 @@ Dashboard context strip
 
 Overview production analytics compares the current Manila calendar day with the immediately preceding Manila calendar day. It does not evaluate production against a configured target.
 
-The backend uses S-05 Output Cutting pulse events as the single source for both totals. One bounded query covers yesterday through the end of today, then the service derives:
+The backend uses accepted S-05 Output Cutting pulse events as the single source for both totals. The shared aggregation RPC excludes stale and explicitly rejected S-05 pulses; one bounded query covers yesterday through the end of today, then the service derives:
 
 - Today's pipe count.
 - Yesterday's pipe count.

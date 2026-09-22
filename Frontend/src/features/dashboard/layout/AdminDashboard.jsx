@@ -502,7 +502,7 @@ export default function AdminDashboard() {
   function handleLogout() {
     // Clears local auth, then returns the user to the login page.
     logout()
-    navigate('/login', { replace: true })
+    navigate('/login', { replace: true, state: { from: '/dashboard' } })
   }
 
   function handleSidebarScroll() {
