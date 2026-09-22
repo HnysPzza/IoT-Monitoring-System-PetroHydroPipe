@@ -114,7 +114,8 @@ function createFakeSupabase({
     rpcCalls,
     rpc(functionName, args) {
       rpcCalls.push({ functionName, args })
-      return Promise.resolve({ data: aggregateRows, error: aggregateError })
+      const rows = typeof aggregateRows === 'function' ? aggregateRows(rpcCalls.length, args) : aggregateRows
+      return Promise.resolve({ data: rows, error: aggregateError })
     },
     from: createQuery,
   }
@@ -221,6 +222,7 @@ test('report includes pre-window overlap, unions concurrent downtime, and exclud
   const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-09' })
 
   assert.deepEqual(report.metrics, {
+    outputPieces: 1,
     durationMinutes: 540,
     unplannedMinutes: 60,
     plannedExcludedMinutes: 480,
@@ -289,4 +291,36 @@ test('future report returns unobserved values without querying operational recor
   assert.equal(report.metrics.availabilityPercent, null)
   assert.equal(fakeSupabase.rpcCalls.length, 0)
   assert.equal(fakeSupabase.queries.some((query) => query.tableName === 'downtime_events'), false)
+})
+
+test('report includes server-owned prior-period comparison metrics when requested', async () => {
+  const fakeSupabase = createFakeSupabase({
+    aggregateRows: (callNumber) => [{ sensor_code: 'S-05', event_count: callNumber === 1 ? 12 : 8 }],
+  })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-09', compare: true })
+
+  assert.equal(report.metrics.outputPieces, 12)
+  assert.deepEqual(report.comparison.metrics, {
+    outputPieces: 8,
+    availabilityPercent: 100,
+    estimatedLoss: 0,
+  })
+  assert.equal(report.comparison.periodState, 'complete')
+  assert.equal(fakeSupabase.rpcCalls.length, 2)
+})
+
+test('partial comparisons use the same elapsed window from the preceding period', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-31T12:00:00+08:00') })
+  const fakeSupabase = createFakeSupabase()
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ type: 'daily', date: '2026-08-31', compare: true })
+
+  assert.equal(report.periodState, 'partial')
+  assert.equal(report.comparison.periodState, 'partial')
+  assert.equal(report.comparison.observedEndAt, '2026-08-30T04:00:00.000Z')
+  assert.equal(fakeSupabase.rpcCalls[1].args.p_started_at, '2026-08-29T16:00:00.000Z')
+  assert.equal(fakeSupabase.rpcCalls[1].args.p_ended_at, '2026-08-30T04:00:00.000Z')
 })

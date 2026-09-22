@@ -116,7 +116,7 @@ S-05 never participates in absence detection. Any S-05 `no_pulse` input is retai
 | `PATCH /api/alerts/:id/acknowledge` | JWT | Atomically record acknowledgement and resulting lifecycle state |
 | `GET /api/alerts/stream` | JWT `Authorization` header | Alert SSE stream |
 | `GET /api/downtime/stream` | JWT `Authorization` header | Downtime SSE stream |
-| `GET /api/reports/summary?type=daily\|weekly\|monthly` | Management-role JWT | Report summary; optional `date` selects the business period anchor |
+| `GET /api/reports/summary?type=daily\|weekly\|monthly` | Management-role JWT | Report summary; optional `date` selects the business period anchor and `compare=true` adds the matching prior-period metrics |
 
 ### 3.2 Auth
 - Dashboard users: JWT, `Authorization: Bearer <token>` header. The backend uses `jsonwebtoken` and `bcryptjs`.

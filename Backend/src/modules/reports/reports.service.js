@@ -58,6 +58,28 @@ function getObservedWindow(window, asOf) {
   return { periodState: 'complete', window }
 }
 
+function getPreviousWindow(type, window) {
+  if (type === 'monthly') {
+    return { start: addBusinessMonths(window.start, -1), end: window.start }
+  }
+
+  const days = type === 'weekly' ? 7 : 1
+  return { start: addBusinessDays(window.start, -days), end: window.start }
+}
+
+function getComparisonWindow(type, currentWindow, periodState, asOf) {
+  const previousWindow = getPreviousWindow(type, currentWindow)
+  const elapsedMilliseconds = periodState === 'partial'
+    ? asOf.getTime() - currentWindow.start.getTime()
+    : previousWindow.end.getTime() - previousWindow.start.getTime()
+  const end = new Date(Math.min(
+    previousWindow.end.getTime(),
+    previousWindow.start.getTime() + elapsedMilliseconds,
+  ))
+
+  return { start: previousWindow.start, end }
+}
+
 function getUnobservedReport(type, date, asOf) {
   return {
     generatedAt: asOf.toISOString(),
@@ -75,6 +97,7 @@ function getUnobservedReport(type, date, asOf) {
       { id: 'loss', label: 'Estimated Loss', value: 'N/A', helper: 'Period not reached yet' },
     ],
     metrics: {
+      outputPieces: null,
       durationMinutes: null,
       unplannedMinutes: null,
       plannedExcludedMinutes: null,
@@ -127,23 +150,11 @@ async function getEventSummary(machineId, window) {
   }
 }
 
-async function getSummary({ type = 'daily', date } = {}) {
-  const asOf = new Date()
-  const machine = await getMachine()
-  const requestedWindow = getWindow(type, date)
-  const observed = getObservedWindow(requestedWindow, asOf)
-  const selectedDate = date || formatBusinessDate()
-  if (!observed.window) return getUnobservedReport(type, selectedDate, asOf)
-  const window = observed.window
-  const [eventSummary, downtimeRows, settingsHistory, lossEstimateBasis] = await Promise.all([
+async function buildObservedReport({ type, selectedDate, machine, window, periodState, asOf, lossEstimateBasis }) {
+  const [eventSummary, downtimeRows, settingsHistory] = await Promise.all([
     getEventSummary(machine.id, window),
     getOverlappingDowntime(machine.id, window),
     getSettingsHistory(machine.id, window),
-    getOutputLossBasis({
-      machineId: machine.id,
-      asOf,
-      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
-    }),
   ])
   const lossRatePiecesPerMinute = lossEstimateBasis.ratePiecesPerMinute
   const metrics = calculateMachineMetrics({
@@ -167,7 +178,7 @@ async function getSummary({ type = 'daily', date } = {}) {
     generatedAt: asOf.toISOString(),
     reportType: type,
     selectedDate,
-    periodState: observed.periodState,
+    periodState,
     observedStartAt: window.start.toISOString(),
     observedEndAt: window.end.toISOString(),
     lossEstimateBasis,
@@ -180,6 +191,7 @@ async function getSummary({ type = 'daily', date } = {}) {
       { id: 'loss', label: 'Estimated Loss', value: `${metrics.estimatedLoss} pcs`, helper: `Using ${lossRatePiecesPerMinute} pcs per downtime minute` },
     ],
     metrics: {
+      outputPieces: eventSummary.productionTotal,
       durationMinutes: metrics.durationMinutes,
       unplannedMinutes: metrics.unplannedMinutes,
       plannedExcludedMinutes: metrics.plannedExcludedMinutes,
@@ -189,6 +201,61 @@ async function getSummary({ type = 'daily', date } = {}) {
     },
     processSensors: eventSummary.processSensors,
     rows,
+  }
+}
+
+async function getSummary({ type = 'daily', date, compare = false } = {}) {
+  const asOf = new Date()
+  const machine = await getMachine()
+  const selectedDate = date || formatBusinessDate()
+  const requestedWindow = getWindow(type, selectedDate)
+  const observed = getObservedWindow(requestedWindow, asOf)
+  if (!observed.window) {
+    return compare
+      ? { ...getUnobservedReport(type, selectedDate, asOf), comparison: null }
+      : getUnobservedReport(type, selectedDate, asOf)
+  }
+
+  const lossEstimateBasis = await getOutputLossBasis({
+    machineId: machine.id,
+    asOf,
+    fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+  })
+  const report = await buildObservedReport({
+    type,
+    selectedDate,
+    machine,
+    window: observed.window,
+    periodState: observed.periodState,
+    asOf,
+    lossEstimateBasis,
+  })
+
+  if (!compare) return report
+
+  const comparisonWindow = getComparisonWindow(type, requestedWindow, observed.periodState, asOf)
+  const previousReport = await buildObservedReport({
+    type,
+    selectedDate: formatBusinessDate(comparisonWindow.start),
+    machine,
+    window: comparisonWindow,
+    periodState: observed.periodState,
+    asOf,
+    lossEstimateBasis,
+  })
+
+  return {
+    ...report,
+    comparison: {
+      periodState: observed.periodState,
+      observedStartAt: comparisonWindow.start.toISOString(),
+      observedEndAt: comparisonWindow.end.toISOString(),
+      metrics: {
+        outputPieces: previousReport.metrics.outputPieces,
+        availabilityPercent: previousReport.metrics.availabilityPercent,
+        estimatedLoss: previousReport.metrics.estimatedLoss,
+      },
+    },
   }
 }
 

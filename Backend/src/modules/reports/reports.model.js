@@ -4,6 +4,7 @@ const reportSummarySchema = z.object({
   query: z.object({
     type: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
     date: z.string().date('Invalid report date.').optional(),
+    compare: z.enum(['true', 'false']).transform((value) => value === 'true').default(false),
   }),
 })
 

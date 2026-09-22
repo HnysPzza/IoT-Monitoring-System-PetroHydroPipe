@@ -908,13 +908,17 @@ test('downtime routes list records and reject manual status changes', async () =
 })
 
 test('reports summary is restricted to management roles', async () => {
+  const summaryCalls = []
   const app = loadAppWithMocks({
     'src/modules/reports/reports.service.js': {
-      getSummary: async ({ type }) => ({
-        reportType: type,
-        summary: [{ id: 'production', label: 'Production Count', value: '5 pcs' }],
-        rows: [],
-      }),
+      getSummary: async (query) => {
+        summaryCalls.push(query)
+        return {
+          reportType: query.type,
+          summary: [{ id: 'production', label: 'Production Count', value: '5 pcs' }],
+          rows: [],
+        }
+      },
     },
   })
 
@@ -933,6 +937,12 @@ test('reports summary is restricted to management roles', async () => {
     assert.equal(allowed.response.status, 200)
     assert.equal(allowed.response.headers.get('cache-control'), 'no-store')
     assert.equal(allowed.body.report.reportType, 'daily')
+
+    const compared = await requestJson(baseUrl, '/api/reports/summary?type=daily&date=2026-09-02&compare=true', {
+      headers: authHeader('Operation Manager'),
+    })
+    assert.equal(compared.response.status, 200)
+    assert.equal(summaryCalls.at(-1).compare, true)
 
     const director = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
       headers: authHeader('Managing Director'),
