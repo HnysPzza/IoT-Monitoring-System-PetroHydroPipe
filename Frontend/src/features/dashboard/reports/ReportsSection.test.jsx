@@ -102,8 +102,7 @@ function deferred() {
 
 async function selectExportFormat(user, format) {
   await user.click(await screen.findByRole('button', { name: 'Export report' }))
-  const label = format === 'excel' ? 'Excel' : format.toUpperCase()
-  await user.click(await screen.findByRole('button', { name: `Export ${label}` }))
+  await user.click(await screen.findByRole('button', { name: `Export ${format.toUpperCase()}` }))
 }
 
 async function selectReportDate(user, dateName) {
@@ -185,7 +184,7 @@ describe('ReportsSection request states', () => {
     }))
   })
 
-  it('exports Excel through the server endpoint and downloads the returned file', async () => {
+  it('exports CSV through the server endpoint and downloads the returned file', async () => {
     const user = userEvent.setup()
     const downloads = []
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
@@ -195,23 +194,23 @@ describe('ReportsSection request states', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
     exportReport.mockResolvedValue({
-      blob: new Blob(['PK\x03\x04'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-      filename: 'report-daily-2026-09-02.xlsx',
+      blob: new Blob(['cause,sensor\nCorrective Maintenance,S-03\n'], { type: 'text/csv' }),
+      filename: 'report-daily-2026-09-02.csv',
     })
 
     renderWithAuth(<ReportsSection />)
-    await selectExportFormat(user, 'excel')
+    await selectExportFormat(user, 'csv')
 
     await waitFor(() => {
       expect(downloads).toHaveLength(1)
     })
-    expect(downloads[0].download).toBe('report-daily-2026-09-02.xlsx')
+    expect(downloads[0].download).toBe('report-daily-2026-09-02.csv')
     expect(downloads[0].href).toBe('blob:report')
 
     expect(exportReport).toHaveBeenCalledTimes(1)
     expect(exportReport).toHaveBeenCalledWith('test-token', expect.objectContaining({
       reportType: 'daily',
-      format: 'xlsx',
+      format: 'csv',
     }))
     expect(exportReport.mock.calls[0][1].selectedDate).toEqual(expect.any(String))
     vi.unstubAllGlobals()
@@ -251,7 +250,7 @@ describe('ReportsSection request states', () => {
     exportReport.mockRejectedValue(new Error('Too many export requests. Please try again later.'))
 
     renderWithAuth(<ReportsSection />)
-    await selectExportFormat(user, 'excel')
+    await selectExportFormat(user, 'csv')
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many export requests. Please try again later.')
     expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()

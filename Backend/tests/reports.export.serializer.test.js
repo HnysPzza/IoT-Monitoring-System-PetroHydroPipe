@@ -6,9 +6,7 @@ const {
   contentTypeFor,
   toCsv,
   toPdf,
-  toXlsx,
 } = require('../src/modules/reports/reportsExport.serializer')
-const { strFromU8, unzipSync } = require('fflate')
 
 function createReport(overrides = {}) {
   return {
@@ -27,7 +25,6 @@ function createReport(overrides = {}) {
       { id: 'loss', label: 'Estimated Loss', value: '3 pcs', helper: 'Using 0.05 pcs per downtime minute' },
     ],
     metrics: {
-      outputPieces: 1250,
       durationMinutes: 55,
       unplannedMinutes: 55,
       plannedExcludedMinutes: 0,
@@ -99,31 +96,6 @@ test('toCsv falls back to Not available for missing metadata values', () => {
   assert.ok(csv.includes('"Loss Rate Pieces Per Minute","Not available"'))
 })
 
-test('toXlsx creates a clean management workbook with typed summary sections', async () => {
-  const buffer = await toXlsx(createReport())
-  const files = unzipSync(new Uint8Array(buffer))
-  const workbookXml = strFromU8(files['xl/workbook.xml'])
-  const sheetXml = strFromU8(files['xl/worksheets/sheet1.xml'])
-  const stylesXml = strFromU8(files['xl/styles.xml'])
-
-  assert.equal(buffer.subarray(0, 2).toString('utf8'), 'PK')
-  assert.match(workbookXml, /Management Summary/)
-  assert.doesNotMatch(workbookXml, /<workbookPr|<fileVersion/)
-  assert.match(workbookXml, /<definedNames\/><calcPr /)
-  assert.match(sheetXml, /MANAGEMENT REPORT/)
-  assert.match(sheetXml, /Dunggoan, Danao City, Cebu, Philippines 6004/)
-  assert.match(sheetXml, /Exported \(PHT\)/)
-  assert.match(sheetXml, /Production Count/)
-  assert.match(sheetXml, /DOWNTIME DETAIL/)
-  assert.match(sheetXml, /Corrective Maintenance/)
-  assert.match(sheetXml, /<dimension ref="A1:E\d+"\/>/)
-  assert.doesNotMatch(sheetXml, /<autoFilter|<mergeCells|<pane /)
-  assert.match(sheetXml, /<drawing r="rId1"\/>/)
-  assert.ok(files['xl/media/image1.png'])
-  assert.match(stylesXml, /dd mmm yyyy/)
-  assert.match(stylesXml, /0\.0%/)
-})
-
 test('toPdf resolves to a non-empty PDF buffer with the %PDF magic header', async () => {
   const buffer = await toPdf(createReport())
 
@@ -165,14 +137,9 @@ test('buildExportFilename derives a safe deterministic filename from the request
     buildExportFilename({ reportType: 'monthly', selectedDate: undefined, format: 'pdf' }),
     'report-monthly-undated.pdf',
   )
-  assert.equal(
-    buildExportFilename({ reportType: 'weekly', selectedDate: '2026-09-07', format: 'xlsx' }),
-    'report-weekly-2026-09-07.xlsx',
-  )
 })
 
 test('contentTypeFor maps each export format to its MIME type', () => {
   assert.equal(contentTypeFor('csv'), 'text/csv; charset=utf-8')
   assert.equal(contentTypeFor('pdf'), 'application/pdf')
-  assert.equal(contentTypeFor('xlsx'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 })
