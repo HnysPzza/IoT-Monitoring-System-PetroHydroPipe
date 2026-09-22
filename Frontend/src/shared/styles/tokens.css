@@ -3402,10 +3402,12 @@ button:disabled {
   min-width: 0;
 }
 
-.reports-heading-actions {
+.reports-controls-actions {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
   gap: 8px;
 }
 
@@ -3449,38 +3451,37 @@ button:disabled {
   border: 0;
 }
 
-.reports-period-toggle {
-  display: grid;
+.trend-mode-toggle.reports-period-toggle {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
   width: 100%;
-  padding: 4px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  background: var(--panel-bg);
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
-.reports-period-button {
+.reports-controls-card .reports-period-button {
   min-width: 0;
   min-height: 44px;
   padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border: 1px solid var(--subtle-border);
+  border-radius: 8px;
   color: var(--c-text-2);
   background: transparent;
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
-.reports-period-button:hover:not(:disabled) {
+.reports-controls-card .reports-period-button:hover:not(:disabled) {
   color: var(--c-text);
   background: var(--hover-bg);
 }
 
-.reports-period-button.is-selected {
+.reports-controls-card .reports-period-button.is-selected {
   color: var(--c-text);
-  border-color: var(--c-accent);
-  background: color-mix(in srgb, var(--c-accent) 16%, var(--panel-bg));
+  border-color: color-mix(in srgb, var(--c-primary) 58%, var(--subtle-border));
+  background: var(--hover-bg);
 }
 
 .reports-period-button:focus-visible,
@@ -3501,7 +3502,6 @@ button:disabled {
 .reports-downtime-card {
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   align-items: center;
-  gap: 8px 16px;
 }
 
 .reports-downtime-card .reports-stat-heading {
@@ -3511,6 +3511,10 @@ button:disabled {
 .reports-downtime-card .stat-helper {
   grid-column: 1 / -1;
   margin: 0;
+}
+
+.reports-downtime-card .stat-label {
+  font-size: 0.82rem;
 }
 
 .reports-summary-primary-grid,
@@ -3570,6 +3574,16 @@ button:disabled {
 .reports-secondary-card .reports-stat-value {
   font-size: 1.14rem;
   letter-spacing: -0.02em;
+}
+
+.reports-stat-card.reports-downtime-card {
+  align-content: center;
+  gap: 8px 16px;
+}
+
+.reports-secondary-card.reports-downtime-card .reports-stat-value {
+  font-size: 1.3rem;
+  line-height: 1.15;
 }
 
 .reports-delta-badge {
@@ -3680,12 +3694,20 @@ button:disabled {
   }
 
   .reports-controls {
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 30%);
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 24%) auto;
     align-items: center;
+  }
+
+  .trend-mode-toggle.reports-period-toggle {
+    width: auto;
   }
 
   .reports-downtime-card {
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+    gap: 16px;
+  }
+
+  .reports-stat-card.reports-downtime-card {
     gap: 16px;
   }
 

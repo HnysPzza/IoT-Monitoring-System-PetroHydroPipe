@@ -295,33 +295,16 @@ export default function ReportsSection() {
             <p className="section-eyebrow">Management report</p>
             <h2 id="reports-title">Generate summary</h2>
           </div>
-          <div className="reports-heading-actions">
-            <button
-              className="btn reports-icon-button"
-              type="button"
-              aria-label="Refresh report"
-              disabled={loadState === 'loading'}
-              onClick={retryCurrentReport}
-            >
-              <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={18} aria-hidden="true" />
-            </button>
-            <ExportMenu
-              isBlocked={isExportBlocked}
-              exportState={exportState}
-              exportingFormat={exportingFormat}
-              onExport={handleExport}
-            />
-          </div>
         </div>
 
         <div className="reports-controls">
           <fieldset className="reports-period-fieldset">
             <legend className="sr-only">Report period</legend>
-            <div className="reports-period-toggle" role="group" aria-label="Report period">
+            <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report period">
               {reportTypes.map((type) => (
                 <button
                   key={type.id}
-                  className={`reports-period-button ${reportType === type.id ? 'is-selected' : ''}`}
+                  className={`trend-mode-button reports-period-button ${reportType === type.id ? 'is-selected' : ''}`}
                   type="button"
                   aria-pressed={reportType === type.id}
                   onClick={() => handleReportTypeChange(type.id)}
@@ -338,6 +321,23 @@ export default function ReportsSection() {
             rangeLabel={calendarRangeLabel}
             onDateChange={handleCalendarDateChange}
           />
+          <div className="reports-controls-actions">
+            <button
+              className="btn reports-icon-button"
+              type="button"
+              aria-label="Refresh report"
+              disabled={loadState === 'loading'}
+              onClick={retryCurrentReport}
+            >
+              <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={18} aria-hidden="true" />
+            </button>
+            <ExportMenu
+              isBlocked={isExportBlocked}
+              exportState={exportState}
+              exportingFormat={exportingFormat}
+              onExport={handleExport}
+            />
+          </div>
         </div>
 
         {exportErrorMessage ? (

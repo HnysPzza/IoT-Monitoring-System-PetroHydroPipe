@@ -136,7 +136,7 @@ describe('ReportsSection request states', () => {
       processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
     }))
 
-    renderWithAuth(<ReportsSection />)
+    const { container } = renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByText('Production Count')).toBeInTheDocument()
     expect(screen.getByText('Availability')).toBeInTheDocument()
@@ -150,6 +150,9 @@ describe('ReportsSection request states', () => {
     expect(screen.getAllByRole('article')).toHaveLength(4)
     expect(document.querySelectorAll('.reports-primary-card')).toHaveLength(3)
     expect(screen.getAllByTestId('report-delta')).toHaveLength(3)
+    expect(container.querySelector('.reports-period-toggle')).toHaveClass('trend-mode-toggle')
+    expect(container.querySelector('.reports-controls-actions')).toBeInTheDocument()
+    expect(container.querySelector('.reports-controls .reports-icon-button[aria-label="Refresh report"]')).toBeInTheDocument()
   })
 
   it('marks non-zero Estimated Loss as a warning while zero stays neutral', async () => {
