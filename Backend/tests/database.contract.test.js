@@ -295,3 +295,24 @@ test('migration 043 makes downtime updates and audit logging atomic', () => {
   assert.match(migration, /return 43/i)
   assert.match(migration, /update_downtime_record\(uuid, text, text, boolean, boolean, uuid\)/i)
 })
+
+test('migration 044 classifies S-05 output before shared aggregation', () => {
+  const migration = read('database/migrations/044_validate_s05_output_pulses.sql')
+  const schema = read('database/schema.sql')
+
+  for (const content of [migration, schema]) {
+    assert.match(content, /output_accepted boolean/i)
+    assert.match(content, /output_rejection_reason text/i)
+    assert.match(content, /output_accepted is null\s+and output_rejection_reason is null/i)
+    assert.match(content, /machine_stationary/i)
+    assert.match(content, /machine_downtime/i)
+    assert.match(content, /server_debounce/i)
+    assert.match(content, /output_accepted is not false/i)
+  }
+
+  assert.match(migration, /v_sensor_code <> 'S-05'[\s\S]*v_fault_source = 'absence_watchdog'/i)
+  assert.match(migration, /v_sensor_code <> 'S-05'[\s\S]*v_detection_state in \('downtime', 'recovering'\)/i)
+  assert.match(migration, /return 44/i)
+  assert.match(migration, /revoke (?:all|execute)[\s\S]*from public, anon, authenticated/i)
+  assert.match(migration, /grant execute[\s\S]*to service_role/i)
+})

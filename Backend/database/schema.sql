@@ -65,6 +65,21 @@ create table if not exists sensor_events (
   event_value jsonb not null default '{}'::jsonb,
   recorded_at timestamptz not null,
   stale boolean,
+  output_accepted boolean,
+  output_rejection_reason text,
+  constraint sensor_events_output_classification check (
+    (output_accepted is null and output_rejection_reason is null)
+    or (output_accepted and output_rejection_reason is null)
+    or (
+      not output_accepted
+      and output_rejection_reason in (
+        'stale_event',
+        'machine_stationary',
+        'machine_downtime',
+        'server_debounce'
+      )
+    )
+  ),
   created_at timestamptz not null default now()
 );
 
@@ -2423,6 +2438,7 @@ begin
         from public.sensor_events event
         where event.sensor_id = sensor.id
           and event.stale is not true
+          and (sensor.sensor_code <> 'S-05' or event.output_accepted is not false)
         order by event.recorded_at desc, event.id desc
         limit 1
       ) latest_event on true
@@ -2625,6 +2641,7 @@ begin
     and event.recorded_at >= p_started_at
     and event.recorded_at < p_ended_at
     and sensor.sensor_code in ('S-01', 'S-02', 'S-04', 'S-05')
+    and (sensor.sensor_code <> 'S-05' or event.output_accepted is not false)
   group by 1, sensor.sensor_code, sensor.label
   order by 1, sensor.sensor_code;
 end;
@@ -2654,6 +2671,7 @@ as $$
       and event.event_type = 'pulse'
       and event.stale is not true
       and sensor.sensor_code in ('S-01', 'S-02', 'S-04', 'S-05')
+      and (sensor.sensor_code <> 'S-05' or event.output_accepted is not false)
 
     union all
 
