@@ -8,6 +8,12 @@ const { publishIngestionTransitions } = require('../operations/transitionPublish
 
 const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
 const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
+const OUTPUT_REJECTION_REASONS = new Set([
+  'stale_event',
+  'machine_stationary',
+  'machine_downtime',
+  'server_debounce',
+])
 
 function createIotError(status, code, message) {
   const error = new Error(message)
@@ -53,6 +59,12 @@ function hasValidTransitionDescriptor(descriptor) {
 
 function validateSensorEventResult(data) {
   const descriptors = data?.transition_descriptors
+  const outputMetadata = data?.event_value?.metadata
+  const outputAccepted = outputMetadata?.outputAccepted
+  const outputRejectionReason = outputMetadata?.outputRejectionReason
+  const hasOutputClassification = (outputAccepted === undefined && outputRejectionReason === undefined)
+    || (outputAccepted === true && (outputRejectionReason === undefined || outputRejectionReason === null))
+    || (outputAccepted === false && OUTPUT_REJECTION_REASONS.has(outputRejectionReason))
   const hasBasicFields = typeof data?.sensor_event_id === 'string'
     && typeof data.device_event_id === 'string'
     && typeof data.event_type === 'string'
@@ -61,6 +73,7 @@ function validateSensorEventResult(data) {
     && typeof data.duplicate === 'boolean'
     && typeof data.stale === 'boolean'
     && typeof data.state_applied === 'boolean'
+    && hasOutputClassification
     && Array.isArray(descriptors)
     && descriptors.every(hasValidTransitionDescriptor)
 
@@ -86,6 +99,10 @@ function validateSensorEventResult(data) {
 
 function toEventResponse(eventRecord, sensorRecord, processing = {}) {
   const machine = getMachineRecord(sensorRecord)
+  const outputMetadata = processing.event_value?.metadata
+  const hasOutputClassification = sensorRecord.sensor_code === 'S-05'
+    && eventRecord.event_type === 'pulse'
+    && typeof outputMetadata?.outputAccepted === 'boolean'
 
   return {
     id: eventRecord.id,
@@ -98,6 +115,10 @@ function toEventResponse(eventRecord, sensorRecord, processing = {}) {
     duplicate: Boolean(processing.duplicate),
     stale: Boolean(processing.stale),
     stateApplied: Boolean(processing.state_applied),
+    outputAccepted: hasOutputClassification ? outputMetadata.outputAccepted : null,
+    outputRejectionReason: hasOutputClassification
+      ? outputMetadata.outputRejectionReason || null
+      : null,
     machineStatus: processing.new_machine_status || machine?.status || null,
     downtimeAction: processing.downtime_action || null,
     downtimeId: processing.downtime_id || null,

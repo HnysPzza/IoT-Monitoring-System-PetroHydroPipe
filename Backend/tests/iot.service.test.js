@@ -225,6 +225,62 @@ test('pulse and idle events rely on the atomic RPC without secondary writes', as
   assert.equal(pulse.rpcCalls[0].args.p_device_event_id, EVENT_ID)
 })
 
+test('rejected S-05 output is returned without publishing transitions', async () => {
+  const result = await createTestEvent('pulse', 'active', {
+    sensorOverrides: { sensor_code: 'S-05' },
+    processingOverrides: {
+      state_applied: false,
+      event_value: {
+        signal: 'active',
+        metadata: {
+          outputAccepted: false,
+          outputRejectionReason: 'machine_stationary',
+        },
+      },
+    },
+  })
+
+  assert.equal(result.event.outputAccepted, false)
+  assert.equal(result.event.outputRejectionReason, 'machine_stationary')
+  assert.equal(result.alertEvents.length, 0)
+  assert.equal(result.downtimeEvents.length, 0)
+})
+
+test('malformed S-05 output classification fails closed', async () => {
+  await assert.rejects(
+    () => createTestEvent('pulse', 'active', {
+      sensorOverrides: { sensor_code: 'S-05' },
+      processingOverrides: {
+        event_value: {
+          signal: 'active',
+          metadata: {
+            outputAccepted: true,
+            outputRejectionReason: 'machine_stationary',
+          },
+        },
+      },
+    }),
+    { code: 'SENSOR_EVENT_RESULT_INVALID', status: 500 },
+  )
+})
+
+test('partial S-05 output classification fails closed', async () => {
+  await assert.rejects(
+    () => createTestEvent('pulse', 'active', {
+      sensorOverrides: { sensor_code: 'S-05' },
+      processingOverrides: {
+        event_value: {
+          signal: 'active',
+          metadata: {
+            outputRejectionReason: 'machine_stationary',
+          },
+        },
+      },
+    }),
+    { code: 'SENSOR_EVENT_RESULT_INVALID', status: 500 },
+  )
+})
+
 test('explicit faults publish committed downtime and alert transitions from one RPC result', async () => {
   const result = await createTestEvent('fault', 'fault')
 
