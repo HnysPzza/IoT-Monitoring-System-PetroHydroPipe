@@ -91,6 +91,7 @@ function ReportSummaryCard({ card }) {
     'section-card',
     'reports-stat-card',
     card.isPrimary ? 'reports-primary-card' : 'reports-secondary-card',
+    card.id === 'downtime' ? 'reports-downtime-card' : '',
     card.isWarning ? 'reports-card-warning' : '',
   ].filter(Boolean).join(' ')
 

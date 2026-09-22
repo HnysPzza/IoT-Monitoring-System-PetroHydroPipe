@@ -131,7 +131,7 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('7')).toBeInTheDocument()
   })
 
-  it('renders three primary cards and keeps Process Events beside merged Downtime', async () => {
+  it('renders three primary cards and one merged Downtime card', async () => {
     getReportSummary.mockResolvedValue(reportPayload({
       processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
     }))
@@ -141,11 +141,13 @@ describe('ReportsSection request states', () => {
     expect(await screen.findByText('Production Count')).toBeInTheDocument()
     expect(screen.getByText('Availability')).toBeInTheDocument()
     expect(screen.getByTestId('report-card-loss')).toHaveTextContent('Estimated Loss')
-    expect(screen.getByText('Process Events')).toBeInTheDocument()
+    expect(screen.getByTestId('report-card-downtime')).toHaveClass('reports-downtime-card')
     expect(screen.getByText('6 events · 38 min')).toBeInTheDocument()
+    expect(screen.getByText('Open and resolved, unplanned')).toBeInTheDocument()
     expect(screen.queryByText('Downtime Events')).not.toBeInTheDocument()
     expect(screen.queryByText('Downtime Duration')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('article')).toHaveLength(5)
+    expect(screen.queryByTestId('report-card-process-events')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('article')).toHaveLength(4)
     expect(document.querySelectorAll('.reports-primary-card')).toHaveLength(3)
     expect(screen.getAllByTestId('report-delta')).toHaveLength(3)
   })

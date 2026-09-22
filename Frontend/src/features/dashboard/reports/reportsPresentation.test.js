@@ -37,14 +37,15 @@ describe('getReportCards', () => {
       'production',
       'availability',
       'loss',
-      'process-events',
       'downtime',
     ])
     expect(cards.find((card) => card.id === 'downtime')).toMatchObject({
       label: 'Downtime',
       value: '6 events · 38 min',
+      helper: 'Open and resolved, unplanned',
       isPrimary: false,
     })
+    expect(cards.find((card) => card.id === 'process-events')).toBeUndefined()
   })
 
   it('keeps future values unobserved instead of fabricating downtime units', () => {

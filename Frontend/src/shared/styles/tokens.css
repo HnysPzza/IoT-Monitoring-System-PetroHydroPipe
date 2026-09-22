@@ -3498,6 +3498,21 @@ button:disabled {
   min-height: 52px;
 }
 
+.reports-downtime-card {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.reports-downtime-card .reports-stat-heading {
+  align-items: center;
+}
+
+.reports-downtime-card .stat-helper {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .reports-summary-primary-grid,
 .reports-summary-secondary-grid {
   display: grid;
@@ -3665,8 +3680,19 @@ button:disabled {
   }
 
   .reports-controls {
-    grid-template-columns: minmax(240px, 0.9fr) minmax(280px, 1.1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 30%);
     align-items: center;
+  }
+
+  .reports-downtime-card {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+    gap: 16px;
+  }
+
+  .reports-downtime-card .stat-helper {
+    grid-column: auto;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .reports-summary-primary-grid {
@@ -3674,7 +3700,7 @@ button:disabled {
   }
 
   .reports-summary-secondary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

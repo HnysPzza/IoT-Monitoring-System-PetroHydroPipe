@@ -114,16 +114,13 @@ export function getReportCards(report = {}) {
     }
   })
 
-  const processEvents = getSummaryItem(summaryById, 'process-events', 'Process Events')
-
   return [
     ...primaryCards,
-    { ...processEvents, id: 'process-events', label: 'Process Events', isPrimary: false },
     {
       id: 'downtime',
       label: 'Downtime',
       value: getDowntimeValue(summaryById),
-      helper: 'Events and duration in selected period',
+      helper: 'Open and resolved, unplanned',
       isPrimary: false,
     },
   ]
