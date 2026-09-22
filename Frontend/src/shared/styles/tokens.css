@@ -3402,6 +3402,10 @@ button:disabled {
   min-width: 0;
 }
 
+.reports-controls-card .section-eyebrow {
+  transform: translateY(4px);
+}
+
 .reports-controls-actions {
   display: inline-flex;
   flex: 0 0 auto;
