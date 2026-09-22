@@ -169,8 +169,8 @@ function xlsxRow(rowNumber, cells, height) {
   return `<row r="${rowNumber}"${heightAttributes}>${cellXml}</row>`
 }
 
-function styledRowCells(rowNumber, styleId, value) {
-  return Array.from({ length: 8 }, (_, index) => [
+function styledRowCells(rowNumber, styleId, value, columnCount = 5) {
+  return Array.from({ length: columnCount }, (_, index) => [
     `${String.fromCharCode(65 + index)}${rowNumber}`,
     index === 0 ? value : null,
     styleId,
@@ -254,7 +254,6 @@ function xlsxStylesXml() {
 
 function toXlsx(report) {
   const rows = []
-  const merges = ['A1:H1', 'A2:H2', 'A3:H3']
   let rowNumber = 0
   const addRow = (cells, height) => {
     rowNumber += 1
@@ -264,42 +263,40 @@ function toXlsx(report) {
   const addBlankRow = (height = 8) => addRow([], height)
   const addSection = (title) => {
     const sectionRow = rowNumber + 1
-    merges.push(`A${sectionRow}:H${sectionRow}`)
     return addRow(styledRowCells(sectionRow, XLSX_STYLE.section, title), 22)
   }
 
-  addRow(styledRowCells(1, XLSX_STYLE.title, COMPANY_NAME), 26)
-  addRow(styledRowCells(2, XLSX_STYLE.subtitle, 'MANAGEMENT REPORT'), 20)
-  addRow(styledRowCells(3, XLSX_STYLE.subtitle, `${String(report.reportType || 'daily').toUpperCase()} REPORT • ${report.selectedDate || 'Undated'} • ${MACHINE_LABEL}`), 18)
-  addBlankRow()
+  addRow([['A1', 'MANAGEMENT REPORT', XLSX_STYLE.title]], 26)
+  addRow([['A2', COMPANY_NAME, XLSX_STYLE.subtitle]], 18)
+  addRow([['A3', `Machine: ${MACHINE_LABEL}`, XLSX_STYLE.subtitle]], 18)
 
   addRow([
-    ['A5', 'Report Type', XLSX_STYLE.metaLabel],
-    ['C5', 'Reporting Date', XLSX_STYLE.metaLabel],
-    ['E5', 'Observation Status', XLSX_STYLE.metaLabel],
-    ['G5', 'Generated At (PHT)', XLSX_STYLE.metaLabel],
+    ['A4', 'Report Type', XLSX_STYLE.metaLabel],
+    ['B4', 'Reporting Date', XLSX_STYLE.metaLabel],
+    ['C4', 'Status', XLSX_STYLE.metaLabel],
+    ['D4', 'Generated At (PHT)', XLSX_STYLE.metaLabel],
   ], 18)
   addRow([
-    ['A6', String(report.reportType || 'daily').replace(/^./, (letter) => letter.toUpperCase()), XLSX_STYLE.metaValue],
-    ['C6', dateOnlyCell(report.selectedDate), XLSX_STYLE.date],
-    ['E6', String(report.periodState || 'complete').replace(/^./, (letter) => letter.toUpperCase()), XLSX_STYLE.metaValue],
-    ['G6', manilaDateTimeCell(report.generatedAt), XLSX_STYLE.dateTime],
+    ['A5', String(report.reportType || 'daily').replace(/^./, (letter) => letter.toUpperCase()), XLSX_STYLE.metaValue],
+    ['B5', dateOnlyCell(report.selectedDate), XLSX_STYLE.date],
+    ['C5', String(report.periodState || 'complete').replace(/^./, (letter) => letter.toUpperCase()), XLSX_STYLE.metaValue],
+    ['D5', manilaDateTimeCell(report.generatedAt), XLSX_STYLE.dateTime],
   ], 22)
   addRow([
-    ['A7', 'Observed Start (PHT)', XLSX_STYLE.metaLabel],
-    ['C7', 'Observed End (PHT)', XLSX_STYLE.metaLabel],
-    ['E7', 'Loss Rate Source', XLSX_STYLE.metaLabel],
-    ['G7', 'Loss Rate (pcs/min)', XLSX_STYLE.metaLabel],
+    ['A6', 'Observed Start (PHT)', XLSX_STYLE.metaLabel],
+    ['B6', 'Observed End (PHT)', XLSX_STYLE.metaLabel],
+    ['C6', 'Loss Rate Source', XLSX_STYLE.metaLabel],
+    ['D6', 'Loss Rate (pcs/min)', XLSX_STYLE.metaLabel],
   ], 18)
   addRow([
-    ['A8', manilaDateTimeCell(report.observedStartAt), XLSX_STYLE.dateTime],
-    ['C8', manilaDateTimeCell(report.observedEndAt), XLSX_STYLE.dateTime],
-    ['E8', report.lossEstimateBasis?.source || 'Not available', XLSX_STYLE.metaValue],
-    ['G8', valueOrUnavailable(report.lossEstimateBasis?.ratePiecesPerMinute), XLSX_STYLE.decimal],
+    ['A7', manilaDateTimeCell(report.observedStartAt), XLSX_STYLE.dateTime],
+    ['B7', manilaDateTimeCell(report.observedEndAt), XLSX_STYLE.dateTime],
+    ['C7', report.lossEstimateBasis?.source || 'Not available', XLSX_STYLE.metaValue],
+    ['D7', valueOrUnavailable(report.lossEstimateBasis?.ratePiecesPerMinute), XLSX_STYLE.decimal],
   ], 22)
   addBlankRow()
 
-  const summarySectionRow = addSection('MANAGEMENT SUMMARY')
+  const summarySectionRow = addSection('SUMMARY')
   const summaryHeaderRow = summarySectionRow + 1
   addRow([
     [`A${summaryHeaderRow}`, 'Metric', XLSX_STYLE.tableHeader],
@@ -330,7 +327,7 @@ function toXlsx(report) {
   })
 
   addBlankRow()
-  const processSectionRow = addSection('PROCESS SENSOR ACTIVITY')
+  const processSectionRow = addSection('SENSOR ACTIVITY')
   const processHeaderRow = processSectionRow + 1
   addRow([
     [`A${processHeaderRow}`, 'Sensor Code', XLSX_STYLE.tableHeader],
@@ -340,7 +337,6 @@ function toXlsx(report) {
   const processRows = report.processSensors || []
   if (processRows.length === 0) {
     rowNumber += 1
-    merges.push(`A${rowNumber}:C${rowNumber}`)
     rows.push(xlsxRow(rowNumber, [[`A${rowNumber}`, 'No process sensor activity recorded for this period.', XLSX_STYLE.note]], 21))
   } else {
     processRows.forEach((sensor) => {
@@ -354,7 +350,7 @@ function toXlsx(report) {
   }
 
   addBlankRow()
-  const downtimeSectionRow = addSection('DOWNTIME ATTRIBUTION')
+  const downtimeSectionRow = addSection('DOWNTIME DETAIL')
   const downtimeHeaderRow = downtimeSectionRow + 1
   addRow([
     [`A${downtimeHeaderRow}`, 'Cause', XLSX_STYLE.tableHeader],
@@ -366,10 +362,8 @@ function toXlsx(report) {
 
   const downtimeRows = report.rows || []
   const downtimeStartRow = rowNumber + 1
-  let downtimeEndRow = downtimeHeaderRow
   if (downtimeRows.length === 0) {
     rowNumber += 1
-    merges.push(`A${rowNumber}:E${rowNumber}`)
     rows.push(xlsxRow(rowNumber, [[`A${rowNumber}`, 'No machine downtime incidents recorded for this period.', XLSX_STYLE.note]], 21))
   } else {
     downtimeRows.forEach((downtime) => {
@@ -382,7 +376,6 @@ function toXlsx(report) {
         [`E${rowNumber}`, valueOrUnavailable(downtime.estimatedLoss), downtime.estimatedLoss > 0 ? XLSX_STYLE.warning : XLSX_STYLE.decimal],
       ], 21))
     })
-    downtimeEndRow = rowNumber
     const totalRow = rowNumber + 1
     rowNumber = totalRow
     rows.push(xlsxRow(rowNumber, [
@@ -396,31 +389,25 @@ function toXlsx(report) {
 
   addBlankRow()
   const noteRow = rowNumber + 1
-  merges.push(`A${noteRow}:H${noteRow}`)
-  addRow(styledRowCells(noteRow, XLSX_STYLE.note, 'Prepared from recorded telemetry and downtime records. Values marked Not available were not observed in the selected period.'), 30)
+  addRow([['A' + noteRow, 'Prepared from recorded telemetry and downtime records. Values marked Not available were not observed in the selected period.', XLSX_STYLE.note]], 24)
 
   const lastRow = rowNumber
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheetPr><outlinePr summaryBelow="1" summaryRight="1"/><pageSetUpPr fitToPage="1"/></sheetPr>
-  <dimension ref="A1:H${lastRow}"/>
-  <sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="9" topLeftCell="A10" state="frozen"/><selection pane="bottomLeft" activeCell="A10" sqref="A10"/></sheetView></sheetViews>
+  <dimension ref="A1:E${lastRow}"/>
+  <sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="16"/>
   <cols>
-    <col min="1" max="1" width="30" customWidth="1"/><col min="2" max="2" width="27" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="38" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/><col min="6" max="6" width="18" customWidth="1"/><col min="7" max="7" width="22" customWidth="1"/><col min="8" max="8" width="22" customWidth="1"/>
+    <col min="1" max="1" width="31" customWidth="1"/><col min="2" max="2" width="27" customWidth="1"/><col min="3" max="3" width="19" customWidth="1"/><col min="4" max="4" width="40" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/>
   </cols>
   <sheetData>${rows.join('')}</sheetData>
-  <autoFilter ref="A${downtimeHeaderRow}:E${downtimeEndRow}"/>
-  <mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>
-  <pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
-  <pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>
 </worksheet>`
 
   const files = {
     '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`),
     '_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
-    'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><fileVersion appName="xl" lastEdited="7"/><workbookPr/><bookViews><workbookView visibility="visible" minimized="0" showHorizontalScroll="1" showVerticalScroll="1" showSheetTabs="1" tabRatio="600" firstSheet="0" activeTab="0" autoFilterDateGrouping="1"/></bookViews><sheets><sheet name="${XLSX_SHEET_NAME}" sheetId="1" state="visible" r:id="rId1"/></sheets><definedNames/><calcPr calcId="124519" fullCalcOnLoad="1"/></workbook>`),
+    'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView visibility="visible" minimized="0" showHorizontalScroll="1" showVerticalScroll="1" showSheetTabs="1" tabRatio="600" firstSheet="0" activeTab="0" autoFilterDateGrouping="1"/></bookViews><sheets><sheet name="${XLSX_SHEET_NAME}" sheetId="1" state="visible" r:id="rId1"/></sheets><definedNames/><calcPr calcId="124519" fullCalcOnLoad="1"/></workbook>`),
     'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
     'xl/worksheets/sheet1.xml': strToU8(sheetXml),
     'xl/styles.xml': strToU8(xlsxStylesXml()),
