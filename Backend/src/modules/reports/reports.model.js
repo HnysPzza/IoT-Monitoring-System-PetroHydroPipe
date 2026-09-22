@@ -12,7 +12,7 @@ const exportReportSchema = z.object({
   body: z.object({
     type: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
     date: z.string().date('Invalid report date.').optional(),
-    format: z.enum(['csv', 'pdf']),
+    format: z.enum(['csv', 'xlsx', 'pdf']),
   }),
 })
 

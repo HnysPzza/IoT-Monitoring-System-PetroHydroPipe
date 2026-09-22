@@ -5,6 +5,7 @@ const {
   contentTypeFor,
   toCsv,
   toPdf,
+  toXlsx,
 } = require('./reportsExport.serializer')
 
 async function getSummary(req, res) {
@@ -17,7 +18,11 @@ async function exportReport(req, res) {
   const { type, date, format } = req.validated.body
   const report = await reportsService.getSummary({ type, date })
 
-  const content = format === 'pdf' ? await toPdf(report) : Buffer.from(toCsv(report), 'utf8')
+  const content = format === 'pdf'
+    ? await toPdf(report)
+    : format === 'xlsx'
+      ? await toXlsx(report)
+      : Buffer.from(toCsv(report), 'utf8')
   const filename = buildExportFilename({
     reportType: type,
     selectedDate: report.selectedDate,

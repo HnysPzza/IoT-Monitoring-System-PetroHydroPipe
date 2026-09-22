@@ -144,6 +144,30 @@ test('Export API streams server-generated CSV with attachment headers and record
   })
 })
 
+test('Export API streams a formatted XLSX management workbook', async () => {
+  const auditCalls = []
+  const app = loadExportApp({ summaryCalls: [], auditCalls })
+
+  await withTestServer(app, async (baseUrl) => {
+    const response = await requestExport(
+      baseUrl,
+      { type: 'daily', date: '2026-09-02', format: 'xlsx' },
+      authHeader('Admin'),
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    assert.equal(
+      response.headers.get('content-disposition'),
+      'attachment; filename="report-daily-2026-09-02.xlsx"',
+    )
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    assert.equal(buffer.subarray(0, 2).toString('utf8'), 'PK')
+    assert.equal(auditCalls[0].metadata.format, 'xlsx')
+  })
+})
+
 test('Export API streams PDF for Managing Director and Operation Manager', async () => {
   const auditCalls = []
   const app = loadExportApp({ summaryCalls: [], auditCalls })
