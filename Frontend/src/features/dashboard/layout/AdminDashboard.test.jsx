@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
 import { ThemeContext } from '../../../shared/context/ThemeContext.jsx'
@@ -45,6 +45,11 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+function LogoutLocationProbe() {
+  const location = useLocation()
+  return <output data-testid="logout-location">{JSON.stringify({ pathname: location.pathname, state: location.state })}</output>
+}
+
 function createControllableMatchMedia(initialMatches = false) {
   let matches = initialMatches
   const listeners = new Set()
@@ -87,6 +92,34 @@ describe('AdminDashboard alerts', () => {
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
+  })
+
+  it('sets Overview as the post-login destination after explicit logout', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockReturnValue(new Promise(() => { }))
+    const logout = vi.fn()
+
+    render(
+      <AuthContext.Provider value={{
+        token: 'test-token',
+        user: { id: 'user-1', name: 'admin', role: 'Admin' },
+        logout,
+      }}>
+        <ThemeContext.Provider value={{ theme: 'light', setTheme: vi.fn() }}>
+          <MemoryRouter initialEntries={['/dashboard/reports']}>
+            <AdminDashboard />
+            <LogoutLocationProbe />
+          </MemoryRouter>
+        </ThemeContext.Provider>
+      </AuthContext.Provider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Logout' }))
+
+    expect(logout).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('logout-location')).toHaveTextContent(
+      JSON.stringify({ pathname: '/login', state: { from: '/dashboard' } }),
+    )
   })
 
   it('labels the reporting navigation group as Analytics', () => {

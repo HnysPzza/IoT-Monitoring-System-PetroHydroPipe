@@ -21,7 +21,7 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 | 2. ESP32 nodes and firmware | **HARDWARE GATE** | Backend heartbeat and absence-watchdog support. | Firmware security, enclosures, wiring, flash protection, and physical inspection. |
 | 3. IoT telemetry ingestion | **DONE - DEVELOPMENT** | Device authentication, rate limits, validation, idempotency, stale-event classification, and atomic ingestion. | Hosted migration/deployment verification, physical-device proof, and historical review of pre-classification rows. |
 | 4. S-03 downtime records | **DONE - DEVELOPMENT** | Grouped S-03 ownership, watchdog/recovery rules, S-05 isolation, actor-attributed atomic audit logging, retry idempotency, and local regressions. | Hosted migration/permission/backup verification and machine-floor validation. |
-| 5. S-05 output counts | **NEAR-COMPLETE - DEVELOPMENT** | S-05 cannot own downtime; pulses are classified against S-03 activity/downtime; stale and bounce pulses are rejected; rejected evidence is excluded from shared counts and live state. | Hosted migration/permission verification, measured firmware/electrical debounce, physical cutter validation, and review of pre-migration unclassified rows. |
+| 5. S-05 output counts | **NEAR-COMPLETE - HOSTED MIGRATION REPORTED** | Local control is implemented and verified; the user reports migration 044 has been added to Supabase. | Readiness/permission verification, a post-migration classified event, measured firmware/electrical debounce, physical cutter validation, and review of pre-migration unclassified rows. |
 | 6. Database and secrets | **DONE - LOCAL ONLY** | RLS, restricted grants, backend-only service-role access, environment validation, and local recovery drill. | Production secret injection, real-project backup/restore, retention, and recovery-time evidence. |
 | 7. JWT tokens and sessions | **DONE - DEVELOPMENT** | In-memory access tokens, HttpOnly rotating refresh cookies, session lineage, replay detection, and local browser/regression checks. | Hosted HTTPS, CORS/proxy/cookie verification, expired-row cleanup, and shared rate limiting before scaling. |
 | 8. Real-time SSE stream | **DONE - SINGLE PROCESS** | Authentication, revalidation, connection caps, backpressure limits, keepalive, and bounded lifetime. | Cross-process/shared connection state; the current deployment remains single-process. |
@@ -146,14 +146,14 @@ Each asset follows the same pattern: the threat, what's already working, what's 
 - Exact event retries return the stored classification without replaying state transitions.
 
 **What's missing**
-- Hosted Supabase application of migration 044, permission/readiness verification, and production deployment evidence.
+- Supabase migration 044 was reported as applied, but readiness/permission verification and a post-migration classified event are still pending. The latest supplied query shows `recent_events = 0`, `classified_recent_events = 0`, and the latest S-05 row from September 11, so the new classifier has not yet been exercised in Supabase.
 - Physical cutter-cycle correlation, sensor polarity, electrical isolation/level shifting, and measured firmware debounce remain unverified because no ESP32 hardware is in this repository.
 - The 100 ms server debounce floor is a provisional safeguard based on the documented firmware example; replace or calibrate it from measured machine behavior before production enforcement.
 - Rows from before migration 044 have `output_accepted = NULL` and remain historical/unclassified. They need separate evidence and review; the migration does not guess their validity.
 
 **The fix**
 - Migration 044 cross-checks each new S-05 pulse against S-03 evidence at the pulse timestamp, rejects pulses during stationary state or S-03-owned downtime, applies a server debounce floor, and filters rejected rows from every shared count consumer while preserving raw evidence.
-- Before marking this threat fully complete, apply migration 044 to a disposable hosted-like database, verify `/api/health/ready` returns 44, calibrate the physical cutter/firmware debounce, and run a parallel hardware observation proving accepted and rejected cycles.
+- Before marking this threat fully complete, confirm `get_backend_readiness()` returns 44, verify the deployed backend's `/api/health/ready`, send a controlled post-migration event through the ingestion API in a disposable environment, calibrate the physical cutter/firmware debounce, and run a parallel hardware observation proving accepted and rejected cycles.
 
 ---
 
