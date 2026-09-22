@@ -3694,12 +3694,18 @@ button:disabled {
   }
 
   .reports-controls {
-    grid-template-columns: minmax(0, 1fr) minmax(160px, 24%) auto;
+    grid-template-columns: auto minmax(160px, 24%) auto;
     align-items: center;
+    justify-content: end;
   }
 
   .trend-mode-toggle.reports-period-toggle {
+    grid-template-columns: repeat(3, minmax(104px, 1fr));
     width: auto;
+  }
+
+  .reports-controls-card .reports-period-button {
+    min-width: 104px;
   }
 
   .reports-downtime-card {
