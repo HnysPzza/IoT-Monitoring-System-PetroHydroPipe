@@ -3390,6 +3390,8 @@ button:disabled {
 
 /* Reports uses a compact mobile-first control bar and a two-level summary hierarchy. */
 .reports-controls-card {
+  display: grid;
+  gap: 0;
   padding: 16px;
 }
 
@@ -3400,10 +3402,6 @@ button:disabled {
 
 .reports-controls-card .section-heading > div:first-child {
   min-width: 0;
-}
-
-.reports-controls-card .section-eyebrow {
-  transform: translateY(4px);
 }
 
 .reports-controls-actions {
@@ -3694,7 +3692,14 @@ button:disabled {
 
 @media (min-width: 720px) {
   .reports-controls-card {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    column-gap: 16px;
     padding: 20px;
+  }
+
+  .reports-controls-card .section-heading {
+    margin-bottom: 0;
   }
 
   .reports-controls {
