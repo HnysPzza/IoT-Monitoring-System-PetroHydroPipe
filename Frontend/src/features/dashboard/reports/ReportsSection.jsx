@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Download, FileText, RotateCw } from 'lucide-react'
+import { AlertTriangle, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
+import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
+import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 import { exportReport, getReportSummary, reportTypes } from './reportsService.js'
+import { getReportCards } from './reportsPresentation.js'
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
@@ -26,12 +29,133 @@ function getQueryKey(reportType, selectedDate) {
   return `${reportType}:${selectedDate}`
 }
 
+function parseLocalDate(value) {
+  const [year, month, day] = String(value).split('-').map(Number)
+  return new Date(year, (month || 1) - 1, day || 1)
+}
+
+function toDateInputValue(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getCalendarMode(reportType) {
+  if (reportType === 'weekly') return 'week'
+  if (reportType === 'monthly') return 'month'
+  return 'day'
+}
+
+function formatCalendarDate(date) {
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function getCalendarRangeLabel(reportType, date) {
+  if (reportType === 'monthly') return date.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+  if (reportType === 'weekly') {
+    const weekStart = normalizeCalendarSelection('week', date)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekEnd.getDate() + 6)
+    return `${formatCalendarDate(weekStart)} - ${formatCalendarDate(weekEnd)}`
+  }
+  return formatCalendarDate(date)
+}
+
 function formatSuccessfulUpdate(date) {
   return date.toLocaleString('en-PH', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'Asia/Manila',
   })
+}
+
+function DeltaIcon({ direction }) {
+  if (direction === 'up') return <TrendingUp size={13} aria-hidden="true" />
+  if (direction === 'down') return <TrendingDown size={13} aria-hidden="true" />
+  return <Minus size={13} aria-hidden="true" />
+}
+
+function ReportDeltaBadge({ delta }) {
+  return (
+    <span className={`reports-delta-badge is-${delta.sentiment}`} data-testid="report-delta">
+      <DeltaIcon direction={delta.direction} />
+      <span>{delta.label}</span>
+      <span className="sr-only"> compared with the prior period</span>
+    </span>
+  )
+}
+
+function ReportSummaryCard({ card }) {
+  const cardClasses = [
+    'section-card',
+    'reports-stat-card',
+    card.isPrimary ? 'reports-primary-card' : 'reports-secondary-card',
+    card.isWarning ? 'reports-card-warning' : '',
+  ].filter(Boolean).join(' ')
+
+  return (
+    <article
+      className={cardClasses}
+      data-testid={`report-card-${card.id}`}
+    >
+      <div className="reports-stat-heading">
+        <p className="stat-label">{card.label}</p>
+        {card.isPrimary ? <ReportDeltaBadge delta={card.delta} /> : null}
+      </div>
+      <p className="reports-stat-value">{card.value}</p>
+      <p className="stat-helper">{card.helper}</p>
+    </article>
+  )
+}
+
+function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const isExporting = exportState === 'exporting'
+
+  function chooseFormat(format) {
+    setIsOpen(false)
+    onExport(format)
+  }
+
+  return (
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="btn reports-icon-button"
+          type="button"
+          aria-label="Export report"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+          disabled={isBlocked}
+        >
+          {isExporting ? <RotateCw className="spin-icon" size={18} aria-hidden="true" /> : <Download size={18} aria-hidden="true" />}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="reports-export-menu" aria-label="Export report format">
+        <div className="reports-export-menu-list">
+          <button
+            className="reports-export-option"
+            type="button"
+            disabled={isBlocked}
+            onClick={() => chooseFormat('pdf')}
+          >
+            <img src="/assets/report-export-pdf.png" alt="" aria-hidden="true" />
+            <span>{isExporting && exportingFormat === 'pdf' ? 'Exporting...' : 'Export PDF'}</span>
+          </button>
+          <button
+            className="reports-export-option"
+            type="button"
+            disabled={isBlocked}
+            onClick={() => chooseFormat('csv')}
+          >
+            <img src="/assets/report-export-csv.png" alt="" aria-hidden="true" />
+            <span>{isExporting && exportingFormat === 'csv' ? 'Exporting...' : 'Export CSV'}</span>
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 export default function ReportsSection() {
@@ -49,12 +173,16 @@ export default function ReportsSection() {
   const [exportErrorMessage, setExportErrorMessage] = useState('')
   const requestIdRef = useRef(0)
   const successfulReportRef = useRef(null)
-  const selectedReportLabel = reportTypes.find((type) => type.id === reportType)?.label || 'Report'
   const currentDate = getManilaDateInputValue()
+  const selectedCalendarDate = parseLocalDate(selectedDate)
+  const maxCalendarDate = parseLocalDate(currentDate)
+  const calendarMode = getCalendarMode(reportType)
+  const calendarRangeLabel = getCalendarRangeLabel(reportType, selectedCalendarDate)
   const queryKey = getQueryKey(reportType, selectedDate)
   const requestKey = `${token || 'anonymous'}:${queryKey}`
   const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
   const isCurrentSuccess = loadState === 'success' && hasCurrentReport
+  const reportCards = hasCurrentReport ? getReportCards(report) : []
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1
@@ -66,7 +194,7 @@ export default function ReportsSection() {
       setErrorMessage('')
 
       try {
-        const payload = await getReportSummary(token, { reportType, selectedDate })
+        const payload = await getReportSummary(token, { reportType, selectedDate, includeComparison: true })
         if (isCancelled || requestId !== requestIdRef.current) return
 
         const nextReport = payload.report || { summary: [], rows: [] }
@@ -101,6 +229,17 @@ export default function ReportsSection() {
 
   function retryCurrentReport() {
     setRefreshRequest((current) => current + 1)
+  }
+
+  function handleReportTypeChange(nextReportType) {
+    const nextMode = getCalendarMode(nextReportType)
+    const nextDate = normalizeCalendarSelection(nextMode, selectedCalendarDate)
+    setReportType(nextReportType)
+    setSelectedDate(toDateInputValue(nextDate))
+  }
+
+  function handleCalendarDateChange(date) {
+    setSelectedDate(toDateInputValue(date))
   }
 
   const isExportBlocked = !isCurrentSuccess || report?.periodState === 'future' || exportState === 'exporting'
@@ -155,77 +294,49 @@ export default function ReportsSection() {
             <p className="section-eyebrow">Management report</p>
             <h2 id="reports-title">Generate summary</h2>
           </div>
-          <span className="section-chip">
-            <FileText size={16} aria-hidden="true" />
-            {selectedReportLabel}
-          </span>
+          <div className="reports-heading-actions">
+            <button
+              className="btn reports-icon-button"
+              type="button"
+              aria-label="Refresh report"
+              disabled={loadState === 'loading'}
+              onClick={retryCurrentReport}
+            >
+              <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={18} aria-hidden="true" />
+            </button>
+            <ExportMenu
+              isBlocked={isExportBlocked}
+              exportState={exportState}
+              exportingFormat={exportingFormat}
+              onExport={handleExport}
+            />
+          </div>
         </div>
 
         <div className="reports-controls">
-          <label className="filter-field" htmlFor="reports-type-filter">
-            <span>Report type</span>
-            <select
-              id="reports-type-filter"
-              name="reportType"
-              value={reportType}
-              onChange={(event) => setReportType(event.target.value)}
-              autoComplete="off"
-            >
+          <fieldset className="reports-period-fieldset">
+            <legend className="sr-only">Report period</legend>
+            <div className="reports-period-toggle" role="group" aria-label="Report period">
               {reportTypes.map((type) => (
-                <option key={type.id} value={type.id}>{type.label}</option>
+                <button
+                  key={type.id}
+                  className={`reports-period-button ${reportType === type.id ? 'is-selected' : ''}`}
+                  type="button"
+                  aria-pressed={reportType === type.id}
+                  onClick={() => handleReportTypeChange(type.id)}
+                >
+                  {type.label}
+                </button>
               ))}
-            </select>
-          </label>
-          <label className="filter-field" htmlFor="reports-date-filter">
-            <span>Date</span>
-            <input
-              id="reports-date-filter"
-              name="reportDate"
-              type={reportType === 'monthly' ? 'month' : 'date'}
-              value={reportType === 'monthly' ? selectedDate.slice(0, 7) : selectedDate}
-              max={reportType === 'monthly' ? currentDate.slice(0, 7) : currentDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-              autoComplete="off"
-            />
-          </label>
-          <button
-            className="btn btn-success reports-action reports-refresh-button"
-            type="button"
-            aria-label="Refresh report"
-            disabled={loadState === 'loading'}
-            onClick={retryCurrentReport}
-          >
-            <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={17} aria-hidden="true" />
-            Refresh
-          </button>
-          <button
-            className="btn btn-primary reports-action"
-            type="button"
-            aria-label="Export CSV"
-            disabled={isExportBlocked}
-            onClick={() => handleExport('csv')}
-          >
-            {exportState === 'exporting' && exportingFormat === 'csv' ? (
-              <RotateCw className="spin-icon" size={17} aria-hidden="true" />
-            ) : (
-              <Download size={17} aria-hidden="true" />
-            )}
-            {exportState === 'exporting' && exportingFormat === 'csv' ? 'Exporting...' : 'Export CSV'}
-          </button>
-          <button
-            className="btn btn-primary reports-action"
-            type="button"
-            aria-label="Export PDF"
-            disabled={isExportBlocked}
-            onClick={() => handleExport('pdf')}
-          >
-            {exportState === 'exporting' && exportingFormat === 'pdf' ? (
-              <RotateCw className="spin-icon" size={17} aria-hidden="true" />
-            ) : (
-              <Download size={17} aria-hidden="true" />
-            )}
-            {exportState === 'exporting' && exportingFormat === 'pdf' ? 'Exporting...' : 'Export PDF'}
-          </button>
+            </div>
+          </fieldset>
+          <TrendCalendarControl
+            mode={calendarMode}
+            selectedDate={selectedCalendarDate}
+            maxDate={maxCalendarDate}
+            rangeLabel={calendarRangeLabel}
+            onDateChange={handleCalendarDateChange}
+          />
         </div>
 
         {exportErrorMessage ? (
@@ -237,13 +348,15 @@ export default function ReportsSection() {
       </section>
 
       {hasCurrentReport && report.periodState === 'partial' ? (
-        <div className="notice dashboard-alert" role="status">
+        <div className="notice reports-period-banner dashboard-alert" role="status">
+          <Info size={16} aria-hidden="true" />
           <span>Partial report. Values cover recorded time so far.</span>
         </div>
       ) : null}
 
       {hasCurrentReport && report.periodState === 'future' ? (
-        <div className="notice dashboard-alert" role="status">
+        <div className="notice reports-period-banner dashboard-alert" role="status">
+          <Info size={16} aria-hidden="true" />
           <span>Period not reached yet. No values have been observed.</span>
         </div>
       ) : null}
@@ -264,15 +377,18 @@ export default function ReportsSection() {
           <div className="skeleton skeleton-panel" />
         </section>
       ) : hasCurrentReport ? (
-        <div className="reports-summary-grid">
-          {report.summary.map((item) => (
-            <article key={item.id} className="section-card stat-card">
-              <p className="stat-label">{item.label}</p>
-              <p className="stat-value">{item.value}</p>
-              <p className="stat-helper">{item.helper}</p>
-            </article>
-          ))}
-        </div>
+        <>
+          <section className="reports-summary-primary-grid" aria-label="Primary report summary">
+            {reportCards.filter((card) => card.isPrimary).map((card) => (
+              <ReportSummaryCard key={card.id} card={card} />
+            ))}
+          </section>
+          <section className="reports-summary-secondary-grid" aria-label="Secondary report summary">
+            {reportCards.filter((card) => !card.isPrimary).map((card) => (
+              <ReportSummaryCard key={card.id} card={card} />
+            ))}
+          </section>
+        </>
       ) : null}
 
       {loadState !== 'error' ? (

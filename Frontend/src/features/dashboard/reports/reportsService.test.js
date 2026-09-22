@@ -34,6 +34,23 @@ describe('getReportSummary', () => {
     expect(url).toContain('/api/reports/summary?type=daily&date=2026-09-01')
     expect(options.headers.Authorization).toBe('Bearer test-token')
   })
+
+  it('requests prior-period comparison data when the report UI needs deltas', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ report: {} }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getReportSummary('test-token', {
+      reportType: 'weekly',
+      selectedDate: '2026-09-07',
+      includeComparison: true,
+    })
+
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toContain('/api/reports/summary?type=weekly&date=2026-09-07&compare=true')
+  })
 })
 
 describe('exportReport', () => {

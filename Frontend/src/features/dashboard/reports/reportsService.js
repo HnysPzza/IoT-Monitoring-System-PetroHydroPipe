@@ -3,17 +3,18 @@ import { notifyUnauthorized } from '../../../shared/errors/unauthorizedSession.j
 import { API_BASE_URL, apiRequest, DEFAULT_REQUEST_TIMEOUT_MS } from '../../../shared/services/apiClient.js'
 
 export const reportTypes = [
-  { id: 'daily', label: 'Daily summary' },
-  { id: 'weekly', label: 'Weekly summary' },
-  { id: 'monthly', label: 'Monthly summary' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'monthly', label: 'Monthly' },
 ]
 
-export function getReportSummary(token, { reportType, selectedDate }) {
+export function getReportSummary(token, { reportType, selectedDate, includeComparison = false }) {
   const params = new URLSearchParams()
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
 
   params.set('type', reportType)
   if (normalizedDate) params.set('date', normalizedDate)
+  if (includeComparison) params.set('compare', 'true')
 
   return apiRequest(`/api/reports/summary?${params.toString()}`, { token })
 }

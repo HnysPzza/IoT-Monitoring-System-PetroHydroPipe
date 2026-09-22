@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../../features/auth/authSession.jsx'
 import ReportsSection from './ReportsSection.jsx'
 import { exportReport, getReportSummary } from './reportsService.js'
+import '../../../shared/components/ui/Calendar.jsx'
 
 vi.mock('./reportsService.js', async () => {
   const actual = await vi.importActual('./reportsService.js')
@@ -16,7 +17,34 @@ vi.mock('./reportsService.js', async () => {
   }
 })
 
-function reportPayload({ rows = [], summaryValue = '0 min', processSensors = [], periodState = 'complete' } = {}) {
+function reportPayload({
+  rows = [],
+  processSensors = [],
+  periodState = 'complete',
+  estimatedLoss = 0,
+  downtimeEvents = 6,
+  downtimeMinutes = 38,
+  outputPieces = 1250,
+} = {}) {
+  const isFuture = periodState === 'future'
+  const summary = isFuture
+    ? [
+        { id: 'production', label: 'Production Count', value: 'N/A', helper: 'Period not reached yet' },
+        { id: 'process-events', label: 'Process Events', value: 'N/A', helper: 'Period not reached yet' },
+        { id: 'events', label: 'Downtime Events', value: 'N/A', helper: 'Period not reached yet' },
+        { id: 'duration', label: 'Downtime Duration', value: 'N/A', helper: 'Period not reached yet' },
+        { id: 'availability', label: 'Availability', value: 'N/A', helper: 'Period not reached yet' },
+        { id: 'loss', label: 'Estimated Loss', value: 'N/A', helper: 'Period not reached yet' },
+      ]
+    : [
+        { id: 'production', label: 'Production Count', value: `${outputPieces.toLocaleString('en-PH')} pcs`, helper: 'From Spiral Mill 01' },
+        { id: 'process-events', label: 'Process Events', value: '12', helper: 'From S-01, S-02, and S-04 pulses' },
+        { id: 'events', label: 'Downtime Events', value: String(downtimeEvents), helper: 'Open and resolved events' },
+        { id: 'duration', label: 'Downtime Duration', value: `${downtimeMinutes} min`, helper: 'Unplanned minutes' },
+        { id: 'availability', label: 'Availability', value: '92%', helper: 'Based on eligible production time' },
+        { id: 'loss', label: 'Estimated Loss', value: `${estimatedLoss} pcs`, helper: 'Using 0.05 pcs per downtime minute' },
+      ]
+
   return {
     report: {
       generatedAt: '2026-08-31T04:00:00.000Z',
@@ -29,8 +57,23 @@ function reportPayload({ rows = [], summaryValue = '0 min', processSensors = [],
         productiveMinutes: 240,
         outputPieces: 8,
       },
-      summary: [{ id: 'downtime', label: 'Downtime', value: summaryValue, helper: 'Selected period' }],
+      summary,
       periodState,
+      metrics: {
+        outputPieces: isFuture ? null : outputPieces,
+        durationMinutes: isFuture ? null : downtimeMinutes,
+        downtimeEventCount: isFuture ? null : downtimeEvents,
+        availabilityPercent: isFuture ? null : 92,
+        estimatedLoss: isFuture ? null : estimatedLoss,
+      },
+      comparison: isFuture ? null : {
+        periodState: 'complete',
+        metrics: {
+          outputPieces: 1000,
+          availabilityPercent: 90,
+          estimatedLoss: 2,
+        },
+      },
       processSensors,
       rows,
     },
@@ -57,6 +100,20 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+async function selectExportFormat(user, format) {
+  await user.click(await screen.findByRole('button', { name: 'Export report' }))
+  await user.click(await screen.findByRole('button', { name: `Export ${format.toUpperCase()}` }))
+}
+
+async function selectReportDate(user, dateName) {
+  await user.click(screen.getByRole('button', { name: /selected period/i }))
+  await screen.findByRole('dialog')
+  if (!screen.queryByRole('button', { name: dateName })) {
+    await user.click(await screen.findByRole('button', { name: /previous month/i }))
+  }
+  await user.click(await screen.findByRole('button', { name: dateName }))
+}
+
 describe('ReportsSection request states', () => {
   beforeEach(() => {
     getReportSummary.mockReset()
@@ -74,6 +131,54 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('7')).toBeInTheDocument()
   })
 
+  it('renders three primary cards and keeps Process Events beside merged Downtime', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({
+      processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText('Production Count')).toBeInTheDocument()
+    expect(screen.getByText('Availability')).toBeInTheDocument()
+    expect(screen.getByTestId('report-card-loss')).toHaveTextContent('Estimated Loss')
+    expect(screen.getByText('Process Events')).toBeInTheDocument()
+    expect(screen.getByText('6 events · 38 min')).toBeInTheDocument()
+    expect(screen.queryByText('Downtime Events')).not.toBeInTheDocument()
+    expect(screen.queryByText('Downtime Duration')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('article')).toHaveLength(5)
+    expect(document.querySelectorAll('.reports-primary-card')).toHaveLength(3)
+    expect(screen.getAllByTestId('report-delta')).toHaveLength(3)
+  })
+
+  it('marks non-zero Estimated Loss as a warning while zero stays neutral', async () => {
+    getReportSummary.mockResolvedValue(reportPayload({ estimatedLoss: 4 }))
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByTestId('report-card-loss')).toHaveClass('reports-card-warning')
+    expect(screen.getByTestId('report-card-loss')).toHaveTextContent('4 pcs')
+  })
+
+  it('uses visible period segments and an adaptive calendar control', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(reportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
+    expect(screen.queryByText('Daily summary')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    expect(await screen.findByRole('dialog')).toHaveAccessibleName('Select chart week')
+    expect(getReportSummary).toHaveBeenCalledWith('test-token', expect.objectContaining({
+      reportType: 'weekly',
+      includeComparison: true,
+    }))
+  })
+
   it('exports CSV through the server endpoint and downloads the returned file', async () => {
     const user = userEvent.setup()
     const downloads = []
@@ -89,7 +194,7 @@ describe('ReportsSection request states', () => {
     })
 
     renderWithAuth(<ReportsSection />)
-    await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
+    await selectExportFormat(user, 'csv')
 
     await waitFor(() => {
       expect(downloads).toHaveLength(1)
@@ -121,7 +226,7 @@ describe('ReportsSection request states', () => {
     })
 
     renderWithAuth(<ReportsSection />)
-    await user.click(await screen.findByRole('button', { name: 'Export PDF' }))
+    await selectExportFormat(user, 'pdf')
 
     await waitFor(() => {
       expect(downloads).toHaveLength(1)
@@ -140,7 +245,7 @@ describe('ReportsSection request states', () => {
     exportReport.mockRejectedValue(new Error('Too many export requests. Please try again later.'))
 
     renderWithAuth(<ReportsSection />)
-    await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
+    await selectExportFormat(user, 'csv')
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many export requests. Please try again later.')
     expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
@@ -152,23 +257,21 @@ describe('ReportsSection request states', () => {
     renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByText(/Partial report/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Date')).toHaveAttribute('max')
+    expect(screen.getByRole('button', { name: /selected period/i })).toBeInTheDocument()
   })
 
   it('renders future report values as unobserved and blocks export', async () => {
     getReportSummary.mockResolvedValue(reportPayload({
       periodState: 'future',
-      summaryValue: 'N/A',
       processSensors: [{ sensorCode: 'S-01', eventCount: null }],
     }))
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText(/Period not reached yet/i)).toBeInTheDocument()
-    expect(screen.getByText('Not observed')).toBeInTheDocument()
+    expect(await screen.findByText('Period not reached yet. No values have been observed.')).toBeInTheDocument()
+    expect(screen.getAllByText('Not observed').length).toBeGreaterThan(0)
     expect(screen.getByText('Downtime not observed yet.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
   })
 
   it('shows an unavailable state on initial failure and retries the same query', async () => {
@@ -182,13 +285,13 @@ describe('ReportsSection request states', () => {
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Reports service is offline.')
     expect(screen.queryByText('No downtime rows found for this report range.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'Retry' }))
 
     expect(await screen.findByText('Corrective Maintenance')).toBeInTheDocument()
     expect(getReportSummary).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeEnabled()
   })
 
   it('treats a successful report with no rows as a valid empty result', async () => {
@@ -198,32 +301,32 @@ describe('ReportsSection request states', () => {
 
     expect(await screen.findByText('No downtime rows found for this report range.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Unable to load this report' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeEnabled()
   })
 
   it('preserves same-query data as stale after refresh failure and gates export', async () => {
     const user = userEvent.setup()
     const refresh = deferred()
     getReportSummary
-      .mockResolvedValueOnce(reportPayload({ rows: [reportRow()], summaryValue: '12 min' }))
+      .mockResolvedValueOnce(reportPayload({ rows: [reportRow()] }))
       .mockReturnValueOnce(refresh.promise)
 
     renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByText('Corrective Maintenance')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: 'Refresh report' }))
     expect(screen.getByText('Refreshing report...')).toBeInTheDocument()
     expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
 
     refresh.reject(new Error('Refresh failed.'))
 
     expect(await screen.findByText(/Report data is stale/i)).toHaveTextContent('Refresh failed.')
     expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
     expect(screen.getByText(/Report data is stale/i).querySelector('time')).toHaveAttribute('dateTime')
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
   })
 
   it('does not display a previous range after a new-range failure', async () => {
@@ -234,8 +337,7 @@ describe('ReportsSection request states', () => {
     renderWithAuth(<ReportsSection />)
     expect(await screen.findByText('Old range cause')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-08-01' } })
-
+    await selectReportDate(userEvent.setup(), /august 1st, 2026/i)
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
     expect(screen.queryByText('Old range cause')).not.toBeInTheDocument()
     expect(screen.queryByText('No downtime rows found for this report range.')).not.toBeInTheDocument()
@@ -249,7 +351,7 @@ describe('ReportsSection request states', () => {
       .mockReturnValueOnce(secondRequest.promise)
 
     renderWithAuth(<ReportsSection />)
-    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-08-01' } })
+    await selectReportDate(userEvent.setup(), /august 1st, 2026/i)
 
     secondRequest.resolve(reportPayload({ rows: [reportRow('Current range cause')] }))
     expect(await screen.findByText('Current range cause')).toBeInTheDocument()
@@ -283,7 +385,7 @@ describe('ReportsSection request states', () => {
     view.rerender(renderTree('second-token'))
 
     expect(screen.queryByText('Prior session cause')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
 
     nextSessionRequest.reject(new Error('Second session failed.'))
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
