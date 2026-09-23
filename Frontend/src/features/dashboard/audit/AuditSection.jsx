@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, History, RotateCw, X } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import { getAuditLogs } from './auditService.js'
 import {
   auditActionOptions,
@@ -13,6 +14,29 @@ import {
 } from './auditFormatters.js'
 
 const AUDIT_PAGE_SIZE = 25
+
+function parseAuditDate(value) {
+  if (!value) return undefined
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatAuditDateInput(date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
+}
+
+function formatAuditDateLabel(date) {
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function getManilaDateInputValue() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
 
 export default function AuditSection() {
   const { token } = useAuth()
@@ -102,6 +126,9 @@ export default function AuditSection() {
     detailsDialogRef.current?.close()
   }
 
+  const selectedAuditDate = parseAuditDate(dateFilter)
+  const maxAuditDate = parseAuditDate(getManilaDateInputValue())
+
   return (
     <div className="audit-layout">
       {notice ? (
@@ -111,19 +138,15 @@ export default function AuditSection() {
         </div>
       ) : null}
 
-      <section className="section-card audit-controls-card" aria-labelledby="audit-title">
+      <section className="section-card reports-controls-card audit-controls-card" aria-labelledby="audit-title">
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Accountability</p>
             <h2 id="audit-title">Audit log</h2>
           </div>
-          <span className="section-chip">
-            <History size={16} aria-hidden="true" />
-            {pagination.total} total
-          </span>
         </div>
 
-        <div className="reports-controls">
+        <div className="audit-controls">
           <label className="filter-field" htmlFor="audit-action-filter">
             <span>Activity</span>
             <select
@@ -152,31 +175,41 @@ export default function AuditSection() {
               ))}
             </select>
           </label>
-          <label className="filter-field" htmlFor="audit-date-filter">
+          <div className="filter-field audit-date-field">
             <span>Date</span>
-            <input
-              id="audit-date-filter"
-              name="auditDate"
-              type="date"
-              value={dateFilter}
-              onChange={(event) => updateDateFilter(event.target.value)}
-              autoComplete="off"
+            <TrendCalendarControl
+              mode="day"
+              accessibleLabel="Select audit date"
+              selectedDate={selectedAuditDate}
+              maxDate={maxAuditDate}
+              rangeLabel={selectedAuditDate ? formatAuditDateLabel(selectedAuditDate) : ''}
+              onDateChange={(date) => updateDateFilter(formatAuditDateInput(date))}
             />
-          </label>
-          <button className="btn btn-success table-action-button audit-refresh-button" type="button" aria-label="Refresh audit log" disabled={isRefreshing} onClick={() => loadAuditLogs({ silent: true })}>
-            <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            Refresh
-          </button>
+            {dateFilter ? (
+              <button className="audit-date-clear" type="button" onClick={() => updateDateFilter('')}>
+                Clear date
+              </button>
+            ) : null}
+          </div>
+          <div className="audit-controls-actions">
+            <button className="btn reports-icon-button audit-refresh-button" type="button" aria-label="Refresh audit log" disabled={isRefreshing} onClick={() => loadAuditLogs({ silent: true })}>
+              <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </section>
 
-      <section className="section-card" aria-labelledby="audit-table-title">
+      <section className="section-card audit-history-card" aria-labelledby="audit-table-title">
         <div className="section-heading">
           <div>
             <p className="section-eyebrow">Activity history</p>
             <h2 id="audit-table-title">Recent system actions</h2>
             <p className="table-muted">Page {pagination.page} of {pagination.totalPages}, showing up to {pagination.limit} records per page.</p>
           </div>
+          <span className="section-chip audit-total-chip">
+            <History size={14} aria-hidden="true" />
+            {pagination.total} total
+          </span>
         </div>
 
         {isLoading ? (

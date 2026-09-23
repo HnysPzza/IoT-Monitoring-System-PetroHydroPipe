@@ -143,13 +143,13 @@ function WeekPicker({ selectedDate, maxDate, onSelect }) {
   )
 }
 
-export default function TrendCalendarControl({ mode, selectedDate, maxDate, rangeLabel, onDateChange }) {
+export default function TrendCalendarControl({ mode, selectedDate, maxDate, rangeLabel, onDateChange, accessibleLabel: accessibleLabelOverride }) {
   const [isOpen, setIsOpen] = useState(false)
-  const accessibleLabel = mode === 'month'
+  const accessibleLabel = accessibleLabelOverride || (mode === 'month'
     ? 'Select chart month'
     : mode === 'week'
       ? 'Select chart week'
-      : 'Select chart date'
+      : 'Select chart date')
 
   function handleSelect(date) {
     if (!date || date > maxDate) return

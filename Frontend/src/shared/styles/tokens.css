@@ -5620,14 +5620,88 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   min-height: 44px;
 }
 
-.audit-controls-card .reports-controls {
-  align-items: flex-start;
+.audit-controls {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.audit-controls .filter-field {
+  min-width: 0;
+}
+
+.audit-controls .filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.audit-date-field .trend-calendar-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.audit-date-clear {
+  justify-self: start;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 0;
+  color: var(--c-text-2);
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.audit-date-clear:hover {
+  color: var(--c-text);
+}
+
+.audit-date-clear:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.audit-controls-actions {
+  display: grid;
+  align-content: end;
+  justify-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.audit-total-chip {
+  min-height: 30px;
+  padding: 5px 9px;
+  gap: 6px;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.audit-total-chip svg {
+  width: 14px;
+  height: 14px;
+}
+
+.audit-history-card .section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 136px;
+  align-items: start;
+}
+
+.audit-history-card .audit-total-chip {
+  justify-self: start;
 }
 
 .audit-refresh-button {
-  align-self: flex-start;
-  margin-top: 22px;
-  min-height: 42px;
+  align-self: end;
+  margin: 0;
+}
+
+@media (min-width: 901px) {
+  .audit-controls {
+    grid-template-columns: minmax(136px, 160px) minmax(168px, 200px) minmax(180px, 220px) 44px;
+    align-items: end;
+    justify-content: end;
+  }
 }
 
 .audit-note {
@@ -6179,8 +6253,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   .analytics-range-fieldset,
   .analytics-range-toggle,
   .filter-field,
-  .reports-action,
-  .audit-refresh-button {
+  .reports-action {
     width: 100%;
   }
 
@@ -6210,8 +6283,20 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     grid-template-columns: 1fr;
   }
 
+  .audit-controls-card {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-controls-card .section-heading {
+    margin-bottom: 16px;
+  }
+
+  .audit-controls {
+    grid-template-columns: 1fr;
+  }
+
   .audit-refresh-button {
-    margin-top: 0;
+    justify-self: end;
   }
 
   .audit-details-grid {
