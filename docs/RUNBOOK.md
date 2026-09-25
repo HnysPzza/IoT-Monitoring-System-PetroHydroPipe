@@ -16,6 +16,16 @@ cd Frontend
 npm run dev
 ```
 
+## Centralized Test Runner
+
+Run from the repository root to open the central test and verification menu. The script name is `run-tests.js` (plural).
+
+```powershell
+node scripts\run-tests.js
+```
+
+Use `node scripts\run-tests.js --list` to list available suites or `node scripts\run-tests.js --suite all` to run the required backend, frontend, and production-build checks.
+
 ## Required Test Suite
 
 Backend: verifies all API, database, security, analytics, watchdog, health, and shutdown behavior. Expected: `0 fail` (current baseline: 308 tests).
@@ -206,6 +216,12 @@ To verify direct S-03 downtime, duplicate retry, and stale recovery while leavin
 
 ```bash
 npm run iot:simulate:verify-direct-s03-lifecycle
+```
+
+To verify Threat #5, run this pulse command once with a Running machine and no open downtime, and once after opening direct S-03 downtime. The first S-05 pulse must be accepted; with S-03 downtime open, it must report `outputAccepted: false` with `machine_downtime` and leave recovery to `iot:simulate:recover-active-faults`:
+
+```bash
+npm run iot:simulate:send-s05-pulse
 ```
 
 To verify the grouped rule against the real ingestion endpoint, send faults for S-01, S-04, and S-02 in sequence. The first two remain process-level; the third opens one S-03-owned downtime record and leaves its process faults active:

@@ -73,6 +73,16 @@ function directS03VerificationResponse(event, index, overrides = {}) {
   }
 }
 
+function s05PulseResponse(event, outcome) {
+  return {
+    event: {
+      sensorCode: event.metadata.sensorCode,
+      ...event,
+      ...outcome,
+    },
+  }
+}
+
 function simulatorAlert(sensorCode, metadata) {
   const isDowntime = Boolean(metadata.downtimeId)
   return {
@@ -542,6 +552,80 @@ test('direct S-03 verification leaves downtime open for recovery mode', async (t
   assert.equal(receivedRequests.filter((request) => request.method === 'GET').length, 3)
   assert.equal(receivedRequests.filter((request) => request.url === '/api/alerts').length, 1)
   assert.ok(receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
+})
+
+test('S-05 pulse verification accepts output when no downtime is open', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => {
+    baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-05').lastEventAt = event.recordedAt
+    return s05PulseResponse(event, {
+      downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+      machineStatus: 'Running', stateApplied: true, duplicate: false, stale: false,
+      outputAccepted: true, outputRejectionReason: null,
+    })
+  }, baseline)
+
+  assert.equal(result.exitCode, 0, result.stderr)
+  assert.deepEqual(result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]), [['S-05', 'pulse']])
+  assert.equal(result.receivedRequests.filter((request) => request.url === '/api/alerts').length, 0)
+  assert.ok(result.receivedRequests.filter((request) => request.method === 'GET').every((request) => request.authorization === 'Bearer test-bearer'))
+  assert.match(result.stdout, /S-05 pulse was accepted with no open downtime/i)
+})
+
+test('S-05 pulse verification rejects output when S-03 downtime is open', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  baseline.live.machine.status = 'Downtime'
+  const s03 = baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-03')
+  s03.status = 'Downtime'
+  s03.physicalStatus = 'Fault'
+  baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-05').lastEventAt = 'previous-output'
+  baseline.downtime = { records: [{ id: 'downtime-s05', sensor: 'S-03', status: 'Open' }], summary: { open: 1 } }
+  baseline.alerts = {
+    alerts: [simulatorAlert('S-03', { downtimeId: 'downtime-s05' })],
+    snapshotRevision: '1',
+  }
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => s05PulseResponse(event, {
+    downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+    machineStatus: 'Downtime', stateApplied: false, duplicate: false, stale: false,
+    outputAccepted: false, outputRejectionReason: 'machine_downtime',
+  }), baseline)
+
+  assert.equal(result.exitCode, 0, result.stderr)
+  assert.deepEqual(result.receivedEvents.map((event) => event.metadata.sensorCode), ['S-05'])
+  assert.equal(result.receivedRequests.filter((request) => request.url === '/api/alerts').length, 1)
+  assert.match(result.stdout, /S-05 pulse was rejected during S-03 downtime/i)
+})
+
+test('S-05 pulse verification rejects a normal pulse that is not accepted', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => s05PulseResponse(event, {
+    downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+    machineStatus: 'Running', stateApplied: false, duplicate: false, stale: false,
+    outputAccepted: false, outputRejectionReason: 'machine_downtime',
+  }), baseline)
+
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stderr, /S-05 normal pulse verification was not accepted as output/)
+  assert.deepEqual(result.receivedEvents.map((event) => event.metadata.sensorCode), ['S-05'])
+})
+
+test('S-05 pulse verification rejects an accepted output during downtime', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  baseline.live.machine.status = 'Downtime'
+  const s03 = baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-03')
+  s03.status = 'Downtime'
+  s03.physicalStatus = 'Fault'
+  baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-05').lastEventAt = 'previous-output'
+  baseline.downtime = { records: [{ id: 'downtime-s05', sensor: 'S-03', status: 'Open' }], summary: { open: 1 } }
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => s05PulseResponse(event, {
+    downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+    machineStatus: 'Downtime', stateApplied: true, duplicate: false, stale: false,
+    outputAccepted: true, outputRejectionReason: null,
+  }), baseline)
+
+  assert.equal(result.exitCode, 1)
+  assert.match(result.stderr, /S-05 downtime pulse verification was not rejected as output/)
+  assert.deepEqual(result.receivedEvents.map((event) => event.metadata.sensorCode), ['S-05'])
 })
 
 test('grouped verification uses a monotonic current-time event sequence', async (t) => {

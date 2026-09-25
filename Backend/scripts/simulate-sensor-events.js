@@ -8,6 +8,7 @@ const RUN_ONCE = cliArguments.includes('--once')
 const PROCESS_ISOLATION_MODE = cliArguments.includes('--process-isolation') || cliArguments.includes('--deterministic')
 const GROUP_VERIFICATION = cliArguments.includes('--verify-grouped-lifecycle') || cliArguments.includes('--verify-group')
 const DIRECT_S03_VERIFICATION = cliArguments.includes('--verify-direct-s03-lifecycle')
+const S05_PULSE_MODE = cliArguments.includes('--send-s05-pulse')
 const RECOVER_ACTIVE_FAULTS_MODE = cliArguments.includes('--recover-active-faults')
 const verificationArgument = cliArguments.find((argument) => argument.startsWith('--verify-sensor='))
 const VERIFICATION_SENSOR_CODE = verificationArgument?.slice('--verify-sensor='.length).toUpperCase()
@@ -30,6 +31,7 @@ const knownOptions = new Set([
   '--verify-grouped-lifecycle',
   '--verify-group',
   '--verify-direct-s03-lifecycle',
+  '--send-s05-pulse',
   '--recover-active-faults',
 ])
 
@@ -53,6 +55,10 @@ function validateOptions() {
   }
   if (PROCESS_ISOLATION_MODE && (GROUP_VERIFICATION || VERIFICATION_SENSOR_CODE)) {
     throw new Error('Process-isolation cannot be combined with downtime verification.')
+  }
+  if (S05_PULSE_MODE
+    && (PROCESS_ISOLATION_MODE || GROUP_VERIFICATION || VERIFICATION_SENSOR_CODE || RECOVER_ACTIVE_FAULTS_MODE)) {
+    throw new Error('S-05 pulse mode cannot be combined with another verification mode.')
   }
   if (PROCESS_ISOLATION_MODE && !RUN_ONCE) {
     throw new Error('--process-isolation requires --once because retained faults can form the process group.')
@@ -292,6 +298,100 @@ function assertAcceptedRecovery(device, event) {
   if (failedCheck) throw new Error(`Recovery ${device.sensorCode} ${failedCheck[1]}.`)
 }
 
+function assertRejectedS05DowntimePulse(event) {
+  const checks = [
+    [event.sensorCode === 'S-05', 'returned the wrong sensor'],
+    [event.eventType === 'pulse', 'returned the wrong event type'],
+    [event.outputAccepted === false, 'was not rejected as output'],
+    [event.outputRejectionReason === 'machine_downtime', `used rejection reason ${event.outputRejectionReason || 'missing'}`],
+    [event.stateApplied === false, 'was unexpectedly applied'],
+    [event.duplicate === false, 'was unexpectedly duplicate'],
+    [event.stale === false, 'was unexpectedly stale'],
+    [event.machineStatus === 'Downtime', `changed machine status to ${event.machineStatus || 'missing'}`],
+    [event.downtimeAction === null, `returned downtime action ${event.downtimeAction || 'missing'}`],
+    [event.downtimeId === null, 'returned a downtime ID'],
+    [event.downtimeSensorCode === null, 'returned a downtime owner'],
+  ]
+  const failedCheck = checks.find(([passed]) => !passed)
+  if (failedCheck) throw new Error(`S-05 downtime pulse verification ${failedCheck[1]}.`)
+}
+
+function assertAcceptedS05Pulse(event) {
+  const checks = [
+    [event.sensorCode === 'S-05', 'returned the wrong sensor'],
+    [event.eventType === 'pulse', 'returned the wrong event type'],
+    [event.outputAccepted === true, 'was not accepted as output'],
+    [event.outputRejectionReason === null, `returned rejection reason ${event.outputRejectionReason || 'missing'}`],
+    [event.stateApplied === true, 'was not applied'],
+    [event.duplicate === false, 'was unexpectedly duplicate'],
+    [event.stale === false, 'was unexpectedly stale'],
+    [event.machineStatus === 'Running', `changed machine status to ${event.machineStatus || 'missing'}`],
+    [event.downtimeAction === null, `returned downtime action ${event.downtimeAction || 'missing'}`],
+    [event.downtimeId === null, 'returned a downtime ID'],
+    [event.downtimeSensorCode === null, 'returned a downtime owner'],
+  ]
+  const failedCheck = checks.find(([passed]) => !passed)
+  if (failedCheck) throw new Error(`S-05 normal pulse verification ${failedCheck[1]}.`)
+}
+
+async function assertDowntimeStillOpen(downtimeId, pulseEvent, token) {
+  const [live, downtime] = await Promise.all([
+    readStateEndpoint('/api/iot/live', token),
+    readStateEndpoint('/api/downtime?status=Open&limit=100', token),
+  ])
+  const matchingRecord = downtime?.records?.find((record) => record.id === downtimeId && record.status === 'Open')
+  const outputSensor = live?.sensors?.find((sensor) => sensor.sensorCode === 'S-05')
+  const s03Sensor = live?.sensors?.find((sensor) => sensor.sensorCode === 'S-03')
+  if (live?.machine?.status !== 'Downtime'
+    || s03Sensor?.status !== 'Downtime'
+    || downtime?.summary?.open !== 1
+    || !matchingRecord
+    || outputSensor?.lastEventAt === pulseEvent.recordedAt) {
+    throw new Error('S-05 downtime pulse verification changed the open S-03 downtime or live output state.')
+  }
+  await assertDowntimeAlert(downtimeId, token)
+}
+
+async function readS05PulseContext(token) {
+  const [live, downtime] = await Promise.all([
+    readStateEndpoint('/api/iot/live', token),
+    readStateEndpoint('/api/downtime?status=Open&limit=100', token),
+  ])
+  const openRecords = Array.isArray(downtime?.records)
+    ? downtime.records.filter((record) => record.status === 'Open')
+    : []
+  const s03Sensor = live?.sensors?.find((sensor) => sensor.sensorCode === 'S-03')
+  const s05Sensor = live?.sensors?.find((sensor) => sensor.sensorCode === 'S-05')
+  if (!live?.machine || !s03Sensor || !s05Sensor
+    || !Number.isInteger(downtime?.summary?.open)
+    || downtime.summary.open !== openRecords.length) {
+    throw new Error('S-05 pulse preflight failed: live or downtime state is invalid.')
+  }
+  const openDowntime = openRecords[0] || null
+  if (openDowntime && (typeof openDowntime.id !== 'string'
+    || openDowntime.sensor !== 'S-03' || live.machine.status !== 'Downtime')) {
+    throw new Error('S-05 pulse preflight failed: open downtime is not an S-03 machine downtime.')
+  }
+  if (!openDowntime && live.machine.status !== 'Running') {
+    throw new Error(`S-05 pulse preflight failed: machine is ${live.machine.status || 'unknown'} without open downtime.`)
+  }
+  return openDowntime
+}
+
+async function assertNormalS05PulseState(pulseEvent, token) {
+  const [live, downtime] = await Promise.all([
+    readStateEndpoint('/api/iot/live', token),
+    readStateEndpoint('/api/downtime?status=Open&limit=100', token),
+  ])
+  const outputSensor = live?.sensors?.find((sensor) => sensor.sensorCode === 'S-05')
+  if (live?.machine?.status !== 'Running'
+    || downtime?.summary?.open !== 0
+    || downtime?.records?.some((record) => record.status === 'Open')
+    || outputSensor?.lastEventAt !== pulseEvent.recordedAt) {
+    throw new Error('S-05 normal pulse changed downtime state or was not applied to live output state.')
+  }
+}
+
 async function runActiveFaultRecovery() {
   const token = liveReadToken()
   const initialLive = await readStateEndpoint('/api/iot/live', token)
@@ -412,6 +512,27 @@ async function runDirectS03Verification() {
   console.log('Verified direct S-03 downtime: created, duplicate ignored, stale recovery ignored; leave it open and run recover-active-faults when ready.')
 }
 
+async function runS05PulseVerification() {
+  const s05Device = devices.find((candidate) => candidate.sensorCode === 'S-05')
+  const pulse = { eventType: 'pulse', signal: 'active' }
+  const token = liveReadToken()
+
+  const openDowntime = await readS05PulseContext(token)
+  console.log(`Sending S-05 pulse against ${BASE_URL} (${openDowntime ? 'S-03 downtime open' : 'no open downtime'})`)
+
+  const normalEvent = await postEvent(s05Device, pulse, 1)
+  if (openDowntime) {
+    assertRejectedS05DowntimePulse(normalEvent)
+    await assertDowntimeStillOpen(openDowntime.id, normalEvent, token)
+    console.log('S-05 pulse was rejected during S-03 downtime; downtime remains open. Run recover-active-faults when ready.')
+    return
+  }
+
+  assertAcceptedS05Pulse(normalEvent)
+  await assertNormalS05PulseState(normalEvent, token)
+  console.log('S-05 pulse was accepted with no open downtime.')
+}
+
 async function runGroupedVerificationLifecycle() {
   const sequence = [
     { sensorCode: 'S-01', event: { eventType: 'fault', signal: 'fault' }, label: 'first process fault', machineStatus: 'Running', downtimeAction: null },
@@ -463,6 +584,10 @@ async function main() {
 
   if (GROUP_VERIFICATION) {
     await runGroupedVerificationLifecycle()
+    return
+  }
+  if (S05_PULSE_MODE) {
+    await runS05PulseVerification()
     return
   }
   if (VERIFICATION_SENSOR_CODE) {

@@ -203,6 +203,13 @@ const suites = Object.freeze({
     simulation: true,
     commands: [npm('run', 'iot:simulate:verify-direct-s03-lifecycle')],
   },
+  'simulate-s05-pulse': {
+    name: 'Send Sensor 5 Pulse (live)',
+    description: 'Sends one S-05 pulse and checks the result against the current S-03 downtime state.',
+    expected: 'A Running machine with no open downtime accepts the pulse; an open S-03 downtime returns machine_downtime and remains open.',
+    simulation: true,
+    commands: [npm('run', 'iot:simulate:send-s05-pulse')],
+  },
   'simulate-demo-continuous': {
     name: 'Send random sensor events continuously (live)',
     description: 'Keeps sending random sensor events until Ctrl+C.',
@@ -230,7 +237,7 @@ const menu = Object.freeze([
   'all', 'backend', 'frontend', 'docs', 'deadlines', 'health',
   'shutdown', 'phase3', 'phase4', 'integration', 'hosted', 'manual',
   'simulate-short-material-pause', 'simulate-material-fault', 'simulate-short-machine-stop', 'simulate-planned-break', 'simulate-offline-reconnect',
-  'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
+  'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-s05-pulse', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
   'heartbeat-once', 'heartbeat',
 ])
 
@@ -247,7 +254,7 @@ const categories = Object.freeze({
     name: 'Simulations',
     suites: [
       'simulate-short-material-pause', 'simulate-material-fault', 'simulate-short-machine-stop', 'simulate-planned-break', 'simulate-offline-reconnect',
-      'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
+      'simulate-demo-once', 'simulate-recover-active-faults', 'simulate-process-isolation', 'simulate-direct-s03-lifecycle', 'simulate-s05-pulse', 'simulate-grouped-lifecycle', 'simulate-demo-continuous',
       'heartbeat-once', 'heartbeat',
     ],
   },
@@ -481,7 +488,8 @@ function selfTest() {
   assert.equal(submenuSelection('back', categories.tests.suites), BACK_SELECTION)
   assert.equal(submenuSelection('8', categories.simulations.suites), 'simulate-process-isolation')
   assert.equal(submenuSelection('10', categories.simulations.suites), 'simulate-direct-s03-lifecycle')
-  assert.equal(submenuSelection('14', categories.simulations.suites), 'heartbeat')
+  assert.equal(submenuSelection('11', categories.simulations.suites), 'simulate-s05-pulse')
+  assert.equal(submenuSelection('15', categories.simulations.suites), 'heartbeat')
   assert.equal(submenuSelection('10', categories.tests.suites), categories.tests.suites[8])
   assert.equal(submenuSelection('11', categories.tests.suites), categories.tests.suites[9])
   assert.equal(expandedCommands('all').length, 3)
@@ -492,6 +500,7 @@ function selfTest() {
   assert.deepEqual(expandedCommands('simulate-process-isolation')[0].args, ['run', 'iot:simulate:process-isolation'])
   assert.deepEqual(expandedCommands('simulate-grouped-lifecycle')[0].args, ['run', 'iot:simulate:verify-grouped-lifecycle'])
   assert.deepEqual(expandedCommands('simulate-direct-s03-lifecycle')[0].args, ['run', 'iot:simulate:verify-direct-s03-lifecycle'])
+  assert.deepEqual(expandedCommands('simulate-s05-pulse')[0].args, ['run', 'iot:simulate:send-s05-pulse'])
   assert.deepEqual(expandedCommands('simulate-short-material-pause')[0].args, [
     '--test', '--test-name-pattern', 'confirmed healthy activity returns a process sensor from grace Idle to Active',
     'tests/process-absence.migration.pglite.test.js',

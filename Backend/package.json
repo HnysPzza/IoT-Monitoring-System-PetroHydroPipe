@@ -16,6 +16,7 @@
     "iot:simulate:process-isolation": "node scripts/simulate-sensor-events.js --process-isolation --once",
     "iot:simulate:verify-grouped-lifecycle": "node scripts/simulate-sensor-events.js --verify-grouped-lifecycle",
     "iot:simulate:verify-direct-s03-lifecycle": "node scripts/simulate-sensor-events.js --verify-direct-s03-lifecycle",
+    "iot:simulate:send-s05-pulse": "node scripts/simulate-sensor-events.js --send-s05-pulse",
     "iot:heartbeat:once": "node scripts/simulate-heartbeats.js --once",
     "iot:heartbeat": "node scripts/simulate-heartbeats.js"
   },
