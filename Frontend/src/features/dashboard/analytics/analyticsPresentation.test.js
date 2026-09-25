@@ -75,7 +75,7 @@ describe('Analytics presentation helpers', () => {
       expect.objectContaining({
         id: 'estimated-loss',
         value: '6.5 pcs',
-        helper: 'Configured fallback: 0.05 pcs/min',
+        helper: 'Configured fallback: 3 pcs/hr',
       }),
       expect.objectContaining({ id: 'availability', value: '91%' }),
       expect.objectContaining({ id: 'process-events', value: '5' }),

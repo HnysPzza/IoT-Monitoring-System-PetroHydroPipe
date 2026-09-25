@@ -188,7 +188,7 @@ async function buildObservedReport({ type, selectedDate, machine, window, period
       { id: 'events', label: 'Downtime Events', value: String(downtimeRows.length), helper: 'Open and resolved events' },
       { id: 'duration', label: 'Downtime Duration', value: `${metrics.durationMinutes} min`, helper: `${metrics.unplannedMinutes} unplanned min` },
       { id: 'availability', label: 'Availability', value: availabilityValue, helper: 'Based on eligible production time' },
-      { id: 'loss', label: 'Estimated Loss', value: `${metrics.estimatedLoss} pcs`, helper: `Using ${lossRatePiecesPerMinute} pcs per downtime minute` },
+      { id: 'loss', label: 'Estimated Loss', value: `${metrics.estimatedLoss} pcs`, helper: `Using ${Math.ceil(lossRatePiecesPerMinute * 60)} pcs/hr` },
     ],
     metrics: {
       outputPieces: eventSummary.productionTotal,

@@ -160,7 +160,7 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
               ? 'last 7 completed days'
               : lossEstimateBasis.source === 'trailing-30-days'
                 ? 'last 30 completed days'
-                : 'configured fallback'}: {lossEstimateBasis.ratePiecesPerMinute} pcs/min.
+                : 'configured fallback'}: {Math.ceil(lossEstimateBasis.ratePiecesPerMinute * 60)} pcs/hr.
           </span>
         </div>
       ) : null}

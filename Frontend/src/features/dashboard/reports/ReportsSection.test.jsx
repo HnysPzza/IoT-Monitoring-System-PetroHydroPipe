@@ -42,7 +42,7 @@ function reportPayload({
         { id: 'events', label: 'Downtime Events', value: String(downtimeEvents), helper: 'Open and resolved events' },
         { id: 'duration', label: 'Downtime Duration', value: `${downtimeMinutes} min`, helper: 'Unplanned minutes' },
         { id: 'availability', label: 'Availability', value: '92%', helper: 'Based on eligible production time' },
-        { id: 'loss', label: 'Estimated Loss', value: `${estimatedLoss} pcs`, helper: 'Using 0.05 pcs per downtime minute' },
+        { id: 'loss', label: 'Estimated Loss', value: `${estimatedLoss} pcs`, helper: 'Using 3 pcs/hr' },
       ]
 
   return {

@@ -37,7 +37,7 @@ function toCsv(report) {
   const metadata = [
     ['Generated At', report.generatedAt],
     ['Loss Rate Source', report.lossEstimateBasis?.source],
-    ['Loss Rate Pieces Per Minute', report.lossEstimateBasis?.ratePiecesPerMinute],
+    ['Loss Rate Pieces Per Hour', report.lossEstimateBasis?.ratePiecesPerMinute == null ? null : Math.ceil(report.lossEstimateBasis.ratePiecesPerMinute * 60)],
   ].map(([label, value]) => `${csvCell(label)},${csvCell(value)}`)
 
   const table = [CSV_HEADERS, ...report.rows.map((row) => [
@@ -134,7 +134,7 @@ function renderMetadataCard(doc, report) {
     { label: 'REPORT TYPE & DATE', val: `${(report.reportType || 'Daily').toUpperCase()} (${pdfText(report.selectedDate)})` },
     { label: 'OBSERVATION STATUS', val: (report.periodState || 'complete').toUpperCase() },
     { label: 'TARGET MACHINE', val: MACHINE_LABEL },
-    { label: 'LOSS ESTIMATE BASIS', val: `${report.lossEstimateBasis?.ratePiecesPerMinute ?? '0.05'} pcs/min (${report.lossEstimateBasis?.source || 'configured'})` },
+    { label: 'LOSS ESTIMATE BASIS', val: `${Math.ceil((report.lossEstimateBasis?.ratePiecesPerMinute ?? 0.05) * 60)} pcs/hr (${report.lossEstimateBasis?.source || 'configured'})` },
   ]
 
   metaItems.forEach((item, index) => {

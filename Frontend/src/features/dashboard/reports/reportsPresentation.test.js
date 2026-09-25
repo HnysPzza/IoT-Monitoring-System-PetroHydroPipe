@@ -9,7 +9,7 @@ function report(overrides = {}) {
       { id: 'events', label: 'Downtime Events', value: '6', helper: 'Open and resolved events' },
       { id: 'duration', label: 'Downtime Duration', value: '38 min', helper: 'Unplanned minutes' },
       { id: 'availability', label: 'Availability', value: '92%', helper: 'Based on eligible production time' },
-      { id: 'loss', label: 'Estimated Loss', value: '0 pcs', helper: 'Using 0.05 pcs per downtime minute' },
+      { id: 'loss', label: 'Estimated Loss', value: '0 pcs', helper: 'Using 3 pcs/hr' },
     ],
     periodState: 'complete',
     metrics: {

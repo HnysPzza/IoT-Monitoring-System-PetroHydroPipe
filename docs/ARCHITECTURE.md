@@ -308,7 +308,7 @@ Estimated output loss is a counterfactual calculation, not a directly measured s
 
 The rate uses recorded S-05 output divided by productive minutes. Productive minutes are scheduled eligible minutes minus unioned unplanned downtime, so breaks, grace periods, and overlapping downtime are not double-counted. Only fully completed Manila days with recorded S-05 output qualify.
 
-The backend uses the previous seven completed days when the sample contains at least three qualified production days, 360 productive minutes, and 10 output pieces. It expands to 30 completed days when the seven-day sample is insufficient. If both samples are insufficient, it uses `OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE`, which defaults to `0.05` pieces per minute (one piece per 20 minutes).
+The backend uses the previous seven completed days when the sample contains at least three qualified production days, 360 productive minutes, and 10 output pieces. It expands to 30 completed days when the seven-day sample is insufficient. If both samples are insufficient, it uses `OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE`, which defaults to `0.05` pieces per minute. Dashboard and report baselines display the equivalent hourly rate rounded up to a whole piece, so the configured fallback appears as `3 pcs/hr`.
 
 API responses include the source, rate, window, qualified day count, productive minutes, and recorded output used for the estimate. Existing sensor and downtime history is never rewritten. Historical heartbeat completeness remains unavailable, so zero-output days are not treated as proven production observations, and S-05 absence detection remains prohibited.
 

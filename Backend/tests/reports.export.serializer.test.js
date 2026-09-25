@@ -22,7 +22,7 @@ function createReport(overrides = {}) {
     },
     summary: [
       { id: 'production', label: 'Production Count', value: '1,250 pcs', helper: 'From Spiral Mill 01' },
-      { id: 'loss', label: 'Estimated Loss', value: '3 pcs', helper: 'Using 0.05 pcs per downtime minute' },
+      { id: 'loss', label: 'Estimated Loss', value: '3 pcs', helper: 'Using 3 pcs/hr' },
     ],
     metrics: {
       durationMinutes: 55,
@@ -61,7 +61,7 @@ test('toCsv renders metadata block, header row, and one quoted line per downtime
 
   assert.equal(lines[0], '"Generated At","2026-09-03T01:23:45.678Z"')
   assert.equal(lines[1], '"Loss Rate Source","configured-fallback"')
-  assert.equal(lines[2], '"Loss Rate Pieces Per Minute","0.05"')
+  assert.equal(lines[2], '"Loss Rate Pieces Per Hour","3"')
   assert.equal(lines[3], '')
   assert.equal(lines[4], '"Cause","Sensor","Events","Duration Minutes","Estimated Loss"')
   assert.equal(
@@ -93,7 +93,7 @@ test('toCsv falls back to Not available for missing metadata values', () => {
 
   assert.ok(csv.includes('"Generated At","Not available"'))
   assert.ok(csv.includes('"Loss Rate Source","Not available"'))
-  assert.ok(csv.includes('"Loss Rate Pieces Per Minute","Not available"'))
+  assert.ok(csv.includes('"Loss Rate Pieces Per Hour","Not available"'))
 })
 
 test('toPdf resolves to a non-empty PDF buffer with the %PDF magic header', async () => {
