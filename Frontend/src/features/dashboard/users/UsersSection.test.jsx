@@ -58,28 +58,32 @@ it('adds a user without credentials and reports unconfirmed email without losing
   await user.type(form.getByLabelText('Username'), 'operator')
   await user.type(form.getByLabelText('Email'), 'operator@example.test')
   await user.selectOptions(form.getByLabelText('Role'), 'Production Supervisor')
-  await user.click(form.getByRole('button', { name: 'Add user' }))
+  await user.click(form.getByRole('button', { name: 'Send invite' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(createUser).toHaveBeenCalledWith('test-token', { name: 'New Operator', username: 'operator', email: 'operator@example.test', role: 'Production Supervisor' })
   expect(screen.getByRole('alert')).toHaveTextContent(/Account saved, but email delivery is unconfirmed/)
 })
 
-it('renders the segmented metric pills with summary counts', async () => {
+it('places Add user in the filter row and removes the advanced setup filter', async () => {
   render(<UsersSection />)
-  await waitFor(() => expect(screen.getByText('21')).toBeInTheDocument())
-  expect(screen.getByText('Total Users:')).toBeInTheDocument()
-  expect(screen.getByText('Active:')).toBeInTheDocument()
-  expect(screen.getByText('20')).toBeInTheDocument()
-  expect(screen.getByText('Inactive:')).toBeInTheDocument()
-  expect(screen.getByText('1')).toBeInTheDocument()
-  expect(screen.getByText('Awaiting Setup:')).toBeInTheDocument()
-  expect(screen.getByText('2')).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Staff accounts' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'User accounts' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Total Users:')).not.toBeInTheDocument()
+  const addUserButton = screen.getByRole('button', { name: 'Add user' })
+  const filters = addUserButton.closest('.users-filters')
+  expect(filters).toBeInTheDocument()
+  expect(filters.querySelector('details')).toBeNull()
+  expect(screen.queryByLabelText('Setup')).not.toBeInTheDocument()
 })
 
 it('shows clear filters button only when filters are active and clears on click', async () => {
   const user = userEvent.setup()
   render(<UsersSection />)
   await waitFor(() => expect(screen.getByLabelText('Status')).toBeInTheDocument())
+
+  await user.selectOptions(screen.getByLabelText('Sort'), 'name-asc')
+  await waitFor(() => expect(getUsers).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ sort: 'name', direction: 'asc' }), expect.any(AbortSignal)))
+  expect(screen.getByRole('columnheader', { name: 'User' })).toHaveAttribute('aria-sort', 'ascending')
 
   // Initially no active filter button
   expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument()
@@ -92,6 +96,7 @@ it('shows clear filters button only when filters are active and clears on click'
   await user.click(screen.getByRole('button', { name: /clear filters/i }))
   expect(screen.getByLabelText('Status')).toHaveValue('')
   expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument()
+  await waitFor(() => expect(getUsers).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 1, role: '', status: '', sort: 'name', direction: 'asc' }), expect.any(AbortSignal)))
 })
 
 it('opens confirmation modal and deactivates account on confirm', async () => {

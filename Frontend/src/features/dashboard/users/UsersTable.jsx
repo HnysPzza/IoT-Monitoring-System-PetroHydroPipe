@@ -2,9 +2,6 @@ import * as PopoverPrimitive from '@radix-ui/react-popover'
 import {
   AlertCircle,
   Archive,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -30,7 +27,6 @@ export default function UsersTable({
   onRequestArchive,
   onRequestDeactivate,
   onResend,
-  onSortChange,
   onStatusChange,
   page = 1,
   sort = 'created',
@@ -40,48 +36,23 @@ export default function UsersTable({
 }) {
   const handleArchive = onRequestArchive || onArchiveAccount
   const handleDeactivate = onRequestDeactivate || onStatusChange
-
-  function handleHeaderSort(columnKey) {
-    if (!onSortChange) return
-    if (sort === columnKey) {
-      onSortChange(columnKey, direction === 'asc' ? 'desc' : 'asc')
-    } else {
-      onSortChange(columnKey, columnKey === 'created' ? 'desc' : 'asc')
-    }
-  }
-
-  function renderSortableTh(columnKey, label) {
-    const isSorted = sort === columnKey
-    return (
-      <th scope="col" aria-sort={isSorted ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-        <button
-          type="button"
-          className={`th-sort-button ${isSorted ? 'is-sorted' : ''}`}
-          onClick={() => handleHeaderSort(columnKey)}
-          aria-label={`Sort by ${label}${isSorted ? ` (${direction === 'asc' ? 'ascending' : 'descending'})` : ''}`}
-        >
-          <span>{label}</span>
-          {isSorted ? (
-            direction === 'asc' ? <ArrowUp size={14} aria-hidden="true" /> : <ArrowDown size={14} aria-hidden="true" />
-          ) : (
-            <ArrowUpDown size={14} className="th-sort-idle" aria-hidden="true" />
-          )}
-        </button>
-      </th>
-    )
-  }
+  const columnHeader = (key, label) => (
+    <th scope="col" aria-sort={sort === key ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      {label}
+    </th>
+  )
 
   return (
-    <div className="users-table-card" aria-label="User accounts directory">
+    <div className="users-table-content">
       <div className="account-table-wrap">
         <table className="account-table">
           <thead>
             <tr>
-              {renderSortableTh('name', 'User')}
-              {renderSortableTh('role', 'Role')}
-              {renderSortableTh('status', 'Status')}
-              <th scope="col">Setup</th>
-              {renderSortableTh('created', 'Created')}
+              {columnHeader('name', 'User')}
+              {columnHeader('role', 'Role')}
+              {columnHeader('status', 'Status')}
+              <th scope="col">Onboarding</th>
+              {columnHeader('created', 'Created')}
               <th scope="col">Last login</th>
               <th scope="col">Actions</th>
             </tr>
@@ -149,7 +120,7 @@ export default function UsersTable({
                       ) : (
                         <span className="setup-pill-badge setup-pill-ready">
                           <CheckCircle2 size={13} aria-hidden="true" />
-                          <span>{account.onboarding || 'Ready'}</span>
+                          <span>{account.onboarding === 'Ready' ? 'Complete' : account.onboarding || 'Complete'}</span>
                         </span>
                       )}
                     </td>
@@ -248,14 +219,14 @@ export default function UsersTable({
 
       {totalPages > 0 && onPageChange ? (
         <nav className="users-pagination" aria-label="Account directory pages">
-          <div className="pagination-info">
+          <div className="users-pagination-info">
             <span aria-live="polite">
               Page {page || 1} of {totalPages} · {totalCount} accounts
             </span>
           </div>
-          <div className="pagination-actions">
+          <div className="users-pagination-actions">
             <button
-              className="btn btn-secondary pagination-btn"
+              className="btn btn-secondary users-pagination-btn"
               disabled={isLoading || (page || 1) <= 1}
               onClick={() => onPageChange((page || 1) - 1)}
               type="button"
@@ -264,7 +235,7 @@ export default function UsersTable({
               <span>Previous</span>
             </button>
             <button
-              className="btn btn-secondary pagination-btn"
+              className="btn btn-secondary users-pagination-btn"
               disabled={isLoading || (page || 1) >= totalPages}
               onClick={() => onPageChange((page || 1) + 1)}
               type="button"

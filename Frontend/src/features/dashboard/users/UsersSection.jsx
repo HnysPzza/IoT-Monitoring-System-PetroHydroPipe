@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  Clock,
   Search,
-  UserCheck,
   UserPlus,
-  Users,
-  UserX,
   X,
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -17,11 +13,11 @@ import { archiveUser, createUser, getRoles, getUsers, resendSetup, updateUserSta
 import { initialUserForm, normalizeUsername, validateAccount } from './usersUtils.js'
 import './users.css'
 
-const initialQuery = { page: 1, limit: 10, search: '', role: '', status: '', onboarding: '', sort: 'created', direction: 'desc' }
+const initialQuery = { page: 1, limit: 10, search: '', role: '', status: '', sort: 'created', direction: 'desc' }
 
 export default function UsersSection() {
   const { token, user } = useAuth()
-  const [directory, setDirectory] = useState({ users: [], total: 0, summary: {} })
+  const [directory, setDirectory] = useState({ users: [], total: 0 })
   const [roles, setRoles] = useState([])
   const [query, setQuery] = useState(initialQuery)
   const [search, setSearch] = useState('')
@@ -123,182 +119,147 @@ export default function UsersSection() {
   const hasActiveFilters = Boolean(
     search.trim() ||
     query.role ||
-    query.status ||
-    query.onboarding ||
-    query.sort !== 'created' ||
-    query.direction !== 'desc',
+    query.status,
   )
 
   const pages = Math.max(1, Math.ceil(directory.total / query.limit))
 
   return (
     <div className="users-directory">
-      <div className="section-heading">
-        <div>
-          <h2 className="users-page-title">User accounts</h2>
-          <p className="users-page-subtitle">Add staff, manage access, and track password setup. The single Admin account is protected.</p>
-        </div>
-        <button
-          className="btn btn-primary btn-add-user"
-          type="button"
-          disabled={busy || !roles.length}
-          onClick={openForm}
-        >
-          <UserPlus size={16} aria-hidden="true" />
-          <span>Add user</span>
-        </button>
-      </div>
-
       <UsersNotice notice={notice} />
 
-      <div className="users-metrics-bar" role="status" aria-label="Account directory statistics">
-        <div className="metric-pill metric-pill-total">
-          <span className="metric-pill-icon"><Users size={15} aria-hidden="true" /></span>
-          <span className="metric-pill-label">Total Users:</span>
-          <strong className="metric-pill-value">{isLoading || loadError ? '—' : (directory.summary?.total ?? directory.total ?? 0)}</strong>
-        </div>
-        <div className="metric-pill metric-pill-active">
-          <span className="metric-pill-icon"><UserCheck size={15} aria-hidden="true" /></span>
-          <span className="metric-pill-label">Active:</span>
-          <strong className="metric-pill-value">{isLoading || loadError ? '—' : (directory.summary?.active ?? 0)}</strong>
-        </div>
-        <div className="metric-pill metric-pill-inactive">
-          <span className="metric-pill-icon"><UserX size={15} aria-hidden="true" /></span>
-          <span className="metric-pill-label">Inactive:</span>
-          <strong className="metric-pill-value">{isLoading || loadError ? '—' : (directory.summary?.inactive ?? 0)}</strong>
-        </div>
-        <div className="metric-pill metric-pill-pending">
-          <span className="metric-pill-icon"><Clock size={15} aria-hidden="true" /></span>
-          <span className="metric-pill-label">Awaiting Setup:</span>
-          <strong className="metric-pill-value">{isLoading || loadError ? '—' : (directory.summary?.pending ?? 0)}</strong>
-        </div>
-      </div>
-      <small className="users-metrics-helper">Active means access enabled; password setup is still required before sign-in.</small>
+      <section className="section-card users-filters-card" aria-label="User account filters">
+        <div className="users-filters">
+          <label className="filter-field users-search-field" htmlFor="users-search-input">
+            <span>Search</span>
+            <div className="users-search-control">
+              <Search size={16} className="users-search-icon" aria-hidden="true" />
+              <input
+                type="search"
+                id="users-search-input"
+                value={search}
+                maxLength={100}
+                placeholder="Search by name, username, or email..."
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          </label>
 
-      <div className="users-filters">
-        <div className="filter-group filter-group-search">
-          <label htmlFor="users-search-input" className="filter-label">Search</label>
-          <div className="filter-search-wrap">
-            <Search size={16} className="search-icon" aria-hidden="true" />
-            <input
-              type="search"
-              id="users-search-input"
-              value={search}
-              maxLength={100}
-              placeholder="Search by name, username, or email..."
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-        </div>
+          <label className="filter-field" htmlFor="users-filter-role">
+            <span>Role</span>
+            <select
+              id="users-filter-role"
+              value={query.role}
+              onChange={(event) => filter('role', event.target.value)}
+            >
+              <option value="">All roles</option>
+              {roles.map((role) => <option key={role.id}>{role.name}</option>)}
+            </select>
+          </label>
 
-        <div className="filter-group">
-          <label htmlFor="users-filter-role" className="filter-label">Role</label>
-          <select
-            id="users-filter-role"
-            value={query.role}
-            onChange={(event) => filter('role', event.target.value)}
-          >
-            <option value="">All roles</option>
-            {roles.map((role) => <option key={role.id}>{role.name}</option>)}
-          </select>
-        </div>
+          <label className="filter-field" htmlFor="users-filter-status">
+            <span>Status</span>
+            <select
+              id="users-filter-status"
+              value={query.status}
+              onChange={(event) => filter('status', event.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </label>
 
-        <div className="filter-group">
-          <label htmlFor="users-filter-status" className="filter-label">Status</label>
-          <select
-            id="users-filter-status"
-            value={query.status}
-            onChange={(event) => filter('status', event.target.value)}
-          >
-            <option value="">All statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-        </div>
-
-        <div className="filter-group">
-          <label htmlFor="users-filter-setup" className="filter-label">Setup</label>
-          <select
-            id="users-filter-setup"
-            value={query.onboarding}
-            onChange={(event) => filter('onboarding', event.target.value)}
-          >
-            <option value="">All setup states</option>
-            <option value="Invited">Invited</option>
-            <option value="Expired">Expired</option>
-            <option value="Ready">Ready</option>
-          </select>
-        </div>
-
-        <div className="filter-group">
-          <label htmlFor="users-filter-sort" className="filter-label">Sort</label>
-          <select
-            id="users-filter-sort"
-            value={`${query.sort}-${query.direction}`}
-            onChange={(event) => {
-              const [sort, direction] = event.target.value.split('-')
-              setQuery((current) => ({ ...current, sort, direction, page: 1 }))
-            }}
-          >
-            <option value="created-desc">Newest first</option>
-            <option value="created-asc">Oldest first</option>
-            <option value="name-asc">Name (A–Z)</option>
-            <option value="name-desc">Name (Z–A)</option>
-            <option value="role-asc">Role (A–Z)</option>
-            <option value="status-asc">Status</option>
-          </select>
-        </div>
-
-        {hasActiveFilters && (
           <button
-            className="filter-clear-btn"
+            className="btn btn-secondary users-add-user"
             type="button"
-            onClick={() => { setSearch(''); setQuery(initialQuery) }}
+            disabled={busy || !roles.length}
+            onClick={openForm}
           >
-            <X size={15} aria-hidden="true" />
-            <span>Clear filters</span>
+            <UserPlus size={16} aria-hidden="true" />
+            <span>Add user</span>
           </button>
-        )}
-      </div>
 
-      {loadError ? (
-        <div role="alert">
-          <p>{loadError}</p>
-          <button className="btn btn-secondary" onClick={() => setRevision((current) => current + 1)}>Retry loading</button>
+          {hasActiveFilters && (
+            <button
+              className="btn btn-secondary users-clear-filters"
+              type="button"
+              onClick={() => {
+                setSearch('')
+                setQuery((current) => ({ ...current, page: 1, search: '', role: '', status: '' }))
+              }}
+            >
+              <X size={15} aria-hidden="true" />
+              <span>Clear filters</span>
+            </button>
+          )}
         </div>
-      ) : (
-        <UsersTable
-          accounts={directory.users}
-          currentUserId={user?.id}
-          isLoading={isLoading}
-          busy={busy}
-          sort={query.sort}
-          direction={query.direction}
-          onSortChange={(sort, direction) => setQuery((current) => ({ ...current, sort, direction, page: 1 }))}
-          page={query.page}
-          totalPages={pages}
-          totalCount={directory.total}
-          onPageChange={(page) => setQuery((current) => ({ ...current, page }))}
-          onRequestDeactivate={(account) => {
-            setConfirmAction({ type: 'deactivate', account })
-            confirmDialog.current?.showModal()
-          }}
-          onRequestArchive={(account) => {
-            setConfirmAction({ type: 'archive', account })
-            confirmDialog.current?.showModal()
-          }}
-          onStatusChange={(account) => {
-            runMutation(
-              () => updateUserStatus(token, account.id, 'Active'),
-              'Account is now Active.',
-            )
-          }}
-          onArchiveAccount={(account) => {
-            runMutation(() => archiveUser(token, account.id), 'Account archived.')
-          }}
-          onResend={(account) => runMutation(() => resendSetup(token, account.id), 'New setup email accepted by Brevo. Previous setup links no longer work.')}
-        />
-      )}
+      </section>
+
+      <section className="section-card users-directory-card" aria-labelledby="users-directory-title">
+        <div className="section-heading">
+          <div>
+            <p className="section-eyebrow">Directory</p>
+            <h2 id="users-directory-title">Staff accounts</h2>
+          </div>
+          <label className="filter-field users-sort-field" htmlFor="users-filter-sort">
+            <span>Sort</span>
+            <select
+              id="users-filter-sort"
+              value={`${query.sort}-${query.direction}`}
+              onChange={(event) => {
+                const [sort, direction] = event.target.value.split('-')
+                setQuery((current) => ({ ...current, sort, direction, page: 1 }))
+              }}
+            >
+              <option value="created-desc">Newest first</option>
+              <option value="created-asc">Oldest first</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="name-desc">Name (Z–A)</option>
+              <option value="role-asc">Role (A–Z)</option>
+              <option value="status-asc">Status</option>
+            </select>
+          </label>
+        </div>
+
+        {loadError ? (
+          <div className="users-load-error" role="alert">
+            <p>{loadError}</p>
+            <button className="btn btn-secondary" type="button" onClick={() => setRevision((current) => current + 1)}>Retry loading</button>
+          </div>
+        ) : (
+          <UsersTable
+            accounts={directory.users}
+            currentUserId={user?.id}
+            sort={query.sort}
+            direction={query.direction}
+            isLoading={isLoading}
+            busy={busy}
+            page={query.page}
+            totalPages={pages}
+            totalCount={directory.total}
+            onPageChange={(page) => setQuery((current) => ({ ...current, page }))}
+            onRequestDeactivate={(account) => {
+              setConfirmAction({ type: 'deactivate', account })
+              confirmDialog.current?.showModal()
+            }}
+            onRequestArchive={(account) => {
+              setConfirmAction({ type: 'archive', account })
+              confirmDialog.current?.showModal()
+            }}
+            onStatusChange={(account) => {
+              runMutation(
+                () => updateUserStatus(token, account.id, 'Active'),
+                'Account is now Active.',
+              )
+            }}
+            onArchiveAccount={(account) => {
+              runMutation(() => archiveUser(token, account.id), 'Account archived.')
+            }}
+            onResend={(account) => runMutation(() => resendSetup(token, account.id), 'New setup email accepted by Brevo. Previous setup links no longer work.')}
+          />
+        )}
+      </section>
 
       {/* Account Creation Modal */}
       <dialog className="users-dialog" ref={dialog} aria-labelledby="create-account-title" onCancel={(event) => { if (busy) event.preventDefault() }}>

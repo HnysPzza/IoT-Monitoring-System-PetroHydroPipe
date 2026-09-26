@@ -4,10 +4,10 @@ import {
   HelpCircle,
   LoaderCircle,
   Mail,
+  Send,
   Shield,
   ShieldCheck,
   User,
-  UserPlus,
   X,
 } from 'lucide-react'
 
@@ -157,16 +157,12 @@ export default function UserAccountForm({
             </button>
           )}
           <button
-            className="btn btn-primary account-submit"
+            className="btn btn-secondary account-submit"
             type="submit"
             disabled={isLoading || isSubmitting}
           >
-            {isSubmitting ? (
-              <LoaderCircle className="spin-icon" size={16} aria-hidden="true" />
-            ) : (
-              <UserPlus size={16} aria-hidden="true" />
-            )}
-            <span>{isSubmitting ? 'Adding...' : 'Add user'}</span>
+            {isSubmitting ? <LoaderCircle className="spin-icon" size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+            <span>{isSubmitting ? 'Sending...' : 'Send invite'}</span>
           </button>
         </div>
       </form>

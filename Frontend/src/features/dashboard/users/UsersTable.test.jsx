@@ -66,20 +66,11 @@ describe('UsersTable', () => {
     expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()
   })
 
-  it('invokes onSortChange when clicking a sortable column header', async () => {
-    const user = userEvent.setup()
-    const onSortChange = vi.fn()
-    render(
-      <UsersTable
-        accounts={[account]}
-        currentUserId="user-1"
-        sort="created"
-        direction="desc"
-        onSortChange={onSortChange}
-      />,
-    )
+  it('keeps table column headings static when sorting is controlled above the directory', () => {
+    render(<UsersTable accounts={[account]} currentUserId="user-1" sort="name" direction="asc" />)
 
-    await user.click(screen.getByRole('button', { name: /sort by user/i }))
-    expect(onSortChange).toHaveBeenCalledWith('name', 'asc')
+    expect(screen.getByRole('columnheader', { name: 'User' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'User' })).toHaveAttribute('aria-sort', 'ascending')
+    expect(screen.queryByRole('button', { name: /sort by user/i })).not.toBeInTheDocument()
   })
 })
