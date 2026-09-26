@@ -44,6 +44,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/042_finalize_sensor_idle_fault_release.sql` advances readiness to 42 and verifies the watchdog evaluator exists.
 - `migrations/043_atomic_downtime_update_audit.sql` makes manual downtime updates and their audit rows one transaction, then advances readiness to 43.
 - `migrations/044_validate_s05_output_pulses.sql` classifies S-05 pulses against S-03 activity, rejects stale/stationary/downtime/bounce evidence without applying state, filters rejected pulses from shared analytics, and advances readiness to 44.
+- `migrations/045_user_password_reset.sql` adds admin-issued, single-use password reset links and advances readiness to 45.
 
 ## Tables
 
@@ -69,8 +70,8 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 3. Copy and run `schema.sql`.
 4. Copy and run the credential-free `seed.sql` to create the roles, M-01, and its five sensors.
 5. Provision exactly one active, unarchived Admin with a privately generated bcrypt password hash.
-6. Run migrations 029 through 044 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `44` before starting the current backend.
-7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 044 from `Backend/database/migrations/`.
+6. Run migrations 029 through 045 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `45` before starting the current backend.
+7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 045 from `Backend/database/migrations/`.
 8. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
 9. Confirm the configured rows:
    - 5 roles
@@ -408,11 +409,11 @@ Expected readiness is `44`. This verifies the database contract only; it does no
 
 1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
 2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
-3. Apply pending migrations through 044 before deploying the current backend, which requires readiness version 44. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
+3. Apply pending migrations through 045 before deploying the current backend, which requires readiness version 45. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
 4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
 5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
-For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 044 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
+For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 045 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
 Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
 

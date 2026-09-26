@@ -6,17 +6,37 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useUsersAction } from './UsersActionProvider.jsx'
 import UserAccountForm from './UserAccountForm.jsx'
 import UsersNotice from './UsersNotice.jsx'
 import UsersTable from './UsersTable.jsx'
-import { archiveUser, createUser, getRoles, getUsers, resendSetup, updateUserStatus } from './usersService.js'
+import { archiveUser, createUser, getRoles, getUsers, resendSetup, sendPasswordReset, updateUserStatus } from './usersService.js'
 import { initialUserForm, normalizeUsername, validateAccount } from './usersUtils.js'
 import './users.css'
 
 const initialQuery = { page: 1, limit: 10, search: '', role: '', status: '', sort: 'created', direction: 'desc' }
 
+function applyPendingAction(payload, pendingAction, query) {
+  if (!pendingAction) return payload
+
+  const removesFromResults = pendingAction.type === 'archive'
+    || (pendingAction.type === 'deactivate' && query.status === 'Active')
+  const users = removesFromResults
+    ? payload.users.filter((account) => account.id !== pendingAction.account.id)
+    : payload.users.map((account) => account.id === pendingAction.account.id
+      ? { ...account, status: 'Inactive' }
+      : account)
+
+  return {
+    ...payload,
+    users,
+    total: removesFromResults ? Math.max(0, payload.total - 1) : payload.total,
+  }
+}
+
 export default function UsersSection() {
   const { token, user } = useAuth()
+  const { pendingAction, revision: actionRevision, scheduleAccountAction } = useUsersAction()
   const [directory, setDirectory] = useState({ users: [], total: 0 })
   const [roles, setRoles] = useState([])
   const [query, setQuery] = useState(initialQuery)
@@ -27,11 +47,13 @@ export default function UsersSection() {
   const [notice, setNotice] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [isMutating, setIsMutating] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
+  const busy = isMutating || Boolean(pendingAction)
   const dialog = useRef(null)
   const confirmDialog = useRef(null)
   const mutation = useRef(false)
+  const usersRequest = useRef(null)
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery((current) => current.search === search
@@ -39,6 +61,12 @@ export default function UsersSection() {
       : { ...current, search, page: 1 }), 300)
     return () => clearTimeout(timer)
   }, [search])
+
+  useEffect(() => {
+    if (!notice) return undefined
+    const timer = setTimeout(() => setNotice(null), 5000)
+    return () => clearTimeout(timer)
+  }, [notice])
 
   useEffect(() => {
     let active = true
@@ -52,6 +80,7 @@ export default function UsersSection() {
 
   useEffect(() => {
     const controller = new AbortController()
+    usersRequest.current = controller
     setIsLoading(true)
     setLoadError('')
     getUsers(token, query, controller.signal).then((payload) => {
@@ -61,28 +90,31 @@ export default function UsersSection() {
         setQuery((current) => ({ ...current, page: lastPage }))
         return
       }
-      setDirectory(payload)
+      setDirectory(applyPendingAction(payload, pendingAction, query))
     }).catch((error) => {
       if (!controller.signal.aborted) setLoadError(error.message || 'Unable to load accounts.')
     }).finally(() => {
       if (!controller.signal.aborted) setIsLoading(false)
     })
-    return () => controller.abort()
-  }, [token, query, revision])
+    return () => {
+      controller.abort()
+      if (usersRequest.current === controller) usersRequest.current = null
+    }
+  }, [token, query, revision, actionRevision])
 
   function filter(field, value) {
     setQuery((current) => ({ ...current, [field]: value, page: 1 }))
   }
 
-  async function runMutation(action, success) {
+  async function runMutation(action, success, unconfirmedMessage = 'Account saved, but email delivery is unconfirmed. Check the inbox, or resend after one minute. Do not add the account again.') {
     if (mutation.current) return false
     mutation.current = true
-    setBusy(true)
+    setIsMutating(true)
     setNotice(null)
     try {
       const payload = await action()
       setNotice({ type: payload.delivery === 'unconfirmed' ? 'error' : 'success', message: payload.delivery === 'unconfirmed'
-        ? 'Account saved, but email delivery is unconfirmed. Check the inbox, or resend after one minute. Do not add the account again.'
+        ? unconfirmedMessage
         : success })
       return true
     } catch (error) {
@@ -91,8 +123,35 @@ export default function UsersSection() {
     } finally {
       setRevision((current) => current + 1)
       mutation.current = false
-      setBusy(false)
+      setIsMutating(false)
     }
+  }
+
+  function stageAccountAction(type, account) {
+    if (pendingAction || mutation.current) return
+
+    const removesFromResults = type === 'archive' || (type === 'deactivate' && query.status === 'Active')
+    if (!scheduleAccountAction(type, account, removesFromResults)) return
+
+    const nextTotal = Math.max(0, directory.total - (removesFromResults ? 1 : 0))
+    const nextPageCount = Math.max(1, Math.ceil(nextTotal / query.limit))
+    const nextUsers = removesFromResults
+      ? directory.users.filter((userAccount) => userAccount.id !== account.id)
+      : directory.users.map((userAccount) => userAccount.id === account.id
+        ? { ...userAccount, status: 'Inactive' }
+        : userAccount)
+
+    usersRequest.current?.abort()
+    setIsLoading(false)
+    setDirectory((current) => ({
+      ...current,
+      users: nextUsers,
+      total: query.page <= nextPageCount ? nextTotal : current.total,
+    }))
+
+    setNotice(null)
+    confirmDialog.current?.close()
+    setConfirmAction(null)
   }
 
   async function handleSubmit(event) {
@@ -102,7 +161,7 @@ export default function UsersSection() {
     if (Object.keys(nextErrors).length) return
     const saved = await runMutation(() => createUser(token, {
       ...form, name: form.name.trim(), username: normalizeUsername(form.username), email: form.email.trim().toLowerCase(),
-    }), 'User added. Brevo accepted the setup email; inbox delivery is not guaranteed.')
+    }), 'Invitation sent. Brevo accepted the email; inbox delivery is not guaranteed.')
     if (saved) {
       dialog.current.close()
       setForm(initialUserForm)
@@ -126,7 +185,7 @@ export default function UsersSection() {
 
   return (
     <div className="users-directory">
-      <UsersNotice notice={notice} />
+      <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
 
       <section className="section-card users-filters-card" aria-label="User account filters">
         <div className="users-filters">
@@ -140,6 +199,7 @@ export default function UsersSection() {
                 value={search}
                 maxLength={100}
                 placeholder="Search by name, username, or email..."
+                disabled={busy}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
@@ -150,6 +210,7 @@ export default function UsersSection() {
             <select
               id="users-filter-role"
               value={query.role}
+              disabled={busy}
               onChange={(event) => filter('role', event.target.value)}
             >
               <option value="">All roles</option>
@@ -162,6 +223,7 @@ export default function UsersSection() {
             <select
               id="users-filter-status"
               value={query.status}
+              disabled={busy}
               onChange={(event) => filter('status', event.target.value)}
             >
               <option value="">All statuses</option>
@@ -184,6 +246,7 @@ export default function UsersSection() {
             <button
               className="btn btn-secondary users-clear-filters"
               type="button"
+              disabled={busy}
               onClick={() => {
                 setSearch('')
                 setQuery((current) => ({ ...current, page: 1, search: '', role: '', status: '' }))
@@ -207,6 +270,7 @@ export default function UsersSection() {
             <select
               id="users-filter-sort"
               value={`${query.sort}-${query.direction}`}
+              disabled={busy}
               onChange={(event) => {
                 const [sort, direction] = event.target.value.split('-')
                 setQuery((current) => ({ ...current, sort, direction, page: 1 }))
@@ -257,13 +321,18 @@ export default function UsersSection() {
               runMutation(() => archiveUser(token, account.id), 'Account archived.')
             }}
             onResend={(account) => runMutation(() => resendSetup(token, account.id), 'New setup email accepted by Brevo. Previous setup links no longer work.')}
+            onResetPassword={(account) => runMutation(
+              () => sendPasswordReset(token, account.id),
+              'Password reset email accepted by Brevo. Inbox delivery is not guaranteed.',
+              'Password reset link was created, but email delivery is unconfirmed. Check delivery status before retrying.',
+            )}
           />
         )}
       </section>
 
       {/* Account Creation Modal */}
       <dialog className="users-dialog" ref={dialog} aria-labelledby="create-account-title" onCancel={(event) => { if (busy) event.preventDefault() }}>
-        <UsersNotice notice={notice} />
+        <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
         <UserAccountForm
           form={form}
           errors={errors}
@@ -325,24 +394,9 @@ export default function UsersSection() {
                 type="button"
                 className="btn btn-danger"
                 disabled={busy}
-                onClick={async () => {
+                onClick={() => {
                   const { type, account } = confirmAction
-                  let success = false
-                  if (type === 'deactivate') {
-                    success = await runMutation(
-                      () => updateUserStatus(token, account.id, 'Inactive'),
-                      'Account is now Inactive. Reactivated pending accounts need a new setup link.',
-                    )
-                  } else {
-                    success = await runMutation(
-                      () => archiveUser(token, account.id),
-                      'Account archived.',
-                    )
-                  }
-                  if (success) {
-                    confirmDialog.current?.close()
-                    setConfirmAction(null)
-                  }
+                  stageAccountAction(type, account)
                 }}
               >
                 {confirmAction.type === 'deactivate' ? 'Deactivate' : 'Archive'}

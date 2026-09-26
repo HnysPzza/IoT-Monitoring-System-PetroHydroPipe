@@ -62,6 +62,13 @@ router.post('/setup-password', setupLimiter, rejectForeignOrigin, validateReques
   await onboarding.setupPassword(req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
+router.post('/password-reset/validate', setupCheckLimiter, rejectForeignOrigin, validateRequest(setupTokenSchema), asyncHandler(async (req, res) => {
+  res.set('Cache-Control', 'no-store').json(await onboarding.validatePasswordResetToken(req.validated.body))
+}))
+router.post('/password-reset', setupLimiter, rejectForeignOrigin, validateRequest(setupPasswordSchema), asyncHandler(async (req, res) => {
+  await onboarding.setupPassword(req.validated.body)
+  res.set('Cache-Control', 'no-store').json({ completed: true })
+}))
 router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticate, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
   await onboarding.changePassword(req.user.sub, req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })

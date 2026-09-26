@@ -36,6 +36,7 @@ import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alerts
 
 import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
 import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.jsx'
+import UsersActionProvider from '../users/UsersActionProvider.jsx'
 
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
 const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
@@ -811,7 +812,9 @@ export default function AdminDashboard() {
 
         <section className="dashboard-content">
           {/* Nested /dashboard routes render here. */}
-          <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList }} />
+          <UsersActionProvider>
+            <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList }} />
+          </UsersActionProvider>
         </section>
       </div>
     </main>

@@ -49,6 +49,25 @@ it('scrubs the token from the URL and submits only matching passwords', async ()
   expect(await screen.findByText(/Password saved/)).toBeInTheDocument()
 })
 
+it('validates and completes an administrator-issued password reset link', async () => {
+  const token = 'c'.repeat(64)
+  window.history.replaceState(null, '', `/reset-password#token=${token}`)
+  render(<MemoryRouter><PasswordSetupPage resetPassword /></MemoryRouter>)
+
+  expect(apiRequest).toHaveBeenCalledWith('/api/auth/password-reset/validate', expect.objectContaining({ body: { token } }))
+  const user = userEvent.setup()
+  await user.type(await screen.findByLabelText('New password'), 'A-strong-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'A-strong-password1!')
+  await user.click(screen.getByRole('button', { name: 'Reset password' }))
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/auth/password-reset', expect.objectContaining({
+    method: 'POST',
+    body: { token, password: 'A-strong-password1!' },
+  })))
+  expect(await screen.findByRole('status')).toHaveTextContent(/Password reset/)
+  expect(screen.getByText(/Sign in with your new password/)).toBeInTheDocument()
+})
+
 it('shows a recovery state instead of the form when the setup link is missing', () => {
   render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
   expect(screen.getByRole('alert')).toHaveTextContent(/link unavailable/i)

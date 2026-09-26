@@ -76,9 +76,9 @@ function passwordErrorMessage(code) {
   return 'Could not save password.'
 }
 
-export default function PasswordSetupPage({ changePassword = false }) {
+export default function PasswordSetupPage({ changePassword = false, resetPassword = false }) {
   const { token, logout } = useAuth()
-  const [setupToken, setSetupToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('token') || '')
+  const [linkToken, setLinkToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('token') || '')
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
@@ -89,7 +89,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
   const [checkAttempt, setCheckAttempt] = useState(0)
   const submitting = useRef(false)
   const firstFieldRef = useRef(null)
-  const validLink = /^[0-9a-f]{64}$/.test(setupToken)
+  const validLink = /^[0-9a-f]{64}$/.test(linkToken)
   const passwordBytes = new TextEncoder().encode(password).length
   const passwordCharacters = Array.from(password).length
   const hasRequiredCharacters = /[a-z]/.test(password) && /[A-Z]/.test(password)
@@ -102,6 +102,14 @@ export default function PasswordSetupPage({ changePassword = false }) {
         title: 'Change password',
         description: 'Choose a new password.',
       }
+    : resetPassword
+      ? {
+          badge: 'Password reset',
+          brandTitle: 'Reset your password',
+          brandDescription: 'Choose a new account password.',
+          title: 'Reset password',
+          description: 'Choose a new password for your account.',
+        }
     : {
         badge: 'Secure setup',
         brandTitle: 'Secure account setup',
@@ -131,8 +139,8 @@ export default function PasswordSetupPage({ changePassword = false }) {
     const startedAt = Date.now()
     setLinkState('checking')
     setError('')
-    apiRequest('/api/auth/setup-password/validate', {
-      method: 'POST', body: { token: setupToken }, signal: controller.signal,
+    apiRequest(`/api/auth/${resetPassword ? 'password-reset' : 'setup-password'}/validate`, {
+      method: 'POST', body: { token: linkToken }, signal: controller.signal,
     }).then((result) => {
       if (controller.signal.aborted) return
       if (!Number.isFinite(result?.validForMs) || result.validForMs <= 0) {
@@ -147,7 +155,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
       }, Math.max(0, remaining))
     }).catch((failure) => {
       if (controller.signal.aborted) return
-      setLinkState(failure.code === 'SETUP_LINK_INVALID' ? 'invalid' : 'error')
+      setLinkState(['SETUP_LINK_INVALID', 'PASSWORD_RESET_LINK_INVALID'].includes(failure.code) ? 'invalid' : 'error')
       setError('Could not check link.')
     })
     const recheck = () => setCheckAttempt((attempt) => attempt + 1)
@@ -157,7 +165,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
       window.clearTimeout(expiryTimer)
       window.removeEventListener('focus', recheck)
     }
-  }, [changePassword, validLink, setupToken, completed, checkAttempt])
+  }, [changePassword, resetPassword, validLink, linkToken, completed, checkAttempt])
 
   async function submit(event) {
     event.preventDefault()
@@ -173,14 +181,15 @@ export default function PasswordSetupPage({ changePassword = false }) {
     setBusy(true)
     setError('')
     try {
-      await apiRequest(`/api/auth/${changePassword ? 'change-password' : 'setup-password'}`, {
+      const endpoint = changePassword ? 'change-password' : resetPassword ? 'password-reset' : 'setup-password'
+      await apiRequest(`/api/auth/${endpoint}`, {
         method: 'POST', token: changePassword ? token : undefined,
-        body: changePassword ? { currentPassword, password } : { token: setupToken, password },
+        body: changePassword ? { currentPassword, password } : { token: linkToken, password },
       })
       setPassword('')
       setConfirmation('')
       setCurrentPassword('')
-      setSetupToken('')
+      setLinkToken('')
       setCompleted(true)
       if (changePassword) await logout()
     } catch (failure) {
@@ -233,7 +242,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
               <div>
                 <KeyRound size={20} aria-hidden="true" />
                 <span>
-                  <strong>One-time setup</strong>
+                  <strong>{resetPassword ? 'Single-use reset' : 'One-time setup'}</strong>
                   Link must be valid.
                 </span>
               </div>
@@ -250,9 +259,9 @@ export default function PasswordSetupPage({ changePassword = false }) {
                 <CheckCircle2 size={30} />
               </span>
               <div>
-                <p className="password-state-kicker">Setup complete</p>
-                <h1 id="password-setup-title">Password saved</h1>
-                <p>Use your new password.</p>
+                <p className="password-state-kicker">{resetPassword ? 'Password reset' : 'Setup complete'}</p>
+                <h1 id="password-setup-title">{resetPassword ? 'Password reset' : 'Password saved'}</h1>
+                <p>Sign in with your new password.</p>
               </div>
               <Link className="btn btn-primary password-primary-action" to="/login">
                 Sign in
@@ -344,7 +353,7 @@ export default function PasswordSetupPage({ changePassword = false }) {
 
                 <button className="btn btn-primary password-primary-action" disabled={busy}>
                   {busy ? <LoaderCircle className="password-spinner" size={18} aria-hidden="true" /> : <ShieldCheck size={18} aria-hidden="true" />}
-                  {busy ? 'Saving...' : changePassword ? 'Change password' : 'Set password'}
+                  {busy ? 'Saving...' : changePassword ? 'Change password' : resetPassword ? 'Reset password' : 'Set password'}
                 </button>
               </form>
 

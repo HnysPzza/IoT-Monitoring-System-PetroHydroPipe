@@ -66,6 +66,64 @@ test('setup validates input, rejects foreign origins, and requires no login', as
   })
 })
 
+test('password reset links validate and save through separate public endpoints', async () => {
+  const calls = []
+  const app = loadAppWithMocks({
+    'src/modules/auth/onboarding.service.js': {
+      validatePasswordResetToken: async (body) => { calls.push({ action: 'validate', body }); return { validForMs: 60000 } },
+      setupPassword: async (body) => calls.push({ action: 'complete', body }),
+    },
+  })
+  await withTestServer(app, async (baseUrl) => {
+    const body = { token: 'c'.repeat(64) }
+    const invalid = await requestJson(baseUrl, '/api/auth/password-reset/validate', { method: 'POST', body: { token: 'bad' } })
+    assert.equal(invalid.response.status, 400)
+    const foreign = await requestJson(baseUrl, '/api/auth/password-reset/validate', { method: 'POST', body, headers: { Origin: 'https://foreign.example' } })
+    assert.equal(foreign.response.status, 403)
+    const valid = await requestJson(baseUrl, '/api/auth/password-reset/validate', { method: 'POST', body })
+    assert.equal(valid.response.status, 200)
+    assert.equal(valid.response.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(valid.body, { validForMs: 60000 })
+
+    const passwordBody = { ...body, password: 'A-long-new-password1!' }
+    const completed = await requestJson(baseUrl, '/api/auth/password-reset', { method: 'POST', body: passwordBody })
+    assert.equal(completed.response.status, 200)
+    assert.deepEqual(completed.body, { completed: true })
+    assert.deepEqual(calls, [
+      { action: 'validate', body },
+      { action: 'complete', body: passwordBody },
+    ])
+  })
+})
+
+test('account password reset action is Admin-only and records the actor', async () => {
+  const calls = []
+  const app = loadAppWithMocks({
+    'src/modules/auth/onboarding.service.js': {
+      requestPasswordReset: async (values) => { calls.push(values); return { delivery: 'accepted' } },
+    },
+  })
+  const targetId = '22222222-2222-4222-8222-222222222222'
+  const adminId = '11111111-1111-4111-8111-111111111111'
+  const token = (id, role) => jwt.sign({ role, username: role.toLowerCase() }, process.env.JWT_SECRET, { subject: id })
+
+  await withTestServer(app, async (baseUrl) => {
+    const forbidden = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token('33333333-3333-4333-8333-333333333333', 'Production Supervisor')}` },
+    })
+    assert.equal(forbidden.response.status, 403)
+
+    const accepted = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token(adminId, 'Admin')}` },
+    })
+    assert.equal(accepted.response.status, 200)
+    assert.deepEqual(accepted.body, { delivery: 'accepted' })
+    assert.deepEqual(calls, [{ userId: targetId, actorUserId: adminId }])
+  })
+})
+
 test('rechecking a link cannot exhaust the password submission allowance', async () => {
   const app = loadAppWithMocks({
     'src/modules/auth/onboarding.service.js': {
