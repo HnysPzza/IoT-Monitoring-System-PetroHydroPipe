@@ -1,0 +1,132 @@
+.users-action-snackbar {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  left: auto;
+  z-index: 60;
+  display: flex;
+  width: min(460px, calc(100vw - 32px));
+  min-height: 60px;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 14px 16px 16px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  animation: users-action-enter 160ms ease-out both;
+}
+
+.users-action-snackbar-message {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.users-action-undo,
+.users-action-dismiss {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 7px;
+  background: var(--c-surface2);
+  color: var(--c-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.users-action-dismiss {
+  width: 36px;
+  padding: 0;
+}
+
+.users-action-undo:hover,
+.users-action-dismiss:hover {
+  background: var(--hover-bg);
+}
+
+.users-action-undo:focus-visible,
+.users-action-dismiss:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.users-action-undo[hidden] {
+  display: none;
+}
+
+.users-action-result-error {
+  flex: 0 0 auto;
+  color: var(--c-danger);
+}
+
+.users-action-result-success {
+  flex: 0 0 auto;
+  color: var(--c-success);
+}
+
+.users-action-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  background: var(--c-surface2);
+}
+
+.users-action-progress > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left;
+  animation: users-action-progress-countdown linear forwards;
+  background: var(--c-text-3);
+}
+
+@keyframes users-action-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes users-action-progress-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (max-width: 560px) {
+  .users-action-snackbar {
+    right: 12px;
+    left: auto;
+    width: min(460px, calc(100vw - 24px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .users-action-snackbar {
+    animation: none;
+  }
+
+  .users-action-progress > span {
+    animation: none;
+  }
+}

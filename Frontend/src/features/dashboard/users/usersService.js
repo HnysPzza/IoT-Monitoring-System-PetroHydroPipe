@@ -9,6 +9,10 @@ export function resendSetup(token, userId) {
   return apiRequest(`/api/users/${userId}/resend-setup`, { token, method: 'POST' })
 }
 
+export function sendPasswordReset(token, userId) {
+  return apiRequest(`/api/users/${userId}/password-reset`, { token, method: 'POST' })
+}
+
 export function getRoles(token) {
   return apiRequest('/api/users/roles', { token })
 }

@@ -48,6 +48,23 @@ describe('UsersTable', () => {
     expect(onArchiveAccount).toHaveBeenCalledWith(account)
   })
 
+  it('offers a password reset link for active accounts that completed setup', async () => {
+    const user = userEvent.setup()
+    const onResetPassword = vi.fn()
+    render(
+      <UsersTable
+        accounts={[{ ...account, onboarding: 'Ready' }]}
+        currentUserId="user-1"
+        onResetPassword={onResetPassword}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /actions for/i }))
+    await user.click(screen.getByRole('button', { name: 'Send password reset link' }))
+
+    expect(onResetPassword).toHaveBeenCalledWith({ ...account, onboarding: 'Ready' })
+  })
+
   it('disables archive for the current user', async () => {
     const user = userEvent.setup()
     render(

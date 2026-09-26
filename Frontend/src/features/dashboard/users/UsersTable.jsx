@@ -27,6 +27,7 @@ export default function UsersTable({
   onRequestArchive,
   onRequestDeactivate,
   onResend,
+  onResetPassword,
   onStatusChange,
   page = 1,
   sort = 'created',
@@ -159,6 +160,21 @@ export default function UsersTable({
                               </PopoverPrimitive.Close>
                             ) : null}
 
+                            {account.onboarding === 'Ready' && account.status === 'Active' ? (
+                              <PopoverPrimitive.Close asChild>
+                                <button
+                                  className="user-actions-item"
+                                  type="button"
+                                  onClick={() => onResetPassword?.(account)}
+                                  disabled={isActionBusy || isCurrentUser}
+                                  title={isCurrentUser ? 'Protected account cannot be reset' : undefined}
+                                >
+                                  <KeyRound size={15} aria-hidden="true" />
+                                  <span>Send password reset link</span>
+                                </button>
+                              </PopoverPrimitive.Close>
+                            ) : null}
+
                             {account.status === 'Active' ? (
                               <PopoverPrimitive.Close asChild>
                                 <button
@@ -227,7 +243,7 @@ export default function UsersTable({
           <div className="users-pagination-actions">
             <button
               className="btn btn-secondary users-pagination-btn"
-              disabled={isLoading || (page || 1) <= 1}
+              disabled={isLoading || busy || (page || 1) <= 1}
               onClick={() => onPageChange((page || 1) - 1)}
               type="button"
             >
@@ -236,7 +252,7 @@ export default function UsersTable({
             </button>
             <button
               className="btn btn-secondary users-pagination-btn"
-              disabled={isLoading || (page || 1) >= totalPages}
+              disabled={isLoading || busy || (page || 1) >= totalPages}
               onClick={() => onPageChange((page || 1) + 1)}
               type="button"
             >
