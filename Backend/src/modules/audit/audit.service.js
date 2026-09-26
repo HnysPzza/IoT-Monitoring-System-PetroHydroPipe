@@ -99,9 +99,31 @@ async function listAuditLogs(filters = {}) {
 
   const total = count || 0
   const totalPages = Math.max(Math.ceil(total / limit), 1)
+  const affectedUserIds = [...new Set(data
+    .filter((record) => record.entity_type === 'user' && record.entity_id)
+    .map((record) => record.entity_id))]
+  let affectedUsersById = new Map()
+
+  if (affectedUserIds.length > 0) {
+    const { data: affectedUsers, error: affectedUsersError } = await supabase
+      .from('users')
+      .select('id, username')
+      .in('id', affectedUserIds)
+
+    if (affectedUsersError) {
+      throw createAuditError(500, 'AUDIT_QUERY_FAILED', 'Unable to load audit logs.')
+    }
+
+    affectedUsersById = new Map((affectedUsers || []).map((user) => [user.id, user]))
+  }
 
   return {
-    logs: data.map(toAuditLogResponse),
+    logs: data.map((record) => ({
+      ...toAuditLogResponse(record),
+      targetUser: record.entity_type === 'user' && affectedUsersById.has(record.entity_id)
+        ? { username: affectedUsersById.get(record.entity_id).username }
+        : null,
+    })),
     pagination: {
       page,
       limit,

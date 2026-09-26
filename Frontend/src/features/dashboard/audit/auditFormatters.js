@@ -10,6 +10,12 @@ const actionLabels = {
   LOGIN_SUCCESS: 'Successful login',
   LOGIN_FAILED: 'Failed login attempt',
   USER_CREATED: 'User account created',
+  USER_INVITED: 'User account invited',
+  USER_INVITATION_RESENT: 'Invitation resend requested',
+  USER_PASSWORD_RESET_REQUESTED: 'Password reset requested',
+  PASSWORD_SETUP_COMPLETED: 'Password setup completed',
+  PASSWORD_CHANGED: 'Password changed',
+  PASSWORD_RESET_COMPLETED: 'Password reset completed',
   USER_STATUS_UPDATED: 'User account status changed',
   USER_ARCHIVED: 'User account archived',
   DOWNTIME_CREATED: 'Downtime record created',
@@ -98,7 +104,7 @@ export function getReadableTarget(log) {
   }
 
   if (log.entityType === 'user') {
-    return log.metadata?.targetUsername || 'User account'
+    return log.targetUser?.username || log.metadata?.targetUsername || 'User account'
   }
 
   if (log.entityType === 'machine') {
@@ -122,7 +128,7 @@ export function getReadableTarget(log) {
 
 export function getReadableDetails(log) {
   const metadata = log.metadata || {}
-  const targetUser = metadata.targetUsername || 'User account'
+  const targetUser = log.targetUser?.username || metadata.targetUsername || 'User account'
   const targetRole = metadata.targetRole ? ` as ${metadata.targetRole}` : ''
   const status = metadata.newStatus || 'updated'
   const sensor = getSensorName(metadata.sensorCode) || 'Sensor'
@@ -145,6 +151,18 @@ export function getReadableDetails(log) {
       return `Login failed because ${loginFailureReasons[metadata.reason] || 'the request was rejected'}.`
     case 'USER_CREATED':
       return `${targetUser} was created${targetRole}.`
+    case 'USER_INVITED':
+      return `${targetUser} was invited${targetRole}.`
+    case 'USER_INVITATION_RESENT':
+      return `A new invitation link was requested for ${targetUser}.`
+    case 'USER_PASSWORD_RESET_REQUESTED':
+      return `A password reset was requested for ${targetUser}.`
+    case 'PASSWORD_SETUP_COMPLETED':
+      return `${targetUser} completed password setup.`
+    case 'PASSWORD_CHANGED':
+      return `${targetUser} changed their password.`
+    case 'PASSWORD_RESET_COMPLETED':
+      return `${targetUser} reset their password.`
     case 'USER_STATUS_UPDATED':
       return `${targetUser} was changed to ${status}.`
     case 'USER_ARCHIVED':

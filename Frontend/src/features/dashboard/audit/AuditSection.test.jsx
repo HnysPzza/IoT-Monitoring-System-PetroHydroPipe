@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AuditSection from './AuditSection.jsx'
 import { getAuditLogs } from './auditService.js'
+import { auditActionOptions, getReadableAction, getReadableDetails, getReadableTarget } from './auditFormatters.js'
 
 vi.mock('./auditService.js', () => ({
   getAuditLogs: vi.fn(),
@@ -25,6 +26,26 @@ afterAll(() => {
 describe('AuditSection', () => {
   beforeEach(() => {
     getAuditLogs.mockReset()
+  })
+
+  it('formats user account audit actions and affected accounts', () => {
+    const events = [
+      ['USER_INVITED', 'User account invited', 'operator01 was invited.'],
+      ['USER_INVITATION_RESENT', 'Invitation resend requested', 'A new invitation link was requested for operator01.'],
+      ['USER_PASSWORD_RESET_REQUESTED', 'Password reset requested', 'A password reset was requested for operator01.'],
+      ['PASSWORD_SETUP_COMPLETED', 'Password setup completed', 'operator01 completed password setup.'],
+      ['PASSWORD_CHANGED', 'Password changed', 'operator01 changed their password.'],
+      ['PASSWORD_RESET_COMPLETED', 'Password reset completed', 'operator01 reset their password.'],
+    ]
+
+    for (const [action, label, summary] of events) {
+      const log = { action, entityType: 'user', entityId: 'user-1', targetUser: { username: 'operator01' }, metadata: {} }
+
+      expect(getReadableAction(log)).toBe(label)
+      expect(getReadableDetails(log)).toBe(summary)
+      expect(getReadableTarget(log)).toBe('operator01')
+      expect(auditActionOptions.some((option) => option.value === action && option.label === label)).toBe(true)
+    }
   })
 
   it('loads audit logs and requests the next page from the backend', async () => {
