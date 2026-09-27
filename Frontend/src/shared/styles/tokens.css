@@ -3041,23 +3041,22 @@ button:disabled {
 .live-machine-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 12px 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--subtle-border);
 }
 
-.live-machine-grid div {
+.live-machine-grid > div {
   display: grid;
-  align-content: center;
-  gap: 8px;
-  min-height: 88px;
-  padding: 14px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  background: var(--panel-bg);
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .live-machine-grid strong {
   color: var(--c-text);
-  font-size: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .machine-admin-grid {
@@ -3765,16 +3764,16 @@ button:disabled {
 
 .live-sensor-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(180px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 12px;
   align-items: stretch;
 }
 
 .live-sensor-card {
   display: grid;
-  grid-template-rows: minmax(56px, auto) minmax(48px, auto) minmax(80px, auto) 1fr;
-  align-content: stretch;
-  gap: 14px;
+  grid-template-rows: auto auto auto 1fr;
+  align-content: start;
+  gap: 12px;
   min-width: 0;
   height: 100%;
 }
@@ -3784,7 +3783,6 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  min-height: 56px;
 }
 
 .live-sensor-card .machine-card-header > div {
@@ -3815,12 +3813,6 @@ button:disabled {
   gap: 8px;
 }
 
-.live-refresh-icon,
-.live-refresh-icon:hover:not(:disabled) {
-  color: #10B981;
-  background: transparent;
-}
-
 .live-refresh-icon:disabled {
   opacity: 0.55;
 }
@@ -3828,13 +3820,9 @@ button:disabled {
 .live-detection-state {
   display: flex;
   align-items: center;
-  min-height: 48px;
   margin: 0;
-  padding: 8px 10px;
-  border-left: 3px solid var(--card-border);
-  border-radius: 0 6px 6px 0;
+  padding: 0;
   color: var(--c-text-2);
-  background: var(--panel-bg);
   font-family: 'Inter', sans-serif;
   font-size: 0.78rem;
   line-height: 1.35;
@@ -3842,10 +3830,9 @@ button:disabled {
 
 .live-sensor-card .live-sensor-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
   margin: 0;
-  min-height: 80px;
   align-content: start;
 }
 
@@ -3895,24 +3882,108 @@ button:disabled {
 .live-purpose-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  min-height: 60px;
   margin-top: auto;
   padding-top: 10px;
   border-top: 1px solid var(--subtle-border);
   color: var(--c-text-2);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   line-height: 1.4;
-}
-
-.live-purpose-row svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
 }
 
 .live-purpose-row span {
   min-width: 0;
   overflow-wrap: break-word;
+}
+
+.section-card.live-activity-card {
+  padding: 6px 16px;
+}
+
+.live-activity-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.live-activity-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.live-activity-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.live-activity-caption {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 0.74rem;
+}
+
+.live-activity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 12px;
+  margin: 0 -16px;
+  padding: 0;
+  list-style: none;
+}
+
+.live-activity-item {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 16px;
+}
+
+.live-activity-item:not(:first-child)::before {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: -6px;
+  width: 1px;
+  background: var(--card-border);
+  content: '';
+}
+
+.live-activity-sensor {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.live-activity-sensor .machine-id {
+  font-size: 0.72rem;
+}
+
+.live-activity-sensor strong {
+  color: var(--c-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.live-activity-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+}
+
+.live-activity-time span {
+  color: var(--c-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.live-activity-time time {
+  color: var(--c-text-2);
+  font-size: 0.72rem;
 }
 
 .live-network-card {
@@ -4168,6 +4239,14 @@ button:disabled {
 .machine-card.status-fault {
   border-color: var(--status-fault-border);
   background: linear-gradient(180deg, var(--status-fault-bg), var(--card-bg));
+}
+
+.machine-card.live-sensor-card.status-running,
+.machine-card.live-sensor-card.status-idle,
+.machine-card.live-sensor-card.status-downtime,
+.machine-card.live-sensor-card.status-fault {
+  border-color: var(--subtle-border);
+  background: var(--card-bg);
 }
 
 .status-badge.status-running {
@@ -6002,7 +6081,6 @@ button:disabled {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .live-sensor-grid,
   .admin-sensor-grid,
   .settings-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6161,6 +6239,20 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .live-activity-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .live-activity-item:not(:first-child)::before {
+    display: none;
+  }
+
+  .live-activity-item:not(:first-child) {
+    border-top: 1px solid var(--card-border);
+  }
+
   .analytics-header-controls {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 44px;
@@ -6317,7 +6409,6 @@ button:disabled {
   .kpi-grid,
   .overview-sensor-grid,
   .live-machine-grid,
-  .live-sensor-grid,
   .admin-sensor-grid,
   .machine-admin-grid,
   .settings-profile-grid,

@@ -640,7 +640,7 @@ export default function AdminDashboard() {
           <div className="topbar-trailing">
             <span className={`alert-connection-status is-${alertConnectionStatus}`} role="status">
               {alertConnectionStatus === 'live'
-                ? 'Live'
+                ? 'Alert stream live'
                 : alertConnectionStatus === 'polling'
                   ? 'Polling'
                   : alertConnectionStatus === 'connecting'

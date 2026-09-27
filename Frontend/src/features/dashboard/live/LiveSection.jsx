@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, Wifi, WifiOff, Wrench } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
@@ -9,12 +9,32 @@ import { getLiveFeed } from './liveService.js'
 import { presentLiveSensors } from './livePresentation.js'
 
 const POLL_INTERVAL_MS = 15000
+const RELATIVE_TIME_UNITS = [
+  ['year', 31_536_000_000],
+  ['month', 2_592_000_000],
+  ['week', 604_800_000],
+  ['day', 86_400_000],
+  ['hour', 3_600_000],
+  ['minute', 60_000],
+  ['second', 1000],
+]
+const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('en-PH', { numeric: 'auto' })
 
 function StatusIcon({ status }) {
-  if (status === 'Running') return <Wifi size={18} aria-hidden="true" />
+  if (status === 'Running') return <Activity size={18} aria-hidden="true" />
   if (status === 'Downtime') return <AlertTriangle size={18} aria-hidden="true" />
   if (status === 'Fault') return <Wrench size={18} aria-hidden="true" />
   return <PauseCircle size={18} aria-hidden="true" />
+}
+
+function formatEventAge(value) {
+  if (!value) return 'No event yet'
+  const difference = Date.parse(value) - Date.now()
+  if (!Number.isFinite(difference)) return 'Unknown'
+  const [unit, duration] =
+    RELATIVE_TIME_UNITS.find(([, unitDuration]) => Math.abs(difference) >= unitDuration) ||
+    RELATIVE_TIME_UNITS[RELATIVE_TIME_UNITS.length - 1]
+  return RELATIVE_TIME_FORMATTER.format(Math.round(difference / duration), unit)
 }
 
 export default function LiveSection() {
@@ -106,7 +126,7 @@ export default function LiveSection() {
       {machine ? (
         <section className="section-card live-hero-card" aria-labelledby="live-title">
           <div className="section-heading">
-            <div><p className="section-eyebrow">Live feed</p><h2 id="live-title">{machine.name}</h2></div>
+            <div><h2 id="live-title">{machine.name}</h2></div>
             <div className="live-heading-badges">
               <button className="icon-button live-refresh-icon" type="button" aria-label="Refresh live feed" disabled={isRefreshing} onClick={() => loadLiveFeed()}>
                 <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={18} strokeWidth={2.4} aria-hidden="true" />
@@ -118,8 +138,8 @@ export default function LiveSection() {
           <div className="live-machine-grid">
             <div><span className="live-metric-label">Machine</span><strong>{machine.machineCode}</strong></div>
             <div><span className="live-metric-label">Location</span><strong>{machine.location || 'Not set'}</strong></div>
-            <div><span className="live-metric-label">Snapshot</span><strong>{formatLiveDateTime(monitoring.capturedAt)}</strong></div>
-            <div><span className="live-metric-label">Inductive Sensors</span><strong>{machine.activeSensors} active</strong></div>
+            <div><span className="live-metric-label">Status snapshot</span><strong>{formatLiveDateTime(monitoring.capturedAt, 'Not available')}</strong></div>
+            <div><span className="live-metric-label">Running sensors</span><strong>{machine.activeSensors}</strong></div>
           </div>
         </section>
       ) : (
@@ -138,13 +158,35 @@ export default function LiveSection() {
             <p className="live-detection-state">{sensor.stateLabel}</p>
             <dl className="machine-meta live-sensor-meta">
               <div><dt>Signal</dt><dd>{formatSignal(sensor.signal)}</dd></div>
-              <div><dt>Last Event</dt><dd>{formatLiveDateTime(sensor.lastEventAt)}</dd></div>
               <div><dt>Connection</dt><dd className={sensor.monitoring?.connectivityState === 'offline' ? 'live-offline' : ''}>{sensor.monitoring?.connectivityState === 'online' ? <CheckCircle2 size={14} aria-hidden="true" /> : null}{sensor.monitoring?.connectivityState === 'offline' ? <WifiOff size={14} aria-hidden="true" /> : null}<span className="live-connectivity-label">{sensor.connectivityLabel}</span></dd></div>
             </dl>
-            <div className="live-purpose-row">{sensor.displayStatus === 'Downtime' ? <Wrench size={16} aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}<span>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</span></div>
+            <div className="live-purpose-row"><span>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</span></div>
           </article>
         ))}
       </section>
+
+      {presentedSensors.length > 0 ? (
+        <section className="section-card live-activity-card" aria-labelledby="live-activity-title">
+          <div className="live-activity-heading">
+            <div><p className="section-eyebrow">Recent activity</p><h2 id="live-activity-title">Latest event by sensor</h2></div>
+            <p className="live-activity-caption">Columns match the sensor cards above</p>
+          </div>
+          <ol className="live-activity-grid" aria-label="Latest event reported by each sensor">
+            {presentedSensors.map((sensor) => (
+              <li className="live-activity-item" key={sensor.id}>
+                <div className="live-activity-sensor">
+                  <span className="machine-id">{sensor.sensorCode}</span>
+                  <strong>{getSensorLabel(sensor.sensorCode, sensor.label)}</strong>
+                </div>
+                <div className="live-activity-time">
+                  <span>{formatEventAge(sensor.lastEventAt)}</span>
+                  {sensor.lastEventAt ? <time dateTime={sensor.lastEventAt}>{formatLiveDateTime(sensor.lastEventAt)}</time> : null}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
     </div>
   )
 }
