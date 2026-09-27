@@ -62,7 +62,7 @@ export const navItems = [
     icon: 'monitor',
     group: 'admin',
     roles: ['Admin', 'Engineering Supervisor'],
-    subtitle: 'Manage Spiral Mill 01 and its five sensors.',
+    subtitle: 'Review current status of Spiral Mill 01 and its sensors.',
   },
   {
     label: 'Settings',
@@ -108,7 +108,7 @@ export const dashboardPageMeta = {
   },
   '/dashboard/machines': {
     title: 'Machines',
-    subtitle: 'Spiral Mill 01 and five-sensor configuration.',
+    subtitle: 'Current machine and sensor status for Spiral Mill 01.',
   },
   '/dashboard/audit': {
     title: 'Audit Log',

@@ -11,7 +11,7 @@ vi.mock('../live/liveService.js', () => ({ getLiveFeed: vi.fn() }))
 
 function livePayload({ machine = {}, sensors } = {}) {
   return {
-    monitoring: { mode: 'observe', capturedAt: '2026-08-09T02:00:00.000Z' },
+    monitoring: { mode: 'observe', capturedAt: '2026-08-10T02:00:00.000Z' },
     machine: {
       id: 'machine-1',
       machineCode: 'M-01',
@@ -119,13 +119,15 @@ describe('MachinesSection live snapshot', () => {
     expect(screen.getByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
   })
 
-  it('uses one live snapshot and labels S-03 physical input separately from downtime authority', async () => {
+  it('uses one live snapshot without adding special S-03 card copy', async () => {
     getLiveFeed.mockResolvedValue(livePayload())
 
     renderWithAuth(<MachinesSection />)
 
     expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
-    expect(screen.getByText(/Physical input: Active/)).toBeInTheDocument()
+    expect(screen.getByText('Status snapshot').parentElement.querySelector('time'))
+      .toHaveAttribute('dateTime', '2026-08-10T02:00:00.000Z')
+    expect(screen.queryByText(/Physical input:/)).not.toBeInTheDocument()
     expect(screen.getAllByText('Downtime')).toHaveLength(2)
     expect(getLiveFeed).toHaveBeenCalledWith('test-token')
     expect(screen.queryByLabelText('Machine status')).not.toBeInTheDocument()

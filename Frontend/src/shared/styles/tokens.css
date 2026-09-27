@@ -3059,13 +3059,6 @@ button:disabled {
   line-height: 1.4;
 }
 
-.machine-admin-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.machine-admin-grid article,
 .settings-profile-card {
   display: grid;
   gap: 8px;
@@ -3076,7 +3069,6 @@ button:disabled {
   background: var(--panel-bg);
 }
 
-.machine-admin-grid span,
 .settings-profile-card p {
   margin: 0;
   color: var(--c-text-2);
@@ -3085,19 +3077,9 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.machine-admin-grid strong,
 .settings-profile-card strong {
   color: var(--c-text);
   font-size: 0.98rem;
-}
-
-.machine-status-admin {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: space-between;
-  gap: 14px;
-  margin-top: 18px;
 }
 
 .admin-sensor-grid {
@@ -3107,13 +3089,16 @@ button:disabled {
 }
 
 .admin-sensor-card {
-  align-content: stretch;
-  grid-template-rows: auto 1fr auto;
-  min-height: 320px;
+  align-content: start;
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--c-text) 8%, transparent);
 }
 
 .admin-sensor-card .machine-meta {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-sensor-card .admin-sensor-meta-wide {
+  grid-column: 1 / -1;
 }
 
 .production-analytics-card {
@@ -4249,6 +4234,14 @@ button:disabled {
   background: var(--card-bg);
 }
 
+.machine-card.admin-sensor-card.status-running,
+.machine-card.admin-sensor-card.status-idle,
+.machine-card.admin-sensor-card.status-downtime,
+.machine-card.admin-sensor-card.status-fault {
+  border-color: var(--subtle-border);
+  background: var(--card-bg);
+}
+
 .status-badge.status-running {
   color: var(--status-running-text);
   border-color: var(--status-running-border);
@@ -5331,17 +5324,6 @@ button:disabled {
   font-weight: 600;
 }
 
-.machine-status-admin .filter-field {
-  width: min(100%, 260px);
-  min-width: 220px;
-}
-
-.admin-sensor-card .filter-field {
-  align-self: end;
-  width: 100%;
-  min-width: 0;
-}
-
 .filter-field span {
   color: var(--c-text-2);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -6081,13 +6063,15 @@ button:disabled {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .admin-sensor-grid,
+  .admin-sensor-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .settings-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .live-machine-grid,
-  .machine-admin-grid {
+  .live-machine-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -6103,6 +6087,10 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
+  .admin-sensor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .login-page {
     grid-template-columns: 1fr;
     overflow: visible;
@@ -6313,11 +6301,6 @@ button:disabled {
     flex-direction: column;
   }
 
-  .machine-status-admin .filter-field {
-    width: 100%;
-    min-width: 0;
-  }
-
   .brand-content,
   .form-panel {
     padding: 24px 16px;
@@ -6410,10 +6393,13 @@ button:disabled {
   .overview-sensor-grid,
   .live-machine-grid,
   .admin-sensor-grid,
-  .machine-admin-grid,
   .settings-profile-grid,
   .analytics-summary-row,
   .machine-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sensor-card .machine-meta {
     grid-template-columns: 1fr;
   }
 
