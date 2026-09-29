@@ -74,7 +74,7 @@ describe('LiveSection polling', () => {
     expect(screen.getByText('Idle — grace period')).toBeInTheDocument()
   })
 
-  it('renders a sensor fault in orange instead of the red downtime style', async () => {
+  it('keeps a sensor fault distinct from downtime status', async () => {
     const faultPayload = payload()
     faultPayload.sensors[0].status = 'Fault'
     getLiveFeed.mockResolvedValue(faultPayload)

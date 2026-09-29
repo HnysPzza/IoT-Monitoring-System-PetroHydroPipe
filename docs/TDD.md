@@ -203,7 +203,7 @@ UC018 currently defines only the trigger threshold. The clear/resume threshold n
 
 ## 7. Reporting & Export (UC022, UC023)
 - PDF generation: Puppeteer or PDFKit (Laravel's built-in PDF generation is being replaced by one of these — pick one and standardize, don't mix).
-- CSV export: straightforward from query results.
+- XLSX export: serialize report data into a formatted workbook with typed cells.
 - Reports: daily/weekly/monthly, covering downtime, process events, output counts, availability rate, and estimated loss.
 
 ## 8. Email / Notification Subsystem

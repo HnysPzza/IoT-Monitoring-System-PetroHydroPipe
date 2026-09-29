@@ -3,7 +3,6 @@ const path = require('path')
 const fs = require('fs')
 
 const NOT_AVAILABLE = 'Not available'
-const CSV_HEADERS = ['Cause', 'Sensor', 'Events', 'Duration Minutes', 'Estimated Loss']
 
 const COMPANY_NAME = 'PETRO HYDRO PIPE CORP.'
 const COMPANY_SUBTITLE = 'Industrial Steel Pipe Manufacturing • IoT Machine Monitoring Division'
@@ -26,29 +25,6 @@ const COLOR = {
   rowOdd: '#FFFFFF',
   cardBg: '#F8FAFC',
   accentBlue: '#2563EB',
-}
-
-function csvCell(value) {
-  const text = value === null || value === undefined || value === '' ? NOT_AVAILABLE : String(value)
-  return `"${text.replaceAll('"', '""')}"`
-}
-
-function toCsv(report) {
-  const metadata = [
-    ['Generated At', report.generatedAt],
-    ['Loss Rate Source', report.lossEstimateBasis?.source],
-    ['Loss Rate Pieces Per Hour', report.lossEstimateBasis?.ratePiecesPerMinute == null ? null : Math.ceil(report.lossEstimateBasis.ratePiecesPerMinute * 60)],
-  ].map(([label, value]) => `${csvCell(label)},${csvCell(value)}`)
-
-  const table = [CSV_HEADERS, ...report.rows.map((row) => [
-    row.cause,
-    row.sensor,
-    row.events,
-    row.durationMinutes,
-    row.estimatedLoss,
-  ])].map((cells) => cells.map(csvCell).join(','))
-
-  return [...metadata, '', ...table].join('\n')
 }
 
 function pdfText(value) {
@@ -451,12 +427,13 @@ function buildExportFilename({ reportType, selectedDate, format }) {
 }
 
 function contentTypeFor(format) {
-  return format === 'pdf' ? 'application/pdf' : 'text/csv; charset=utf-8'
+  if (format === 'pdf') return 'application/pdf'
+  if (format === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  throw new TypeError(`Unsupported report export format: ${format}`)
 }
 
 module.exports = {
   buildExportFilename,
   contentTypeFor,
-  toCsv,
   toPdf,
 }

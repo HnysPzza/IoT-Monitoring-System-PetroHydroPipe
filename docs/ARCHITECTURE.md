@@ -28,7 +28,7 @@ Main responsibilities:
 - Overview analytics.
 - Live Feed.
 - Downtime records.
-- Reports and CSV export.
+- Reports and PDF/XLSX export.
 - User management.
 - Machine/sensor management.
 - Audit log viewer.

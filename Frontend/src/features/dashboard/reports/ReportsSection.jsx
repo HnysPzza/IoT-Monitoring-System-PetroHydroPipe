@@ -148,10 +148,10 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
             className="reports-export-option"
             type="button"
             disabled={isBlocked}
-            onClick={() => chooseFormat('csv')}
+            onClick={() => chooseFormat('xlsx')}
           >
-            <img src="/assets/report-export-csv.png" alt="" aria-hidden="true" />
-            <span>{isExporting && exportingFormat === 'csv' ? 'Exporting...' : 'Export CSV'}</span>
+            <img src="/assets/report-export-excel.png" alt="" aria-hidden="true" />
+            <span>{isExporting && exportingFormat === 'xlsx' ? 'Exporting...' : 'Export Excel'}</span>
           </button>
         </div>
       </PopoverContent>

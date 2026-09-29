@@ -38,7 +38,7 @@ Petro Hydro Pipe Corp. currently tracks machine downtime, process events, and pr
 2. Log process events (coil joint, inside/outside filler wire) as timestamped records, separate from downtime, via Sensors 1, 2, 4.
 3. Automatically count finished pipe output at the cutter via Sensor 5.
 4. Compute estimated production loss from downtime duration/frequency.
-5. Provide a shift-aware, role-based web dashboard with real-time status, historical logs, trend charts, and exportable reports (PDF/CSV).
+5. Provide a shift-aware, role-based web dashboard with real-time status, historical logs, trend charts, and exportable reports (PDF/XLSX).
 6. Evaluate the finished system against **ISO 25010** software quality characteristics and **UTAUT** (performance expectancy, effort expectancy, social influence, facilitating conditions) for user acceptance.
 
 ## 4. Explicitly Out of Scope
@@ -81,7 +81,7 @@ First login always forces a password change from a one-time temporary password (
 ### 6.3 Analytics & Reporting (UC021–UC023)
 - Current-vs-historical data analytics across downtime, maintenance patterns, process events, output, and loss (UC021).
 - Daily/weekly/monthly summary report generation (UC022).
-- Export to PDF/CSV (UC023).
+- Export to PDF/XLSX (UC023).
 
 ### 6.4 Machine & Sensor Administration (UC024–UC026)
 - Register/edit machine records (UC024).

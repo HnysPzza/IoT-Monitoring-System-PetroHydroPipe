@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
+const ExcelJS = require('exceljs')
 const { assertError, loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
@@ -29,6 +30,7 @@ const REPORT = {
     { id: 'production', label: 'Production Count', value: '1,250 pcs', helper: 'From Spiral Mill 01' },
   ],
   metrics: {
+    outputPieces: 1250,
     durationMinutes: 55,
     unplannedMinutes: 55,
     plannedExcludedMinutes: 0,
@@ -71,16 +73,15 @@ async function requestExport(baseUrl, body, headers) {
   return response
 }
 
-test('Export API enforces authentication, docx export roles, and request validation', async () => {
+test('Export API enforces authentication, report export roles, and request validation', async () => {
   const app = loadExportApp({ summaryCalls: [], auditCalls: [] })
 
   await withTestServer(app, async (baseUrl) => {
-    const body = { type: 'daily', date: '2026-09-02', format: 'csv' }
+    const body = { type: 'daily', date: '2026-09-02', format: 'xlsx' }
 
     assert.equal((await requestExport(baseUrl, body)).status, 401)
 
-    // The docx control authorizes exports for Admin, Managing Director, and
-    // Operation Manager only — Asst. Operation Manager must be rejected here.
+    // Only Admin, Managing Director, and Operation Manager can export reports.
     assert.equal((await requestExport(baseUrl, body, authHeader('Production Supervisor'))).status, 403)
     assert.equal((await requestExport(baseUrl, body, authHeader('Asst. Operation Manager'))).status, 403)
 
@@ -92,55 +93,14 @@ test('Export API enforces authentication, docx export roles, and request validat
 
     for (const invalid of [
       { type: 'daily', format: 'xls' },
-      { type: 'yearly', format: 'csv' },
-      { type: 'daily', date: '09-02-2026', format: 'csv' },
+      { type: 'yearly', format: 'pdf' },
+      { type: 'daily', date: '09-02-2026', format: 'xlsx' },
     ]) {
       const response = await requestExport(baseUrl, invalid, authHeader('Admin'))
       assert.equal(response.status, 400, JSON.stringify(invalid))
       const payload = await response.json()
       assertError(payload, 'VALIDATION_ERROR')
     }
-  })
-})
-
-test('Export API streams server-generated CSV with attachment headers and records the audit entry', async () => {
-  const summaryCalls = []
-  const auditCalls = []
-  const app = loadExportApp({ summaryCalls, auditCalls })
-
-  await withTestServer(app, async (baseUrl) => {
-    const response = await requestExport(
-      baseUrl,
-      { type: 'daily', date: '2026-09-02', format: 'csv' },
-      authHeader('Admin'),
-    )
-
-    assert.equal(response.status, 200)
-    assert.equal(response.headers.get('content-type'), 'text/csv; charset=utf-8')
-    assert.equal(
-      response.headers.get('content-disposition'),
-      'attachment; filename="report-daily-2026-09-02.csv"',
-    )
-
-    const csv = await response.text()
-    assert.ok(csv.includes('"Cause","Sensor","Events","Duration Minutes","Estimated Loss"'))
-    assert.ok(csv.includes('"Corrective Maintenance","S-01 Coil Joint Replacement","2","45","3"'))
-
-    assert.deepEqual(summaryCalls, [{ type: 'daily', date: '2026-09-02' }])
-
-    assert.equal(auditCalls.length, 1)
-    assert.equal(auditCalls[0].action, 'REPORT_EXPORTED')
-    assert.equal(auditCalls[0].userId, USER_ID)
-    assert.equal(auditCalls[0].entityType, 'report')
-    assert.deepEqual(auditCalls[0].metadata, {
-      reportType: 'daily',
-      selectedDate: '2026-09-02',
-      format: 'csv',
-      rowCount: 1,
-      periodState: 'complete',
-      observedStartAt: REPORT.observedStartAt,
-      observedEndAt: REPORT.observedEndAt,
-    })
   })
 })
 
@@ -169,13 +129,40 @@ test('Export API streams PDF for Managing Director and Operation Manager', async
   })
 })
 
+test('Export API streams a formatted XLSX workbook and records its format in the audit entry', async () => {
+  const auditCalls = []
+  const app = loadExportApp({ summaryCalls: [], auditCalls })
+
+  await withTestServer(app, async (baseUrl) => {
+    const response = await requestExport(
+      baseUrl,
+      { type: 'daily', date: '2026-09-02', format: 'xlsx' },
+      authHeader('Admin'),
+    )
+
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="report-daily-2026-09-02.xlsx"')
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()))
+    const sheet = workbook.getWorksheet('Operational Report')
+    assert.equal(sheet.getCell('A20').value, 'Corrective Maintenance')
+    assert.equal(sheet.getCell('B8').value, 1250)
+
+    assert.equal(auditCalls.length, 1)
+    assert.equal(auditCalls[0].action, 'REPORT_EXPORTED')
+    assert.equal(auditCalls[0].metadata.format, 'xlsx')
+  })
+})
+
 test('Export API limits repeated exports per user beyond the configured cap', async () => {
   const app = loadExportApp({ summaryCalls: [], auditCalls: [] })
 
   await withTestServer(app, async (baseUrl) => {
     const requests = await Promise.all(Array.from({ length: 11 }, () => requestExport(
       baseUrl,
-      { type: 'daily', format: 'csv' },
+      { type: 'daily', format: 'xlsx' },
       authHeader('Admin'),
     )))
     const limited = requests.filter((response) => response.status === 429)

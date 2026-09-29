@@ -1,10 +1,11 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
+const ExcelJS = require('exceljs')
+const { toXlsx } = require('../src/modules/reports/reportsXlsx.serializer')
 
 const {
   buildExportFilename,
   contentTypeFor,
-  toCsv,
   toPdf,
 } = require('../src/modules/reports/reportsExport.serializer')
 
@@ -25,6 +26,7 @@ function createReport(overrides = {}) {
       { id: 'loss', label: 'Estimated Loss', value: '3 pcs', helper: 'Using 3 pcs/hr' },
     ],
     metrics: {
+      outputPieces: 1250,
       durationMinutes: 55,
       unplannedMinutes: 55,
       plannedExcludedMinutes: 0,
@@ -54,47 +56,6 @@ function createReport(overrides = {}) {
     ...overrides,
   }
 }
-
-test('toCsv renders metadata block, header row, and one quoted line per downtime row', () => {
-  const csv = toCsv(createReport())
-  const lines = csv.split('\n')
-
-  assert.equal(lines[0], '"Generated At","2026-09-03T01:23:45.678Z"')
-  assert.equal(lines[1], '"Loss Rate Source","configured-fallback"')
-  assert.equal(lines[2], '"Loss Rate Pieces Per Hour","3"')
-  assert.equal(lines[3], '')
-  assert.equal(lines[4], '"Cause","Sensor","Events","Duration Minutes","Estimated Loss"')
-  assert.equal(
-    lines[5],
-    '"Corrective Maintenance","S-01 Coil Joint Replacement","2","45","3"',
-  )
-  assert.equal(lines.length, 7)
-})
-
-test('toCsv doubles embedded quotes so injected characters cannot break the cell', () => {
-  const csv = toCsv(createReport())
-
-  assert.ok(csv.includes('"Pending ""Review"", unresolved"'))
-})
-
-test('toCsv still emits the header when the report has no downtime rows', () => {
-  const csv = toCsv(createReport({ rows: [] }))
-  const lines = csv.split('\n')
-
-  assert.equal(lines[4], '"Cause","Sensor","Events","Duration Minutes","Estimated Loss"')
-  assert.equal(lines.length, 5)
-})
-
-test('toCsv falls back to Not available for missing metadata values', () => {
-  const csv = toCsv(createReport({
-    generatedAt: null,
-    lossEstimateBasis: { source: null, ratePiecesPerMinute: null },
-  }))
-
-  assert.ok(csv.includes('"Generated At","Not available"'))
-  assert.ok(csv.includes('"Loss Rate Source","Not available"'))
-  assert.ok(csv.includes('"Loss Rate Pieces Per Hour","Not available"'))
-})
 
 test('toPdf resolves to a non-empty PDF buffer with the %PDF magic header', async () => {
   const buffer = await toPdf(createReport())
@@ -128,18 +89,92 @@ test('toPdf renders multi-page PDF with pagination when report has numerous down
   assert.ok(pageCount >= 2, `expected at least 2 pages for 45 rows, got ${pageCount}`)
 })
 
+test('toXlsx writes a styled report with typed values and a restrained palette', async () => {
+  const buffer = await toXlsx(createReport())
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.getWorksheet('Operational Report')
+
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.equal(sheet.views[0].showGridLines, false)
+  assert.ok(sheet.getCell('B4').value instanceof Date)
+  assert.equal(sheet.getCell('B8').value, 1250)
+  assert.equal(sheet.getCell('B8').numFmt, '#,##0 "pcs"')
+  assert.equal(sheet.getCell('E8').value, 2)
+  assert.equal(sheet.getCell('E9').numFmt, '#,##0 "min"')
+  assert.equal(sheet.getCell('E10').numFmt, '#,##0 "pcs"')
+  assert.equal(sheet.getCell('A20').value, 'Corrective Maintenance')
+  assert.equal(sheet.getCell('C20').value, 2)
+  assert.equal(sheet.getCell('D20').numFmt, '#,##0')
+  assert.equal(sheet.getCell('E21').numFmt, '#,##0.##')
+  assert.equal(sheet.getCell('E20').value, 3)
+  assert.equal(sheet.getCell('B10').value, 0.9074)
+  assert.equal(sheet.getCell('B10').numFmt, '0.0%')
+  assert.equal(sheet.getCell('A19').font.color.argb, 'FFFFFFFF')
+
+  const colors = new Set()
+  sheet.eachRow((row) => row.eachCell((cell) => {
+    if (cell.font?.color?.argb) colors.add(cell.font.color.argb)
+    if (cell.fill?.fgColor?.argb) colors.add(cell.fill.fgColor.argb)
+    for (const side of Object.values(cell.border || {})) {
+      if (side.color?.argb) colors.add(side.color.argb)
+    }
+  }))
+  assert.deepEqual([...colors].sort(), ['FFE4E9EF', 'FF1F3A5F', 'FFFFFFFF'].sort())
+})
+
+test('toXlsx keeps small fractional durations and losses visible', async () => {
+  const report = createReport({
+    metrics: { ...createReport().metrics, durationMinutes: 0.01, estimatedLoss: 0.01 },
+    rows: [{ ...createReport().rows[0], durationMinutes: 0.01, estimatedLoss: 0.01 }],
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.getWorksheet('Operational Report')
+
+  assert.equal(sheet.getCell('E9').value, 0.01)
+  assert.equal(sheet.getCell('E9').numFmt, '#,##0.## "min"')
+  assert.equal(sheet.getCell('E10').value, 0.01)
+  assert.equal(sheet.getCell('E10').numFmt, '#,##0.## "pcs"')
+  assert.equal(sheet.getCell('D20').numFmt, '#,##0.##')
+  assert.equal(sheet.getCell('E20').value, 0.01)
+  assert.equal(sheet.getCell('E20').numFmt, '#,##0.##')
+})
+
+test('toXlsx preserves unobserved values as N/A instead of inventing zeros', async () => {
+  const report = createReport({
+    periodState: 'future',
+    summary: [{ id: 'events', value: 'N/A' }],
+    metrics: { outputPieces: null, durationMinutes: null, availabilityPercent: null, estimatedLoss: null },
+    processSensors: [{ sensorCode: 'S-01', sensorLabel: 'Coil Joint Replacement', eventCount: null }],
+    rows: [],
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.getWorksheet('Operational Report')
+
+  assert.equal(sheet.getCell('B8').value, 'N/A')
+  assert.equal(sheet.getCell('E8').value, 'N/A')
+  assert.equal(sheet.getCell('B9').value, 'N/A')
+  assert.equal(sheet.getCell('A14').value, 'S-01')
+  assert.equal(sheet.getCell('C14').value, 'N/A')
+  assert.equal(sheet.getCell('A20').value, 'No downtime records for this period.')
+})
+
 test('buildExportFilename derives a safe deterministic filename from the request', () => {
-  assert.equal(
-    buildExportFilename({ reportType: 'daily', selectedDate: '2026-09-02', format: 'csv' }),
-    'report-daily-2026-09-02.csv',
-  )
   assert.equal(
     buildExportFilename({ reportType: 'monthly', selectedDate: undefined, format: 'pdf' }),
     'report-monthly-undated.pdf',
   )
+  assert.equal(
+    buildExportFilename({ reportType: 'weekly', selectedDate: '2026-09-02', format: 'xlsx' }),
+    'report-weekly-2026-09-02.xlsx',
+  )
 })
 
 test('contentTypeFor maps each export format to its MIME type', () => {
-  assert.equal(contentTypeFor('csv'), 'text/csv; charset=utf-8')
   assert.equal(contentTypeFor('pdf'), 'application/pdf')
+  assert.equal(contentTypeFor('xlsx'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 })

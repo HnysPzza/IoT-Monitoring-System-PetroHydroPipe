@@ -135,7 +135,7 @@ describe('MachinesSection live snapshot', () => {
     expect(screen.queryByRole('button', { name: 'Reconcile recovery' })).not.toBeInTheDocument()
   })
 
-  it('renders a sensor fault in orange instead of the red downtime style', async () => {
+  it('keeps a sensor fault distinct from downtime status', async () => {
     const faultSensor = livePayload().sensors[0]
     getLiveFeed.mockResolvedValue(livePayload({
       machine: { status: 'Running' },

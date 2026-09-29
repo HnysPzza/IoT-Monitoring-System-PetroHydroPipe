@@ -2,11 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { exportReport, getReportSummary } from './reportsService.js'
 import { setUnauthorizedHandler } from '../../../shared/errors/unauthorizedSession.js'
 
-function exportResponse(body, { status = 200, filename = 'report-daily-2026-09-02.csv' } = {}) {
+function exportResponse(body, {
+  status = 200,
+  filename = 'report-daily-2026-09-02.pdf',
+  contentType = 'application/pdf',
+} = {}) {
   return new Response(body, {
     status,
     headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   })
@@ -61,13 +65,13 @@ describe('exportReport', () => {
   })
 
   it('posts to the export endpoint with the bearer token and requested format', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(exportResponse('cause,sensor\n'))
+    const fetchMock = vi.fn().mockResolvedValue(exportResponse('%PDF-x'))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await exportReport('test-token', {
       reportType: 'daily',
       selectedDate: '2026-09-02',
-      format: 'csv',
+      format: 'pdf',
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -75,14 +79,14 @@ describe('exportReport', () => {
     expect(url).toContain('/api/reports/export')
     expect(options.method).toBe('POST')
     expect(options.headers.Authorization).toBe('Bearer test-token')
-    expect(JSON.parse(options.body)).toEqual({ type: 'daily', date: '2026-09-02', format: 'csv' })
+    expect(JSON.parse(options.body)).toEqual({ type: 'daily', date: '2026-09-02', format: 'pdf' })
 
-    expect(result.filename).toBe('report-daily-2026-09-02.csv')
+    expect(result.filename).toBe('report-daily-2026-09-02.pdf')
     expect(result.blob).toBeInstanceOf(Blob)
   })
 
   it('normalizes a month-only date before exporting', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(exportResponse('cause,sensor\n'))
+    const fetchMock = vi.fn().mockResolvedValue(exportResponse('%PDF-x'))
     vi.stubGlobal('fetch', fetchMock)
 
     await exportReport('test-token', {
@@ -98,6 +102,26 @@ describe('exportReport', () => {
     })
   })
 
+  it('accepts the XLSX attachment and preserves its filename', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(exportResponse('xlsx-data', {
+      filename: 'report-daily-2026-09-02.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await exportReport('test-token', {
+      reportType: 'daily',
+      selectedDate: '2026-09-02',
+      format: 'xlsx',
+    })
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      type: 'daily', date: '2026-09-02', format: 'xlsx',
+    })
+    expect(result.filename).toBe('report-daily-2026-09-02.xlsx')
+    expect(result.blob).toBeInstanceOf(Blob)
+  })
+
   it('surfaces backend error messages when the export is rejected', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: { code: 'RATE_LIMITED', message: 'Too many export requests. Please try again later.' },
@@ -106,7 +130,7 @@ describe('exportReport', () => {
     await expect(exportReport('test-token', {
       reportType: 'daily',
       selectedDate: '2026-09-02',
-      format: 'csv',
+      format: 'pdf',
     })).rejects.toMatchObject({
       message: 'Too many export requests. Please try again later.',
       status: 429,
@@ -136,7 +160,7 @@ describe('exportReport', () => {
     await expect(exportReport('test-token', {
       reportType: 'daily',
       selectedDate: '2026-09-02',
-      format: 'csv',
+      format: 'pdf',
     })).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' })
   })
 
@@ -146,7 +170,7 @@ describe('exportReport', () => {
     await expect(exportReport('test-token', {
       reportType: 'daily',
       selectedDate: '2026-09-02',
-      format: 'csv',
+      format: 'pdf',
     })).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
   })
 })
