@@ -2,6 +2,7 @@
 
 /* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
+  color-scheme: dark;
   --c-bg: #0B1322;
   /* Layer 1: Main Canvas */
   --c-surface: #111C2E;
@@ -15,8 +16,7 @@
   --c-text: #F8FAFC;
   --c-text-2: #94A3B8;
   /* text-slate-400 */
-  --c-text-3: #64748B;
-  /* text-slate-500 */
+  --c-text-3: #8190A7;
   --c-success: #10B981;
   --c-danger: #EF4444;
   --selected-control-bg: #0E62E8;
@@ -84,6 +84,7 @@
 
 /* Light theme overrides dashboard surfaces while the login background keeps its own look. */
 :root[data-theme='light'] {
+  color-scheme: light;
   --c-bg: #F4F7FA;
   --c-surface: #FFFFFF;
   --c-surface2: #F1F5F9;
@@ -200,6 +201,7 @@ button:disabled {
 
 /* Login screen layout and background image overlay. */
 .login-page {
+  color-scheme: dark;
   --c-bg: #0B1220;
   --c-surface: #111827;
   --c-surface2: #1F2937;
@@ -535,6 +537,7 @@ button:disabled {
 
 .btn-primary {
   background: var(--c-primary);
+  color: #0B1220;
 }
 
 .btn-secondary {
@@ -544,7 +547,7 @@ button:disabled {
 
 .btn-success {
   background: #10B981;
-  color: #FFFFFF;
+  color: #041B14;
   border-color: #059669;
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
   font-weight: 600;
@@ -1365,8 +1368,42 @@ button:disabled {
 /* Contextual State Coloring & Rotational Micro-Animations */
 .theme-toggle-icon {
   display: block;
-  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), color 200ms ease;
+  view-transition-name: theme-toggle-icon;
+  transition: transform 160ms ease-out, color 160ms ease-out;
   will-change: transform;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+::view-transition-old(theme-toggle-icon) {
+  animation: theme-toggle-icon-out 160ms ease-out both;
+}
+
+::view-transition-new(theme-toggle-icon) {
+  animation: theme-toggle-icon-in 160ms ease-out both;
+}
+
+@keyframes theme-toggle-icon-out {
+  to {
+    opacity: 0;
+    transform: rotate(-45deg) scale(0.8);
+  }
+}
+
+@keyframes theme-toggle-icon-in {
+  from {
+    opacity: 0;
+    transform: rotate(45deg) scale(0.8);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
 }
 
 /* Sun icon in Dark Mode: warm amber (text-amber-400) -> +45deg rotation on hover */
@@ -1375,7 +1412,6 @@ button:disabled {
 }
 
 .theme-toggle-btn:hover .theme-toggle-icon.is-sun {
-  transform: rotate(45deg);
   color: #F59E0B;
 }
 
@@ -1385,7 +1421,6 @@ button:disabled {
 }
 
 .theme-toggle-btn:hover .theme-toggle-icon.is-moon {
-  transform: rotate(-12deg);
   color: #1D4ED8;
 }
 
@@ -5173,10 +5208,6 @@ button:disabled {
   transform: none;
 }
 
-.settings-form .btn-primary {
-  color: #fff;
-}
-
 .settings-form .btn-secondary {
   color: var(--c-text);
   border-color: var(--c-border);
@@ -6550,6 +6581,13 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(theme-toggle-icon),
+  ::view-transition-new(theme-toggle-icon) {
+    animation-duration: 0.01ms !important;
+  }
 
   *,
   *::before,
