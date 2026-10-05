@@ -155,14 +155,13 @@ export default function MachinesSection() {
           </div>
           <div className="live-heading-badges">
             <button
-              className="btn btn-secondary table-action-button"
+              className="icon-button live-refresh-icon"
               type="button"
               aria-label="Refresh machines"
               disabled={isRefreshing}
               onClick={refreshSnapshot}
             >
               <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-              Refresh
             </button>
             <span className={`status-badge ${getMachineStatusClass(machine.status)}`}>{machine.status}</span>
           </div>
