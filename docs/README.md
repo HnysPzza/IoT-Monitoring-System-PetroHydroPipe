@@ -8,6 +8,7 @@ Use this folder for technical project documentation. Use the Obsidian vault for 
 
 | Need | Open |
 |---|---|
+| Clone and run locally with your own Supabase project | [clone-and-run.md](./clone-and-run.md) |
 | Product requirements | [PRD.md](./PRD.md) |
 | Technical design | [TDD.md](./TDD.md) |
 | System architecture | [ARCHITECTURE.md](./ARCHITECTURE.md) |

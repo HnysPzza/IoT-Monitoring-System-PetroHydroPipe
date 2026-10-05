@@ -24,6 +24,7 @@ Backend/dist/
 # Local generated documentation; keep the maintained public docs tracked.
 docs/*
 !docs/ARCHITECTURE.md
+!docs/clone-and-run.md
 !docs/PRD.md
 !docs/README.md
 !docs/RUNBOOK.md

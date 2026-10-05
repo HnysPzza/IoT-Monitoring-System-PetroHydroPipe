@@ -13,6 +13,7 @@ The system provides a role-aware web dashboard for live monitoring, alerts, down
 
 ## Project Documents
 
+- [Clone and Run Guide](docs/clone-and-run.md)
 - [Product Requirements Document](docs/PRD.md)
 - [Technical Design Document](docs/TDD.md)
 - [Architecture](docs/ARCHITECTURE.md)

@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.resolve(__dirname, '../../..')
-const publicDocs = ['ARCHITECTURE.md', 'PRD.md', 'README.md', 'RUNBOOK.md', 'TDD.md']
+const publicDocs = ['ARCHITECTURE.md', 'PRD.md', 'README.md', 'RUNBOOK.md', 'TDD.md', 'clone-and-run.md']
 
 test('public documentation is complete and excludes obsolete sensor mappings', () => {
   const obsoletePatterns = [
