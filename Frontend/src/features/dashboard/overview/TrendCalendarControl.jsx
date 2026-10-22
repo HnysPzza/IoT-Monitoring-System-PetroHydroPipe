@@ -143,7 +143,17 @@ function WeekPicker({ selectedDate, maxDate, onSelect }) {
   )
 }
 
-export default function TrendCalendarControl({ mode, selectedDate, maxDate, rangeLabel, onDateChange, accessibleLabel: accessibleLabelOverride }) {
+export default function TrendCalendarControl({
+  mode,
+  selectedDate,
+  maxDate,
+  rangeLabel,
+  onDateChange,
+  accessibleLabel: accessibleLabelOverride,
+  triggerAriaLabel,
+  triggerLabel = 'SELECTED PERIOD',
+  popoverClassName,
+}) {
   const [isOpen, setIsOpen] = useState(false)
   const accessibleLabel = accessibleLabelOverride || (mode === 'month'
     ? 'Select chart month'
@@ -166,18 +176,19 @@ export default function TrendCalendarControl({ mode, selectedDate, maxDate, rang
             className="trend-calendar-trigger"
             type="button"
             aria-expanded={isOpen}
+            aria-label={triggerAriaLabel}
             title={accessibleLabel}
           >
             <CalendarDays size={18} aria-hidden="true" />
             <span className="trend-calendar-copy">
-              <span className="trend-calendar-kicker">SELECTED PERIOD</span>
+              <span className="trend-calendar-kicker">{triggerLabel}</span>
               {' '}
               <span className="trend-calendar-value">{rangeLabel}</span>
             </span>
             <ChevronDown className="trend-calendar-chevron" size={16} aria-hidden="true" />
           </button>
         </PopoverTrigger>
-        <PopoverContent aria-label={accessibleLabel}>
+        <PopoverContent aria-label={accessibleLabel} className={popoverClassName}>
           {mode === 'month' ? (
             <MonthPicker selectedDate={selectedDate} maxDate={maxDate} onSelect={handleSelect} />
           ) : mode === 'week' ? (

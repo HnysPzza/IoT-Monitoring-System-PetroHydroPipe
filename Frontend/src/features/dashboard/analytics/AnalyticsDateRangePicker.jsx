@@ -1,8 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronDown } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
-import { Calendar } from '../../../shared/components/ui/Calendar.jsx'
-import '../../../shared/components/ui/calendar.css'
+import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import './analytics-date-range-picker.css'
 
 function parseDateInput(value) {
@@ -12,81 +8,42 @@ function parseDateInput(value) {
 }
 
 function formatDateInput(date) {
-  if (!date) return ''
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
 }
 
-function formatDateLabel(value) {
-  return parseDateInput(value)?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) || ''
-}
+function getRangeLabel(period, selectedDate) {
+  const date = parseDateInput(selectedDate)
+  if (!date) return 'Choose a period'
 
-function toRange(startDate, endDate) {
-  return { from: parseDateInput(startDate), to: parseDateInput(endDate) }
-}
-
-export default function AnalyticsDateRangePicker({ startDate, endDate, maxDate, onChange, isActive = false }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const value = useMemo(() => toRange(startDate, endDate), [endDate, startDate])
-  const [draftRange, setDraftRange] = useState(value)
-
-  useEffect(() => {
-    if (!isOpen) setDraftRange(value)
-  }, [isOpen, value])
-
-  function handleOpenChange(nextOpen) {
-    setIsOpen(nextOpen)
-    if (nextOpen) {
-      setDraftRange(value)
-    }
+  if (period === 'month') {
+    return date.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
   }
 
-  function handleSelect(nextRange) {
-    setDraftRange(nextRange || {})
-    if (!nextRange?.from || !nextRange?.to) return
+  const monday = new Date(date)
+  monday.setDate(monday.getDate() - (monday.getDay() || 7) + 1)
+  const sunday = new Date(monday)
+  sunday.setDate(sunday.getDate() + 6)
+  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }).formatRange(monday, sunday)
+}
 
-    onChange?.({
-      startDate: formatDateInput(nextRange.from),
-      endDate: formatDateInput(nextRange.to),
-    })
-    setIsOpen(false)
-  }
-
-  const dateLabel = startDate && endDate
-    ? `${formatDateLabel(startDate)} – ${formatDateLabel(endDate)}`
-    : 'Choose dates'
+export default function AnalyticsDateRangePicker({ period, selectedDate, maxDate, onChange, isActive = false }) {
+  const mode = period === 'month' ? 'month' : 'week'
+  const modeLabel = mode === 'month' ? 'Monthly' : 'Weekly'
+  const accessibleLabel = `Select Analytics ${mode}`
 
   return (
-    <div className="analytics-date-range-picker">
-      <Popover open={isOpen} onOpenChange={handleOpenChange}>
-        <PopoverTrigger asChild>
-          <button
-            className={`analytics-custom-trigger ${isActive ? 'is-selected' : ''}`}
-            type="button"
-            aria-label="Custom date range"
-            aria-haspopup="dialog"
-            aria-expanded={isOpen}
-          >
-            <CalendarDays size={16} aria-hidden="true" />
-            <span className="analytics-custom-copy">
-              <span className="analytics-custom-kicker">Custom</span>
-              <span className="analytics-custom-value">{dateLabel}</span>
-            </span>
-            <ChevronDown className="analytics-custom-chevron" size={15} aria-hidden="true" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="analytics-date-range-popover" aria-label="Custom date range">
-          <Calendar
-            className="analytics-date-range-calendar"
-            mode="range"
-            selected={draftRange}
-            defaultMonth={draftRange.from || parseDateInput(maxDate)}
-            disabled={maxDate ? { after: parseDateInput(maxDate) } : undefined}
-            onSelect={handleSelect}
-            weekStartsOn={1}
-            autoFocus
-          />
-        </PopoverContent>
-      </Popover>
+    <div className={`analytics-date-range-picker ${isActive ? 'is-selected' : ''}`}>
+      <TrendCalendarControl
+        mode={mode}
+        selectedDate={parseDateInput(selectedDate)}
+        maxDate={parseDateInput(maxDate)}
+        rangeLabel={getRangeLabel(period, selectedDate)}
+        onDateChange={(date) => onChange?.(formatDateInput(date))}
+        accessibleLabel={accessibleLabel}
+        triggerAriaLabel={accessibleLabel}
+        triggerLabel={modeLabel}
+        popoverClassName="analytics-date-range-popover"
+      />
     </div>
   )
 }
