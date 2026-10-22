@@ -1,7 +1,6 @@
-import { screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/react'
 import UsersTable from './UsersTable.jsx'
 
 const account = {
@@ -19,7 +18,9 @@ describe('UsersTable', () => {
   it('protects any Admin account even when it is not the current row', async () => {
     const user = userEvent.setup()
     render(<UsersTable accounts={[{ ...account, role: 'Admin' }]} currentUserId="another-user" />)
-    expect(screen.getByText(/protected admin/i)).toBeInTheDocument()
+    const row = screen.getByRole('row', { name: /operator one/i })
+    expect(within(row).getByText('Managing Director')).toBeInTheDocument()
+    expect(within(row).getByText('Protected Managing Director')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /actions for/i }))
     expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()

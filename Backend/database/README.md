@@ -27,7 +27,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/018_add_manual_sensor_recovery_override.sql` adds atomic, audited manual recovery without imitating an IoT event.
 - `migrations/019_add_analytics_event_aggregation.sql` adds secured event aggregation for backend Analytics.
 - `migrations/020_add_analytics_all_time_range.sql` adds the first contributing-record lookup for all-time Analytics.
-- `migrations/021_add_managing_director_role.sql` adds the PRD-required Managing Director role for read-only operational access.
+- `migrations/021_add_managing_director_role.sql` historically added a separate read-only Managing Director role; migration 046 consolidates it into the protected Admin identity.
 - `migrations/022_require_reviewed_cause_before_resolve.sql` prevents unresolved S-03 causes from being silently finalized.
 - `migrations/023_route_no_pulse_through_watchdog.sql` prevents `no_pulse` observations from bypassing schedule-aware watchdog evaluation.
 - `migrations/025_prevent_s05_downtime.sql` keeps S-05 issue telemetry observational and blocks new S-05 downtime rows.
@@ -45,6 +45,7 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/043_atomic_downtime_update_audit.sql` makes manual downtime updates and their audit rows one transaction, then advances readiness to 43.
 - `migrations/044_validate_s05_output_pulses.sql` classifies S-05 pulses against S-03 activity, rejects stale/stationary/downtime/bounce evidence without applying state, filters rejected pulses from shared analytics, and advances readiness to 44.
 - `migrations/045_user_password_reset.sql` adds admin-issued, single-use password reset links and advances readiness to 45.
+- `migrations/046_consolidate_managing_director_role.sql` removes the separate Managing Director role, stops if it is assigned to an account, and advances readiness to 46.
 
 ## Tables
 
@@ -70,11 +71,11 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 3. Copy and run `schema.sql`.
 4. Copy and run the credential-free `seed.sql` to create the roles, M-01, and its five sensors.
 5. Provision exactly one active, unarchived Admin with a privately generated bcrypt password hash.
-6. Run migrations 029 through 045 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Verify `select public.get_backend_readiness();` returns `45` before starting the current backend.
-7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 045 from `Backend/database/migrations/`.
+6. Run migrations 029 through 046 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Migration 046 stops without removing the legacy role if any account still uses it. Verify `select public.get_backend_readiness();` returns `46` before starting the current backend.
+7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 046 from `Backend/database/migrations/`.
 8. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
 9. Confirm the configured rows:
-   - 5 roles
+   - 5 roles (`Admin` is displayed in the interface as Managing Director)
    - 1 admin user
    - 1 machine
    - 5 sensors
@@ -409,11 +410,11 @@ Expected readiness is `44`. This verifies the database contract only; it does no
 
 1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
 2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
-3. Apply pending migrations through 045 before deploying the current backend, which requires readiness version 45. Migration 029 requires exactly one active, unarchived Admin. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
+3. Apply pending migrations through 046 before deploying the current backend, which requires readiness version 46. Migration 029 requires exactly one active, unarchived Admin. Migration 046 requires the legacy Managing Director role to be unassigned and verifies the five-role catalog. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
 4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
 5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
-For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 045 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
+For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 046 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
 Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
 

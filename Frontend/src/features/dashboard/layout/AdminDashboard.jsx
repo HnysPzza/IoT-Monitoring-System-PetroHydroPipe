@@ -21,6 +21,7 @@ import {
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useTheme } from '../../../shared/hooks/useTheme.js'
 import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
@@ -596,7 +597,7 @@ export default function AdminDashboard() {
             </span>
             <div className="sidebar-user-copy">
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
-              <span className="sidebar-user-role">{user?.role || 'Admin'}</span>
+              <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
             </div>
           </div>
           <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>

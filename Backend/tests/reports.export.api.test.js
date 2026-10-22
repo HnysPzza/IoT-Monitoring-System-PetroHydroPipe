@@ -81,9 +81,10 @@ test('Export API enforces authentication, report export roles, and request valid
 
     assert.equal((await requestExport(baseUrl, body)).status, 401)
 
-    // Only Admin, Managing Director, and Operation Manager can export reports.
+    // Only Admin and Operation Manager can export reports.
     assert.equal((await requestExport(baseUrl, body, authHeader('Production Supervisor'))).status, 403)
     assert.equal((await requestExport(baseUrl, body, authHeader('Asst. Operation Manager'))).status, 403)
+    assert.equal((await requestExport(baseUrl, body, authHeader('Managing Director'))).status, 403)
 
     // View access to the summary endpoint is intentionally unchanged.
     const summary = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
@@ -104,12 +105,12 @@ test('Export API enforces authentication, report export roles, and request valid
   })
 })
 
-test('Export API streams PDF for Managing Director and Operation Manager', async () => {
+test('Export API streams PDF for Admin and Operation Manager', async () => {
   const auditCalls = []
   const app = loadExportApp({ summaryCalls: [], auditCalls })
 
   await withTestServer(app, async (baseUrl) => {
-    for (const role of ['Managing Director', 'Operation Manager']) {
+    for (const role of ['Admin', 'Operation Manager']) {
       const response = await requestExport(
         baseUrl,
         { type: 'weekly', format: 'pdf' },

@@ -14,6 +14,7 @@ import {
   UserX,
 } from 'lucide-react'
 import { formatDate, getInitials } from './usersUtils.js'
+import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 
 export default function UsersTable({
   accounts,
@@ -87,11 +88,11 @@ export default function UsersTable({
                     </td>
                     <td>
                       <div className="user-role-wrap">
-                        <span className="user-role-text">{account.role}</span>
+                        <span className="user-role-text">{getRoleDisplayName(account.role)}</span>
                         {account.role === 'Admin' ? (
-                          <span className="protected-badge" title="Protected Admin account">
+                          <span className="protected-badge" title="Protected Managing Director account">
                             <ShieldCheck size={12} aria-hidden="true" />
-                            <span>Protected Admin</span>
+                            <span>Protected Managing Director</span>
                           </span>
                         ) : null}
                       </div>

@@ -31,5 +31,5 @@ test('migration 021 adds the Managing Director role and is safe to reapply', asy
     name: 'Managing Director',
     description: 'Full read access to operational analytics and reports.',
   }])
-  assert.match(seedSql, /'Managing Director', 'Full read access to operational analytics and reports\.'/)
+  assert.doesNotMatch(seedSql, /'Managing Director'/)
 })

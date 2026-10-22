@@ -30,8 +30,9 @@ test('Analytics API validates dates, enforces roles, and returns the service con
     const path = '/api/analytics?startDate=2026-08-01&endDate=2026-08-07'
     assert.equal((await requestJson(baseUrl, path)).response.status, 401)
     assert.equal((await requestJson(baseUrl, path, { headers: authHeader('Production Supervisor') })).response.status, 403)
+    assert.equal((await requestJson(baseUrl, path, { headers: authHeader('Managing Director') })).response.status, 403)
 
-    for (const role of ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director']) {
+    for (const role of ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']) {
       const result = await requestJson(baseUrl, path, { headers: authHeader(role) })
       assert.equal(result.response.status, 200, role)
       assert.deepEqual(result.body, { analytics })
