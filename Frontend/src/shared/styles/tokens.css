@@ -5592,6 +5592,11 @@ button:disabled {
   min-width: 0;
 }
 
+.audit-date-field .trend-calendar-trigger {
+  min-height: 44px;
+  padding-block: 4px;
+}
+
 .audit-date-clear {
   justify-self: start;
   min-height: 30px;
@@ -5650,8 +5655,8 @@ button:disabled {
 
 @media (min-width: 901px) {
   .audit-controls {
-    grid-template-columns: minmax(136px, 160px) minmax(168px, 200px) minmax(180px, 220px) 44px;
-    align-items: end;
+    grid-template-columns: minmax(128px, 144px) minmax(152px, 168px) minmax(180px, 200px) 44px;
+    align-items: start;
     justify-content: end;
   }
 }
