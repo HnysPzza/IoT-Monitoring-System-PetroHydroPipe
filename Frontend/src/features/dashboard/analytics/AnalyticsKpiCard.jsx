@@ -31,7 +31,7 @@ function DeltaIcon({ direction }) {
   return <Minus size={13} aria-hidden="true" />
 }
 
-export default function AnalyticsKpiCard({ kpi, selectedMetric, onSelect }) {
+export default function AnalyticsKpiCard({ kpi, selectedMetric, onSelect, showComparison = true }) {
   const isSelected = selectedMetric === kpi.id
   const delta = kpi.delta || { direction: 'unknown', sentiment: 'neutral', label: 'No prior period' }
   const sparkline = kpi.isPrimary ? getSparklinePath(kpi.sparkline) : null
@@ -48,11 +48,13 @@ export default function AnalyticsKpiCard({ kpi, selectedMetric, onSelect }) {
       </div>
       <div className="analytics-kpi-value-row">
         <p className="stat-value">{kpi.value}</p>
-        <span className={`analytics-kpi-delta is-${delta.sentiment}`}>
-          <DeltaIcon direction={delta.direction} />
-          <span>{delta.label}</span>
-          <span className="sr-only"> compared with the prior period</span>
-        </span>
+        {showComparison ? (
+          <span className={`analytics-kpi-delta is-${delta.sentiment}`}>
+            <DeltaIcon direction={delta.direction} />
+            <span>{delta.label}</span>
+            <span className="sr-only"> compared with the prior period</span>
+          </span>
+        ) : null}
       </div>
       <p className="stat-helper">{kpi.helper}</p>
       {sparkline ? (
