@@ -1,3 +1,4 @@
+import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { cleanCode, formatDateTime as formatSharedDateTime } from '../../../shared/utils/formatters.js'
 import { getSignalLabel } from '../../../shared/utils/signalFormatters.js'
@@ -84,7 +85,7 @@ export function getReadableEntity(log) {
 
 export function getReadableActor(log) {
   if (log.actor) {
-    return log.actor.role || 'User'
+    return getRoleDisplayName(log.actor.role) || 'User'
   }
 
   if (isSensorActivity(log)) {
