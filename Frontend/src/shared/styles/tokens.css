@@ -3719,9 +3719,8 @@ button:disabled {
 
 @media (min-width: 720px) {
   .reports-controls-card {
-    grid-template-columns: max-content minmax(0, 1fr);
-    align-items: center;
-    column-gap: 16px;
+    grid-template-columns: 1fr;
+    gap: 16px;
     padding: 20px;
   }
 
@@ -3730,18 +3729,19 @@ button:disabled {
   }
 
   .reports-controls {
-    grid-template-columns: auto minmax(160px, 24%) auto;
+    grid-template-columns: minmax(240px, 312px) minmax(200px, 260px) auto;
     align-items: center;
-    justify-content: end;
+    justify-content: space-between;
+    gap: 10px;
   }
 
   .trend-mode-toggle.reports-period-toggle {
-    grid-template-columns: repeat(3, minmax(104px, 1fr));
-    width: auto;
+    grid-template-columns: repeat(3, minmax(76px, 1fr));
+    width: 100%;
   }
 
   .reports-controls-card .reports-period-button {
-    min-width: 104px;
+    min-width: 0;
   }
 
   .reports-downtime-card {
@@ -5598,29 +5598,15 @@ button:disabled {
 }
 
 .audit-date-clear {
-  justify-self: start;
-  min-height: 30px;
-  padding: 0 4px;
-  border: 0;
-  color: var(--c-text-2);
-  background: transparent;
-  font-size: 0.72rem;
-  font-weight: 650;
-}
-
-.audit-date-clear:hover {
-  color: var(--c-text);
-}
-
-.audit-date-clear:focus-visible {
-  outline: 2px solid var(--c-primary);
-  outline-offset: 2px;
+  margin: 0;
 }
 
 .audit-controls-actions {
-  display: grid;
-  align-content: end;
-  justify-items: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: end;
+  justify-self: end;
   gap: 8px;
   min-width: 0;
 }
@@ -5654,10 +5640,29 @@ button:disabled {
 }
 
 @media (min-width: 901px) {
+  .audit-controls-card {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    column-gap: 16px;
+  }
+
   .audit-controls {
-    grid-template-columns: minmax(128px, 144px) minmax(152px, 168px) minmax(180px, 200px) 44px;
-    align-items: start;
+    grid-template-columns: minmax(128px, 144px) minmax(152px, 168px) minmax(180px, 200px) auto;
+    align-items: end;
     justify-content: end;
+  }
+}
+
+@media (min-width: 1120px) {
+  .reports-controls-card {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    column-gap: 16px;
+  }
+
+  .reports-controls {
+    justify-content: end;
+    gap: 12px;
   }
 }
 

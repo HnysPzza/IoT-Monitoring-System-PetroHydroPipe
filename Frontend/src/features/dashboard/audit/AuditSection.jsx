@@ -185,13 +185,13 @@ export default function AuditSection() {
               rangeLabel={selectedAuditDate ? formatAuditDateLabel(selectedAuditDate) : ''}
               onDateChange={(date) => updateDateFilter(formatAuditDateInput(date))}
             />
-            {dateFilter ? (
-              <button className="audit-date-clear" type="button" onClick={() => updateDateFilter('')}>
-                Clear date
-              </button>
-            ) : null}
           </div>
           <div className="audit-controls-actions">
+            {dateFilter ? (
+              <button className="btn reports-icon-button audit-date-clear" type="button" aria-label="Clear date" title="Clear date" onClick={() => updateDateFilter('')}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            ) : null}
             <button className="btn reports-icon-button audit-refresh-button" type="button" aria-label="Refresh audit log" disabled={isRefreshing} onClick={() => loadAuditLogs({ silent: true })}>
               <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
             </button>
