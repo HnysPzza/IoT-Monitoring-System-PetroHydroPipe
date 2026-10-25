@@ -22,7 +22,7 @@ async function authenticate(req, res, next) {
 
   try {
     // JWT identifies the user; current role/status is refreshed from the database.
-    const tokenPayload = jwt.verify(token, env.JWT_SECRET)
+    const tokenPayload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] })
     const currentUser = await authService.getAuthenticatedUser(tokenPayload)
     if (currentUser.mustChangePassword && !['/api/auth/me', '/api/auth/change-password'].includes(req.originalUrl.split('?')[0])) {
       return res.status(403).json({ error: { code: 'PASSWORD_CHANGE_REQUIRED', message: 'Change your password before using the system.' } })

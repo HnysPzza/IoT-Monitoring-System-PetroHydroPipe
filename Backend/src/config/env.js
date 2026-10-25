@@ -2,6 +2,17 @@ const { z } = require('zod')
 
 require('dotenv').config({ quiet: true })
 
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  'replace-with-a-long-random-secret',
+  'your-private-random-secret-at-least-24-characters-long',
+  'your-private-random-secret-at-least-32-characters-long',
+])
+
+const NON_PROD_JWT_SECRETS = new Set([
+  'test-jwt-secret-for-backend-suite',
+  'disposable-browser-review-secret-only',
+])
+
 // Defines every backend environment variable and catches invalid values at startup.
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -19,7 +30,14 @@ const envSchema = z.object({
     (value) => value === '' ? undefined : value,
     z.string().trim().min(1).max(120).default('Petro Hydro Monitoring'),
   ),
-  JWT_SECRET: z.string().min(24, 'JWT_SECRET must be at least 24 characters.').optional().or(z.literal('')),
+  JWT_SECRET: z.string()
+    .trim()
+    .min(32, 'JWT_SECRET must be at least 32 characters.')
+    .refine((value) => !PLACEHOLDER_JWT_SECRETS.has(value.toLowerCase()), {
+      message: 'JWT_SECRET cannot use a placeholder value.',
+    })
+    .optional()
+    .or(z.literal('')),
   ACCESS_TOKEN_EXPIRES_MINUTES: z.preprocess(
     (value) => value === '' ? undefined : value,
     z.coerce.number().int().min(15).max(60).default(30),
@@ -131,6 +149,10 @@ function validateEnv() {
 
     if (missing.length > 0) {
       throw new Error(`Missing required production environment variables: ${missing.join(', ')}`)
+    }
+
+    if (NON_PROD_JWT_SECRETS.has(env.JWT_SECRET.toLowerCase())) {
+      throw new Error('Invalid environment configuration. JWT_SECRET cannot use a test secret in production.')
     }
   }
 

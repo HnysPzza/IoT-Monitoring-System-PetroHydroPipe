@@ -110,6 +110,7 @@ function createAuthToken(userRecord, sessionId) {
     },
     env.JWT_SECRET,
     {
+      algorithm: 'HS256',
       subject: userRecord.id,
       expiresIn: TOKEN_EXPIRES_IN,
     },

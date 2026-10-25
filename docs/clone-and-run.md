@@ -103,7 +103,7 @@ Edit `Backend/.env` and set these values from **your** Supabase project:
 ```env
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-server-side-secret-or-service-role-key
-JWT_SECRET=your-private-random-secret-at-least-24-characters-long
+JWT_SECRET=your-private-random-secret-at-least-32-characters-long
 ```
 
 The backend reads the Supabase key from `SUPABASE_SERVICE_ROLE_KEY`. Use the server-side secret/service-role key from the project's API settings; never put it in the frontend or share it. Generate a random JWT secret locally with:

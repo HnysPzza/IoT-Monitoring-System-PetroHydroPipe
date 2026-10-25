@@ -38,6 +38,43 @@ test('production refuses each missing backend credential even when other setting
   withEnvironment(configured, (loadEnv) => {
     assert.equal(loadEnv().NODE_ENV, 'production')
   })
+
+  for (const shortSecret of [
+    'short-secret',
+    '24-chars-is-now-too-shrt',
+    'thirty-one-characters-long-key!',
+    ' '.repeat(32),
+  ]) {
+    withEnvironment({ NODE_ENV: 'test', JWT_SECRET: shortSecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET must be at least 32 characters/)
+    })
+    withEnvironment({ ...configured, JWT_SECRET: shortSecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET must be at least 32 characters/)
+    })
+  }
+
+  for (const placeholder of [
+    'replace-with-a-long-random-secret',
+    '  REPLACE-WITH-A-LONG-RANDOM-SECRET  ',
+    'your-private-random-secret-at-least-24-characters-long',
+    'your-private-random-secret-at-least-32-characters-long',
+  ]) {
+    withEnvironment({ NODE_ENV: 'test', JWT_SECRET: placeholder }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET cannot use a placeholder value/)
+    })
+    withEnvironment({ ...configured, JWT_SECRET: placeholder }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET cannot use a placeholder value/)
+    })
+  }
+
+  for (const testSecret of [
+    'test-jwt-secret-for-backend-suite',
+    'disposable-browser-review-secret-only',
+  ]) {
+    withEnvironment({ ...configured, JWT_SECRET: testSecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET cannot use a test secret in production/)
+    })
+  }
 })
 
 test('loads valid Brevo development configuration', () => {
