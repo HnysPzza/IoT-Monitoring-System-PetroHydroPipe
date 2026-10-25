@@ -205,7 +205,7 @@ async function createTestEvent(eventType, signal, options = {}) {
       eventType,
       signal,
       recordedAt: '2026-06-11T00:00:00.000Z',
-      metadata: {},
+      metadata: options.metadata || {},
     },
   })
 
@@ -244,6 +244,28 @@ test('rejected S-05 output is returned without publishing transitions', async ()
   assert.equal(result.event.outputRejectionReason, 'machine_stationary')
   assert.equal(result.alertEvents.length, 0)
   assert.equal(result.downtimeEvents.length, 0)
+})
+
+test('reserved output metadata keys are rejected before calling the ingestion RPC', async () => {
+  for (const key of ['outputAccepted', 'outputRejectionReason']) {
+    const rpcCalls = []
+    const iotService = loadIotService({ eventType: 'pulse', signal: 'active', rpcCalls })
+
+    await assert.rejects(
+      () => iotService.createSensorEvent({
+        sensor: createSensorRecord(),
+        payload: {
+          eventId: EVENT_ID,
+          eventType: 'pulse',
+          signal: 'active',
+          recordedAt: '2026-06-11T00:00:00.000Z',
+          metadata: { [key]: true },
+        },
+      }),
+      { code: 'SENSOR_EVENT_REJECTED', status: 400 },
+    )
+    assert.equal(rpcCalls.length, 0)
+  }
 })
 
 test('malformed S-05 output classification fails closed', async () => {

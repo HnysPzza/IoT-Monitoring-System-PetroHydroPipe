@@ -48,6 +48,20 @@ test('sensor event timestamps accept explicit UTC offsets like heartbeat timesta
   assert.equal(sensorEventSchema.safeParse(input).success, false)
 })
 
+test('device metadata cannot carry server-owned output classification keys', () => {
+  for (const key of ['outputAccepted', 'outputRejectionReason']) {
+    const input = event('pulse', 'active')
+    input.body.metadata = { [key]: true, firmware: '1.0.0' }
+    const result = sensorEventSchema.safeParse(input)
+    assert.equal(result.success, false, key)
+    assert.deepEqual(result.error.issues[0].path, ['body', 'metadata', key])
+  }
+
+  const allowed = event('pulse', 'active')
+  allowed.body.metadata = { firmware: '1.0.0' }
+  assert.equal(sensorEventSchema.safeParse(allowed).success, true)
+})
+
 test('every mismatched event and signal pair is rejected', () => {
   const pairs = { pulse: 'active', idle: 'idle', downtime: 'no_pulse', fault: 'fault', recovered: 'active' }
   for (const [type, expected] of Object.entries(pairs)) {

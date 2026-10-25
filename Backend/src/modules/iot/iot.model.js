@@ -8,6 +8,8 @@ const SIGNAL_BY_EVENT_TYPE = {
   recovered: 'active',
 }
 
+const RESERVED_METADATA_KEYS = ['outputAccepted', 'outputRejectionReason']
+
 const deviceHeadersSchema = z.object({
   'x-device-id': z.string().trim()
     .min(3, 'x-device-id must be at least 3 characters.')
@@ -34,6 +36,14 @@ const sensorEventSchema = z.object({
         message: `Signal ${body.signal} is invalid for event type ${body.eventType}.`,
       })
     }
+    for (const key of RESERVED_METADATA_KEYS) {
+      if (!Object.hasOwn(body.metadata, key)) continue
+      context.addIssue({
+        code: 'custom',
+        path: ['metadata', key],
+        message: `metadata.${key} is reserved for server use.`,
+      })
+    }
   }),
 })
 
@@ -42,6 +52,7 @@ const liveFeedRequestSchema = z.object({
 })
 
 module.exports = {
+  RESERVED_METADATA_KEYS,
   deviceHeadersSchema,
   liveFeedRequestSchema,
   sensorEventSchema,

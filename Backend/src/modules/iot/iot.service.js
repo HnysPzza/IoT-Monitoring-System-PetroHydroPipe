@@ -5,6 +5,7 @@ const env = require('../../config/env')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
 const { recordAuditLog } = require('../audit/audit.service')
 const { publishIngestionTransitions } = require('../operations/transitionPublisher')
+const { RESERVED_METADATA_KEYS } = require('./iot.model')
 
 const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
 const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
@@ -283,7 +284,17 @@ async function authenticateDevice({ deviceId, deviceKey }) {
   return sensor
 }
 
+function assertAllowedEventMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return
+  for (const key of RESERVED_METADATA_KEYS) {
+    if (Object.hasOwn(metadata, key)) {
+      throw createIotError(400, 'SENSOR_EVENT_REJECTED', `metadata.${key} is reserved for server use.`)
+    }
+  }
+}
+
 async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
+  assertAllowedEventMetadata(payload.metadata)
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .rpc('ingest_iot_sensor_event', {

@@ -4,7 +4,7 @@ const path = require('node:path')
 const test = require('node:test')
 
 const databaseRoot = path.resolve(__dirname, '../database')
-const releaseSchemaVersion = 46
+const releaseSchemaVersion = 47
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -28,7 +28,7 @@ async function database(t, migrationEnd = releaseSchemaVersion) {
   return db
 }
 
-test('full migration chain reports release readiness version 46 and five roles', async (t) => {
+test('full migration chain reports release readiness version 47 and five roles', async (t) => {
   const db = await database(t)
 
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
@@ -50,12 +50,12 @@ test('password reset migration remains repeatable before role consolidation', as
 })
 
 test('role consolidation migration can be reapplied without lowering readiness', async (t) => {
-  const db = await database(t)
+  const db = await database(t, 46)
   const migration = fs.readFileSync(path.join(databaseRoot, 'migrations', '046_consolidate_managing_director_role.sql'), 'utf8')
 
   await db.exec(migration)
 
-  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 46)
   assert.equal((await db.query("select count(*)::int as count from roles where name = 'Managing Director'")).rows[0].count, 0)
 })
 
