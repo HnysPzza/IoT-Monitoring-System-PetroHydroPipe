@@ -118,6 +118,19 @@ describe('AuditSection', () => {
     await user.click(detailsButton)
 
     const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).queryByText('Activity summary')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('A clear summary of this activity.')).not.toBeInTheDocument()
+    const detailTerms = within(dialog).getAllByRole('term')
+    expect(detailTerms.map((term) => term.textContent)).toEqual([
+      'Who did it',
+      'What happened',
+      'Time',
+      'Affected item',
+      'Source',
+    ])
+    expect(detailTerms[0].closest('.audit-detail-item')).toHaveClass('audit-detail-primary', 'audit-detail-full')
+    expect(detailTerms[1].closest('.audit-detail-item')).not.toHaveClass('audit-detail-full')
+    expect(detailTerms[2].closest('.audit-detail-item')).not.toHaveClass('audit-detail-full')
     expect(within(dialog).getByText('What happened')).toBeInTheDocument()
     expect(within(dialog).getByText(/outside filler wire downtime detected was created/i)).toBeInTheDocument()
     expect(within(dialog).getByText('Who did it')).toBeInTheDocument()
