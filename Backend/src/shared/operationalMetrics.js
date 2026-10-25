@@ -27,6 +27,28 @@ function toRecordInterval(record, asOf) {
   return { start, end }
 }
 
+function createInvalidTimeError() {
+  const error = new Error('Downtime record has an invalid timestamp.')
+  error.status = 500
+  error.code = 'DOWNTIME_RECORD_INVALID_TIME'
+  return error
+}
+
+function getRecordsSpan(records, asOf) {
+  let startMs = Number.POSITIVE_INFINITY
+  let endMs = Number.NEGATIVE_INFINITY
+
+  for (const record of records) {
+    const recordStartMs = new Date(record.started_at).getTime()
+    const recordEndMs = record.ended_at ? new Date(record.ended_at).getTime() : asOf.getTime()
+    if (Number.isNaN(recordStartMs) || Number.isNaN(recordEndMs)) throw createInvalidTimeError()
+    if (recordStartMs < startMs) startMs = recordStartMs
+    if (recordEndMs > endMs) endMs = recordEndMs
+  }
+
+  return { start: new Date(startMs), end: new Date(Math.max(endMs, startMs + 1000)) }
+}
+
 function calculateRecordMetrics({ record, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
   const breakdown = calculateDowntimeBreakdown({
     record,
@@ -149,5 +171,6 @@ module.exports = {
   calculateEstimatedLoss,
   calculateMachineMetrics,
   calculateRecordMetrics,
+  getRecordsSpan,
   toMinutes,
 }

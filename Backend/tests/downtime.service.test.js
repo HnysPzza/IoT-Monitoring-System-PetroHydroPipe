@@ -167,7 +167,8 @@ function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = 
   return require(path.join(backendRoot, 'src', 'modules', 'downtime', 'downtime.service.js'))
 }
 
-test('list calculates detail only for the visible page while preserving whole-result totals', async () => {
+test('list calculates detail only for the visible page while preserving whole-result totals', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T12:00:00.000Z') })
   const records = Array.from({ length: 30 }, (_, index) => attachRelations({
     id: `downtime-${String(index).padStart(2, '0')}`,
     machine_id: MACHINE_ID,
@@ -199,7 +200,8 @@ test('list calculates detail only for the visible page while preserving whole-re
   assert.equal(calculatedRecords.length, 0)
 })
 
-test('empty list returns empty metrics without calculating details', async () => {
+test('empty list returns empty metrics without calculating details', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T12:00:00.000Z') })
   const calculatedRecords = []
   const service = loadDowntimeService({ calculatedRecords })
   const result = await service.listDowntime()
@@ -210,7 +212,8 @@ test('empty list returns empty metrics without calculating details', async () =>
   assert.equal(calculatedRecords.length, 0)
 })
 
-test('tied starts keep descending IDs and union overlaps across pages', async () => {
+test('tied starts keep descending IDs and union overlaps across pages', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T12:00:00.000Z') })
   const records = ['a', 'c', 'b'].map((id) => attachRelations({
     id, machine_id: MACHINE_ID, sensor_id: 'sensor-3',
     started_at: '2026-07-13T00:00:00.000Z', ended_at: '2026-07-13T00:30:00.000Z',
@@ -226,7 +229,8 @@ test('tied starts keep descending IDs and union overlaps across pages', async ()
   assert.deepEqual(last.summary, first.summary)
 })
 
-test('paged details retain breaks, grace and effective-dated schedules', async () => {
+test('paged details retain breaks, grace and effective-dated schedules', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T12:00:00.000Z') })
   const changeAt = '2026-07-13T02:30:00.000Z'
   const settingsHistory = [
     { ...SETTINGS_HISTORY[0], effective_to: changeAt, shift_schedule: {
@@ -282,7 +286,8 @@ test('open and zero-length records preserve metrics with a fixed clock across pa
   assert.equal(second.records[0].estimatedLoss, 1.5)
 })
 
-test('missing history fails closed even when the requested page is empty', async () => {
+test('missing history fails closed even when the requested page is empty', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T12:00:00.000Z') })
   const records = [attachRelations({ id: 'history-gap', machine_id: MACHINE_ID, sensor_id: 'sensor-3',
     started_at: '2026-07-13T00:00:00.000Z', ended_at: '2026-07-13T00:30:00.000Z', status: 'Resolved', cause: 'Other' })]
   const service = loadDowntimeService({ records, settingsHistory: [] })
@@ -435,4 +440,38 @@ test('automatic sensor downtime cause cannot be manually changed', async () => {
     }),
     { code: 'DOWNTIME_CAUSE_LOCKED', status: 400 },
   )
+})
+
+
+test('unfiltered list is bounded to the last 30 Manila days using overlap', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-07-13T04:00:00.000Z') })
+  const calls = []
+  const records = [
+    { id: 'old-resolved', started_at: '2026-06-01T00:00:00.000Z', ended_at: '2026-06-01T00:10:00.000Z', status: 'Resolved' },
+    { id: 'long-open', started_at: '2026-06-10T00:00:00.000Z', ended_at: null, status: 'Open' },
+    { id: 'recent', started_at: '2026-07-13T00:00:00.000Z', ended_at: '2026-07-13T00:10:00.000Z', status: 'Resolved' },
+  ].map((record) => attachRelations({ machine_id: MACHINE_ID, sensor_id: 'sensor-3', cause: 'Other', ...record }))
+  const service = loadDowntimeService({ records, calls })
+
+  const result = await service.listDowntime({ page: 1, limit: 25 })
+
+  assert.deepEqual(result.records.map((record) => record.id), ['recent', 'long-open'])
+  assert.equal(result.pagination.total, 2)
+  assert.deepEqual(result.range, {
+    start: '2026-06-13T16:00:00.000Z',
+    end: '2026-07-13T16:00:00.000Z',
+    isDefault: true,
+  })
+  assert.equal(calls.find((call) => call.operation === 'lt').value, '2026-07-13T16:00:00.000Z')
+  assert.match(calls.find((call) => call.operation === 'or').value, /ended_at\.gt\.2026-06-13T16:00:00\.000Z/)
+})
+
+test('explicit date keeps the single Manila day and reports a non-default range', async () => {
+  const service = loadDowntimeService()
+  const result = await service.listDowntime({ date: '2026-07-13' })
+  assert.deepEqual(result.range, {
+    start: '2026-07-12T16:00:00.000Z',
+    end: '2026-07-13T16:00:00.000Z',
+    isDefault: false,
+  })
 })

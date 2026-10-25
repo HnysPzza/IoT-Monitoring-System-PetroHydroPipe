@@ -352,4 +352,21 @@ describe('DowntimeSection', () => {
     expect(screen.getAllByText('Consumable Shortage').length).toBeGreaterThan(1)
     expect(screen.queryByLabelText(/cause for s-04/i)).not.toBeInTheDocument()
   })
+
+  it('explains the default 30-day window when the date filter is cleared', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValueOnce({ records: [downtimeRecord()] })
+      .mockResolvedValue({
+        records: [downtimeRecord()],
+        range: { start: '2026-06-13T16:00:00.000Z', end: '2026-07-13T16:00:00.000Z', isDefault: true },
+      })
+
+    renderWithAuth(<DowntimeSection />)
+
+    await screen.findByText('S-03 08:42 AM')
+    expect(screen.queryByText(/Showing the last 30 days/)).not.toBeInTheDocument()
+    await user.clear(screen.getByLabelText('Date'))
+    expect(await screen.findByText(/Showing the last 30 days/)).toBeInTheDocument()
+    expect(getDowntimeRecords).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ date: '' }))
+  })
 })
