@@ -243,21 +243,38 @@ test('Analytics declares unequal calendar-month segment counts without dropping 
   })
 })
 
-test('Analytics all-time range starts on the first contributing record and bypasses only the custom 366-day limit', async () => {
+test('Analytics all-time range starts on the first contributing record when on or after 2026-05-01 and clamps earlier records to 2026-05-01', async () => {
   const { getAnalytics } = require('../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies()
 
-  const result = await getAnalytics({ range: 'all' }, dependencies)
+  const clampedResult = await getAnalytics({ range: 'all' }, dependencies)
 
-  assert.equal(result.selectionMode, 'all')
-  assert.equal(result.comparisonMode, 'none')
-  assert.equal(result.comparison, null)
-  assert.equal(result.comparisonClipped, false)
-  assert.equal(result.trendAlignment.comparisonBucketCount, 0)
-  assert.equal(result.selected.range.requestedStartDate, '2024-01-15')
-  assert.equal(result.selected.range.requestedEndDate, '2026-08-03')
-  assert.equal(result.selected.range.daysInclusive, 932)
-  assert.equal(result.selected.range.bucket, 'monthly')
+  assert.equal(clampedResult.selectionMode, 'all')
+  assert.equal(clampedResult.comparisonMode, 'none')
+  assert.equal(clampedResult.comparison, null)
+  assert.equal(clampedResult.comparisonClipped, false)
+  assert.equal(clampedResult.trendAlignment.comparisonBucketCount, 0)
+  assert.equal(clampedResult.selected.range.requestedStartDate, '2026-05-01')
+  assert.equal(clampedResult.selected.range.requestedEndDate, '2026-08-03')
+  assert.equal(clampedResult.selected.range.daysInclusive, 95)
+  assert.equal(clampedResult.selected.range.bucket, 'monthly')
   assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
   assert.equal(aggregationCalls.length, 1)
+
+  const epochDependencies = {
+    ...dependencies,
+    getFirstRecordedAt: async () => new Date('1970-01-01T00:00:00.000Z'),
+  }
+  const epochResult = await getAnalytics({ range: 'all' }, epochDependencies)
+  assert.equal(epochResult.selected.range.requestedStartDate, '2026-05-01')
+  assert.equal(epochResult.selected.range.daysInclusive, 95)
+
+  const postMayDependencies = {
+    ...dependencies,
+    getFirstRecordedAt: async () => new Date('2026-06-15T01:00:00.000Z'),
+  }
+  const postMayResult = await getAnalytics({ range: 'all' }, postMayDependencies)
+  assert.equal(postMayResult.selected.range.requestedStartDate, '2026-06-15')
+  assert.equal(postMayResult.selected.range.requestedEndDate, '2026-08-03')
+  assert.equal(postMayResult.selected.range.daysInclusive, 50)
 })

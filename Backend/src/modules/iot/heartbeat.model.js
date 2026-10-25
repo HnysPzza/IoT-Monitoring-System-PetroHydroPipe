@@ -1,5 +1,5 @@
 const { z } = require('zod')
-const { deviceHeadersSchema } = require('./iot.model')
+const { deviceHeadersSchema, recordedAtTimestampSchema } = require('./iot.model')
 
 const positiveDecimalString = z.string()
   .regex(/^[1-9]\d*$/, 'Value must be a positive decimal string.')
@@ -16,7 +16,7 @@ const heartbeatSchema = z.object({
     bootId: z.string().uuid('bootId must be a UUID.'),
     bootCounter: positiveDecimalString,
     sequence: positiveDecimalString,
-    recordedAt: z.string().datetime({ offset: true, message: 'recordedAt must be an ISO timestamp with an offset.' }),
+    recordedAt: recordedAtTimestampSchema,
     activityObserved: z.boolean(),
   }),
 })

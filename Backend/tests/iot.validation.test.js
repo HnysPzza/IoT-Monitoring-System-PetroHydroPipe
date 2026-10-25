@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 
 const { sensorEventSchema } = require('../src/modules/iot/iot.model')
+const { heartbeatSchema } = require('../src/modules/iot/heartbeat.model')
 
 const headers = {
   'x-device-id': 'esp32-m01-s01',
@@ -38,7 +39,7 @@ test('device event contract keeps activity, idle, absence, fault, and recovery d
 })
 
 test('sensor event timestamps accept explicit UTC offsets like heartbeat timestamps', () => {
-  for (const recordedAt of ['2026-09-09T08:00:00+08:00', '2026-09-09T00:00:00Z']) {
+  for (const recordedAt of ['2026-05-01T00:00:00+08:00', '2026-04-30T16:00:00Z', '2026-09-09T08:00:00+08:00', '2026-09-09T00:00:00Z']) {
     const input = event('downtime', 'no_pulse')
     input.body.recordedAt = recordedAt
     assert.equal(sensorEventSchema.safeParse(input).success, true, recordedAt)
@@ -46,6 +47,30 @@ test('sensor event timestamps accept explicit UTC offsets like heartbeat timesta
   const input = event('downtime', 'no_pulse')
   input.body.recordedAt = '2026-09-09T08:00:00'
   assert.equal(sensorEventSchema.safeParse(input).success, false)
+})
+
+test('sensor event and heartbeat timestamps reject pre-May-2026 and unsynced epoch clocks', () => {
+  for (const invalidRecordedAt of ['1970-01-01T00:00:00Z', '1970-01-01T00:00:00+00:00', '2026-04-30T23:59:59+08:00', '2026-04-30T15:59:59.999Z']) {
+    const eventInput = event('pulse', 'active')
+    eventInput.body.recordedAt = invalidRecordedAt
+    const eventResult = sensorEventSchema.safeParse(eventInput)
+    assert.equal(eventResult.success, false, `event should reject ${invalidRecordedAt}`)
+    assert.deepEqual(eventResult.error.issues[0].path, ['body', 'recordedAt'])
+
+    const heartbeatResult = heartbeatSchema.safeParse({
+      headers,
+      body: {
+        heartbeatId: '11111111-1111-4111-8111-111111111111',
+        bootId: '22222222-2222-4222-8222-222222222222',
+        bootCounter: '1',
+        sequence: '1',
+        recordedAt: invalidRecordedAt,
+        activityObserved: true,
+      },
+    })
+    assert.equal(heartbeatResult.success, false, `heartbeat should reject ${invalidRecordedAt}`)
+    assert.deepEqual(heartbeatResult.error.issues[0].path, ['body', 'recordedAt'])
+  }
 })
 
 test('device metadata cannot carry server-owned output classification keys', () => {

@@ -4,7 +4,7 @@ const path = require('node:path')
 const test = require('node:test')
 
 const databaseRoot = path.resolve(__dirname, '../database')
-const releaseSchemaVersion = 47
+const releaseSchemaVersion = 48
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -28,7 +28,7 @@ async function database(t, migrationEnd = releaseSchemaVersion) {
   return db
 }
 
-test('full migration chain reports release readiness version 47 and five roles', async (t) => {
+test('full migration chain reports release readiness version 48 and five roles', async (t) => {
   const db = await database(t)
 
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
