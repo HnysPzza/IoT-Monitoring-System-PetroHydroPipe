@@ -53,10 +53,12 @@ test('POST /api/iot/heartbeats validates, authenticates, and returns the heartbe
   let authenticated = 0
   let received = null
   const app = loadHeartbeatApp({
-    authenticateDevice: async ({ deviceId, deviceKey }) => {
+    authenticateDevice: async ({ deviceId, deviceKey, sourceIp }) => {
       authenticated += 1
       assert.equal(deviceId, 'esp32-m01-s01')
       assert.equal(deviceKey, 'device-secret')
+      assert.equal(typeof sourceIp, 'string')
+      assert.ok(sourceIp.length > 0)
       return {
         id: '30000000-0000-4000-8000-000000000001',
         sensor_code: 'S-01',

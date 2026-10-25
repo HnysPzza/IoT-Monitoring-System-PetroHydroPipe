@@ -279,3 +279,28 @@ test('refresh token lifetime is bounded between 1 hour and 24 hours', () => {
     }, (loadEnv) => assert.throws(loadEnv, /REFRESH_TOKEN_TTL_MINUTES/))
   }
 })
+
+test('IoT authentication cache, failure throttle, and audit cooldown settings are bounded', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+  }, (loadEnv) => {
+    const parsed = loadEnv()
+    assert.equal(parsed.IOT_AUTH_CACHE_TTL_MS, 30_000)
+    assert.equal(parsed.IOT_AUTH_FAILURE_WINDOW_MS, 60_000)
+    assert.equal(parsed.IOT_AUTH_FAILURE_RATE_LIMIT, 10)
+    assert.equal(parsed.IOT_AUTH_AUDIT_COOLDOWN_MS, 60_000)
+  })
+
+  for (const [key, value] of [
+    ['IOT_AUTH_CACHE_TTL_MS', '-1'],
+    ['IOT_AUTH_CACHE_TTL_MS', '300001'],
+    ['IOT_AUTH_FAILURE_WINDOW_MS', '0'],
+    ['IOT_AUTH_FAILURE_RATE_LIMIT', '0'],
+    ['IOT_AUTH_AUDIT_COOLDOWN_MS', '-1'],
+  ]) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      [key]: value,
+    }, (loadEnv) => assert.throws(loadEnv, new RegExp(key)))
+  }
+})

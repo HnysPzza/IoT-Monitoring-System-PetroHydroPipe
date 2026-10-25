@@ -1,3 +1,4 @@
+const crypto = require('node:crypto')
 const bcrypt = require('bcryptjs')
 const { z } = require('zod')
 const { getSupabaseClient } = require('../../database/client')
@@ -6,6 +7,13 @@ const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentit
 const { recordAuditLog } = require('../audit/audit.service')
 const { publishIngestionTransitions } = require('../operations/transitionPublisher')
 const { RESERVED_METADATA_KEYS } = require('./iot.model')
+
+const DUMMY_DEVICE_KEY_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
+const MAX_DEVICE_AUTH_CACHE_ENTRIES = 64
+const MAX_AUTH_TRACKER_ENTRIES = 1024
+const verifiedDeviceCache = new Map()
+const failedAuthBuckets = new Map()
+const failedAuthAuditCooldowns = new Map()
 
 const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
 const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
@@ -239,29 +247,130 @@ async function findSensorByDeviceId(deviceId) {
   return data
 }
 
-async function authenticateDevice({ deviceId, deviceKey }) {
+function digestDeviceKey(deviceKey) {
+  return crypto.createHash('sha256').update(deviceKey).digest()
+}
+
+function pruneExpiredMapEntries(map, now, maxEntries) {
+  if (map.size < maxEntries) return
+  for (const [key, entry] of map.entries()) {
+    if (entry.expiresAt <= now) map.delete(key)
+  }
+  while (map.size >= maxEntries) {
+    const oldestKey = map.keys().next().value
+    if (oldestKey === undefined) break
+    map.delete(oldestKey)
+  }
+}
+
+function getCachedSensorEntry(deviceId, now) {
+  const cached = verifiedDeviceCache.get(deviceId)
+  if (!cached) return null
+  if (cached.expiresAt <= now) {
+    verifiedDeviceCache.delete(deviceId)
+    return null
+  }
+  return cached
+}
+
+function cacheVerifiedSensor(deviceId, keyDigest, sensor, now) {
+  const ttlMs = env.IOT_AUTH_CACHE_TTL_MS ?? 30_000
+  if (ttlMs <= 0) return
+  pruneExpiredMapEntries(verifiedDeviceCache, now, MAX_DEVICE_AUTH_CACHE_ENTRIES)
+  verifiedDeviceCache.set(deviceId, {
+    keyDigest,
+    sensor,
+    expiresAt: now + ttlMs,
+  })
+}
+
+function getFailureBucketKey(deviceId, sourceIp) {
+  if (sourceIp) return `ip:${sourceIp}`
+  return `device:${deviceId || 'missing'}`
+}
+
+function assertNotAuthThrottled(bucketKey, now) {
+  const limit = env.IOT_AUTH_FAILURE_RATE_LIMIT ?? 10
+  const bucket = failedAuthBuckets.get(bucketKey)
+  if (!bucket) return
+  if (bucket.expiresAt <= now) {
+    failedAuthBuckets.delete(bucketKey)
+    return
+  }
+  if (bucket.count >= limit) {
+    throw createIotError(429, 'RATE_LIMITED', 'Too many failed ESP32 authentication attempts. Please try again later.')
+  }
+}
+
+function recordFailedAuthAttempt(bucketKey, now) {
+  const windowMs = env.IOT_AUTH_FAILURE_WINDOW_MS ?? 60_000
+  const existing = failedAuthBuckets.get(bucketKey)
+  if (existing && existing.expiresAt > now) {
+    existing.count += 1
+    return
+  }
+  pruneExpiredMapEntries(failedAuthBuckets, now, MAX_AUTH_TRACKER_ENTRIES)
+  failedAuthBuckets.set(bucketKey, {
+    count: 1,
+    expiresAt: now + windowMs,
+  })
+}
+
+async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, reason, now }) {
+  const cooldownMs = env.IOT_AUTH_AUDIT_COOLDOWN_MS ?? 60_000
+  const cooldownKey = `${deviceId || 'missing'}:${reason}`
+  const existing = failedAuthAuditCooldowns.get(cooldownKey)
+  if (existing && existing.expiresAt > now) {
+    return
+  }
+  if (cooldownMs > 0) {
+    pruneExpiredMapEntries(failedAuthAuditCooldowns, now, MAX_AUTH_TRACKER_ENTRIES)
+    failedAuthAuditCooldowns.set(cooldownKey, { expiresAt: now + cooldownMs })
+  }
+  await recordAuditLog({
+    action: 'IOT_DEVICE_AUTH_FAILED',
+    entityType: 'iot_device',
+    metadata: {
+      deviceId: deviceId || null,
+      ...(sensorCode ? { sensorCode } : {}),
+      reason,
+    },
+  })
+}
+
+async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
+  const now = Date.now()
+  const failureBucketKey = getFailureBucketKey(deviceId, sourceIp)
+
   if (!deviceId || !deviceKey) {
-    await recordAuditLog({
-      action: 'IOT_DEVICE_AUTH_FAILED',
-      entityType: 'iot_device',
-      metadata: {
-        deviceId: deviceId || null,
-        reason: !deviceId ? 'missing_device_id' : 'missing_device_key',
-      },
+    assertNotAuthThrottled(failureBucketKey, now)
+    recordFailedAuthAttempt(failureBucketKey, now)
+    await recordThrottledAuthFailureAudit({
+      deviceId: deviceId || null,
+      reason: !deviceId ? 'missing_device_id' : 'missing_device_key',
+      now,
     })
     throw createIotError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
   }
 
+  const keyDigest = digestDeviceKey(deviceKey)
+  const cachedEntry = getCachedSensorEntry(deviceId, now)
+  if (cachedEntry && crypto.timingSafeEqual(cachedEntry.keyDigest, keyDigest)) {
+    return cachedEntry.sensor
+  }
+
+  assertNotAuthThrottled(failureBucketKey, now)
+
   const sensor = await findSensorByDeviceId(deviceId)
 
   if (!sensor?.device_key_hash) {
-    await recordAuditLog({
-      action: 'IOT_DEVICE_AUTH_FAILED',
-      entityType: 'iot_device',
-      metadata: {
-        deviceId,
-        reason: sensor ? 'missing_device_key_hash' : 'unknown_device',
-      },
+    verifiedDeviceCache.delete(deviceId)
+    await bcrypt.compare(deviceKey, DUMMY_DEVICE_KEY_HASH)
+    recordFailedAuthAttempt(failureBucketKey, now)
+    await recordThrottledAuthFailureAudit({
+      deviceId,
+      reason: sensor ? 'missing_device_key_hash' : 'unknown_device',
+      now,
     })
     throw createIotError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
   }
@@ -269,18 +378,17 @@ async function authenticateDevice({ deviceId, deviceKey }) {
   const keyMatches = await bcrypt.compare(deviceKey, sensor.device_key_hash)
 
   if (!keyMatches) {
-    await recordAuditLog({
-      action: 'IOT_DEVICE_AUTH_FAILED',
-      entityType: 'iot_device',
-      metadata: {
-        deviceId,
-        sensorCode: sensor.sensor_code,
-        reason: 'invalid_device_key',
-      },
+    recordFailedAuthAttempt(failureBucketKey, now)
+    await recordThrottledAuthFailureAudit({
+      deviceId,
+      sensorCode: sensor.sensor_code,
+      reason: 'invalid_device_key',
+      now,
     })
     throw createIotError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
   }
 
+  cacheVerifiedSensor(deviceId, keyDigest, sensor, now)
   return sensor
 }
 
