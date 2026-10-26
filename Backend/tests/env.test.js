@@ -304,3 +304,26 @@ test('IoT authentication cache, failure throttle, and audit cooldown settings ar
     }, (loadEnv) => assert.throws(loadEnv, new RegExp(key)))
   }
 })
+
+test('parses TRUST_PROXY hop counts, subnets, and rejects permissive true', () => {
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: '' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, false)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: 'false' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, false)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: '0' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, false)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: '1' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, 1)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: 'loopback, 10.0.0.0/8' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, 'loopback, 10.0.0.0/8')
+  })
+  for (const invalid of ['true', 'TRUE', '11', '-1', 'invalid-subnet-value']) {
+    withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: invalid }, (loadEnv) => {
+      assert.throws(loadEnv, /TRUST_PROXY/)
+    })
+  }
+})

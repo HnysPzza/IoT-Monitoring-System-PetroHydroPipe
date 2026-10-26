@@ -1508,3 +1508,59 @@ test('audit list is admin-only and returns paginated response', async () => {
     assert.equal(allowed.body.pagination.limit, 25)
   })
 })
+
+test('TRUST_PROXY=1 isolates rate limiters by X-Forwarded-For behind a reverse proxy', async () => {
+  const previousTrustProxy = process.env.TRUST_PROXY
+  const previousIngressLimit = process.env.IOT_INGRESS_RATE_LIMIT
+  process.env.TRUST_PROXY = '1'
+  process.env.IOT_INGRESS_RATE_LIMIT = '1'
+
+  let app
+  try {
+    app = loadAppWithMocks({
+      'src/modules/iot/iot.service.js': {
+        authenticateDevice: async () => ({ id: sensorId, esp32_device_id: 'esp32-m01-s01' }),
+        createSensorEvent: async () => ({ id: 'event-1' }),
+        getLiveFeed: async () => ({ machine: null, sensors: [] }),
+      },
+    })
+  } finally {
+    if (previousTrustProxy === undefined) delete process.env.TRUST_PROXY
+    else process.env.TRUST_PROXY = previousTrustProxy
+    if (previousIngressLimit === undefined) delete process.env.IOT_INGRESS_RATE_LIMIT
+    else process.env.IOT_INGRESS_RATE_LIMIT = previousIngressLimit
+  }
+
+  const eventBody = {
+    eventId: '11111111-1111-4111-8111-111111111111',
+    eventType: 'pulse',
+    signal: 'active',
+  }
+  const baseHeaders = {
+    'x-device-id': 'esp32-m01-s01',
+    'x-device-key': 'test-device-key',
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    const firstClientAllowed = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: { ...baseHeaders, 'X-Forwarded-For': '203.0.113.10' },
+      body: eventBody,
+    })
+    const firstClientBlocked = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: { ...baseHeaders, 'X-Forwarded-For': '203.0.113.10' },
+      body: eventBody,
+    })
+    const secondClientAllowed = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: { ...baseHeaders, 'X-Forwarded-For': '203.0.113.20' },
+      body: eventBody,
+    })
+
+    assert.equal(firstClientAllowed.response.status, 201)
+    assert.equal(firstClientBlocked.response.status, 429)
+    assertError(firstClientBlocked.body, 'RATE_LIMITED')
+    assert.equal(secondClientAllowed.response.status, 201)
+  })
+})

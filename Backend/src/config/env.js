@@ -1,6 +1,46 @@
+const { compileTrust } = require('express/lib/utils')
 const { z } = require('zod')
 
 require('dotenv').config({ quiet: true })
+
+function parseTrustProxy(rawValue, ctx) {
+  if (rawValue === undefined || rawValue === null) return false
+  const trimmed = String(rawValue).trim()
+  const normalized = trimmed.toLowerCase()
+
+  if (trimmed === '' || normalized === 'false' || normalized === '0') {
+    return false
+  }
+
+  if (normalized === 'true') {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TRUST_PROXY cannot be true; specify a hop count (e.g. 1) or trusted subnet (e.g. loopback).',
+    })
+    return z.NEVER
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    const hops = Number.parseInt(trimmed, 10)
+    if (hops > 0 && hops <= 10) return hops
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TRUST_PROXY hop count must be between 1 and 10.',
+    })
+    return z.NEVER
+  }
+
+  try {
+    compileTrust(trimmed)
+    return trimmed
+  } catch {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TRUST_PROXY must be false, a hop count (1-10), or a valid proxy-addr subnet.',
+    })
+    return z.NEVER
+  }
+}
 
 const PLACEHOLDER_JWT_SECRETS = new Set([
   'replace-with-a-long-random-secret',
@@ -17,6 +57,7 @@ const NON_PROD_JWT_SECRETS = new Set([
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
+  TRUST_PROXY: z.string().optional().default('false').transform(parseTrustProxy),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
   ACCOUNT_SETUP_ORIGIN: z.string().url().default('http://localhost:5173'),
   SUPABASE_URL: z.string().url().optional().or(z.literal('')),
