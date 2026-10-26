@@ -25,14 +25,20 @@ function withEnvironment(overrides, assertion) {
 test('production refuses each missing backend credential even when other settings are supplied', () => {
   const configured = {
     NODE_ENV: 'production',
+    TRUST_PROXY: '1',
     CORS_ORIGIN: 'https://frontend.example.test',
     SUPABASE_URL: 'https://database.example.test',
     SUPABASE_SERVICE_ROLE_KEY: 'synthetic-test-value',
     JWT_SECRET: 'synthetic-signing-value-for-tests-only',
   }
-  for (const missing of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET']) {
+  for (const missing of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET', 'TRUST_PROXY']) {
     withEnvironment({ ...configured, [missing]: '' }, (loadEnv) => {
       assert.throws(loadEnv, new RegExp(missing))
+    })
+  }
+  for (const disabledProxy of ['false', 'FALSE', '0']) {
+    withEnvironment({ ...configured, TRUST_PROXY: disabledProxy }, (loadEnv) => {
+      assert.throws(loadEnv, /TRUST_PROXY/)
     })
   }
   withEnvironment(configured, (loadEnv) => {

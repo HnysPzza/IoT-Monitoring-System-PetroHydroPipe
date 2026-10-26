@@ -185,12 +185,13 @@ function validateEnv() {
   }
 
   if (env.NODE_ENV === 'production') {
-    // Production must fail fast if secrets are missing.
+    // Production must fail fast if secrets or proxy trust are missing.
     const missing = []
 
     if (!env.SUPABASE_URL) missing.push('SUPABASE_URL')
     if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY')
     if (!env.JWT_SECRET) missing.push('JWT_SECRET')
+    if (!env.TRUST_PROXY) missing.push('TRUST_PROXY')
 
     if (missing.length > 0) {
       throw new Error(`Missing required production environment variables: ${missing.join(', ')}`)

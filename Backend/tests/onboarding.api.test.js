@@ -159,3 +159,83 @@ test('temporary-password sessions can change password but cannot use business en
     assert.equal(changed, true)
   })
 })
+
+
+test('accountWriteLimiter and onboarding limiters isolate client IPs behind a trusted proxy and return RATE_LIMITED JSON', async () => {
+  const rateLimiters = require('../src/middleware/rateLimiters')
+  assert.equal(typeof rateLimiters.setupLimiter, 'function')
+  assert.equal(typeof rateLimiters.setupCheckLimiter, 'function')
+  assert.equal(typeof rateLimiters.changeIngressLimiter, 'function')
+  assert.equal(typeof rateLimiters.changeLimiter, 'function')
+  assert.equal(typeof rateLimiters.accountWriteLimiter, 'function')
+
+  const app = loadAppWithMocks({
+    'src/modules/auth/onboarding.service.js': {
+      setupPassword: async () => {},
+      requestPasswordReset: async () => ({ delivery: 'accepted' }),
+    },
+  })
+  app.set('trust proxy', 1)
+
+  const targetId = '22222222-2222-4222-8222-222222222222'
+  const adminId = '11111111-1111-4111-8111-111111111111'
+  const adminAuth = `Bearer ${jwt.sign({ role: 'Admin', username: 'admin' }, process.env.JWT_SECRET, { subject: adminId })}`
+  const setupBody = { token: 'a'.repeat(64), password: 'A-long-new-password1!' }
+
+  await withTestServer(app, async (baseUrl) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const { response } = await requestJson(baseUrl, '/api/auth/setup-password', {
+        method: 'POST',
+        headers: { 'X-Forwarded-For': '203.0.113.10' },
+        body: setupBody,
+      })
+      assert.equal(response.status, 200)
+    }
+
+    const limitedSetup = await requestJson(baseUrl, '/api/auth/setup-password', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.10' },
+      body: setupBody,
+    })
+    assert.equal(limitedSetup.response.status, 429)
+    assert.deepEqual(limitedSetup.body, {
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Too many attempts. Wait before trying again.',
+      },
+    })
+
+    const otherIpSetup = await requestJson(baseUrl, '/api/auth/setup-password', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.11' },
+      body: setupBody,
+    })
+    assert.equal(otherIpSetup.response.status, 200)
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const { response } = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
+        method: 'POST',
+        headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.10' },
+      })
+      assert.equal(response.status, 200)
+    }
+
+    const limitedWrite = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
+      method: 'POST',
+      headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.10' },
+    })
+    assert.equal(limitedWrite.response.status, 429)
+    assert.deepEqual(limitedWrite.body, {
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Too many attempts. Wait before trying again.',
+      },
+    })
+
+    const otherIpWrite = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
+      method: 'POST',
+      headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.11' },
+    })
+    assert.equal(otherIpWrite.response.status, 200)
+  })
+})
