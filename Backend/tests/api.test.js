@@ -788,10 +788,14 @@ test('dashboard overview route returns backend summary for allowed roles', async
     assert.equal(result.response.headers.get('cache-control'), 'no-store')
     assert.equal(result.body.summary[0].id, 'pipes')
 
-    const directorOverview = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
+    const adminOverview = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(adminOverview.response.status, 200)
+    const retiredRoleOverview = await requestJson(baseUrl, '/api/dashboard/overview?trendMode=week', {
       headers: authHeader('Managing Director'),
     })
-    assert.equal(directorOverview.response.status, 200)
+    assert.equal(retiredRoleOverview.response.status, 403)
 
     const chart = await requestJson(baseUrl, '/api/dashboard/downtime-impact?trendMode=today', {
       headers: authHeader('Production Supervisor'),
@@ -850,10 +854,14 @@ test('downtime routes list records and reject manual status changes', async () =
     assert.equal(list.response.headers.get('cache-control'), 'no-store')
     assert.equal(list.body.records.length, 1)
 
-    const directorList = await requestJson(baseUrl, '/api/downtime?status=Open', {
+    const adminList = await requestJson(baseUrl, '/api/downtime?status=Open', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(adminList.response.status, 200)
+    const retiredRoleList = await requestJson(baseUrl, '/api/downtime?status=Open', {
       headers: authHeader('Managing Director'),
     })
-    assert.equal(directorList.response.status, 200)
+    assert.equal(retiredRoleList.response.status, 403)
 
     const controller = new AbortController()
     const stream = await fetch(`${baseUrl}/api/downtime/stream`, {
@@ -898,12 +906,20 @@ test('downtime routes list records and reject manual status changes', async () =
     })
     assert.equal(assistantEdit.response.status, 403)
 
-    const directorEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+    const retiredRoleEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',
       headers: authHeader('Managing Director'),
-      body: { notes: 'Unauthorized edit' },
+      body: { notes: 'Retired role edit' },
     })
-    assert.equal(directorEdit.response.status, 403)
+    assert.equal(retiredRoleEdit.response.status, 403)
+
+    const adminEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { notes: 'Managing Director edit' },
+    })
+    assert.equal(adminEdit.response.status, 200)
+    assert.equal(downtimeUpdates.length, 2)
   })
 })
 
@@ -944,10 +960,14 @@ test('reports summary is restricted to management roles', async () => {
     assert.equal(compared.response.status, 200)
     assert.equal(summaryCalls.at(-1).compare, true)
 
-    const director = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+    const admin = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(admin.response.status, 200)
+    const retiredRole = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
       headers: authHeader('Managing Director'),
     })
-    assert.equal(director.response.status, 200)
+    assert.equal(retiredRole.response.status, 403)
   })
 })
 
@@ -1015,16 +1035,26 @@ test('alert routes list, acknowledge, and protect realtime stream', async () => 
     assert.equal(listed.body.alerts[0].revision, '1')
     assert.equal(listed.body.snapshotRevision, '1')
 
-    const directorList = await requestJson(baseUrl, '/api/alerts', {
+    const adminList = await requestJson(baseUrl, '/api/alerts', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(adminList.response.status, 200)
+    const retiredRoleList = await requestJson(baseUrl, '/api/alerts', {
       headers: authHeader('Managing Director'),
     })
-    assert.equal(directorList.response.status, 200)
+    assert.equal(retiredRoleList.response.status, 403)
 
-    const directorAcknowledge = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
+    const retiredRoleAcknowledge = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
       method: 'PATCH',
       headers: authHeader('Managing Director'),
     })
-    assert.equal(directorAcknowledge.response.status, 403)
+    assert.equal(retiredRoleAcknowledge.response.status, 403)
+
+    const adminAcknowledge = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+    })
+    assert.equal(adminAcknowledge.response.status, 200)
 
     const acknowledged = await requestJson(baseUrl, `/api/alerts/${alertId}/acknowledge`, {
       method: 'PATCH',
@@ -1476,5 +1506,61 @@ test('audit list is admin-only and returns paginated response', async () => {
     assert.equal(allowed.response.status, 200)
     assert.equal(allowed.body.logs.length, 1)
     assert.equal(allowed.body.pagination.limit, 25)
+  })
+})
+
+test('TRUST_PROXY=1 isolates rate limiters by X-Forwarded-For behind a reverse proxy', async () => {
+  const previousTrustProxy = process.env.TRUST_PROXY
+  const previousIngressLimit = process.env.IOT_INGRESS_RATE_LIMIT
+  process.env.TRUST_PROXY = '1'
+  process.env.IOT_INGRESS_RATE_LIMIT = '1'
+
+  let app
+  try {
+    app = loadAppWithMocks({
+      'src/modules/iot/iot.service.js': {
+        authenticateDevice: async () => ({ id: sensorId, esp32_device_id: 'esp32-m01-s01' }),
+        createSensorEvent: async () => ({ id: 'event-1' }),
+        getLiveFeed: async () => ({ machine: null, sensors: [] }),
+      },
+    })
+  } finally {
+    if (previousTrustProxy === undefined) delete process.env.TRUST_PROXY
+    else process.env.TRUST_PROXY = previousTrustProxy
+    if (previousIngressLimit === undefined) delete process.env.IOT_INGRESS_RATE_LIMIT
+    else process.env.IOT_INGRESS_RATE_LIMIT = previousIngressLimit
+  }
+
+  const eventBody = {
+    eventId: '11111111-1111-4111-8111-111111111111',
+    eventType: 'pulse',
+    signal: 'active',
+  }
+  const baseHeaders = {
+    'x-device-id': 'esp32-m01-s01',
+    'x-device-key': 'test-device-key',
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    const firstClientAllowed = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: { ...baseHeaders, 'X-Forwarded-For': '203.0.113.10' },
+      body: eventBody,
+    })
+    const firstClientBlocked = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: { ...baseHeaders, 'X-Forwarded-For': '203.0.113.10' },
+      body: eventBody,
+    })
+    const secondClientAllowed = await requestJson(baseUrl, '/api/iot/events', {
+      method: 'POST',
+      headers: { ...baseHeaders, 'X-Forwarded-For': '203.0.113.20' },
+      body: eventBody,
+    })
+
+    assert.equal(firstClientAllowed.response.status, 201)
+    assert.equal(firstClientBlocked.response.status, 429)
+    assertError(firstClientBlocked.body, 'RATE_LIMITED')
+    assert.equal(secondClientAllowed.response.status, 201)
   })
 })

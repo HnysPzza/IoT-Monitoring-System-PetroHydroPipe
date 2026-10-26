@@ -26,7 +26,6 @@ describe('Analytics route and navigation access', () => {
       'Operation Manager',
       'Asst. Operation Manager',
       'Engineering Supervisor',
-      'Managing Director',
     ])
   })
 
@@ -39,13 +38,22 @@ describe('Analytics route and navigation access', () => {
     expect(await screen.findByRole('heading', { name: 'Analytics route content' })).toBeInTheDocument()
   })
 
-  it('allows the Managing Director to open the direct Analytics route', async () => {
+  it('allows Admin to open Analytics as the Managing Director role', async () => {
     renderWithAuth(<App />, {
       route: '/dashboard/analytics',
-      authValue: { user: { id: 'director-1', role: 'Managing Director' } },
+      authValue: { user: { id: 'admin-1', role: 'Admin' } },
     })
 
     expect(await screen.findByRole('heading', { name: 'Analytics route content' })).toBeInTheDocument()
+  })
+
+  it('blocks the retired Managing Director role from the direct Analytics route', async () => {
+    renderWithAuth(<App />, {
+      route: '/dashboard/analytics',
+      authValue: { user: { id: 'legacy-director-1', role: 'Managing Director' } },
+    })
+
+    expect(await screen.findByRole('heading', { name: 'You do not have permission' })).toBeInTheDocument()
   })
 
   it('blocks a direct Analytics route for a role outside the approved scope', async () => {
@@ -58,10 +66,10 @@ describe('Analytics route and navigation access', () => {
     expect(screen.queryByRole('heading', { name: 'Analytics route content' })).not.toBeInTheDocument()
   })
 
-  it('allows the Managing Director to open Reports but blocks Production Supervisor', async () => {
+  it('allows Admin to open Reports but blocks Production Supervisor', async () => {
     const { unmount } = renderWithAuth(<App />, {
       route: '/dashboard/reports',
-      authValue: { user: { id: 'director-1', role: 'Managing Director' } },
+      authValue: { user: { id: 'admin-1', role: 'Admin' } },
     })
     expect(await screen.findByRole('heading', { name: 'Reports route content' })).toBeInTheDocument()
     unmount()

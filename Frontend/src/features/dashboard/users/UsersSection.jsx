@@ -6,6 +6,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useUsersAction } from './UsersActionProvider.jsx'
 import UserAccountForm from './UserAccountForm.jsx'
 import UsersNotice from './UsersNotice.jsx'
@@ -214,7 +215,7 @@ export default function UsersSection() {
               onChange={(event) => filter('role', event.target.value)}
             >
               <option value="">All roles</option>
-              {roles.map((role) => <option key={role.id}>{role.name}</option>)}
+              {roles.map((role) => <option key={role.id} value={role.name}>{getRoleDisplayName(role.name)}</option>)}
             </select>
           </label>
 

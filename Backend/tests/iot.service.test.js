@@ -104,15 +104,19 @@ function createProcessingResult(eventType, signal, overrides = {}) {
   return result
 }
 
-function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls }) {
+function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls, sensorLookups }) {
   return {
     from(tableName) {
       assert.equal(tableName, 'sensors')
       return {
         select() { return this },
-        eq() { return this },
+        eq(_column, value) {
+          if (sensorLookups) sensorLookups.push(value)
+          return this
+        },
         async maybeSingle() {
-          return { data: sensorRecord, error: null }
+          const resolved = typeof sensorRecord === 'function' ? sensorRecord() : sensorRecord
+          return { data: resolved, error: null }
         },
       }
     },
@@ -137,13 +141,18 @@ function loadIotService({
   alertEvents = [],
   downtimeEvents = [],
   rpcCalls = [],
+  sensorLookups = [],
   sensorOverrides = {},
+  sensorRecordOverride,
   alertPublishError = null,
   downtimePublishError = null,
   logs = [],
+  envOverrides = {},
 } = {}) {
   clearSourceCache()
-  const sensorRecord = { ...createSensorRecord(), ...sensorOverrides }
+  const sensorRecord = sensorRecordOverride !== undefined
+    ? sensorRecordOverride
+    : { ...createSensorRecord(), ...sensorOverrides }
   const processingResult = createProcessingResult(eventType, signal, processingOverrides)
   const fakeSupabase = createFakeSupabase({
     sensorRecord,
@@ -151,7 +160,13 @@ function loadIotService({
     rpcDataMissing,
     rpcError,
     rpcCalls,
+    sensorLookups,
   })
+
+  if (Object.keys(envOverrides).length > 0) {
+    const currentEnv = require(path.join(backendRoot, 'src', 'config', 'env.js'))
+    mockModule('src/config/env.js', { ...currentEnv, ...envOverrides })
+  }
 
   mockModule('src/database/client.js', {
     getSupabaseClient: () => fakeSupabase,
@@ -205,7 +220,7 @@ async function createTestEvent(eventType, signal, options = {}) {
       eventType,
       signal,
       recordedAt: '2026-06-11T00:00:00.000Z',
-      metadata: {},
+      metadata: options.metadata || {},
     },
   })
 
@@ -244,6 +259,28 @@ test('rejected S-05 output is returned without publishing transitions', async ()
   assert.equal(result.event.outputRejectionReason, 'machine_stationary')
   assert.equal(result.alertEvents.length, 0)
   assert.equal(result.downtimeEvents.length, 0)
+})
+
+test('reserved output metadata keys are rejected before calling the ingestion RPC', async () => {
+  for (const key of ['outputAccepted', 'outputRejectionReason']) {
+    const rpcCalls = []
+    const iotService = loadIotService({ eventType: 'pulse', signal: 'active', rpcCalls })
+
+    await assert.rejects(
+      () => iotService.createSensorEvent({
+        sensor: createSensorRecord(),
+        payload: {
+          eventId: EVENT_ID,
+          eventType: 'pulse',
+          signal: 'active',
+          recordedAt: '2026-06-11T00:00:00.000Z',
+          metadata: { [key]: true },
+        },
+      }),
+      { code: 'SENSOR_EVENT_REJECTED', status: 400 },
+    )
+    assert.equal(rpcCalls.length, 0)
+  }
 })
 
 test('malformed S-05 output classification fails closed', async () => {
@@ -484,6 +521,283 @@ test('device authentication rejects missing keys, wrong keys, and missing machin
     }),
     { code: 'DEVICE_MACHINE_MISSING', status: 500 },
   )
+})
+
+test('device authentication caches verified key digests for the configured TTL and skips repeated bcrypt work', async (t) => {
+  const sensorLookups = []
+  const compareCalls = []
+  const originalCompare = bcrypt.compare
+  t.after(() => {
+    bcrypt.compare = originalCompare
+  })
+  bcrypt.compare = async (candidate, hash) => {
+    compareCalls.push({ candidate, hash })
+    return originalCompare(candidate, hash)
+  }
+
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    sensorLookups,
+  })
+
+  const first = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+  })
+  const second = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+  })
+
+  assert.equal(first.id, 'sensor-1')
+  assert.equal(second.id, 'sensor-1')
+  assert.equal(sensorLookups.length, 1)
+  assert.equal(compareCalls.length, 1)
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'wrong-key',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+
+  const stillCached = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+  })
+  assert.equal(stillCached.id, 'sensor-1')
+  assert.equal(sensorLookups.length, 2)
+  assert.equal(compareCalls.length, 2)
+})
+
+test('device authentication reloads sensor from database when key rotates while old key is cached', async (t) => {
+  const sensorLookups = []
+  const compareCalls = []
+  const originalCompare = bcrypt.compare
+  t.after(() => {
+    bcrypt.compare = originalCompare
+  })
+  bcrypt.compare = async (candidate, hash) => {
+    compareCalls.push({ candidate, hash })
+    return originalCompare(candidate, hash)
+  }
+
+  let currentSensor = createSensorRecord()
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    sensorLookups,
+    sensorRecordOverride: () => currentSensor,
+  })
+
+  const first = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+  })
+  assert.equal(first.id, 'sensor-1')
+  assert.equal(sensorLookups.length, 1)
+  assert.equal(compareCalls.length, 1)
+
+  currentSensor = {
+    ...createSensorRecord(),
+    device_key_hash: bcrypt.hashSync('rotated-device-secret', 4),
+  }
+
+  const rotated = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'rotated-device-secret',
+  })
+  assert.equal(rotated.id, 'sensor-1')
+  assert.equal(sensorLookups.length, 2)
+  assert.equal(compareCalls.length, 2)
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'device-secret',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+})
+
+test('device authentication evicts cached entry immediately when key is revoked in database', async () => {
+  let currentSensor = createSensorRecord()
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    sensorRecordOverride: () => currentSensor,
+  })
+
+  const first = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+  })
+  assert.equal(first.id, 'sensor-1')
+
+  currentSensor = {
+    ...createSensorRecord(),
+    device_key_hash: null,
+  }
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'wrong-key-triggers-recheck',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'device-secret',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+})
+
+test('device authentication runs dummy bcrypt.compare when sensor or hash is missing to prevent timing enumeration', async (t) => {
+  const compareCalls = []
+  const originalCompare = bcrypt.compare
+  t.after(() => {
+    bcrypt.compare = originalCompare
+  })
+  bcrypt.compare = async (candidate, hash) => {
+    compareCalls.push({ candidate, hash })
+    return originalCompare(candidate, hash)
+  }
+
+  const unknownDeviceService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    sensorRecordOverride: null,
+  })
+
+  await assert.rejects(
+    () => unknownDeviceService.authenticateDevice({
+      deviceId: 'esp32-unknown',
+      deviceKey: 'candidate-key',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+  assert.equal(compareCalls.length, 1)
+  assert.equal(compareCalls[0].candidate, 'candidate-key')
+  assert.match(compareCalls[0].hash, /^\$2[aby]\$10\$/)
+
+  const missingHashService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    sensorOverrides: { device_key_hash: null },
+  })
+
+  await assert.rejects(
+    () => missingHashService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'candidate-key-2',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+  assert.equal(compareCalls.length, 2)
+  assert.equal(compareCalls[1].candidate, 'candidate-key-2')
+})
+
+test('device authentication deduplicates repeated failure audit logs and throttles brute-force attempts', async () => {
+  const auditLogs = []
+  const sensorLookups = []
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    auditLogs,
+    sensorLookups,
+    envOverrides: {
+      IOT_AUTH_FAILURE_RATE_LIMIT: 3,
+      IOT_AUTH_FAILURE_WINDOW_MS: 60_000,
+    },
+  })
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(
+      () => iotService.authenticateDevice({
+        deviceId: 'esp32-m01-s01',
+        deviceKey: `wrong-key-${attempt}`,
+      }),
+      { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+    )
+  }
+
+  assert.equal(auditLogs.length, 1)
+  assert.equal(auditLogs[0].action, 'IOT_DEVICE_AUTH_FAILED')
+  assert.equal(sensorLookups.length, 3)
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'wrong-key-4',
+    }),
+    { code: 'RATE_LIMITED', status: 429 },
+  )
+  assert.equal(sensorLookups.length, 3)
+  assert.equal(auditLogs.length, 1)
+})
+
+test('device authentication throttles rotating fake device IDs from the same source IP while allowing cached valid devices', async () => {
+  const auditLogs = []
+  const sensorLookups = []
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    auditLogs,
+    sensorLookups,
+    envOverrides: {
+      IOT_AUTH_FAILURE_RATE_LIMIT: 2,
+      IOT_AUTH_FAILURE_WINDOW_MS: 60_000,
+    },
+  })
+
+  const verified = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+    sourceIp: '10.0.0.50',
+  })
+  assert.equal(verified.id, 'sensor-1')
+  assert.equal(sensorLookups.length, 1)
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-fake-1',
+      deviceKey: 'wrong-key-1',
+      sourceIp: '10.0.0.50',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-fake-2',
+      deviceKey: 'wrong-key-2',
+      sourceIp: '10.0.0.50',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-fake-3',
+      deviceKey: 'wrong-key-3',
+      sourceIp: '10.0.0.50',
+    }),
+    { code: 'RATE_LIMITED', status: 429 },
+  )
+  assert.equal(sensorLookups.length, 3)
+
+  const cachedStillAllowed = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s01',
+    deviceKey: 'device-secret',
+    sourceIp: '10.0.0.50',
+  })
+  assert.equal(cachedStillAllowed.id, 'sensor-1')
+  assert.equal(sensorLookups.length, 3)
 })
 
 test('post-commit downtime and alert publication failures are isolated in both directions', async () => {

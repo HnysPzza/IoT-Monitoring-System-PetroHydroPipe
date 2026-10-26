@@ -12,16 +12,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/compone
 const AUTO_REFRESH_MS = 60 * 1000
 
 const rangePresets = [
-  { id: 'this-week', label: 'This week' },
-  { id: 'this-month', label: 'This month' },
+  { id: 'week', label: 'Weekly' },
+  { id: 'month', label: 'Monthly' },
   { id: 'all', label: 'All time' },
 ]
-
-function addDateDays(dateValue, amount) {
-  const date = new Date(`${dateValue}T00:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + amount)
-  return date.toISOString().slice(0, 10)
-}
 
 function getRangeValidation(options) {
   try {
@@ -37,9 +31,9 @@ function getRangeValidation(options) {
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
   const { token } = useAuth()
   const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
-  const [period, setPeriod] = useState('this-week')
-  const [customStartDate, setCustomStartDate] = useState(() => addDateDays(currentManilaDate, -6))
-  const [customEndDate, setCustomEndDate] = useState(currentManilaDate)
+  const [period, setPeriod] = useState('week')
+  const [pickerPeriod, setPickerPeriod] = useState('week')
+  const [selectedDate, setSelectedDate] = useState(currentManilaDate)
   const [trendMetric, setTrendMetric] = useState('downtime')
   const [isCaveatOpen, setIsCaveatOpen] = useState(false)
   const [snapshot, setSnapshot] = useState(null)
@@ -50,10 +44,10 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const successfulSnapshotRef = useRef(null)
 
   const requestOptions = useMemo(() => (
-    period === 'custom'
-      ? { period, startDate: customStartDate, endDate: customEndDate }
-      : { period }
-  ), [customEndDate, customStartDate, period])
+    period === 'all'
+      ? { period }
+      : { period: period === 'month' ? 'this-month' : 'this-week', referenceDate: selectedDate }
+  ), [period, selectedDate])
   const { range, errorMessage: rangeErrorMessage } = useMemo(
     () => getRangeValidation(requestOptions),
     [requestOptions],
@@ -71,10 +65,11 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     const requestController = new AbortController()
     requestControllerRef.current = requestController
     const previousResult = successfulSnapshotRef.current
+    const hasPreviousSnapshot = Boolean(previousResult)
     const hasMatchingSnapshot = previousResult?.requestKey === requestKey
 
-    if (!hasMatchingSnapshot) setSnapshot(null)
-    setLoadState(hasMatchingSnapshot ? 'refreshing' : 'loading')
+    if (!hasPreviousSnapshot) setSnapshot(null)
+    setLoadState(hasPreviousSnapshot ? 'refreshing' : 'loading')
     setErrorMessage('')
 
     try {
@@ -132,15 +127,16 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
+  const hasComparison = snapshot?.comparisonMode !== 'none'
   const primaryKpis = kpis.filter((kpi) => kpi.isPrimary)
   const secondaryKpis = kpis.filter((kpi) => secondaryAnalyticsKpiIds.includes(kpi.id))
   const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
+  const isShowingPreviousRange = Boolean(snapshot && successfulSnapshotRef.current?.requestKey !== requestKey)
 
-  const handleCustomDateRangeChange = useCallback(({ startDate, endDate }) => {
-    setCustomStartDate(startDate)
-    setCustomEndDate(endDate)
-    setPeriod('custom')
-  }, [])
+  const handlePickerDateChange = useCallback((nextDate) => {
+    setSelectedDate(nextDate)
+    setPeriod(pickerPeriod)
+  }, [pickerPeriod])
 
   return (
     <div className="reports-layout analytics-layout">
@@ -176,20 +172,28 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
                     className={`trend-mode-button ${period === preset.id ? 'is-selected' : ''}`}
                     type="button"
                     aria-pressed={period === preset.id}
-                    onClick={() => setPeriod(preset.id)}
+                    onClick={() => {
+                      if (preset.id !== 'all') {
+                        setPickerPeriod(preset.id)
+                        setSelectedDate(currentManilaDate)
+                      }
+                      setPeriod(preset.id)
+                    }}
                   >
                     {preset.label}
                   </button>
                 ))}
               </div>
             </fieldset>
-            <AnalyticsDateRangePicker
-              startDate={customStartDate}
-              endDate={customEndDate}
-              maxDate={currentManilaDate}
-              onChange={handleCustomDateRangeChange}
-              isActive={period === 'custom'}
-            />
+            {period !== 'all' ? (
+              <AnalyticsDateRangePicker
+                period={pickerPeriod}
+                selectedDate={selectedDate}
+                maxDate={currentManilaDate}
+                onChange={handlePickerDateChange}
+                isActive
+              />
+            ) : null}
             <button
               className="btn analytics-refresh-button"
               type="button"
@@ -206,7 +210,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
       {loadState === 'refreshing' ? (
         <div className="notice dashboard-alert" role="status" aria-live="polite">
           <RotateCw className="spin-icon" size={16} aria-hidden="true" />
-          <span>Refreshing Analytics...</span>
+          <span>{isShowingPreviousRange ? 'Loading selected period; previous results remain visible.' : 'Refreshing Analytics...'}</span>
         </div>
       ) : null}
 
@@ -258,6 +262,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
                 kpi={kpi}
                 selectedMetric={trendMetric}
                 onSelect={setTrendMetric}
+                showComparison={hasComparison}
               />
             ))}
           </section>
@@ -269,6 +274,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
                 kpi={kpi}
                 selectedMetric={trendMetric}
                 onSelect={setTrendMetric}
+                showComparison={hasComparison}
               />
             ))}
           </section>

@@ -52,6 +52,8 @@ test('Phase 4 read endpoints fail closed against token, query, path, and method 
       `Bearer ${token('admin')}`,
       `Bearer ${jwt.sign({ sub: userId, role: 'Admin' }, 'wrong-secret')}`,
       'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMTEifQ.',
+      `Bearer ${token('Admin', { algorithm: 'HS384', expiresIn: '1h' })}`,
+      `Bearer ${token('Admin', { algorithm: 'HS512', expiresIn: '1h' })}`,
     ]
 
     for (const value of badAuthorization) {

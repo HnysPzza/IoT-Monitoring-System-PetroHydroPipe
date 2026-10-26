@@ -7,7 +7,6 @@ values
   ('Operation Manager', 'Production and downtime monitoring access.'),
   ('Asst. Operation Manager', 'Assistant production monitoring access.'),
   ('Engineering Supervisor', 'Machine and sensor monitoring access.'),
-  ('Managing Director', 'Full read access to operational analytics and reports.'),
   ('Production Supervisor', 'Production floor monitoring access.')
 on conflict (name) do update
 set description = excluded.description;

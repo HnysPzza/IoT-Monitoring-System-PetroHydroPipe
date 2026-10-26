@@ -155,7 +155,7 @@ Local verification does not prove hosted configuration, production backups, or p
 **Controls in place**
 
 - CSV and PDF files are generated on the server through `POST /api/reports/export`.
-- Only Admin, Managing Director, and Operation Manager roles can export.
+- Only the Managing Director (stored internally as `Admin`) and Operation Manager can export.
 - Report type and date are limited to daily, weekly, or monthly selections.
 - Exports are throttled and recorded in the audit log with user, format, period, and row count.
 - CSV fields are quoted and embedded quotes are escaped to prevent formula injection.

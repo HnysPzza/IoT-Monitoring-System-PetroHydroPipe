@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
+import '../../../shared/components/ui/Calendar.jsx'
 import AuditSection from './AuditSection.jsx'
 import { getAuditLogs } from './auditService.js'
 import { auditActionOptions, getReadableAction, getReadableDetails, getReadableTarget } from './auditFormatters.js'
@@ -117,6 +118,19 @@ describe('AuditSection', () => {
     await user.click(detailsButton)
 
     const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).queryByText('Activity summary')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('A clear summary of this activity.')).not.toBeInTheDocument()
+    const detailTerms = within(dialog).getAllByRole('term')
+    expect(detailTerms.map((term) => term.textContent)).toEqual([
+      'Who did it',
+      'What happened',
+      'Time',
+      'Affected item',
+      'Source',
+    ])
+    expect(detailTerms[0].closest('.audit-detail-item')).toHaveClass('audit-detail-primary', 'audit-detail-full')
+    expect(detailTerms[1].closest('.audit-detail-item')).not.toHaveClass('audit-detail-full')
+    expect(detailTerms[2].closest('.audit-detail-item')).not.toHaveClass('audit-detail-full')
     expect(within(dialog).getByText('What happened')).toBeInTheDocument()
     expect(within(dialog).getByText(/outside filler wire downtime detected was created/i)).toBeInTheDocument()
     expect(within(dialog).getByText('Who did it')).toBeInTheDocument()
@@ -157,7 +171,8 @@ describe('AuditSection', () => {
     const dialog = screen.getByRole('dialog', { name: 'Audit details' })
     expect(within(dialog).getByText('Override reason')).toBeInTheDocument()
     expect(within(dialog).getByText('Maintenance confirmed normal operation')).toBeInTheDocument()
-    expect(within(dialog).getByText('Admin')).toBeInTheDocument()
+    expect(within(dialog).getByText('Managing Director')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Admin')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('admin')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('Technical details')).not.toBeInTheDocument()
   })
@@ -194,5 +209,34 @@ describe('AuditSection', () => {
     expect(within(dialog).getAllByText('Sensors')).toHaveLength(2)
     expect(within(dialog).getByText(/reported no pulse.*observation, not confirmed downtime/i)).toBeInTheDocument()
     expect(within(dialog).queryByText('No pulse observation (raw value: downtime)')).not.toBeInTheDocument()
+  })
+
+  it('places the icon-only clear date button beside refresh instead of under the date picker', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+
+    await screen.findByText('No audit records match the selected filters.')
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+
+    const calendarDialog = await screen.findByRole('dialog', { name: 'Select audit date' })
+    const dayButton = (await within(calendarDialog).findAllByRole('button'))
+      .find((button) => !button.disabled && /^\d+$/.test(button.textContent.trim()))
+
+    await user.click(dayButton)
+
+    const clearButton = await screen.findByRole('button', { name: 'Clear date' })
+    expect(clearButton).toHaveClass('reports-icon-button', 'audit-date-clear')
+    expect(clearButton).not.toHaveTextContent('Clear date')
+    expect(document.querySelector('.audit-controls-actions .audit-date-clear')).toBe(clearButton)
+    expect(document.querySelector('.audit-date-field .audit-date-clear')).not.toBeInTheDocument()
+
+    await user.click(clearButton)
+    expect(screen.queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument()
   })
 })

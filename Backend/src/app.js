@@ -9,6 +9,7 @@ const routes = require('./routes')
 const healthRoutes = require('./modules/health/health.routes')
 
 const app = express()
+app.set('trust proxy', env.TRUST_PROXY)
 const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
 const isDevelopment = env.NODE_ENV === 'development'
 

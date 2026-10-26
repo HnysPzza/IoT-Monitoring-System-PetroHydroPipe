@@ -330,3 +330,57 @@ test('periodic database role revalidation sends a terminal control event', async
     assert.equal(authCalls, 2)
   })
 })
+
+test('TRUST_PROXY=1 isolates SSE per-IP connection limits by X-Forwarded-For', async () => {
+  const previousTrustProxy = process.env.TRUST_PROXY
+  const previousMaxPerIp = process.env.SSE_MAX_CONNECTIONS_PER_IP
+  process.env.TRUST_PROXY = '1'
+  process.env.SSE_MAX_CONNECTIONS_PER_IP = '1'
+
+  let app
+  try {
+    app = loadAppWithMocks(createServiceMocks())
+  } finally {
+    if (previousTrustProxy === undefined) delete process.env.TRUST_PROXY
+    else process.env.TRUST_PROXY = previousTrustProxy
+    if (previousMaxPerIp === undefined) delete process.env.SSE_MAX_CONNECTIONS_PER_IP
+    else process.env.SSE_MAX_CONNECTIONS_PER_IP = previousMaxPerIp
+  }
+
+  const token = createToken()
+
+  await withTestServer(app, async (baseUrl) => {
+    const firstAbort = new AbortController()
+    const secondAbort = new AbortController()
+
+    const firstStream = await fetch(`${baseUrl}/api/alerts/stream`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Forwarded-For': '198.51.100.10',
+      },
+      signal: firstAbort.signal,
+    })
+    assert.equal(firstStream.status, 200)
+
+    const sameIpBlocked = await requestJson(baseUrl, '/api/alerts/stream', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Forwarded-For': '198.51.100.10',
+      },
+    })
+    assert.equal(sameIpBlocked.response.status, 429)
+    assert.equal(sameIpBlocked.body.error.code, 'SSE_CONNECTION_LIMITED')
+
+    const secondIpAllowed = await fetch(`${baseUrl}/api/alerts/stream`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Forwarded-For': '198.51.100.20',
+      },
+      signal: secondAbort.signal,
+    })
+    assert.equal(secondIpAllowed.status, 200)
+
+    firstAbort.abort()
+    secondAbort.abort()
+  })
+})

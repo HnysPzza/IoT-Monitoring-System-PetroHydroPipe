@@ -5,7 +5,7 @@ export const navItems = [
     to: '/dashboard',
     icon: 'gauge',
     group: 'monitor',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
     subtitle: 'Production and downtime monitoring for Spiral Mill 01.',
   },
   {
@@ -13,7 +13,7 @@ export const navItems = [
     to: '/dashboard/live',
     icon: 'rss',
     group: 'monitor',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
     subtitle: 'Live status across five monitoring points.',
   },
   {
@@ -21,7 +21,7 @@ export const navItems = [
     to: '/dashboard/downtime',
     icon: 'triangle-alert',
     group: 'monitor',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director', 'Production Supervisor'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
     subtitle: 'Review stoppages, causes, and intervention history.',
   },
   {
@@ -29,7 +29,7 @@ export const navItems = [
     to: '/dashboard/analytics',
     icon: 'chart-no-axes-combined',
     group: 'analyze',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Managing Director'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor'],
     subtitle: 'Explore production, downtime, and process trends.',
   },
   {
@@ -37,7 +37,7 @@ export const navItems = [
     to: '/dashboard/reports',
     icon: 'bar-chart-3',
     group: 'analyze',
-    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Managing Director'],
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager'],
     subtitle: 'Generate and export production summaries.',
   },
   {

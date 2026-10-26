@@ -53,6 +53,22 @@ beforeEach(() => {
   getUsers.mockResolvedValue({ users: [], total: 21, summary: { total: 21, active: 20, inactive: 1, pending: 2 } })
 })
 
+it('displays Managing Director while filtering with the internal Admin role', async () => {
+  const user = userEvent.setup()
+  renderUsers()
+
+  const roleFilter = await screen.findByLabelText('Role', { selector: '#users-filter-role' })
+  const adminOption = within(roleFilter).getByRole('option', { name: 'Managing Director' })
+  expect(adminOption).toHaveValue('Admin')
+
+  await user.selectOptions(roleFilter, 'Admin')
+  await waitFor(() => expect(getUsers).toHaveBeenLastCalledWith(
+    'test-token',
+    expect.objectContaining({ role: 'Admin' }),
+    expect.any(AbortSignal),
+  ))
+})
+
 it('does not reload the directory when the initial search debounce expires', async () => {
   vi.useFakeTimers()
   try {

@@ -1,13 +1,15 @@
 const { EventEmitter } = require('node:events')
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
-const { formatBusinessTime, getBusinessDayRange } = require('../../shared/businessTime')
-const { calculateMachineMetrics, calculateRecordMetrics } = require('../../shared/operationalMetrics')
+const { addBusinessDays, formatBusinessTime, getBusinessDayRange, startOfBusinessDay } = require('../../shared/businessTime')
+const { calculateMachineMetrics, calculateRecordMetrics, getRecordsSpan } = require('../../shared/operationalMetrics')
 const logger = require('../../utils/logger')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
 const METRIC_PAGE_SIZE = 500
+// ponytail: unfiltered lists cap at 30 Manila days; move totals into a SQL RPC if one window nears 10k rows.
+const DEFAULT_LIST_WINDOW_DAYS = 30
 const MANUAL_CAUSE_REVIEW_SENSOR_CODE = 'S-03'
 const downtimeEvents = new EventEmitter()
 downtimeEvents.setMaxListeners(100)
@@ -157,17 +159,6 @@ async function getAllFilteredRecords(filters, dateRange) {
   return records
 }
 
-function getRecordWindow(records, asOf) {
-  const starts = records.map((record) => new Date(record.started_at).getTime())
-  const ends = records.map((record) => (
-    record.ended_at ? new Date(record.ended_at).getTime() : asOf.getTime()
-  ))
-  const start = new Date(Math.min(...starts))
-  const latestEnd = Math.max(...ends)
-  const end = new Date(Math.max(latestEnd, start.getTime() + 1000))
-  return { start, end }
-}
-
 async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossEstimateBasis) {
   const recordMetrics = new Map()
   const pageIds = new Set(pageRecords.map((record) => record.id))
@@ -180,11 +171,11 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossE
   })
 
   for (const [machineId, machineRecords] of recordsByMachine) {
-    const recordWindow = getRecordWindow(machineRecords, asOf)
-    const historyWindow = dateRange ? {
+    const recordWindow = getRecordsSpan(machineRecords, asOf)
+    const historyWindow = {
       start: dateRange.start < recordWindow.start ? dateRange.start : recordWindow.start,
       end: dateRange.end > recordWindow.end ? dateRange.end : recordWindow.end,
-    } : recordWindow
+    }
     const settingsHistory = await getSettingsHistory(machineId, historyWindow)
     const positiveRecords = machineRecords.filter((record) => {
       const endedAt = record.ended_at ? new Date(record.ended_at) : asOf
@@ -212,7 +203,7 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossE
     })
     machineTotals.push(calculateMachineMetrics({
       records: positiveRecords,
-      window: dateRange || recordWindow,
+      window: dateRange,
       settingsHistory,
       asOf,
       lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
@@ -228,12 +219,18 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossE
   }
 }
 
+function getListDateRange(date, asOf) {
+  if (date) return getBusinessDayRange(date)
+  const end = addBusinessDays(startOfBusinessDay(asOf), 1)
+  return { start: addBusinessDays(end, -DEFAULT_LIST_WINDOW_DAYS), end }
+}
+
 async function listDowntime(filters = {}) {
   const asOf = new Date()
   const page = filters.page || 1
   const limit = filters.limit || 25
   const from = (page - 1) * limit
-  const dateRange = filters.date ? getBusinessDayRange(filters.date) : null
+  const dateRange = getListDateRange(filters.date, asOf)
   const allRecords = await getAllFilteredRecords(filters, dateRange)
   const ordered = [...allRecords].sort((left, right) => (
     new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
@@ -257,6 +254,11 @@ async function listDowntime(filters = {}) {
   return {
     records,
     lossEstimateBasis,
+    range: {
+      start: dateRange.start.toISOString(),
+      end: dateRange.end.toISOString(),
+      isDefault: !filters.date,
+    },
     summary: {
       open: allRecords.filter((record) => record.status === 'Open').length,
       resolved: allRecords.filter((record) => record.status === 'Resolved').length,

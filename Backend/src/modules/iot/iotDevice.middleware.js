@@ -6,6 +6,7 @@ async function authenticateIotDevice(req, res, next) {
   const device = await iotService.authenticateDevice({
     deviceId: headers['x-device-id'],
     deviceKey: headers['x-device-key'],
+    sourceIp: req.ip,
   })
 
   if (!device?.id) {

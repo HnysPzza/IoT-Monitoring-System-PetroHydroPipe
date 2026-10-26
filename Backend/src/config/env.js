@@ -1,11 +1,63 @@
+const { compileTrust } = require('express/lib/utils')
 const { z } = require('zod')
 
 require('dotenv').config({ quiet: true })
+
+function parseTrustProxy(rawValue, ctx) {
+  if (rawValue === undefined || rawValue === null) return false
+  const trimmed = String(rawValue).trim()
+  const normalized = trimmed.toLowerCase()
+
+  if (trimmed === '' || normalized === 'false' || normalized === '0') {
+    return false
+  }
+
+  if (normalized === 'true') {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TRUST_PROXY cannot be true; specify a hop count (e.g. 1) or trusted subnet (e.g. loopback).',
+    })
+    return z.NEVER
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    const hops = Number.parseInt(trimmed, 10)
+    if (hops > 0 && hops <= 10) return hops
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TRUST_PROXY hop count must be between 1 and 10.',
+    })
+    return z.NEVER
+  }
+
+  try {
+    compileTrust(trimmed)
+    return trimmed
+  } catch {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TRUST_PROXY must be false, a hop count (1-10), or a valid proxy-addr subnet.',
+    })
+    return z.NEVER
+  }
+}
+
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  'replace-with-a-long-random-secret',
+  'your-private-random-secret-at-least-24-characters-long',
+  'your-private-random-secret-at-least-32-characters-long',
+])
+
+const NON_PROD_JWT_SECRETS = new Set([
+  'test-jwt-secret-for-backend-suite',
+  'disposable-browser-review-secret-only',
+])
 
 // Defines every backend environment variable and catches invalid values at startup.
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
+  TRUST_PROXY: z.string().optional().default('false').transform(parseTrustProxy),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
   ACCOUNT_SETUP_ORIGIN: z.string().url().default('http://localhost:5173'),
   SUPABASE_URL: z.string().url().optional().or(z.literal('')),
@@ -19,7 +71,14 @@ const envSchema = z.object({
     (value) => value === '' ? undefined : value,
     z.string().trim().min(1).max(120).default('Petro Hydro Monitoring'),
   ),
-  JWT_SECRET: z.string().min(24, 'JWT_SECRET must be at least 24 characters.').optional().or(z.literal('')),
+  JWT_SECRET: z.string()
+    .trim()
+    .min(32, 'JWT_SECRET must be at least 32 characters.')
+    .refine((value) => !PLACEHOLDER_JWT_SECRETS.has(value.toLowerCase()), {
+      message: 'JWT_SECRET cannot use a placeholder value.',
+    })
+    .optional()
+    .or(z.literal('')),
   ACCESS_TOKEN_EXPIRES_MINUTES: z.preprocess(
     (value) => value === '' ? undefined : value,
     z.coerce.number().int().min(15).max(60).default(30),
@@ -48,6 +107,10 @@ const envSchema = z.object({
   IOT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
   IOT_INGRESS_RATE_LIMIT: z.coerce.number().int().positive().default(300),
   IOT_DEVICE_RATE_LIMIT: z.coerce.number().int().positive().default(120),
+  IOT_AUTH_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(30_000),
+  IOT_AUTH_FAILURE_WINDOW_MS: z.coerce.number().int().positive().max(2_147_483_647).default(60 * 1000),
+  IOT_AUTH_FAILURE_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+  IOT_AUTH_AUDIT_COOLDOWN_MS: z.coerce.number().int().min(0).max(2_147_483_647).default(60 * 1000),
   IOT_HEARTBEAT_EXPECTED_INTERVAL_MS: z.coerce.number().int().min(1000).max(120_000).default(10_000),
   IOT_HEARTBEAT_STALE_AFTER_MS: z.coerce.number().int().min(2000).max(600_000).default(30_000),
   WATCHDOG_MODE: z.enum(['disabled', 'observe', 'enforce']).default('disabled'),
@@ -131,6 +194,10 @@ function validateEnv() {
 
     if (missing.length > 0) {
       throw new Error(`Missing required production environment variables: ${missing.join(', ')}`)
+    }
+
+    if (NON_PROD_JWT_SECRETS.has(env.JWT_SECRET.toLowerCase())) {
+      throw new Error('Invalid environment configuration. JWT_SECRET cannot use a test secret in production.')
     }
   }
 

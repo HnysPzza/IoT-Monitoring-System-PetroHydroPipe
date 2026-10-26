@@ -185,13 +185,13 @@ export default function AuditSection() {
               rangeLabel={selectedAuditDate ? formatAuditDateLabel(selectedAuditDate) : ''}
               onDateChange={(date) => updateDateFilter(formatAuditDateInput(date))}
             />
-            {dateFilter ? (
-              <button className="audit-date-clear" type="button" onClick={() => updateDateFilter('')}>
-                Clear date
-              </button>
-            ) : null}
           </div>
           <div className="audit-controls-actions">
+            {dateFilter ? (
+              <button className="btn reports-icon-button audit-date-clear" type="button" aria-label="Clear date" title="Clear date" onClick={() => updateDateFilter('')}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            ) : null}
             <button className="btn reports-icon-button audit-refresh-button" type="button" aria-label="Refresh audit log" disabled={isRefreshing} onClick={() => loadAuditLogs({ silent: true })}>
               <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
             </button>
@@ -279,24 +279,26 @@ export default function AuditSection() {
         ref={detailsDialogRef}
         className="audit-details-dialog"
         aria-labelledby="audit-details-title"
-        aria-describedby="audit-details-description"
         onClose={() => setSelectedLog(null)}
       >
         {selectedLog ? (
           <div className="audit-dialog-content">
             <div className="audit-dialog-heading">
-              <div>
-                <p className="section-eyebrow">Activity summary</p>
-                <h2 id="audit-details-title">Audit details</h2>
-                <p id="audit-details-description">A clear summary of this activity.</p>
-              </div>
+              <h2 id="audit-details-title">Audit details</h2>
               <button className="icon-button" type="button" aria-label="Close audit details" onClick={closeDetails}>
                 <X size={20} aria-hidden="true" />
               </button>
             </div>
             <dl className="audit-dialog-details">
               {getReadableDetailItems(selectedLog).map((item) => (
-                <div key={item.label}>
+                <div
+                  key={item.label}
+                  className={[
+                    'audit-detail-item',
+                    item.emphasis === 'primary' ? 'audit-detail-primary' : '',
+                    item.fullWidth ? 'audit-detail-full' : '',
+                  ].filter(Boolean).join(' ')}
+                >
                   <dt>{item.label}</dt>
                   <dd>{item.value}</dd>
                 </div>

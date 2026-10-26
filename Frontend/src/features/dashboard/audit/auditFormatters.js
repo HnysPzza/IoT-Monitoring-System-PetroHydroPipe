@@ -1,3 +1,4 @@
+import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { cleanCode, formatDateTime as formatSharedDateTime } from '../../../shared/utils/formatters.js'
 import { getSignalLabel } from '../../../shared/utils/signalFormatters.js'
@@ -84,7 +85,7 @@ export function getReadableEntity(log) {
 
 export function getReadableActor(log) {
   if (log.actor) {
-    return log.actor.role || 'User'
+    return getRoleDisplayName(log.actor.role) || 'User'
   }
 
   if (isSensorActivity(log)) {
@@ -223,14 +224,14 @@ export function getReadableSource(log) {
 
 export function getReadableDetailItems(log) {
   return [
+    { label: 'Who did it', value: getReadableActor(log), emphasis: 'primary', fullWidth: true },
     { label: 'What happened', value: getReadableDetails(log) },
-    ...(log.action === 'SENSOR_MANUAL_RECOVERY_OVERRIDE' && log.metadata?.reason
-      ? [{ label: 'Override reason', value: log.metadata.reason }]
-      : []),
-    { label: 'Who did it', value: getReadableActor(log) },
+    { label: 'Time', value: formatDateTime(log.createdAt) },
     { label: 'Affected item', value: getReadableTarget(log) },
     { label: 'Source', value: getReadableSource(log) },
-    { label: 'Time', value: formatDateTime(log.createdAt) },
+    ...(log.action === 'SENSOR_MANUAL_RECOVERY_OVERRIDE' && log.metadata?.reason
+      ? [{ label: 'Override reason', value: log.metadata.reason, fullWidth: true }]
+      : []),
   ]
 }
 

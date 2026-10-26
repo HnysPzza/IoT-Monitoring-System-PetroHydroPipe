@@ -72,6 +72,7 @@ export default function DowntimeSection() {
   const [records, setRecords] = useState([])
   const [summary, setSummary] = useState({ open: 0, resolved: 0, minutes: 0, loss: 0 })
   const [lossEstimateBasis, setLossEstimateBasis] = useState(null)
+  const [listRange, setListRange] = useState(null)
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('All')
@@ -105,6 +106,7 @@ export default function DowntimeSection() {
       setRecords(payload.records || [])
       setSummary(payload.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 })
       setLossEstimateBasis(payload.lossEstimateBasis || null)
+      setListRange(payload.range || null)
       setPagination(payload.pagination || { page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       if (!silent) {
         setExpandedRecordId('')
@@ -118,6 +120,7 @@ export default function DowntimeSection() {
         setRecords([])
         setSummary({ open: 0, resolved: 0, minutes: 0, loss: 0 })
         setLossEstimateBasis(null)
+        setListRange(null)
         setPagination({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
       }
     } finally {
@@ -305,6 +308,10 @@ export default function DowntimeSection() {
           />
         </label>
       </section>
+
+      {listRange?.isDefault ? (
+        <p className="stat-helper" role="status">Showing the last 30 days. Pick a date to see a single day.</p>
+      ) : null}
 
       <section className="section-card downtime-table-card" aria-labelledby="downtime-records-title">
         <div className="section-heading">

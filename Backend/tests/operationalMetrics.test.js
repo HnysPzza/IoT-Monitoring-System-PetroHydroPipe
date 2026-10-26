@@ -6,6 +6,7 @@ const {
   calculateEstimatedLoss,
   calculateMachineMetrics,
   calculateRecordMetrics,
+  getRecordsSpan,
 } = require('../src/shared/operationalMetrics')
 
 const window = {
@@ -144,5 +145,33 @@ test('estimated loss preserves fractional pieces and rejects an invalid rate', (
   assert.throws(
     () => calculateEstimatedLoss(60, Number.NaN),
     { code: 'INVALID_OUTPUT_LOSS_RATE' },
+  )
+})
+
+const SPAN_BASE_MS = Date.UTC(2026, 0, 1)
+
+test('records span handles more rows than the engine argument limit', () => {
+  const count = 200000
+  const records = Array.from({ length: count }, (_, index) => ({
+    started_at: new Date(SPAN_BASE_MS + index * 60000).toISOString(),
+    ended_at: new Date(SPAN_BASE_MS + index * 60000 + 30000).toISOString(),
+  }))
+  const span = getRecordsSpan(records, new Date('2026-07-13T00:00:00.000Z'))
+  assert.equal(span.start.toISOString(), '2026-01-01T00:00:00.000Z')
+  assert.equal(span.end.getTime(), SPAN_BASE_MS + (count - 1) * 60000 + 30000)
+})
+
+test('records span uses asOf for open records and pads zero-length spans', () => {
+  const asOf = new Date('2026-07-13T01:00:00.000Z')
+  const open = getRecordsSpan([{ started_at: '2026-07-13T00:00:00.000Z', ended_at: null }], asOf)
+  assert.equal(open.end.toISOString(), asOf.toISOString())
+  const zero = getRecordsSpan([{ started_at: '2026-07-13T00:30:00.000Z', ended_at: '2026-07-13T00:30:00.000Z' }], asOf)
+  assert.equal(zero.end.toISOString(), '2026-07-13T00:30:01.000Z')
+})
+
+test('records span rejects unparseable timestamps instead of skipping them', () => {
+  assert.throws(
+    () => getRecordsSpan([{ started_at: 'not-a-date', ended_at: null }], new Date()),
+    { code: 'DOWNTIME_RECORD_INVALID_TIME', status: 500 },
   )
 })

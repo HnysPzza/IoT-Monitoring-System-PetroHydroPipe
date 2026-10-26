@@ -38,6 +38,43 @@ test('production refuses each missing backend credential even when other setting
   withEnvironment(configured, (loadEnv) => {
     assert.equal(loadEnv().NODE_ENV, 'production')
   })
+
+  for (const shortSecret of [
+    'short-secret',
+    '24-chars-is-now-too-shrt',
+    'thirty-one-characters-long-key!',
+    ' '.repeat(32),
+  ]) {
+    withEnvironment({ NODE_ENV: 'test', JWT_SECRET: shortSecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET must be at least 32 characters/)
+    })
+    withEnvironment({ ...configured, JWT_SECRET: shortSecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET must be at least 32 characters/)
+    })
+  }
+
+  for (const placeholder of [
+    'replace-with-a-long-random-secret',
+    '  REPLACE-WITH-A-LONG-RANDOM-SECRET  ',
+    'your-private-random-secret-at-least-24-characters-long',
+    'your-private-random-secret-at-least-32-characters-long',
+  ]) {
+    withEnvironment({ NODE_ENV: 'test', JWT_SECRET: placeholder }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET cannot use a placeholder value/)
+    })
+    withEnvironment({ ...configured, JWT_SECRET: placeholder }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET cannot use a placeholder value/)
+    })
+  }
+
+  for (const testSecret of [
+    'test-jwt-secret-for-backend-suite',
+    'disposable-browser-review-secret-only',
+  ]) {
+    withEnvironment({ ...configured, JWT_SECRET: testSecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET cannot use a test secret in production/)
+    })
+  }
 })
 
 test('loads valid Brevo development configuration', () => {
@@ -240,5 +277,53 @@ test('refresh token lifetime is bounded between 1 hour and 24 hours', () => {
       NODE_ENV: 'test',
       REFRESH_TOKEN_TTL_MINUTES: value,
     }, (loadEnv) => assert.throws(loadEnv, /REFRESH_TOKEN_TTL_MINUTES/))
+  }
+})
+
+test('IoT authentication cache, failure throttle, and audit cooldown settings are bounded', () => {
+  withEnvironment({
+    NODE_ENV: 'test',
+  }, (loadEnv) => {
+    const parsed = loadEnv()
+    assert.equal(parsed.IOT_AUTH_CACHE_TTL_MS, 30_000)
+    assert.equal(parsed.IOT_AUTH_FAILURE_WINDOW_MS, 60_000)
+    assert.equal(parsed.IOT_AUTH_FAILURE_RATE_LIMIT, 10)
+    assert.equal(parsed.IOT_AUTH_AUDIT_COOLDOWN_MS, 60_000)
+  })
+
+  for (const [key, value] of [
+    ['IOT_AUTH_CACHE_TTL_MS', '-1'],
+    ['IOT_AUTH_CACHE_TTL_MS', '300001'],
+    ['IOT_AUTH_FAILURE_WINDOW_MS', '0'],
+    ['IOT_AUTH_FAILURE_RATE_LIMIT', '0'],
+    ['IOT_AUTH_AUDIT_COOLDOWN_MS', '-1'],
+  ]) {
+    withEnvironment({
+      NODE_ENV: 'test',
+      [key]: value,
+    }, (loadEnv) => assert.throws(loadEnv, new RegExp(key)))
+  }
+})
+
+test('parses TRUST_PROXY hop counts, subnets, and rejects permissive true', () => {
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: '' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, false)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: 'false' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, false)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: '0' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, false)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: '1' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, 1)
+  })
+  withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: 'loopback, 10.0.0.0/8' }, (loadEnv) => {
+    assert.equal(loadEnv().TRUST_PROXY, 'loopback, 10.0.0.0/8')
+  })
+  for (const invalid of ['true', 'TRUE', '11', '-1', 'invalid-subnet-value']) {
+    withEnvironment({ NODE_ENV: 'test', TRUST_PROXY: invalid }, (loadEnv) => {
+      assert.throws(loadEnv, /TRUST_PROXY/)
+    })
   }
 })

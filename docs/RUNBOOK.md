@@ -63,11 +63,13 @@ node --test tests/request-deadline.api.test.js tests/env.test.js
 
 Expected: `0 fail`.
 
+### Current backend migration chain through 046
+
+For existing installations, apply pending migrations 029 through 046 in numeric order before deploying the current backend, which requires readiness version 46. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Existing installations use only pending migrations, not the complete schema or old migration replays.
+
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 046. Do not replay migrations 001 through 028 over the fresh baseline.
+
 ### Telemetry staleness migration 028
-
-Apply pending migrations 028 through 045 in order before deploying the current backend, which requires readiness version 45. Migration 029 requires exactly one active, unarchived Admin. Existing installations use only pending migrations, not the complete schema or old migration replays.
-
-For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 045. Do not replay migrations 001 through 028 over the fresh baseline.
 
 The migration runs in one transaction with a two-second lock timeout. If it fails to acquire locks, allow the transaction to roll back and retry during a quiet ingestion window. It does not delete raw events, rewrite historical timestamps, or change sensor roles.
 
@@ -91,7 +93,9 @@ select public.get_backend_readiness();
 select stale, count(*) from public.sensor_events group by stale;
 ```
 
-Expected readiness after migration 044 and before 045: `44`. Migration 045 advances current readiness to `45`; apply it before deploying the current backend. A passing readiness check is a schema check, not a historical-data or hardware certification.
+### Migration readiness versions
+
+Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Apply both before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
 
 ### S-05 output validation migration 044
 
@@ -109,7 +113,22 @@ This local check proves the SQL contract and routing guards only. It does not pr
 
 ### User password reset migration 045
 
-Migration 045 adds a `purpose` to password setup tokens and supports admin-issued reset links for active, non-admin accounts that completed setup. Reset links expire after one hour, work once, and revoke existing sessions when used. Apply the migration after 044 and verify readiness returns `45` before deploying the matching backend and frontend.
+Migration 045 adds a `purpose` to password setup tokens and supports admin-issued reset links for active, non-admin accounts that completed setup. Reset links expire after one hour, work once, and revoke existing sessions when used. Apply it after 044; then apply migration 046 and verify readiness returns `46` before deploying the matching backend and frontend.
+
+### Role consolidation migration 046
+
+The application now stores five roles. The protected internal role remains `Admin`; the interface displays it as **Managing Director**. The role API keeps its `{ roles }` response shape and returns the five database role names. Account creation continues to reject `Admin`.
+
+Migration 046 takes short locks on `roles` and `users`, then checks that no account references the legacy Managing Director role before deleting that role row. If an account is found, the transaction aborts without changing the role or account. It also aborts if the role catalog contains any unexpected or missing role. Its two-second lock timeout makes it abort and roll back if the required locks are not promptly available. On success, readiness advances from `45` to `46`.
+
+After applying the migration, verify readiness and the role catalog:
+
+```sql
+select public.get_backend_readiness();
+select name from public.roles order by name;
+```
+
+Expected readiness is `46`, with `Admin`, `Operation Manager`, `Asst. Operation Manager`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
 
 ### Health and readiness (historical migration 024 checks)
 

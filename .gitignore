@@ -20,6 +20,8 @@ Frontend/node_modules/
 dist/
 Frontend/dist/
 Backend/dist/
+Frontend/test-results/
+Frontend/playwright-report/
 
 # Local generated documentation; keep the maintained public docs tracked.
 docs/*

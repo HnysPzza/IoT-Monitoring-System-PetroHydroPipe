@@ -2,6 +2,8 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
+
 const backendRoot = path.resolve(__dirname, '..')
 const refreshServicePath = path.join(backendRoot, 'src', 'modules', 'auth', 'refreshTokens.service.js')
 const databaseClientPath = path.join(backendRoot, 'src', 'database', 'client.js')
@@ -130,6 +132,7 @@ test('refreshed tokens preserve the safe user role', () => {
   const authService = require('../src/modules/auth/auth.service')
   const token = authService.createAuthToken({ id: 'user-1', username: 'admin', role: 'Admin' }, 'session-1')
   assert.equal(require('jsonwebtoken').decode(token).role, 'Admin')
+  assert.equal(require('jsonwebtoken').decode(token, { complete: true }).header.alg, 'HS256')
   assert.equal(require('jsonwebtoken').decode(token).sid, 'session-1')
 })
 

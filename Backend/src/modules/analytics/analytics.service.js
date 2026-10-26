@@ -16,6 +16,8 @@ const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.r
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 
 const DAY_MS = 86400000
+const ALL_TIME_FLOOR_DATE = '2026-05-01'
+const MAX_ANALYTICS_DAYS = 366
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
 const OUTPUT_SENSOR_CODE = 'S-05'
 
@@ -391,14 +393,21 @@ async function getAnalytics(query, suppliedDependencies = {}) {
   const firstRecordedAt = selectionMode === 'all'
     ? await dependencies.getFirstRecordedAt(machine.id)
     : null
+  const rollingFloorDate = formatBusinessDate(
+    addBusinessDays(parseBusinessDate(today), -(MAX_ANALYTICS_DAYS - 1)),
+  )
+  const rawAllTimeStartDate = formatBusinessDate(firstRecordedAt || asOf)
+  const clampedAllTimeStartDate = [rawAllTimeStartDate, ALL_TIME_FLOOR_DATE, rollingFloorDate]
+    .sort()
+    .at(-1)
   const startDate = selectionMode === 'all'
-    ? formatBusinessDate(firstRecordedAt || asOf)
+    ? (clampedAllTimeStartDate > today ? today : clampedAllTimeStartDate)
     : query.startDate
   const endDate = selectionMode === 'all' ? today : query.endDate
   const selectedStart = parseBusinessDate(startDate)
   const selectedEnd = addBusinessDays(parseBusinessDate(endDate), 1)
   const daysInclusive = Math.round((selectedEnd - selectedStart) / DAY_MS)
-  if (selectedStart >= selectedEnd || (selectionMode === 'dates' && daysInclusive > 366)) {
+  if (selectedStart >= selectedEnd || daysInclusive > MAX_ANALYTICS_DAYS) {
     throw createAnalyticsError(400, 'ANALYTICS_RANGE_INVALID', 'Analytics date range must be 1 to 366 days.')
   }
 
