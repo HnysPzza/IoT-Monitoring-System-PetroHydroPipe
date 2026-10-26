@@ -104,12 +104,15 @@ function createProcessingResult(eventType, signal, overrides = {}) {
   return result
 }
 
-function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls, sensorLookups }) {
+function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls, sensorLookups, sensorSelects }) {
   return {
     from(tableName) {
       assert.equal(tableName, 'sensors')
       return {
-        select() { return this },
+        select(columns) {
+          if (sensorSelects) sensorSelects.push(columns)
+          return this
+        },
         eq(_column, value) {
           if (sensorLookups) sensorLookups.push(value)
           return this
@@ -142,6 +145,7 @@ function loadIotService({
   downtimeEvents = [],
   rpcCalls = [],
   sensorLookups = [],
+  sensorSelects = [],
   sensorOverrides = {},
   sensorRecordOverride,
   alertPublishError = null,
@@ -161,6 +165,7 @@ function loadIotService({
     rpcError,
     rpcCalls,
     sensorLookups,
+    sensorSelects,
   })
 
   if (Object.keys(envOverrides).length > 0) {
@@ -525,6 +530,7 @@ test('device authentication rejects missing keys, wrong keys, and missing machin
 
 test('device authentication caches verified key digests for the configured TTL and skips repeated bcrypt work', async (t) => {
   const sensorLookups = []
+  const sensorSelects = []
   const compareCalls = []
   const originalCompare = bcrypt.compare
   t.after(() => {
@@ -539,6 +545,7 @@ test('device authentication caches verified key digests for the configured TTL a
     eventType: 'pulse',
     signal: 'active',
     sensorLookups,
+    sensorSelects,
   })
 
   const first = await iotService.authenticateDevice({
@@ -550,10 +557,23 @@ test('device authentication caches verified key digests for the configured TTL a
     deviceKey: 'device-secret',
   })
 
-  assert.equal(first.id, 'sensor-1')
-  assert.equal(second.id, 'sensor-1')
+  const expectedIdentity = {
+    id: 'sensor-1',
+    sensor_code: 'S-01',
+    esp32_device_id: 'esp32-m01-s01',
+    machine_id: 'machine-1',
+    machines: {
+      id: 'machine-1',
+      machine_code: 'M-01',
+      name: 'Spiral Mill 01',
+    },
+  }
+  assert.deepEqual(first, expectedIdentity)
+  assert.deepEqual(second, expectedIdentity)
   assert.equal(sensorLookups.length, 1)
   assert.equal(compareCalls.length, 1)
+  assert.equal(sensorSelects[0].includes('status'), false)
+  assert.equal(sensorSelects[0].includes('updated_at'), false)
 
   await assert.rejects(
     () => iotService.authenticateDevice({
@@ -567,9 +587,66 @@ test('device authentication caches verified key digests for the configured TTL a
     deviceId: 'esp32-m01-s01',
     deviceKey: 'device-secret',
   })
-  assert.equal(stillCached.id, 'sensor-1')
+  assert.deepEqual(stillCached, expectedIdentity)
   assert.equal(sensorLookups.length, 2)
   assert.equal(compareCalls.length, 2)
+})
+
+test('createSensorEvent never falls back to stale cached machine status when RPC returns updated or null status', async () => {
+  const staleSensor = {
+    id: 'sensor-1',
+    sensor_code: 'S-01',
+    esp32_device_id: 'esp32-m01-s01',
+    machine_id: 'machine-1',
+    machines: {
+      id: 'machine-1',
+      machine_code: 'M-01',
+      name: 'Spiral Mill 01',
+      status: 'Running',
+    },
+  }
+
+  const downtimeService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    processingOverrides: {
+      duplicate: true,
+      state_applied: false,
+      new_machine_status: 'Downtime',
+      downtime_action: null,
+    },
+  })
+  const downtimeEvent = await downtimeService.createSensorEvent({
+    sensor: staleSensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'pulse',
+      signal: 'active',
+      recordedAt: '2026-06-11T00:00:00.000Z',
+    },
+  })
+  assert.equal(downtimeEvent.machineStatus, 'Downtime')
+
+  const nullStatusService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    processingOverrides: {
+      duplicate: true,
+      state_applied: false,
+      new_machine_status: null,
+      downtime_action: null,
+    },
+  })
+  const nullStatusEvent = await nullStatusService.createSensorEvent({
+    sensor: staleSensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'pulse',
+      signal: 'active',
+      recordedAt: '2026-06-11T00:00:00.000Z',
+    },
+  })
+  assert.equal(nullStatusEvent.machineStatus, null)
 })
 
 test('device authentication reloads sensor from database when key rotates while old key is cached', async (t) => {

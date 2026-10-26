@@ -128,7 +128,7 @@ function toEventResponse(eventRecord, sensorRecord, processing = {}) {
     outputRejectionReason: hasOutputClassification
       ? outputMetadata.outputRejectionReason || null
       : null,
-    machineStatus: processing.new_machine_status || machine?.status || null,
+    machineStatus: processing.new_machine_status || null,
     downtimeAction: processing.downtime_action || null,
     downtimeId: processing.downtime_id || null,
     downtimeSensorCode: getDowntimeOwnerSensorCode(processing),
@@ -225,16 +225,11 @@ async function findSensorByDeviceId(deviceId) {
       sensor_code,
       esp32_device_id,
       device_key_hash,
-      label,
-      status,
       machine_id,
       machines (
         id,
         machine_code,
-        name,
-        status,
-        location,
-        updated_at
+        name
       )
     `)
     .eq('esp32_device_id', deviceId)
@@ -245,6 +240,23 @@ async function findSensorByDeviceId(deviceId) {
   }
 
   return data
+}
+
+function toVerifiedSensorIdentity(sensorRecord) {
+  const machine = getMachineRecord(sensorRecord)
+  return {
+    id: sensorRecord.id,
+    sensor_code: sensorRecord.sensor_code,
+    esp32_device_id: sensorRecord.esp32_device_id,
+    machine_id: sensorRecord.machine_id,
+    machines: machine
+      ? {
+        id: machine.id,
+        machine_code: machine.machine_code,
+        name: machine.name,
+      }
+      : null,
+  }
 }
 
 function digestDeviceKey(deviceKey) {
@@ -388,8 +400,9 @@ async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
     throw createIotError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
   }
 
-  cacheVerifiedSensor(deviceId, keyDigest, sensor, now)
-  return sensor
+  const verifiedSensor = toVerifiedSensorIdentity(sensor)
+  cacheVerifiedSensor(deviceId, keyDigest, verifiedSensor, now)
+  return verifiedSensor
 }
 
 function assertAllowedEventMetadata(metadata) {
