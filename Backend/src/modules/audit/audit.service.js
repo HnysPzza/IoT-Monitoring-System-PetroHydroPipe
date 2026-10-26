@@ -1,5 +1,6 @@
 const { getSupabaseClient } = require('../../database/client')
 const { getBusinessDayRange } = require('../../shared/businessTime')
+const logger = require('../../utils/logger')
 
 const DEFAULT_AUDIT_LIMIT = 25
 const MAX_AUDIT_LIMIT = 100
@@ -136,23 +137,20 @@ async function listAuditLogs(filters = {}) {
 }
 
 async function recordAuditLog({ userId = null, action, entityType, entityId = null, metadata = {} }) {
-  try {
-    const supabase = getSupabaseClient()
-    const { error } = await supabase
-      .from('audit_logs')
-      .insert({
-        user_id: userId,
-        action,
-        entity_type: entityType,
-        entity_id: entityId,
-        metadata,
-      })
+  const supabase = getSupabaseClient()
+  const { error } = await supabase
+    .from('audit_logs')
+    .insert({
+      user_id: userId,
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      metadata,
+    })
 
-    if (error) {
-      console.warn('Unable to record audit log.', { action, entityType, error: error.message })
-    }
-  } catch (error) {
-    console.warn('Unable to record audit log.', { action, entityType, error: error.message })
+  if (error) {
+    logger.error('AUDIT_WRITE_FAILED', { action, entityType, error: error.message })
+    throw createAuditError(500, 'AUDIT_WRITE_FAILED', 'Unable to record audit log.')
   }
 }
 

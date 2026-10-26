@@ -4,6 +4,7 @@ const { z } = require('zod')
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
+const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
 const { publishIngestionTransitions } = require('../operations/transitionPublisher')
 const { RESERVED_METADATA_KEYS } = require('./iot.model')
@@ -328,9 +329,16 @@ function recordFailedAuthAttempt(bucketKey, now) {
   })
 }
 
-async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, reason, now }) {
+function getAuditCooldownKey({ deviceId, sensorCode, failureBucketKey, reason }) {
+  if (sensorCode || reason === 'missing_device_key_hash') {
+    return `device:${deviceId}:${reason}`
+  }
+  return `${failureBucketKey || `device:${deviceId || 'missing'}`}:${reason}`
+}
+
+async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, failureBucketKey, reason, now }) {
   const cooldownMs = env.IOT_AUTH_AUDIT_COOLDOWN_MS ?? 60_000
-  const cooldownKey = `${deviceId || 'missing'}:${reason}`
+  const cooldownKey = getAuditCooldownKey({ deviceId, sensorCode, failureBucketKey, reason })
   const existing = failedAuthAuditCooldowns.get(cooldownKey)
   if (existing && existing.expiresAt > now) {
     return
@@ -339,15 +347,23 @@ async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, reason, n
     pruneExpiredMapEntries(failedAuthAuditCooldowns, now, MAX_AUTH_TRACKER_ENTRIES)
     failedAuthAuditCooldowns.set(cooldownKey, { expiresAt: now + cooldownMs })
   }
-  await recordAuditLog({
-    action: 'IOT_DEVICE_AUTH_FAILED',
-    entityType: 'iot_device',
-    metadata: {
+  try {
+    await recordAuditLog({
+      action: 'IOT_DEVICE_AUTH_FAILED',
+      entityType: 'iot_device',
+      metadata: {
+        deviceId: deviceId || null,
+        ...(sensorCode ? { sensorCode } : {}),
+        reason,
+      },
+    })
+  } catch (error) {
+    logger.error('IOT_AUTH_AUDIT_LOG_FAILED', {
       deviceId: deviceId || null,
-      ...(sensorCode ? { sensorCode } : {}),
       reason,
-    },
-  })
+      error: error.message,
+    })
+  }
 }
 
 async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
@@ -359,6 +375,7 @@ async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
     recordFailedAuthAttempt(failureBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId: deviceId || null,
+      failureBucketKey,
       reason: !deviceId ? 'missing_device_id' : 'missing_device_key',
       now,
     })
@@ -381,6 +398,7 @@ async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
     recordFailedAuthAttempt(failureBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId,
+      failureBucketKey,
       reason: sensor ? 'missing_device_key_hash' : 'unknown_device',
       now,
     })
@@ -394,6 +412,7 @@ async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
     await recordThrottledAuthFailureAudit({
       deviceId,
       sensorCode: sensor.sensor_code,
+      failureBucketKey,
       reason: 'invalid_device_key',
       now,
     })

@@ -4,10 +4,21 @@ const test = require('node:test')
 
 const backendRoot = path.resolve(__dirname, '..')
 
-function loadAuditService(calls, tableResponses = {}) {
+function loadAuditService(calls, tableResponses = {}, logs = []) {
   const clientPath = path.join(backendRoot, 'src', 'database', 'client.js')
+  const loggerPath = path.join(backendRoot, 'src', 'utils', 'logger.js')
   const servicePath = path.join(backendRoot, 'src', 'modules', 'audit', 'audit.service.js')
   delete require.cache[require.resolve(servicePath)]
+  require.cache[require.resolve(loggerPath)] = {
+    id: loggerPath,
+    filename: loggerPath,
+    loaded: true,
+    exports: {
+      error: (code, metadata) => logs.push({ code, metadata }),
+      info: () => {},
+      warn: () => {},
+    },
+  }
   require.cache[require.resolve(clientPath)] = {
     id: clientPath,
     filename: clientPath,
@@ -19,6 +30,10 @@ function loadAuditService(calls, tableResponses = {}) {
             select() { return this },
             order() { return this },
             range() { return this },
+            insert(payload) {
+              calls.push({ operation: 'insert', table, payload })
+              return Promise.resolve(tableResponses[table] || { data: null, error: null })
+            },
             in(field, values) { calls.push({ operation: 'in', field, values }); return this },
             gte(field, value) { calls.push({ operation: 'gte', field, value }); return this },
             lt(field, value) { calls.push({ operation: 'lt', field, value }); return this },
@@ -71,4 +86,35 @@ test('audit user records include the affected username', async () => {
 
   assert.deepEqual(result.logs[0].targetUser, { username: 'operator01' })
   assert.deepEqual(calls, [{ operation: 'in', field: 'id', values: ['target-1'] }])
+})
+
+test('recordAuditLog logs AUDIT_WRITE_FAILED and throws 500 instead of swallowing insert errors', async () => {
+  const calls = []
+  const logs = []
+  const service = loadAuditService(calls, {
+    audit_logs: {
+      data: null,
+      error: { message: 'audit table unavailable' },
+    },
+  }, logs)
+
+  await assert.rejects(
+    () => service.recordAuditLog({
+      userId: 'actor-1',
+      action: 'USER_UPDATED',
+      entityType: 'user',
+      entityId: 'target-1',
+      metadata: { role: 'Admin' },
+    }),
+    { code: 'AUDIT_WRITE_FAILED', status: 500 },
+  )
+
+  assert.deepEqual(logs, [{
+    code: 'AUDIT_WRITE_FAILED',
+    metadata: {
+      action: 'USER_UPDATED',
+      entityType: 'user',
+      error: 'audit table unavailable',
+    },
+  }])
 })
