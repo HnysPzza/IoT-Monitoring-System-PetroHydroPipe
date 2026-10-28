@@ -181,7 +181,8 @@ function loadIotService({
   })
   mockModule('src/modules/audit/audit.service.js', {
     recordAuditLog: async (entry) => {
-      if (auditError) throw auditError
+      const resolvedError = typeof auditError === 'function' ? auditError() : auditError
+      if (resolvedError) throw resolvedError
       auditLogs.push(entry)
     },
   })
@@ -886,13 +887,16 @@ test('device authentication throttles rotating fake device IDs from the same sou
   assert.equal(sensorLookups.length, 3)
 })
 
-test('device authentication logs IOT_AUTH_AUDIT_LOG_FAILED and still rejects 401 when audit log persistence fails', async () => {
+test('device authentication logs IOT_AUTH_AUDIT_LOG_FAILED, still rejects 401, and retries audit on next failure when audit persistence fails', async () => {
   const logs = []
+  const auditLogs = []
+  let shouldFailAudit = true
   const iotService = loadIotService({
     eventType: 'pulse',
     signal: 'active',
     logs,
-    auditError: new Error('audit db down'),
+    auditLogs,
+    auditError: () => (shouldFailAudit ? new Error('audit db down') : null),
   })
 
   await assert.rejects(
@@ -911,6 +915,18 @@ test('device authentication logs IOT_AUTH_AUDIT_LOG_FAILED and still rejects 401
       error: 'audit db down',
     },
   }])
+  assert.equal(auditLogs.length, 0)
+
+  shouldFailAudit = false
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'wrong-key-2',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+  assert.equal(auditLogs.length, 1)
+  assert.equal(auditLogs[0].action, 'IOT_DEVICE_AUTH_FAILED')
 })
 
 test('post-commit downtime and alert publication failures are isolated in both directions', async () => {

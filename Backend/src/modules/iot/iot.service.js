@@ -343,10 +343,6 @@ async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, failureBu
   if (existing && existing.expiresAt > now) {
     return
   }
-  if (cooldownMs > 0) {
-    pruneExpiredMapEntries(failedAuthAuditCooldowns, now, MAX_AUTH_TRACKER_ENTRIES)
-    failedAuthAuditCooldowns.set(cooldownKey, { expiresAt: now + cooldownMs })
-  }
   try {
     await recordAuditLog({
       action: 'IOT_DEVICE_AUTH_FAILED',
@@ -357,6 +353,10 @@ async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, failureBu
         reason,
       },
     })
+    if (cooldownMs > 0) {
+      pruneExpiredMapEntries(failedAuthAuditCooldowns, now, MAX_AUTH_TRACKER_ENTRIES)
+      failedAuthAuditCooldowns.set(cooldownKey, { expiresAt: now + cooldownMs })
+    }
   } catch (error) {
     logger.error('IOT_AUTH_AUDIT_LOG_FAILED', {
       deviceId: deviceId || null,
