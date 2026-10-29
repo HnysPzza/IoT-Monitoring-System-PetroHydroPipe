@@ -53,7 +53,7 @@ describe('Analytics route and navigation access', () => {
       authValue: { user: { id: 'legacy-director-1', role: 'Managing Director' } },
     })
 
-    expect(await screen.findByRole('heading', { name: 'You do not have permission' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'You don’t have access' })).toBeInTheDocument()
   })
 
   it('blocks a direct Analytics route for a role outside the approved scope', async () => {
@@ -62,7 +62,7 @@ describe('Analytics route and navigation access', () => {
       authValue: { user: { id: 'supervisor-1', role: 'Production Supervisor' } },
     })
 
-    expect(await screen.findByRole('heading', { name: 'You do not have permission' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'You don’t have access' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Analytics route content' })).not.toBeInTheDocument()
   })
 
@@ -78,6 +78,6 @@ describe('Analytics route and navigation access', () => {
       route: '/dashboard/reports',
       authValue: { user: { id: 'supervisor-1', role: 'Production Supervisor' } },
     })
-    expect(await screen.findByRole('heading', { name: 'You do not have permission' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'You don’t have access' })).toBeInTheDocument()
   })
 })
