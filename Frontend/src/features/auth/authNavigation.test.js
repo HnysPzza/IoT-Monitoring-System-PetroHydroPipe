@@ -1,9 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getRoleDashboardPath,
+  getSafeDashboardPath,
   syncRoleHint,
   USER_ROLE_STORAGE_KEY,
 } from './authNavigation.js'
+
+describe('getSafeDashboardPath', () => {
+  it('preserves valid dashboard paths including query and hash', () => {
+    expect(getSafeDashboardPath('/dashboard/reports?type=weekly#rows')).toBe('/dashboard/reports?type=weekly#rows')
+  })
+
+  it('rejects protocol-relative, backslash, external, or non-dashboard paths', () => {
+    expect(getSafeDashboardPath('//evil.example/dashboard')).toBe('/dashboard')
+    expect(getSafeDashboardPath('/\\evil.example/dashboard')).toBe('/dashboard')
+    expect(getSafeDashboardPath('https://evil.example/dashboard')).toBe('/dashboard')
+    expect(getSafeDashboardPath('/login')).toBe('/dashboard')
+    expect(getSafeDashboardPath(null)).toBe('/dashboard')
+  })
+})
 
 describe('getRoleDashboardPath', () => {
   afterEach(() => {

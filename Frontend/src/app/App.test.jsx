@@ -7,7 +7,7 @@ import App, { DashboardRouteBoundary, ProtectedRoute } from './App.jsx'
 
 function LoginDestination() {
   const location = useLocation()
-  return <span>{JSON.stringify(location.state)}</span>
+  return <span>{JSON.stringify({ search: location.search, state: location.state })}</span>
 }
 
 function RouteBoundaryHarness() {
@@ -34,7 +34,9 @@ describe('ProtectedRoute', () => {
     vi.restoreAllMocks()
   })
 
-  it('preserves the current safe dashboard pathname, query, and hash', async () => {
+  it('renders the full-page 401 UnauthorizedPage and preserves the intended dashboard path when unauthenticated', async () => {
+    const user = userEvent.setup()
+
     renderWithAuth(
       <Routes>
         <Route path="/login" element={<LoginDestination />} />
@@ -48,13 +50,25 @@ describe('ProtectedRoute', () => {
         />
       </Routes>,
       {
-        authValue: { isAuthenticated: false, sessionExpired: true, token: null, user: null },
+        authValue: { isAuthenticated: false, isRestoring: false, token: null, user: null },
         route: '/dashboard/reports?type=weekly#rows',
       },
     )
 
-    expect(await screen.findByText('{"from":"/dashboard/reports?type=weekly#rows","sessionExpired":true}')).toBeInTheDocument()
+    expect(screen.getByText('SIGN-IN REQUIRED')).toBeInTheDocument()
+    expect(screen.getByText('401')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /please sign in again/i })).toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+
+    const signInLink = screen.getByRole('link', { name: /sign in/i })
+    expect(signInLink).toHaveAttribute('href', '/login?next=%2Fdashboard%2Freports%3Ftype%3Dweekly%23rows')
+
+    await user.click(signInLink)
+    expect(
+      await screen.findByText(
+        '{"search":"?next=%2Fdashboard%2Freports%3Ftype%3Dweekly%23rows","state":{"from":"/dashboard/reports?type=weekly#rows"}}',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('places dashboard descendants inside the route-aware recovery boundary', () => {

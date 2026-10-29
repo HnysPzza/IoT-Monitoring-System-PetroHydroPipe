@@ -1,9 +1,9 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { USER_ROLE_STORAGE_KEY } from '../../features/auth/authNavigation.js'
-import { renderWithAuth } from '../../test/renderWithAuth.jsx'
-import NotFoundPage from './NotFoundPage.jsx'
+import { USER_ROLE_STORAGE_KEY } from '../../../features/auth/authNavigation.js'
+import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
+import NotFoundPage from '../NotFoundPage.jsx'
 
 describe('NotFoundPage', () => {
   afterEach(() => {

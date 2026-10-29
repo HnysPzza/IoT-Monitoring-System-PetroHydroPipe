@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createApiError } from './apiError.js'
+import { createApiError } from '../apiError.js'
 
 describe('createApiError', () => {
   it('preserves the stable API error fields', () => {

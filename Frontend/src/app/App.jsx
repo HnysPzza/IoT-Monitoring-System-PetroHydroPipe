@@ -4,9 +4,9 @@ import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
 import DashboardErrorBoundary from '../shared/errors/DashboardErrorBoundary.jsx'
 import NotFoundPage from '../shared/errors/NotFoundPage.jsx'
+import UnauthorizedPage from '../shared/errors/UnauthorizedPage.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
 import PasswordSetupPage from '../features/auth/PasswordSetupPage.jsx'
-import { getCurrentDashboardPath } from '../features/auth/authNavigation.js'
 
 const AdminDashboard = lazy(() => import('../features/dashboard/layout/AdminDashboard.jsx'))
 const AnalyticsSection = lazy(() => import('../features/dashboard/analytics/AnalyticsSection.jsx'))
@@ -20,7 +20,7 @@ const SettingsSection = lazy(() => import('../features/dashboard/settings/Settin
 const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
 
 export function ProtectedRoute({ children }) {
-  const { isAuthenticated, isRestoring, sessionExpired, user } = useAuth()
+  const { isAuthenticated, isRestoring, user } = useAuth()
   const location = useLocation()
 
   // Wait for the silent refresh before deciding the session is gone.
@@ -28,18 +28,9 @@ export function ProtectedRoute({ children }) {
     return <DashboardLoadingFallback />
   }
 
-  // Guard dashboard pages; unauthenticated users always go back to login.
+  // Guard dashboard pages; unauthenticated users see the 401 sign-in required page.
   if (!isAuthenticated) {
-    return (
-      <Navigate
-        to="/login"
-        replace
-        state={{
-          from: getCurrentDashboardPath(location),
-          sessionExpired: Boolean(sessionExpired),
-        }}
-      />
-    )
+    return <UnauthorizedPage />
   }
 
   if (user?.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />

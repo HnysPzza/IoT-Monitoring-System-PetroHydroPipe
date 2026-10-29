@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApiError } from './apiError.js'
-import { notifyStreamAuthorizationLost, notifyUnauthorized, setUnauthorizedHandler } from './unauthorizedSession.js'
+import { createApiError } from '../apiError.js'
+import { notifyStreamAuthorizationLost, notifyUnauthorized, setUnauthorizedHandler } from '../unauthorizedSession.js'
 
 describe('unauthorized session handling', () => {
   afterEach(() => {

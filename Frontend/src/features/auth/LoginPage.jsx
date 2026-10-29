@@ -46,10 +46,8 @@ export default function LoginPage() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const intendedRoute = getSafeDashboardPath(location.state?.from)
-  const sessionExpiredMessage = location.state?.sessionExpired
-    ? 'Your session expired. Sign in again to continue.'
-    : ''
+  const nextQueryTarget = new URLSearchParams(location.search).get('next')
+  const intendedRoute = getSafeDashboardPath(nextQueryTarget || location.state?.from)
 
   // Focus username first so operators can start typing immediately.
   useEffect(() => {
@@ -175,12 +173,6 @@ export default function LoginPage() {
           {serverError ? (
             <div className="notice notice-error" role="alert">
               <span>{serverError}</span>
-            </div>
-          ) : null}
-
-          {sessionExpiredMessage ? (
-            <div className="notice notice-error" role="alert">
-              <span>{sessionExpiredMessage}</span>
             </div>
           ) : null}
 

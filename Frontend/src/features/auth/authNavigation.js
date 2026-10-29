@@ -3,7 +3,12 @@ import { navItems } from '../../shared/constants/dashboardMeta.js'
 export const USER_ROLE_STORAGE_KEY = 'iot_monitoring_user_role'
 
 export function getSafeDashboardPath(candidate, fallback = '/dashboard') {
-  if (typeof candidate !== 'string' || !candidate.startsWith('/') || candidate.startsWith('//')) {
+  if (
+    typeof candidate !== 'string'
+    || !candidate.startsWith('/')
+    || candidate.startsWith('//')
+    || candidate.includes('\\')
+  ) {
     return fallback
   }
 

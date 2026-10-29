@@ -8,16 +8,11 @@ import { login as loginRequest, logout as logoutRequest } from './authService.js
 
 const LEGACY_STORAGE_KEY = 'iot_monitoring_auth'
 
-// 401 codes that mean the refresh cookie itself is dead (revoked, reused, or
-// unknown) versus a missing cookie on a first visit.
-const EXPIRED_REFRESH_CODES = new Set(['INVALID_REFRESH_TOKEN', 'REFRESH_TOKEN_REUSED'])
-
 export const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(null)
   const [isRestoring, setIsRestoring] = useState(true)
-  const [sessionExpired, setSessionExpired] = useState(false)
   const removeUnauthorizedHandlerRef = useRef(() => {})
   const explicitlyLoggedOutRef = useRef(false)
 
@@ -27,17 +22,14 @@ export function AuthProvider({ children }) {
       removeUnauthorizedHandlerRef.current()
       syncRoleHint(null)
       setAuth(null)
-      setSessionExpired(true)
     })
     syncRoleHint(payload?.user?.role)
-    setSessionExpired(false)
     setAuth(payload)
   }
 
   function clearSession() {
     removeUnauthorizedHandlerRef.current()
     syncRoleHint(null)
-    setSessionExpired(false)
     setAuth(null)
   }
 
@@ -59,13 +51,10 @@ export function AuthProvider({ children }) {
         if (!payload?.token || explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
         return payload
-      } catch (error) {
+      } catch {
         if (explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
         clearSession()
-        if (EXPIRED_REFRESH_CODES.has(error?.code)) {
-          setSessionExpired(true)
-        }
         return null
       }
     }, (payload) => {
@@ -134,11 +123,10 @@ export function AuthProvider({ children }) {
       user: auth?.user || null,
       isAuthenticated: Boolean(auth?.token),
       isRestoring,
-      sessionExpired,
       login,
       logout,
     }),
-    [auth, isRestoring, sessionExpired],
+    [auth, isRestoring],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

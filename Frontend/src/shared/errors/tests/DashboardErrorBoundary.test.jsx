@@ -2,8 +2,8 @@ import { lazy, Suspense } from 'react'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { renderWithAuth } from '../../test/renderWithAuth.jsx'
-import DashboardErrorBoundary from './DashboardErrorBoundary.jsx'
+import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
+import DashboardErrorBoundary from '../DashboardErrorBoundary.jsx'
 
 function ThrowError({ shouldThrow = true }) {
   if (shouldThrow) throw new Error('Sensitive database connection detail')
