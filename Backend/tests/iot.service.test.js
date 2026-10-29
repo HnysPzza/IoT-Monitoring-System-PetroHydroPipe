@@ -104,18 +104,23 @@ function createProcessingResult(eventType, signal, overrides = {}) {
   return result
 }
 
-function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls, sensorLookups }) {
+function createFakeSupabase({ sensorRecord, processingResult, rpcDataMissing, rpcError, rpcCalls, sensorLookups, sensorSelects }) {
+  let lastLookupValue
   return {
     from(tableName) {
       assert.equal(tableName, 'sensors')
       return {
-        select() { return this },
+        select(columns) {
+          if (sensorSelects) sensorSelects.push(columns)
+          return this
+        },
         eq(_column, value) {
+          lastLookupValue = value
           if (sensorLookups) sensorLookups.push(value)
           return this
         },
         async maybeSingle() {
-          const resolved = typeof sensorRecord === 'function' ? sensorRecord() : sensorRecord
+          const resolved = typeof sensorRecord === 'function' ? sensorRecord(lastLookupValue) : sensorRecord
           return { data: resolved, error: null }
         },
       }
@@ -135,6 +140,7 @@ function loadIotService({
   eventType,
   signal,
   auditLogs = [],
+  auditError = null,
   processingOverrides = {},
   rpcDataMissing = false,
   rpcError = null,
@@ -142,6 +148,7 @@ function loadIotService({
   downtimeEvents = [],
   rpcCalls = [],
   sensorLookups = [],
+  sensorSelects = [],
   sensorOverrides = {},
   sensorRecordOverride,
   alertPublishError = null,
@@ -161,6 +168,7 @@ function loadIotService({
     rpcError,
     rpcCalls,
     sensorLookups,
+    sensorSelects,
   })
 
   if (Object.keys(envOverrides).length > 0) {
@@ -172,7 +180,11 @@ function loadIotService({
     getSupabaseClient: () => fakeSupabase,
   })
   mockModule('src/modules/audit/audit.service.js', {
-    recordAuditLog: async (entry) => auditLogs.push(entry),
+    recordAuditLog: async (entry) => {
+      const resolvedError = typeof auditError === 'function' ? auditError() : auditError
+      if (resolvedError) throw resolvedError
+      auditLogs.push(entry)
+    },
   })
   mockModule('src/modules/alerts/alerts.service.js', {
     publishAlertAction: (action, alert) => {
@@ -525,6 +537,7 @@ test('device authentication rejects missing keys, wrong keys, and missing machin
 
 test('device authentication caches verified key digests for the configured TTL and skips repeated bcrypt work', async (t) => {
   const sensorLookups = []
+  const sensorSelects = []
   const compareCalls = []
   const originalCompare = bcrypt.compare
   t.after(() => {
@@ -539,6 +552,7 @@ test('device authentication caches verified key digests for the configured TTL a
     eventType: 'pulse',
     signal: 'active',
     sensorLookups,
+    sensorSelects,
   })
 
   const first = await iotService.authenticateDevice({
@@ -550,10 +564,23 @@ test('device authentication caches verified key digests for the configured TTL a
     deviceKey: 'device-secret',
   })
 
-  assert.equal(first.id, 'sensor-1')
-  assert.equal(second.id, 'sensor-1')
+  const expectedIdentity = {
+    id: 'sensor-1',
+    sensor_code: 'S-01',
+    esp32_device_id: 'esp32-m01-s01',
+    machine_id: 'machine-1',
+    machines: {
+      id: 'machine-1',
+      machine_code: 'M-01',
+      name: 'Spiral Mill 01',
+    },
+  }
+  assert.deepEqual(first, expectedIdentity)
+  assert.deepEqual(second, expectedIdentity)
   assert.equal(sensorLookups.length, 1)
   assert.equal(compareCalls.length, 1)
+  assert.equal(sensorSelects[0].includes('status'), false)
+  assert.equal(sensorSelects[0].includes('updated_at'), false)
 
   await assert.rejects(
     () => iotService.authenticateDevice({
@@ -567,9 +594,66 @@ test('device authentication caches verified key digests for the configured TTL a
     deviceId: 'esp32-m01-s01',
     deviceKey: 'device-secret',
   })
-  assert.equal(stillCached.id, 'sensor-1')
+  assert.deepEqual(stillCached, expectedIdentity)
   assert.equal(sensorLookups.length, 2)
   assert.equal(compareCalls.length, 2)
+})
+
+test('createSensorEvent never falls back to stale cached machine status when RPC returns updated or null status', async () => {
+  const staleSensor = {
+    id: 'sensor-1',
+    sensor_code: 'S-01',
+    esp32_device_id: 'esp32-m01-s01',
+    machine_id: 'machine-1',
+    machines: {
+      id: 'machine-1',
+      machine_code: 'M-01',
+      name: 'Spiral Mill 01',
+      status: 'Running',
+    },
+  }
+
+  const downtimeService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    processingOverrides: {
+      duplicate: true,
+      state_applied: false,
+      new_machine_status: 'Downtime',
+      downtime_action: null,
+    },
+  })
+  const downtimeEvent = await downtimeService.createSensorEvent({
+    sensor: staleSensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'pulse',
+      signal: 'active',
+      recordedAt: '2026-06-11T00:00:00.000Z',
+    },
+  })
+  assert.equal(downtimeEvent.machineStatus, 'Downtime')
+
+  const nullStatusService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    processingOverrides: {
+      duplicate: true,
+      state_applied: false,
+      new_machine_status: null,
+      downtime_action: null,
+    },
+  })
+  const nullStatusEvent = await nullStatusService.createSensorEvent({
+    sensor: staleSensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'pulse',
+      signal: 'active',
+      recordedAt: '2026-06-11T00:00:00.000Z',
+    },
+  })
+  assert.equal(nullStatusEvent.machineStatus, null)
 })
 
 test('device authentication reloads sensor from database when key rotates while old key is cached', async (t) => {
@@ -750,6 +834,7 @@ test('device authentication throttles rotating fake device IDs from the same sou
     signal: 'active',
     auditLogs,
     sensorLookups,
+    sensorRecordOverride: (deviceId) => (deviceId === 'esp32-m01-s01' ? createSensorRecord() : null),
     envOverrides: {
       IOT_AUTH_FAILURE_RATE_LIMIT: 2,
       IOT_AUTH_FAILURE_WINDOW_MS: 60_000,
@@ -780,6 +865,8 @@ test('device authentication throttles rotating fake device IDs from the same sou
     }),
     { code: 'DEVICE_UNAUTHORIZED', status: 401 },
   )
+  assert.equal(auditLogs.length, 1)
+  assert.equal(auditLogs[0].metadata.reason, 'unknown_device')
 
   await assert.rejects(
     () => iotService.authenticateDevice({
@@ -798,6 +885,48 @@ test('device authentication throttles rotating fake device IDs from the same sou
   })
   assert.equal(cachedStillAllowed.id, 'sensor-1')
   assert.equal(sensorLookups.length, 3)
+})
+
+test('device authentication logs IOT_AUTH_AUDIT_LOG_FAILED, still rejects 401, and retries audit on next failure when audit persistence fails', async () => {
+  const logs = []
+  const auditLogs = []
+  let shouldFailAudit = true
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    logs,
+    auditLogs,
+    auditError: () => (shouldFailAudit ? new Error('audit db down') : null),
+  })
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'wrong-key',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+
+  assert.deepEqual(logs, [{
+    code: 'IOT_AUTH_AUDIT_LOG_FAILED',
+    metadata: {
+      deviceId: 'esp32-m01-s01',
+      reason: 'invalid_device_key',
+      error: 'audit db down',
+    },
+  }])
+  assert.equal(auditLogs.length, 0)
+
+  shouldFailAudit = false
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s01',
+      deviceKey: 'wrong-key-2',
+    }),
+    { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+  )
+  assert.equal(auditLogs.length, 1)
+  assert.equal(auditLogs[0].action, 'IOT_DEVICE_AUTH_FAILED')
 })
 
 test('post-commit downtime and alert publication failures are isolated in both directions', async () => {

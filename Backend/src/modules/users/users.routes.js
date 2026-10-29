@@ -2,12 +2,11 @@ const express = require('express')
 const asyncHandler = require('../../utils/asyncHandler')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
+const { accountWriteLimiter } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const usersController = require('./users.controller')
 const { archiveUserSchema, createUserSchema, updateUserStatusSchema, listUsersSchema } = require('./users.model')
 const { resendSetup, requestPasswordReset } = require('../auth/onboarding.service')
-const { rateLimit } = require('express-rate-limit')
-const accountWriteLimiter = rateLimit({ windowMs: 60000, limit: 10, standardHeaders: true, legacyHeaders: false })
 
 const router = express.Router()
 

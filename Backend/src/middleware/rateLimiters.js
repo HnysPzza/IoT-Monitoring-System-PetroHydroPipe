@@ -14,8 +14,10 @@ function rateLimitResponse(message) {
 const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  passOnStoreError: false,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json(rateLimitResponse('Too many login attempts. Please try again later.'))
   },
@@ -30,6 +32,66 @@ const refreshRateLimiter = rateLimit({
   keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json(rateLimitResponse('Too many session refresh requests. Please try again shortly.'))
+  },
+})
+
+const setupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many attempts. Wait before trying again.'))
+  },
+})
+
+const setupCheckLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many attempts. Wait before trying again.'))
+  },
+})
+
+const changeIngressLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many attempts. Wait before trying again.'))
+  },
+})
+
+const changeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user.sub,
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many attempts. Wait before trying again.'))
+  },
+})
+
+const accountWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many attempts. Wait before trying again.'))
   },
 })
 
@@ -87,10 +149,15 @@ const iotVerifiedDeviceRateLimiter = rateLimit({
 })
 
 module.exports = {
+  accountWriteLimiter,
   analyticsRateLimiter,
+  changeIngressLimiter,
+  changeLimiter,
   exportRateLimiter,
   iotIngressRateLimiter,
   iotVerifiedDeviceRateLimiter,
   loginRateLimiter,
   refreshRateLimiter,
+  setupCheckLimiter,
+  setupLimiter,
 }

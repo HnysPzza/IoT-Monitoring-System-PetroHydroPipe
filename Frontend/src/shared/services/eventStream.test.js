@@ -1,6 +1,7 @@
 import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { subscribeToServerEvents } from './eventStream.js'
+import { createApiError } from '../errors/apiError.js'
 import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
 import { setSessionRefresher } from './sessionRefresh.js'
 
@@ -53,6 +54,29 @@ describe('subscribeToServerEvents', () => {
     await vi.advanceTimersByTimeAsync(6000)
     expect(onStatusChange.mock.calls.map(([status]) => status)).toContain('reconnecting')
     expect(onStatusChange.mock.calls.map(([status]) => status)).toContain('live')
+    unsubscribe()
+  })
+
+  it('keeps retrying instead of signing out when the session refresh hits a server error', async () => {
+    vi.useFakeTimers()
+    const onUnauthorized = vi.fn()
+    const onStatusChange = vi.fn()
+    setUnauthorizedHandler('stale-token', onUnauthorized)
+    setSessionRefresher(vi.fn().mockRejectedValue(
+      createApiError('Unexpected server error.', 500, null, 'REFRESH_QUERY_FAILED'),
+    ))
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(null, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'stale-token', { onStatusChange })
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onUnauthorized).not.toHaveBeenCalled()
+    expect(onStatusChange).not.toHaveBeenCalledWith('unauthorized')
+    expect(onStatusChange).toHaveBeenLastCalledWith('reconnecting')
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     unsubscribe()
   })
 

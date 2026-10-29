@@ -147,7 +147,8 @@ export default function AdminDashboard() {
     [user?.role],
   )
 
-  const pageMeta = dashboardPageMeta[location.pathname] || dashboardPageMeta['/dashboard']
+  const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/'
+  const pageMeta = dashboardPageMeta[normalizedPathname] || dashboardPageMeta['/dashboard']
   const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
   const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
   const unresolvedAlerts = alerts.filter((alert) => (
@@ -159,6 +160,8 @@ export default function AdminDashboard() {
   })).values())
   const activeAlertCount = activeAlerts.length
   const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
+  const matchedNavItem = navItems.find((item) => item.to === normalizedPathname)
+  const isRouteForbidden = Boolean(matchedNavItem && !matchedNavItem.roles.includes(user?.role))
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
@@ -244,7 +247,7 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!token) return undefined
+    if (!token || isRouteForbidden) return undefined
 
     let isMounted = true
     let pollingId = null
@@ -471,7 +474,7 @@ export default function AdminDashboard() {
         window.clearTimeout(resyncTimerId)
       }
     }
-  }, [token])
+  }, [isRouteForbidden, token])
 
   async function handleAcknowledgeAlert(alertId) {
     if (!token || acknowledgementOperationsRef.current.has(alertId)) return
@@ -518,6 +521,14 @@ export default function AdminDashboard() {
       sidebarScrollTimerRef.current = null
       setIsSidebarScrolling(false)
     }, SIDEBAR_SCROLL_ACTIVE_MS)
+  }
+
+  if (isRouteForbidden) {
+    return (
+      <main className="dashboard-shell">
+        <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList }} />
+      </main>
+    )
   }
 
   return (

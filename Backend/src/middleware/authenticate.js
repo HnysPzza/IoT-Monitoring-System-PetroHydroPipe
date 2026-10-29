@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken')
 const env = require('../config/env')
 const authService = require('../modules/auth/auth.service')
 
-async function authenticate(req, res, next) {
+async function authenticateAllowingPasswordChange(req, res, next) {
   const authorization = req.get('authorization') || ''
   const [scheme, token] = authorization.split(' ')
 
@@ -24,9 +24,6 @@ async function authenticate(req, res, next) {
     // JWT identifies the user; current role/status is refreshed from the database.
     const tokenPayload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] })
     const currentUser = await authService.getAuthenticatedUser(tokenPayload)
-    if (currentUser.mustChangePassword && !['/api/auth/me', '/api/auth/change-password'].includes(req.originalUrl.split('?')[0])) {
-      return res.status(403).json({ error: { code: 'PASSWORD_CHANGE_REQUIRED', message: 'Change your password before using the system.' } })
-    }
     req.tokenPayload = tokenPayload
     req.authenticatedUser = currentUser
     req.user = {
@@ -48,4 +45,15 @@ async function authenticate(req, res, next) {
   }
 }
 
+function authenticate(req, res, next) {
+  return authenticateAllowingPasswordChange(req, res, (error) => {
+    if (error) return next(error)
+    if (req.authenticatedUser.mustChangePassword) {
+      return res.status(403).json({ error: { code: 'PASSWORD_CHANGE_REQUIRED', message: 'Change your password before using the system.' } })
+    }
+    return next()
+  })
+}
+
 module.exports = authenticate
+module.exports.authenticateAllowingPasswordChange = authenticateAllowingPasswordChange

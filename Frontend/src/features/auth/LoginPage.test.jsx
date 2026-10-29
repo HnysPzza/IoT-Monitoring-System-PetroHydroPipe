@@ -52,7 +52,7 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/access granted/i)
   })
 
-  it('keeps the expired-session message visible and returns to the safe intended route', async () => {
+  it('returns to the safe ?next= intended route after sign in without showing a redundant session-expired banner', async () => {
     const user = userEvent.setup()
     const login = vi.fn().mockResolvedValue({
       token: 'token',
@@ -73,20 +73,18 @@ describe('LoginPage', () => {
         },
         route: {
           pathname: '/login',
+          search: '?next=%2Fdashboard%2Freports%3Ftype%3Dweekly%23rows',
           state: {
-            from: '/dashboard/reports?type=weekly#rows',
             sessionExpired: true,
           },
         },
       },
     )
 
-    const expiryMessage = screen.getByRole('alert')
-    expect(expiryMessage).toHaveTextContent('Your session expired. Sign in again to continue.')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
     await user.type(screen.getByLabelText(/username/i), 'admin')
     await user.type(screen.getByLabelText(/^password$/i, { selector: 'input' }), 'password123')
-    expect(expiryMessage).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     expect(await screen.findByRole('heading', { name: 'Reports restored' }, { timeout: 1000 })).toBeInTheDocument()

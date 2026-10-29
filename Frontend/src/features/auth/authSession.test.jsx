@@ -40,8 +40,10 @@ function SessionProbe() {
     <div>
       <span>{auth.isAuthenticated ? 'authenticated' : 'signed-out'}</span>
       <span>{auth.isRestoring ? 'restoring' : 'settled'}</span>
-      <span>{auth.sessionExpired ? 'session-expired' : 'session-current'}</span>
+      <span>{'sessionExpired' in auth ? 'has-legacy-expiry-prop' : 'clean-auth-context'}</span>
       <span>{auth.token ?? 'no-token'}</span>
+      <span>{auth.sessionError ? `session-error-${auth.sessionError.status}` : 'no-session-error'}</span>
+      <button type="button" onClick={() => auth.retrySessionRestore()}>do-retry-restore</button>
       <button type="button" onClick={() => auth.login({ username: 'a', password: 'b' })}>do-login</button>
       <button type="button" onClick={() => auth.logout()}>do-logout</button>
     </div>
@@ -101,10 +103,10 @@ describe('AuthProvider memory-only sessions', () => {
     })
     expect(screen.getByText('authenticated')).toBeInTheDocument()
     expect(screen.getByText('restored-token')).toBeInTheDocument()
-    expect(screen.getByText('session-current')).toBeInTheDocument()
+    expect(screen.getByText('clean-auth-context')).toBeInTheDocument()
   })
 
-  it('ends up signed out without an expiry banner when no refresh cookie exists', async () => {
+  it('ends up signed out cleanly when no refresh cookie exists or when refresh fails', async () => {
     apiRequest.mockRejectedValue(
       createApiError('Missing refresh token.', 401, null, 'UNAUTHENTICATED'),
     )
@@ -113,19 +115,57 @@ describe('AuthProvider memory-only sessions', () => {
 
     await waitFor(() => expect(screen.getByText('settled')).toBeInTheDocument())
     expect(screen.getByText('signed-out')).toBeInTheDocument()
-    expect(screen.getByText('session-current')).toBeInTheDocument()
+    expect(screen.getByText('clean-auth-context')).toBeInTheDocument()
   })
 
-  it('marks the session expired when the refresh token was revoked or reused', async () => {
-    apiRequest.mockRejectedValue(
-      createApiError('Session expired.', 401, null, 'INVALID_REFRESH_TOKEN'),
+  it('exposes a server error instead of a silent sign-out when the restore request fails with 500', async () => {
+    apiRequest.mockRejectedValueOnce(
+      createApiError('Unexpected server error.', 500, null, 'REFRESH_QUERY_FAILED'),
     )
 
     renderProvider()
 
     await waitFor(() => expect(screen.getByText('settled')).toBeInTheDocument())
     expect(screen.getByText('signed-out')).toBeInTheDocument()
-    expect(screen.getByText('session-expired')).toBeInTheDocument()
+    expect(screen.getByText('session-error-500')).toBeInTheDocument()
+
+    apiRequest.mockResolvedValueOnce({ token: 'recovered-token', user: { id: 'user-1', role: 'Admin' } })
+    await act(async () => {
+      screen.getByText('do-retry-restore').click()
+    })
+
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    expect(screen.getByText('recovered-token')).toBeInTheDocument()
+    expect(screen.getByText('no-session-error')).toBeInTheDocument()
+    expect(screen.getByText('settled')).toBeInTheDocument()
+  })
+
+  it.each([
+    createApiError('Missing refresh token.', 401, null, 'UNAUTHENTICATED'),
+    createApiError('Offline.', 0, null, 'NETWORK_ERROR'),
+  ])('does not report a server error when restore fails with $code', async (error) => {
+    apiRequest.mockRejectedValue(error)
+
+    renderProvider()
+
+    await waitFor(() => expect(screen.getByText('settled')).toBeInTheDocument())
+    expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(screen.getByText('no-session-error')).toBeInTheDocument()
+  })
+
+  it('keeps the active session when a background refresh fails with a server error', async () => {
+    apiRequest.mockResolvedValueOnce({ token: 'live-token', user: { id: 'user-1', role: 'Admin' } })
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+
+    apiRequest.mockRejectedValueOnce(createApiError('Unexpected server error.', 500, null, 'REFRESH_QUERY_FAILED'))
+    await act(async () => {
+      await expect(registeredRefresher()).rejects.toMatchObject({ status: 500 })
+    })
+
+    expect(screen.getByText('authenticated')).toBeInTheDocument()
+    expect(screen.getByText('live-token')).toBeInTheDocument()
+    expect(screen.getByText('no-session-error')).toBeInTheDocument()
   })
 
   it('stores login results in memory only', async () => {
@@ -208,7 +248,7 @@ describe('AuthProvider memory-only sessions', () => {
     resolveLogout()
   })
 
-  it('clears a matching protected session once and exposes expiry state', async () => {
+  it('clears a matching protected session once when notified of an unauthorized response', async () => {
     apiRequest.mockResolvedValue({
       token: 'stored-token',
       user: { id: 'user-1', name: 'Admin', role: 'Admin' },
@@ -223,7 +263,7 @@ describe('AuthProvider memory-only sessions', () => {
     })
 
     expect(screen.getByText('signed-out')).toBeInTheDocument()
-    expect(screen.getByText('session-expired')).toBeInTheDocument()
+    expect(screen.getByText('no-token')).toBeInTheDocument()
   })
 
   it('handles a replacement-token failure before React commits the refreshed state', async () => {
@@ -236,7 +276,7 @@ describe('AuthProvider memory-only sessions', () => {
       notifyUnauthorized(createApiError('Expired.', 401), { token: 'replacement', path: '/api/alerts' })
     })
     expect(screen.getByText('signed-out')).toBeInTheDocument()
-    expect(screen.getByText('session-expired')).toBeInTheDocument()
+    expect(screen.getByText('no-token')).toBeInTheDocument()
   })
 
   it('keeps the active session for a different token or a forbidden response', async () => {
@@ -254,6 +294,6 @@ describe('AuthProvider memory-only sessions', () => {
     })
 
     expect(screen.getByText('authenticated')).toBeInTheDocument()
-    expect(screen.getByText('session-current')).toBeInTheDocument()
+    expect(screen.getByText('stored-token')).toBeInTheDocument()
   })
 })

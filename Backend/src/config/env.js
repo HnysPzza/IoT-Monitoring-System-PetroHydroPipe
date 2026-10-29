@@ -53,6 +53,13 @@ const NON_PROD_JWT_SECRETS = new Set([
   'disposable-browser-review-secret-only',
 ])
 
+const MIN_JWT_SECRET_DISTINCT_CHARS = 12
+
+function isLowEntropySecret(secret) {
+  if (new Set(secret).size < MIN_JWT_SECRET_DISTINCT_CHARS) return true
+  return !/[a-z]/i.test(secret) || !/\d/.test(secret)
+}
+
 // Defines every backend environment variable and catches invalid values at startup.
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -185,12 +192,13 @@ function validateEnv() {
   }
 
   if (env.NODE_ENV === 'production') {
-    // Production must fail fast if secrets are missing.
+    // Production must fail fast if secrets or proxy trust are missing.
     const missing = []
 
     if (!env.SUPABASE_URL) missing.push('SUPABASE_URL')
     if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY')
     if (!env.JWT_SECRET) missing.push('JWT_SECRET')
+    if (!env.TRUST_PROXY) missing.push('TRUST_PROXY')
 
     if (missing.length > 0) {
       throw new Error(`Missing required production environment variables: ${missing.join(', ')}`)
@@ -198,6 +206,10 @@ function validateEnv() {
 
     if (NON_PROD_JWT_SECRETS.has(env.JWT_SECRET.toLowerCase())) {
       throw new Error('Invalid environment configuration. JWT_SECRET cannot use a test secret in production.')
+    }
+
+    if (isLowEntropySecret(env.JWT_SECRET)) {
+      throw new Error("Invalid environment configuration. JWT_SECRET must have high entropy in production; generate one with crypto.randomBytes(48).toString('base64url').")
     }
   }
 

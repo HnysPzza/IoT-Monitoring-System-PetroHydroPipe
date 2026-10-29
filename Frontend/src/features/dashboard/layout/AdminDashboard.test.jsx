@@ -1151,4 +1151,18 @@ describe('AdminDashboard alerts', () => {
     expect(toggleButton).toHaveAttribute('title', 'Switch to dark theme')
     expect(toggleButton.querySelector('.theme-toggle-icon.is-moon')).toBeInTheDocument()
   })
+
+  it('hides the dashboard sidebar and topbar and skips alert subscriptions when the current route is forbidden (including trailing slash)', () => {
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, {
+      route: '/dashboard/settings/',
+      authValue: { token: 'test-token', user: { id: 'manager-1', role: 'Operation Manager' } },
+    })
+
+    expect(screen.queryByRole('navigation', { name: 'Dashboard sections' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Settings' })).not.toBeInTheDocument()
+    expect(getAlerts).not.toHaveBeenCalled()
+    expect(subscribeToAlerts).not.toHaveBeenCalled()
+  })
 })

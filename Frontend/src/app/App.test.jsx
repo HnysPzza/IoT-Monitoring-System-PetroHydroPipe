@@ -3,11 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../test/renderWithAuth.jsx'
-import { DashboardRouteBoundary, ProtectedRoute } from './App.jsx'
+import App, { DashboardRouteBoundary, ProtectedRoute } from './App.jsx'
 
 function LoginDestination() {
   const location = useLocation()
-  return <span>{JSON.stringify(location.state)}</span>
+  return <span>{JSON.stringify({ search: location.search, state: location.state })}</span>
 }
 
 function RouteBoundaryHarness() {
@@ -34,7 +34,9 @@ describe('ProtectedRoute', () => {
     vi.restoreAllMocks()
   })
 
-  it('preserves the current safe dashboard pathname, query, and hash', async () => {
+  it('renders the full-page 401 UnauthorizedPage and preserves the intended dashboard path when unauthenticated', async () => {
+    const user = userEvent.setup()
+
     renderWithAuth(
       <Routes>
         <Route path="/login" element={<LoginDestination />} />
@@ -48,13 +50,63 @@ describe('ProtectedRoute', () => {
         />
       </Routes>,
       {
-        authValue: { isAuthenticated: false, sessionExpired: true, token: null, user: null },
+        authValue: { isAuthenticated: false, isRestoring: false, token: null, user: null },
         route: '/dashboard/reports?type=weekly#rows',
       },
     )
 
-    expect(await screen.findByText('{"from":"/dashboard/reports?type=weekly#rows","sessionExpired":true}')).toBeInTheDocument()
+    expect(screen.getByText('SIGN-IN REQUIRED')).toBeInTheDocument()
+    expect(screen.getByText('401')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /please sign in again/i })).toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+
+    const signInLink = screen.getByRole('link', { name: /sign in/i })
+    expect(signInLink).toHaveAttribute('href', '/login?next=%2Fdashboard%2Freports%3Ftype%3Dweekly%23rows')
+
+    await user.click(signInLink)
+    expect(
+      await screen.findByText(
+        '{"search":"?next=%2Fdashboard%2Freports%3Ftype%3Dweekly%23rows","state":{"from":"/dashboard/reports?type=weekly#rows"}}',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the full-page 500 ServerErrorPage instead of 401 when session restore fails with a 500 error', async () => {
+    const user = userEvent.setup()
+    const retrySessionRestore = vi.fn()
+
+    renderWithAuth(
+      <Routes>
+        <Route
+          path="/dashboard/reports"
+          element={(
+            <ProtectedRoute>
+              <span>Protected content</span>
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>,
+      {
+        authValue: {
+          isAuthenticated: false,
+          isRestoring: false,
+          token: null,
+          user: null,
+          sessionError: { status: 500, code: 'REFRESH_QUERY_FAILED', message: 'Unexpected server error.' },
+          retrySessionRestore,
+        },
+        route: '/dashboard/reports',
+      },
+    )
+
+    expect(screen.getByText('INTERNAL SERVER ERROR')).toBeInTheDocument()
+    expect(screen.getByText('500')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
+    expect(screen.queryByText('SIGN-IN REQUIRED')).not.toBeInTheDocument()
+    expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    expect(retrySessionRestore).toHaveBeenCalledTimes(1)
   })
 
   it('places dashboard descendants inside the route-aware recovery boundary', () => {
@@ -71,7 +123,7 @@ describe('ProtectedRoute', () => {
       { route: '/dashboard/reports' },
     )
 
-    expect(screen.getByRole('heading', { name: 'This dashboard section could not load' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
     expect(screen.queryByText('private render failure')).not.toBeInTheDocument()
   })
 
@@ -86,5 +138,16 @@ describe('ProtectedRoute', () => {
 
     expect(await screen.findByText('Live section restored')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('renders the full-page 404 NotFoundPage for unknown top-level and nested dashboard routes', async () => {
+    renderWithAuth(<App />, {
+      authValue: { isAuthenticated: true, isRestoring: false, token: 'tok', user: { id: 'u1', role: 'Admin' } },
+      route: '/dashboard/unknown-section',
+    })
+
+    expect(await screen.findByRole('heading', { name: /this page isn’t here/i })).toBeInTheDocument()
+    expect(screen.getByText('404')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /back to dashboard/i })).toHaveAttribute('href', '/dashboard')
   })
 })

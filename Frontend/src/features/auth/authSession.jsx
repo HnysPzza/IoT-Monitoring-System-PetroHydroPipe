@@ -2,21 +2,18 @@ import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } 
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
 import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher, withSessionLock } from '../../shared/services/sessionRefresh.js'
-import { createApiError } from '../../shared/errors/apiError.js'
+import { createApiError, isTransientApiError } from '../../shared/errors/apiError.js'
+import { syncRoleHint } from './authNavigation.js'
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
 const LEGACY_STORAGE_KEY = 'iot_monitoring_auth'
-
-// 401 codes that mean the refresh cookie itself is dead (revoked, reused, or
-// unknown) versus a missing cookie on a first visit.
-const EXPIRED_REFRESH_CODES = new Set(['INVALID_REFRESH_TOKEN', 'REFRESH_TOKEN_REUSED'])
 
 export const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(null)
+  const [sessionError, setSessionError] = useState(null)
   const [isRestoring, setIsRestoring] = useState(true)
-  const [sessionExpired, setSessionExpired] = useState(false)
   const removeUnauthorizedHandlerRef = useRef(() => {})
   const explicitlyLoggedOutRef = useRef(false)
 
@@ -24,16 +21,18 @@ export function AuthProvider({ children }) {
     removeUnauthorizedHandlerRef.current()
     removeUnauthorizedHandlerRef.current = setUnauthorizedHandler(payload.token, () => {
       removeUnauthorizedHandlerRef.current()
+      syncRoleHint(null)
       setAuth(null)
-      setSessionExpired(true)
     })
-    setSessionExpired(false)
+    syncRoleHint(payload?.user?.role)
+    setSessionError(null)
     setAuth(payload)
   }
 
   function clearSession() {
     removeUnauthorizedHandlerRef.current()
-    setSessionExpired(false)
+    syncRoleHint(null)
+    setSessionError(null)
     setAuth(null)
   }
 
@@ -54,14 +53,13 @@ export function AuthProvider({ children }) {
 
         if (!payload?.token || explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
 
+        setSessionError(null)
         return payload
       } catch (error) {
         if (explicitlyLoggedOutRef.current || generation !== getSessionGeneration()) return null
+        if (isTransientApiError(error)) throw error
 
         clearSession()
-        if (EXPIRED_REFRESH_CODES.has(error?.code)) {
-          setSessionExpired(true)
-        }
         return null
       }
     }, (payload) => {
@@ -82,20 +80,27 @@ export function AuthProvider({ children }) {
 
   // Silent restore: a valid HttpOnly refresh cookie brings the session back
   // after a page reload without ever exposing a token to storage.
-  useEffect(() => {
-    let cancelled = false
-
-    async function restoreSession() {
-      try {
-        await refreshSessionOnce()
-      } catch {
-        // Session restore must never block the login page on errors.
-      } finally {
-        if (!cancelled) setIsRestoring(false)
-      }
+  async function runSessionRestore(isCancelled = () => false) {
+    const generation = getSessionGeneration()
+    if (!isCancelled()) {
+      setIsRestoring(true)
+      setSessionError(null)
     }
 
-    restoreSession()
+    try {
+      await refreshSessionOnce()
+    } catch (error) {
+      if (!isCancelled() && !explicitlyLoggedOutRef.current && generation === getSessionGeneration() && error?.status >= 500) {
+        setSessionError(error)
+      }
+    } finally {
+      if (!isCancelled()) setIsRestoring(false)
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    runSessionRestore(() => cancelled)
 
     return () => {
       cancelled = true
@@ -130,11 +135,12 @@ export function AuthProvider({ children }) {
       user: auth?.user || null,
       isAuthenticated: Boolean(auth?.token),
       isRestoring,
-      sessionExpired,
+      sessionError,
+      retrySessionRestore: () => runSessionRestore(),
       login,
       logout,
     }),
-    [auth, isRestoring, sessionExpired],
+    [auth, isRestoring, sessionError],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

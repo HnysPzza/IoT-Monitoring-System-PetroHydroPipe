@@ -1,4 +1,4 @@
-import { createApiError } from '../errors/apiError.js'
+import { createApiError, isTransientApiError } from '../errors/apiError.js'
 import { notifyStreamAuthorizationLost } from '../errors/unauthorizedSession.js'
 import { API_BASE_URL } from './apiClient.js'
 import { getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
@@ -358,8 +358,9 @@ export function subscribeToServerEvents(path, token, {
         let refreshedToken = null
         try {
           refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
-        } catch {
-          refreshedToken = null
+        } catch (refreshError) {
+          // A server-side refresh failure is retried; it does not prove the session is invalid.
+          if (isTransientApiError(refreshError)) error = refreshError
         }
 
         if (refreshedToken && refreshedToken !== activeToken && !isClosed) {

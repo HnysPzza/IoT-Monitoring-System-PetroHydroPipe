@@ -25,14 +25,20 @@ function withEnvironment(overrides, assertion) {
 test('production refuses each missing backend credential even when other settings are supplied', () => {
   const configured = {
     NODE_ENV: 'production',
+    TRUST_PROXY: '1',
     CORS_ORIGIN: 'https://frontend.example.test',
     SUPABASE_URL: 'https://database.example.test',
     SUPABASE_SERVICE_ROLE_KEY: 'synthetic-test-value',
-    JWT_SECRET: 'synthetic-signing-value-for-tests-only',
+    JWT_SECRET: 'synthetic-signing-value-for-tests-123456',
   }
-  for (const missing of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET']) {
+  for (const missing of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET', 'TRUST_PROXY']) {
     withEnvironment({ ...configured, [missing]: '' }, (loadEnv) => {
       assert.throws(loadEnv, new RegExp(missing))
+    })
+  }
+  for (const disabledProxy of ['false', 'FALSE', '0']) {
+    withEnvironment({ ...configured, TRUST_PROXY: disabledProxy }, (loadEnv) => {
+      assert.throws(loadEnv, /TRUST_PROXY/)
     })
   }
   withEnvironment(configured, (loadEnv) => {
@@ -73,6 +79,17 @@ test('production refuses each missing backend credential even when other setting
   ]) {
     withEnvironment({ ...configured, JWT_SECRET: testSecret }, (loadEnv) => {
       assert.throws(loadEnv, /JWT_SECRET cannot use a test secret in production/)
+    })
+  }
+
+  for (const lowEntropySecret of [
+    'a'.repeat(32),
+    '12345678901234567890123456789012',
+    'mysupersecretjwtkeyforproduction',
+    'a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2',
+  ]) {
+    withEnvironment({ ...configured, JWT_SECRET: lowEntropySecret }, (loadEnv) => {
+      assert.throws(loadEnv, /JWT_SECRET must have high entropy in production/)
     })
   }
 })

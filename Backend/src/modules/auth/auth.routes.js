@@ -1,20 +1,20 @@
 const express = require('express')
 const asyncHandler = require('../../utils/asyncHandler')
-const authenticate = require('../../middleware/authenticate')
-const { loginRateLimiter, refreshRateLimiter } = require('../../middleware/rateLimiters')
+const { authenticateAllowingPasswordChange } = require('../../middleware/authenticate')
+const {
+  loginRateLimiter,
+  refreshRateLimiter,
+  setupLimiter,
+  setupCheckLimiter,
+  changeIngressLimiter,
+  changeLimiter,
+} = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const authController = require('./auth.controller')
-const { loginSchema } = require('./auth.model')
+const { loginSchema, setupPasswordSchema, setupTokenSchema, changePasswordSchema } = require('./auth.model')
 const { readRefreshCookie } = require('./refreshToken.cookie')
 const env = require('../../config/env')
 const onboarding = require('./onboarding.service')
-const { setupPasswordSchema, setupTokenSchema, changePasswordSchema } = require('./auth.model')
-const { rateLimit } = require('express-rate-limit')
-const passwordLimitMessage = { error: { code: 'RATE_LIMITED', message: 'Too many attempts. Wait before trying again.' } }
-const setupLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false, message: passwordLimitMessage })
-const setupCheckLimiter = rateLimit({ windowMs: 15 * 60000, limit: 30, standardHeaders: true, legacyHeaders: false, message: passwordLimitMessage })
-const changeIngressLimiter = rateLimit({ windowMs: 15 * 60000, limit: 100, standardHeaders: true, legacyHeaders: false, message: passwordLimitMessage })
-const changeLimiter = rateLimit({ windowMs: 15 * 60000, limit: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user.sub, message: passwordLimitMessage })
 
 const router = express.Router()
 
@@ -54,7 +54,7 @@ function requireRefreshCookie(req, res, next) {
 router.post('/login', loginRateLimiter, rejectForeignOrigin, validateRequest(loginSchema), asyncHandler(authController.login))
 router.post('/refresh', refreshRateLimiter, rejectForeignOrigin, requireRefreshCookie, asyncHandler(authController.refresh))
 router.post('/logout', rejectForeignOrigin, asyncHandler(authController.logout))
-router.get('/me', authenticate, asyncHandler(authController.me))
+router.get('/me', authenticateAllowingPasswordChange, asyncHandler(authController.me))
 router.post('/setup-password/validate', setupCheckLimiter, rejectForeignOrigin, validateRequest(setupTokenSchema), asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store').json(await onboarding.validateSetupToken(req.validated.body))
 }))
@@ -69,7 +69,7 @@ router.post('/password-reset', setupLimiter, rejectForeignOrigin, validateReques
   await onboarding.setupPassword(req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
-router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticate, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
+router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticateAllowingPasswordChange, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
   await onboarding.changePassword(req.user.sub, req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
