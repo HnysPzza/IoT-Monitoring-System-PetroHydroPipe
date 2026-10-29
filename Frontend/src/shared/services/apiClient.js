@@ -1,4 +1,4 @@
-import { createApiError } from '../errors/apiError.js'
+import { createApiError, isTransientApiError } from '../errors/apiError.js'
 import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
 import { assertSessionCurrent, getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
 
@@ -104,6 +104,7 @@ export async function apiRequest(path, {
         throw createApiError('The request was cancelled.', 0, null, 'REQUEST_ABORTED')
       }
 
+      if (isTransientApiError(error)) throw error
       throw createApiError('Unable to reach the server. Check your connection and try again.', 0, null, 'NETWORK_ERROR')
     }
 

@@ -3,6 +3,7 @@ import {
   apiRequest,
   DEFAULT_REQUEST_TIMEOUT_MS,
 } from './apiClient.js'
+import { createApiError } from '../errors/apiError.js'
 import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
 import { beginSessionChange, setSessionRefresher } from './sessionRefresh.js'
 
@@ -182,6 +183,19 @@ describe('apiRequest session refresh', () => {
       resolveRefresh(null)
       await request
     }
+  })
+  it('surfaces a server failure from the shared refresh without signing the user out', async () => {
+    const expired = vi.fn()
+    setUnauthorizedHandler('original', expired)
+    setSessionRefresher(async () => {
+      throw createApiError('Unexpected server error.', 500, null, 'REFRESH_QUERY_FAILED')
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })))
+    await expect(apiRequest('/api/alerts', { token: 'original' })).rejects.toMatchObject({
+      status: 500,
+      code: 'REFRESH_QUERY_FAILED',
+    })
+    expect(expired).not.toHaveBeenCalled()
   })
   it('does not retry an old write after the session changes', async () => {
     let resolveRequest

@@ -10,3 +10,12 @@ export function createApiError(message, status = 0, payload = null, code = getEr
   error.payload = payload
   return error
 }
+
+
+const TRANSIENT_CLIENT_CODES = new Set(['NETWORK_ERROR', 'REQUEST_TIMEOUT'])
+
+// Transient failures mean the server could not answer, not that the session is invalid.
+export function isTransientApiError(error) {
+  if (error?.name !== 'ApiError') return false
+  return error.status >= 500 || error.status === 429 || TRANSIENT_CLIENT_CODES.has(error.code)
+}
