@@ -28,9 +28,11 @@ describe('DashboardErrorBoundary', () => {
 
     const alert = screen.getByRole('alert')
     expect(alert).toHaveFocus()
-    expect(screen.getByRole('heading', { name: 'This dashboard section could not load' })).toBeInTheDocument()
+    expect(screen.getByText('INTERNAL SERVER ERROR')).toBeInTheDocument()
+    expect(screen.getByText('500')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
     expect(screen.queryByText(/Sensitive database connection detail/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Return to overview' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: /back to dashboard/i })).toHaveAttribute('href', '/dashboard')
 
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(reloadPage).toHaveBeenCalledTimes(1)
@@ -56,6 +58,32 @@ describe('DashboardErrorBoundary', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('clears the captured error when clicking Back to dashboard on the same route', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let shouldThrow = true
+
+    function RecoverableSection() {
+      if (shouldThrow) throw new Error('overview render failure')
+      return <p>Dashboard overview recovered</p>
+    }
+
+    renderWithAuth(
+      <DashboardErrorBoundary resetKey="/dashboard">
+        <RecoverableSection />
+      </DashboardErrorBoundary>,
+      { route: '/dashboard' },
+    )
+
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    shouldThrow = false
+
+    await user.click(screen.getByRole('link', { name: /back to dashboard/i }))
+
+    expect(await screen.findByText('Dashboard overview recovered')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('handles a rejected lazy dashboard import without exposing rejection details', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const RejectedDashboardSection = lazy(() => Promise.reject(new Error('sensitive chunk detail')))
@@ -69,7 +97,7 @@ describe('DashboardErrorBoundary', () => {
     )
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'This dashboard section could not load' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
     expect(screen.queryByText(/sensitive chunk detail/i)).not.toBeInTheDocument()
   })
 })

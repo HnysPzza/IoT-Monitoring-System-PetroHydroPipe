@@ -4,6 +4,7 @@ import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
 import DashboardErrorBoundary from '../shared/errors/DashboardErrorBoundary.jsx'
 import NotFoundPage from '../shared/errors/NotFoundPage.jsx'
+import ServerErrorPage from '../shared/errors/ServerErrorPage.jsx'
 import UnauthorizedPage from '../shared/errors/UnauthorizedPage.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
 import PasswordSetupPage from '../features/auth/PasswordSetupPage.jsx'
@@ -20,12 +21,16 @@ const SettingsSection = lazy(() => import('../features/dashboard/settings/Settin
 const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
 
 export function ProtectedRoute({ children }) {
-  const { isAuthenticated, isRestoring, user } = useAuth()
+  const { isAuthenticated, isRestoring, retrySessionRestore, sessionError, user } = useAuth()
   const location = useLocation()
 
   // Wait for the silent refresh before deciding the session is gone.
   if (isRestoring) {
     return <DashboardLoadingFallback />
+  }
+
+  if (!isAuthenticated && sessionError?.status >= 500) {
+    return <ServerErrorPage onRetry={retrySessionRestore} />
   }
 
   // Guard dashboard pages; unauthenticated users see the 401 sign-in required page.
@@ -61,112 +66,115 @@ export function DashboardRouteBoundary({ children }) {
 
 export default function App() {
   return (
-    <Routes>
-      {/* Main route map. Dashboard children render inside AdminDashboard through <Outlet />. */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/setup-password" element={<PasswordSetupPage />} />
-      <Route path="/reset-password" element={<PasswordSetupPage resetPassword />} />
-      <Route path="/change-password" element={<ProtectedRoute><PasswordSetupPage changePassword /></ProtectedRoute>} />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <DashboardRouteBoundary>
+    <DashboardRouteBoundary>
+      <Routes>
+        {/* Main route map. Dashboard children render inside AdminDashboard through <Outlet />. */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/setup-password" element={<PasswordSetupPage />} />
+        <Route path="/reset-password" element={<PasswordSetupPage resetPassword />} />
+        <Route path="/change-password" element={<ProtectedRoute><PasswordSetupPage changePassword /></ProtectedRoute>} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardRouteBoundary>
+                <LazyDashboardRoute>
+                  <AdminDashboard />
+                </LazyDashboardRoute>
+              </DashboardRouteBoundary>
+            </ProtectedRoute>
+          }
+        >
+          <Route
+            index
+            element={
               <LazyDashboardRoute>
-                <AdminDashboard />
+                <DashboardSection />
               </LazyDashboardRoute>
-            </DashboardRouteBoundary>
-          </ProtectedRoute>
-        }
-      >
-        <Route
-          index
-          element={
-            <LazyDashboardRoute>
-              <DashboardSection />
-            </LazyDashboardRoute>
-          }
-        />
-        <Route
-          path="live"
-          element={
-            <LazyDashboardRoute>
-              <LiveSection />
-            </LazyDashboardRoute>
-          }
-        />
-        <Route
-          path="downtime"
-          element={
-            <LazyDashboardRoute>
-              <DowntimeSection />
-            </LazyDashboardRoute>
-          }
-        />
-        <Route
-          path="reports"
-          element={
-            <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager']}>
+            }
+          />
+          <Route
+            path="live"
+            element={
               <LazyDashboardRoute>
-                <ReportsSection />
+                <LiveSection />
               </LazyDashboardRoute>
-            </RequireRole>
-          }
-        />
-        <Route
-          path="analytics"
-          element={
-            <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']}>
+            }
+          />
+          <Route
+            path="downtime"
+            element={
               <LazyDashboardRoute>
-                <AnalyticsSection />
+                <DowntimeSection />
               </LazyDashboardRoute>
-            </RequireRole>
-          }
-        />
-        <Route
-          path="users"
-          element={
-            /* Admin-only account management route. */
-            <RequireRole roles={['Admin']}>
-              <LazyDashboardRoute>
-                <UsersSection />
-              </LazyDashboardRoute>
-            </RequireRole>
-          }
-        />
-        <Route
-          path="machines"
-          element={
-            <RequireRole roles={['Admin', 'Engineering Supervisor']}>
-              <LazyDashboardRoute>
-                <MachinesSection />
-              </LazyDashboardRoute>
-            </RequireRole>
-          }
-        />
-        <Route
-          path="audit"
-          element={
-            <RequireRole roles={['Admin']}>
-              <LazyDashboardRoute>
-                <AuditSection />
-              </LazyDashboardRoute>
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings"
-          element={
-            <RequireRole roles={['Admin']}>
-              <LazyDashboardRoute>
-                <SettingsSection />
-              </LazyDashboardRoute>
-            </RequireRole>
-          }
-        />
-      </Route>
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager']}>
+                <LazyDashboardRoute>
+                  <ReportsSection />
+                </LazyDashboardRoute>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="analytics"
+            element={
+              <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']}>
+                <LazyDashboardRoute>
+                  <AnalyticsSection />
+                </LazyDashboardRoute>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="users"
+            element={
+              /* Admin-only account management route. */
+              <RequireRole roles={['Admin']}>
+                <LazyDashboardRoute>
+                  <UsersSection />
+                </LazyDashboardRoute>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="machines"
+            element={
+              <RequireRole roles={['Admin', 'Engineering Supervisor']}>
+                <LazyDashboardRoute>
+                  <MachinesSection />
+                </LazyDashboardRoute>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="audit"
+            element={
+              <RequireRole roles={['Admin']}>
+                <LazyDashboardRoute>
+                  <AuditSection />
+                </LazyDashboardRoute>
+              </RequireRole>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <RequireRole roles={['Admin']}>
+                <LazyDashboardRoute>
+                  <SettingsSection />
+                </LazyDashboardRoute>
+              </RequireRole>
+            }
+          />
+        </Route>
+        <Route path="/500" element={<ServerErrorPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </DashboardRouteBoundary>
   )
 }

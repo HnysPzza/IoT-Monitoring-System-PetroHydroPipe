@@ -1,6 +1,20 @@
-export default function ErrorPageShell({ titleId, visual, children }) {
+export default function ErrorPageShell({
+  titleId,
+  visual,
+  className = '',
+  role,
+  tabIndex,
+  shellRef,
+  children,
+}) {
   return (
-    <section className="error-page" aria-labelledby={titleId}>
+    <section
+      ref={shellRef}
+      className={`error-page ${className}`.trim()}
+      aria-labelledby={titleId}
+      role={role}
+      tabIndex={tabIndex}
+    >
       <div className="error-page-sparks" aria-hidden="true">
         <span className="error-spark is-1" />
         <span className="error-spark is-2" />

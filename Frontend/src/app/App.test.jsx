@@ -71,6 +71,44 @@ describe('ProtectedRoute', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders the full-page 500 ServerErrorPage instead of 401 when session restore fails with a 500 error', async () => {
+    const user = userEvent.setup()
+    const retrySessionRestore = vi.fn()
+
+    renderWithAuth(
+      <Routes>
+        <Route
+          path="/dashboard/reports"
+          element={(
+            <ProtectedRoute>
+              <span>Protected content</span>
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>,
+      {
+        authValue: {
+          isAuthenticated: false,
+          isRestoring: false,
+          token: null,
+          user: null,
+          sessionError: { status: 500, code: 'REFRESH_QUERY_FAILED', message: 'Unexpected server error.' },
+          retrySessionRestore,
+        },
+        route: '/dashboard/reports',
+      },
+    )
+
+    expect(screen.getByText('INTERNAL SERVER ERROR')).toBeInTheDocument()
+    expect(screen.getByText('500')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
+    expect(screen.queryByText('SIGN-IN REQUIRED')).not.toBeInTheDocument()
+    expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    expect(retrySessionRestore).toHaveBeenCalledTimes(1)
+  })
+
   it('places dashboard descendants inside the route-aware recovery boundary', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -85,7 +123,7 @@ describe('ProtectedRoute', () => {
       { route: '/dashboard/reports' },
     )
 
-    expect(screen.getByRole('heading', { name: 'This dashboard section could not load' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
     expect(screen.queryByText('private render failure')).not.toBeInTheDocument()
   })
 

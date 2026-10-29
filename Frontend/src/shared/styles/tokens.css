@@ -4700,6 +4700,7 @@ button:disabled {
 .error-page {
   --error-code-color: #5CA6DC;
   --error-eyebrow-color: #7FA9C9;
+  --error-kicker-color: #7FA9C9;
   --error-desc-color: #9FB0C4;
   --error-divider-color: rgba(56, 189, 248, 0.16);
   --error-spark-blue: rgba(92, 166, 220, 0.45);
@@ -4721,6 +4722,7 @@ button:disabled {
 :root[data-theme='light'] .error-page {
   --error-code-color: #4E91C2;
   --error-eyebrow-color: #52758D;
+  --error-kicker-color: #52758D;
   --error-desc-color: #6E7E8D;
   --error-divider-color: #DCECF7;
   --error-spark-blue: rgba(78, 145, 194, 0.36);
@@ -4730,6 +4732,13 @@ button:disabled {
   --error-window-fill: #EEF3F6;
   --error-blueprint-fill: #F4F9FC;
   --error-blueprint-stroke: #CBDDE8;
+}
+
+.error-page--500,
+:root[data-theme='light'] .error-page--500 {
+  --error-code-color: #B83B3B;
+  --error-eyebrow-color: #B83B3B;
+  --error-divider-color: rgba(184, 59, 59, 0.35);
 }
 
 .error-page-sparks {
@@ -4871,7 +4880,7 @@ button:disabled {
 }
 
 .error-page-kicker {
-  color: var(--error-eyebrow-color);
+  color: var(--error-kicker-color);
   font-size: 0.74rem;
   font-weight: 600;
   letter-spacing: 0.12em;
