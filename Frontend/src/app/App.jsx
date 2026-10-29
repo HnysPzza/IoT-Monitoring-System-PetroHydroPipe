@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { useAuth } from '../shared/hooks/useAuth.js'
 import RequireRole from '../shared/components/RequireRole.jsx'
 import DashboardErrorBoundary from '../shared/errors/DashboardErrorBoundary.jsx'
+import NotFoundPage from '../shared/errors/NotFoundPage.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
 import PasswordSetupPage from '../features/auth/PasswordSetupPage.jsx'
 import { getCurrentDashboardPath } from '../features/auth/authNavigation.js'
@@ -174,7 +175,7 @@ export default function App() {
           }
         />
       </Route>
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
 }

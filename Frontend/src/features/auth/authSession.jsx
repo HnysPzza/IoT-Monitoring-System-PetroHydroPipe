@@ -3,6 +3,7 @@ import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.
 import { apiRequest } from '../../shared/services/apiClient.js'
 import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher, withSessionLock } from '../../shared/services/sessionRefresh.js'
 import { createApiError } from '../../shared/errors/apiError.js'
+import { syncRoleHint } from './authNavigation.js'
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
 const LEGACY_STORAGE_KEY = 'iot_monitoring_auth'
@@ -24,15 +25,18 @@ export function AuthProvider({ children }) {
     removeUnauthorizedHandlerRef.current()
     removeUnauthorizedHandlerRef.current = setUnauthorizedHandler(payload.token, () => {
       removeUnauthorizedHandlerRef.current()
+      syncRoleHint(null)
       setAuth(null)
       setSessionExpired(true)
     })
+    syncRoleHint(payload?.user?.role)
     setSessionExpired(false)
     setAuth(payload)
   }
 
   function clearSession() {
     removeUnauthorizedHandlerRef.current()
+    syncRoleHint(null)
     setSessionExpired(false)
     setAuth(null)
   }

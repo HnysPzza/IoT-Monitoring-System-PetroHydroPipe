@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../test/renderWithAuth.jsx'
-import { DashboardRouteBoundary, ProtectedRoute } from './App.jsx'
+import App, { DashboardRouteBoundary, ProtectedRoute } from './App.jsx'
 
 function LoginDestination() {
   const location = useLocation()
@@ -86,5 +86,16 @@ describe('ProtectedRoute', () => {
 
     expect(await screen.findByText('Live section restored')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('renders the full-page 404 NotFoundPage for unknown top-level and nested dashboard routes', async () => {
+    renderWithAuth(<App />, {
+      authValue: { isAuthenticated: true, isRestoring: false, token: 'tok', user: { id: 'u1', role: 'Admin' } },
+      route: '/dashboard/unknown-section',
+    })
+
+    expect(await screen.findByRole('heading', { name: /this page isn’t here/i })).toBeInTheDocument()
+    expect(screen.getByText('404')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /back to dashboard/i })).toHaveAttribute('href', '/dashboard')
   })
 })

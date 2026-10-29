@@ -4943,6 +4943,13 @@ button:disabled {
   margin-top: 12px;
 }
 
+.error-state-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 .error-state-cta {
   min-height: 46px;
   padding: 0 20px;
@@ -6791,6 +6798,10 @@ button:disabled {
     justify-items: center;
     text-align: center;
     transform: none;
+  }
+
+  .error-state-action-row {
+    justify-content: center;
   }
 
   .error-state-visual {
