@@ -620,4 +620,100 @@ describe('DashboardSection', () => {
     expect(refreshStatus).toHaveAttribute('role', 'status')
     expect(refreshStatus).toHaveAttribute('aria-live', 'polite')
   })
+
+  it('shows the idle material changeover banner when a process sensor is idle and replaces it without stacking when a fault alert arrives', async () => {
+    const user = userEvent.setup()
+    const liveWithIdleS01 = livePayload()
+    liveWithIdleS01.sensors[0].status = 'Idle'
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(liveWithIdleS01)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<RealtimeAlertHarness />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    const idleBannerText = await screen.findByText(
+      'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+    )
+    const idleBanner = idleBannerText.closest('.overview-alert-banner')
+    expect(idleBanner).toHaveClass('notice-idle')
+    expect(idleBanner).toHaveAttribute('role', 'status')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Emit alert' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('S-04 Outside Filler Wire has no pulse.')
+    expect(
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('replaces the idle banner on overview when live sensor state transitions to Fault before an alert arrives', async () => {
+    const user = userEvent.setup()
+    const liveWithIdleS01 = livePayload()
+    liveWithIdleS01.sensors[0].status = 'Idle'
+    const liveWithFaultS01 = livePayload()
+    liveWithFaultS01.sensors[0].status = 'Fault'
+
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValueOnce(liveWithIdleS01).mockResolvedValueOnce(liveWithFaultS01)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
+
+    expect(
+      await screen.findByText('S-01 Raw Material & Coil Joint process issue detected — trigger limit exceeded.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the idle banner on overview instead of a stale recoveryPending alert when a process sensor is currently idle', async () => {
+    const liveWithIdleS01 = livePayload()
+    liveWithIdleS01.sensors[0].status = 'Idle'
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(liveWithIdleS01)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route
+          element={(
+            <Outlet
+              context={{
+                hasTrustedAlertList: true,
+                unresolvedAlerts: [{
+                  id: 'recovered-alert-1',
+                  severity: 'Critical',
+                  status: 'Active',
+                  message: 'S-03 machine authority reported a physical fault.',
+                  metadata: { recoveryPending: true },
+                }],
+              }}
+            />
+          )}
+        >
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('This alert recovered. Acknowledgement required.')).not.toBeInTheDocument()
+  })
 })

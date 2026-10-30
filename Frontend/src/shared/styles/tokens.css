@@ -404,6 +404,12 @@ button:disabled {
   border: 1px solid var(--notice-error-border);
 }
 
+.notice-idle {
+  color: var(--status-idle-text);
+  background: var(--status-idle-bg);
+  border: 1px solid var(--status-idle-border);
+}
+
 .notice-success {
   color: var(--notice-success-text);
   background: var(--notice-success-bg);

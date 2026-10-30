@@ -123,4 +123,128 @@ describe('LiveSection polling', () => {
     })
     expect(getLiveFeed).toHaveBeenCalledTimes(2)
   })
+
+  it('shows only the idle material changeover banner on live feed and hides it without showing any fault or downtime banner when faulted', async () => {
+    const idlePayload = payload()
+    const faultPayload = payload()
+    faultPayload.sensors[0].status = 'Fault'
+    faultPayload.sensors[0].monitoring.detectionState = 'downtime'
+
+    getLiveFeed.mockResolvedValueOnce(idlePayload).mockResolvedValueOnce(faultPayload)
+    const user = userEvent.setup()
+    renderWithAuth(<LiveSection />)
+
+    const idleText = await screen.findByText(
+      'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+    )
+    expect(idleText.closest('.overview-alert-banner')).toHaveClass('notice-idle')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Refresh live feed' }))
+
+    expect(await screen.findByText('Fault')).toHaveClass('status-badge', 'status-fault')
+    expect(
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/process issue detected/i)).not.toBeInTheDocument()
+  })
+
+  it('hides the idle banner and shows no fault or downtime banner when unresolved alerts exist in outlet context', async () => {
+    getLiveFeed.mockResolvedValue(payload())
+    const { Outlet, Route, Routes } = await import('react-router')
+    renderWithAuth(
+      <Routes>
+        <Route
+          element={(
+            <Outlet
+              context={{
+                hasTrustedAlertList: true,
+                unresolvedAlerts: [{ id: 'alert-1', status: 'Active', message: 'S-04 Outside Filler Wire has no pulse.' }],
+              }}
+            />
+          )}
+        >
+          <Route index element={<LiveSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
+    expect(
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('S-04 Outside Filler Wire has no pulse.')).not.toBeInTheDocument()
+  })
+
+  it('still shows the idle banner on live feed when the only alert in outlet context has already recovered (recoveryPending)', async () => {
+    getLiveFeed.mockResolvedValue(payload())
+    const { Outlet, Route, Routes } = await import('react-router')
+    renderWithAuth(
+      <Routes>
+        <Route
+          element={(
+            <Outlet
+              context={{
+                hasTrustedAlertList: true,
+                unresolvedAlerts: [{
+                  id: 'alert-recovered',
+                  status: 'Active',
+                  message: 'S-03 machine authority reported a physical fault.',
+                  metadata: { recoveryPending: true },
+                }],
+              }}
+            />
+          )}
+        >
+          <Route index element={<LiveSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('randomly idles 2 process sensors and shows the idle banner with +1 more idle sensor', async () => {
+    const { getSensorLabel } = await import('../../../shared/constants/sensorIdentity.js')
+    const processCodes = ['S-01', 'S-02', 'S-04']
+    const shuffled = [...processCodes].sort(() => Math.random() - 0.5)
+    const randomIdlePair = new Set(shuffled.slice(0, 2))
+    const orderedIdleCodes = processCodes.filter((code) => randomIdlePair.has(code))
+
+    const multiSensorPayload = {
+      ...payload(),
+      sensors: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'].map((code, index) => {
+        const isIdle = randomIdlePair.has(code)
+        return {
+          id: `sensor-${index + 1}`,
+          sensorCode: code,
+          label: getSensorLabel(code),
+          status: isIdle ? 'Idle' : 'Running',
+          signal: isIdle ? 'idle' : 'active',
+          lastEventAt: '2026-08-22T00:02:00.000Z',
+          monitoring: {
+            stateFresh: true,
+            connectivityState: 'online',
+            detectionState: isIdle ? 'grace' : 'running',
+          },
+        }
+      }),
+    }
+
+    getLiveFeed.mockResolvedValue(multiSensorPayload)
+    renderWithAuth(<LiveSection />)
+
+    const primaryIdleCode = orderedIdleCodes[0]
+    const expectedMessage = `${primaryIdleCode} ${getSensorLabel(primaryIdleCode)} is idle — within trigger limit for material changeover.`
+    const idleBannerText = await screen.findByText(expectedMessage)
+    const banner = idleBannerText.closest('.overview-alert-banner')
+    expect(banner).toHaveClass('notice-idle')
+    expect(screen.getByText('+1 more idle sensor')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

@@ -7,7 +7,7 @@ import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatte
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import { getLiveFeed } from '../live/liveService.js'
-import { connectivityLabel } from '../live/livePresentation.js'
+import { connectivityLabel, getProcessIdleBanner, getProcessSensorFaultBanner } from '../live/livePresentation.js'
 import DowntimeTrendChart, {
   getTrendRangeLabel,
   startOfDay,
@@ -140,7 +140,7 @@ export default function DashboardSection() {
   const [overviewRefresh, setOverviewRefresh] = useState(0)
   const overviewRequestIdRef = useRef(0)
   const [liveState, setLiveState] = useState('loading')
-  const [liveData, setLiveData] = useState({ machine: null, sensors: [] })
+  const [liveData, setLiveData] = useState({ machine: null, sensors: [], monitoringMode: 'unknown' })
   const [liveRequestKey, setLiveRequestKey] = useState('')
   const [liveError, setLiveError] = useState('')
   const [liveErrorKey, setLiveErrorKey] = useState('')
@@ -173,10 +173,17 @@ export default function DashboardSection() {
   const overviewAlerts = orderOverviewAlerts(alertContext?.hasTrustedAlertList
     ? trustedOverviewAlerts
     : overviewData?.alerts || [])
+  const hasActiveUnrecoveredAlert = overviewAlerts.some((alert) => !isRecoveryPendingAlert(alert))
   const overviewAlertDestinations = Array.from(new Map(overviewAlerts.map((alert) => {
     const destination = getAlertDestination(alert)
     return [destination.to, destination]
   })).values())
+  const fallbackSensorFaultBanner = hasCurrentLive && !hasActiveUnrecoveredAlert
+    ? getProcessSensorFaultBanner(liveData.sensors, liveData.monitoringMode)
+    : null
+  const processIdleBanner = hasCurrentLive && !hasActiveUnrecoveredAlert && !fallbackSensorFaultBanner
+    ? getProcessIdleBanner(liveData.sensors, liveData.monitoringMode)
+    : null
 
   useEffect(() => {
     const requestId = overviewRequestIdRef.current + 1
@@ -234,6 +241,7 @@ export default function DashboardSection() {
         const nextLiveData = {
           machine: payload.machine || null,
           sensors: payload.sensors || [],
+          monitoringMode: payload.monitoring?.mode || 'unknown',
         }
         const updatedAt = new Date()
         successfulLiveRef.current = { requestKey: liveKey, data: nextLiveData, updatedAt }
@@ -463,7 +471,7 @@ export default function DashboardSection() {
 
       {overviewDisplayState === 'empty' && hasCurrentOverview ? <OverviewEmptyState /> : null}
 
-      {overviewAlerts.length > 0 ? (
+      {hasActiveUnrecoveredAlert || (!fallbackSensorFaultBanner && !processIdleBanner && overviewAlerts.length > 0) ? (
         <div className="alerts-stack">
           {(() => {
             const primaryAlert = overviewAlerts[0]
@@ -492,6 +500,56 @@ export default function DashboardSection() {
               </div>
             )
           })()}
+        </div>
+      ) : fallbackSensorFaultBanner ? (
+        <div className="alerts-stack">
+          <div className="notice dashboard-alert overview-alert-banner notice-error" role="alert">
+            <div className="overview-alert-lead">
+              <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
+              <span className="overview-alert-message">{fallbackSensorFaultBanner.message}</span>
+            </div>
+            {fallbackSensorFaultBanner.extraCount > 0 ? (
+              <span className="overview-alert-count">
+                +{fallbackSensorFaultBanner.extraCount} more faulted sensor{fallbackSensorFaultBanner.extraCount > 1 ? 's' : ''}
+              </span>
+            ) : null}
+            <Link
+              to={fallbackSensorFaultBanner.isDowntime ? '/dashboard/downtime' : '/dashboard/live'}
+              className="overview-alert-more-link"
+              aria-label={fallbackSensorFaultBanner.isDowntime ? 'View downtime records' : 'View live sensor status'}
+            >
+              <span className="overview-alert-action-label">
+                {fallbackSensorFaultBanner.isDowntime ? 'View downtime records' : 'View live sensor status'}
+              </span>
+              <MoveRight size={13} aria-hidden="true" />
+            </Link>
+          </div>
+        </div>
+      ) : processIdleBanner ? (
+        <div className="alerts-stack">
+          <div
+            className="notice dashboard-alert overview-alert-banner notice-idle"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="overview-alert-lead">
+              <PauseCircle size={16} aria-hidden="true" className="overview-alert-icon" />
+              <span className="overview-alert-message">{processIdleBanner.message}</span>
+            </div>
+            {processIdleBanner.extraCount > 0 ? (
+              <span className="overview-alert-count">
+                +{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}
+              </span>
+            ) : null}
+            <Link
+              to="/dashboard/live"
+              className="overview-alert-more-link"
+              aria-label="View live sensor status"
+            >
+              <span className="overview-alert-action-label">View live sensor status</span>
+              <MoveRight size={13} aria-hidden="true" />
+            </Link>
+          </div>
         </div>
       ) : null}
 
