@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Calculator,
   Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleDashed,
   CircleSlash,
+  CopyCheck,
   Pencil,
   RotateCw,
   Search,
@@ -15,7 +17,11 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName, getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
-import { getProductionLogs, updateProductionLogSpec } from './productionService.js'
+import {
+  batchUpdateProductionSpecs,
+  getProductionLogs,
+  updateProductionLogSpec,
+} from './productionService.js'
 import './ProductionSection.css'
 
 export function getManilaDateInputValue() {
@@ -54,8 +60,11 @@ export default function ProductionSection({
   loadProduction = getProductionLogs,
   updateProduction = updateProductionLogSpec,
   updateProductionSpec,
+  batchUpdateProduction = batchUpdateProductionSpecs,
+  batchUpdateProductionSpecs: batchUpdateProductionSpecsProp,
 }) {
   const updateFn = updateProductionSpec || updateProduction
+  const batchUpdateFn = batchUpdateProductionSpecsProp || batchUpdateProduction || batchUpdateProductionSpecs
   const { token, user } = useAuth()
   const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role)
 
@@ -97,15 +106,321 @@ export default function ProductionSection({
     circumference: '',
   })
   const [flashingRecordId, setFlashingRecordId] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkForm, setBulkForm] = useState({
+    label: '',
+    size: '',
+    diameter: '',
+    radius: '',
+    circumference: '',
+  })
+  const [isConfirmingBulk, setIsConfirmingBulk] = useState(false)
+  const [isApplyingBulk, setIsApplyingBulk] = useState(false)
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false)
+  const [calcDimensions, setCalcDimensions] = useState({
+    diameter: '',
+    radius: '',
+    circumference: '',
+  })
+  const [flashingRecordIds, setFlashingRecordIds] = useState(() => new Set())
 
   const requestIdRef = useRef(0)
   const flashTimeoutRef = useRef(null)
+  const lastClickedIndexRef = useRef(null)
+  const headerCheckboxRef = useRef(null)
 
   useEffect(() => {
     return () => {
       if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
     }
   }, [])
+
+  // Reset last clicked index on page or filter changes
+  useEffect(() => {
+    lastClickedIndexRef.current = null
+  }, [dateFilter, statusFilter, specStatusFilter, debouncedSearch, page])
+
+  const pageAcceptedRecords = records.filter((r) => r.outputAccepted)
+  const pageAcceptedIds = pageAcceptedRecords.map((r) => r.id || r.sensorEventId)
+  const selectableCount = pageAcceptedIds.length
+  const pageSelectedCount = pageAcceptedIds.filter((id) => selectedIds.has(id)).length
+  const allPageSelected = selectableCount > 0 && pageSelectedCount === selectableCount
+  const somePageSelected = pageSelectedCount > 0 && pageSelectedCount < selectableCount
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = somePageSelected
+    }
+  }, [somePageSelected])
+
+  const handleSelectAllToggle = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allPageSelected) {
+        pageAcceptedIds.forEach((id) => next.delete(id))
+      } else {
+        pageAcceptedIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleRowCheckboxClick = (e, record, index) => {
+    if (!record.outputAccepted) return
+    const rowId = record.id || record.sensorEventId
+    const isShift = Boolean(e.shiftKey || e.nativeEvent?.shiftKey)
+
+    if (isShift && lastClickedIndexRef.current !== null && lastClickedIndexRef.current !== index) {
+      const start = Math.min(lastClickedIndexRef.current, index)
+      const end = Math.max(lastClickedIndexRef.current, index)
+      const targetIds = []
+      for (let i = start; i <= end; i++) {
+        const item = records[i]
+        if (item && item.outputAccepted) {
+          targetIds.push(item.id || item.sensorEventId)
+        }
+      }
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        const shouldSelect = !prev.has(rowId)
+        targetIds.forEach((id) => {
+          if (shouldSelect) {
+            next.add(id)
+          } else {
+            next.delete(id)
+          }
+        })
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(rowId)) {
+          next.delete(rowId)
+        } else {
+          next.add(rowId)
+        }
+        return next
+      })
+    }
+    lastClickedIndexRef.current = index
+  }
+
+  const handleDeselectAll = () => {
+    setSelectedIds(new Set())
+    setIsConfirmingBulk(false)
+  }
+
+  const handleRepeatLastSpec = () => {
+    const lastSpec = records.find(
+      (r) =>
+        r.isSpecified ||
+        Boolean(r.label || r.size || r.diameter != null || r.radius != null || r.circumference != null),
+    )
+    if (!lastSpec) return
+    setBulkForm({
+      label: lastSpec.label || '',
+      size: lastSpec.size || '',
+      diameter: lastSpec.diameter !== null && lastSpec.diameter !== undefined ? String(lastSpec.diameter) : '',
+      radius: lastSpec.radius !== null && lastSpec.radius !== undefined ? String(lastSpec.radius) : '',
+      circumference:
+        lastSpec.circumference !== null && lastSpec.circumference !== undefined ? String(lastSpec.circumference) : '',
+    })
+  }
+
+  const handleOpenCalculator = () => {
+    if (!isCalculatorOpen) {
+      setCalcDimensions({
+        diameter: bulkForm.diameter || '',
+        radius: bulkForm.radius || '',
+        circumference: bulkForm.circumference || '',
+      })
+    }
+    setIsCalculatorOpen((prev) => !prev)
+  }
+
+  const handleCalcDiameterChange = (val) => {
+    const d = parseFloat(val)
+    if (!isNaN(d) && d > 0) {
+      const r = (d / 2).toFixed(2)
+      const c = (d * Math.PI).toFixed(2)
+      setCalcDimensions({
+        diameter: val,
+        radius: r,
+        circumference: c,
+      })
+    } else {
+      setCalcDimensions({
+        diameter: val,
+        radius: '',
+        circumference: '',
+      })
+    }
+  }
+
+  const handleCalcRadiusChange = (val) => {
+    const r = parseFloat(val)
+    if (!isNaN(r) && r > 0) {
+      const d = (r * 2).toFixed(2)
+      const c = (2 * Math.PI * r).toFixed(2)
+      setCalcDimensions({
+        diameter: d,
+        radius: val,
+        circumference: c,
+      })
+    } else {
+      setCalcDimensions({
+        diameter: '',
+        radius: val,
+        circumference: '',
+      })
+    }
+  }
+
+  const handleCalcCircumferenceChange = (val) => {
+    const c = parseFloat(val)
+    if (!isNaN(c) && c > 0) {
+      const d = (c / Math.PI).toFixed(2)
+      const r = (c / (2 * Math.PI)).toFixed(2)
+      setCalcDimensions({
+        diameter: d,
+        radius: r,
+        circumference: val,
+      })
+    } else {
+      setCalcDimensions({
+        diameter: '',
+        radius: '',
+        circumference: val,
+      })
+    }
+  }
+
+  const handleApplyCalculator = () => {
+    setBulkForm((prev) => ({
+      ...prev,
+      diameter: calcDimensions.diameter || prev.diameter,
+      radius: calcDimensions.radius || prev.radius,
+      circumference: calcDimensions.circumference || prev.circumference,
+    }))
+    setIsCalculatorOpen(false)
+  }
+
+  const handleBulkApplyClick = () => {
+    const hasField = Boolean(
+      bulkForm.label.trim() ||
+        bulkForm.size.trim() ||
+        (bulkForm.diameter !== '' && !isNaN(Number(bulkForm.diameter))) ||
+        (bulkForm.radius !== '' && !isNaN(Number(bulkForm.radius))) ||
+        (bulkForm.circumference !== '' && !isNaN(Number(bulkForm.circumference))),
+    )
+    if (!hasField) {
+      setError('Provide at least one specification field to update.')
+      return
+    }
+    setError(null)
+    setIsConfirmingBulk(true)
+  }
+
+  const handleConfirmBulkApply = async () => {
+    setIsConfirmingBulk(false)
+    setIsApplyingBulk(true)
+    setError(null)
+
+    const targetIds = Array.from(selectedIds)
+    const prevRecords = records
+    const prevSummary = summary
+
+    const newLabel = bulkForm.label.trim() || undefined
+    const newSize = bulkForm.size.trim() || undefined
+    const newDiameter =
+      bulkForm.diameter !== '' && !isNaN(Number(bulkForm.diameter)) ? Number(bulkForm.diameter) : undefined
+    const newRadius =
+      bulkForm.radius !== '' && !isNaN(Number(bulkForm.radius)) ? Number(bulkForm.radius) : undefined
+    const newCircumference =
+      bulkForm.circumference !== '' && !isNaN(Number(bulkForm.circumference))
+        ? Number(bulkForm.circumference)
+        : undefined
+
+    const appliedSpec = {}
+    if (newLabel !== undefined) appliedSpec.label = newLabel
+    if (newSize !== undefined) appliedSpec.size = newSize
+    if (newDiameter !== undefined) appliedSpec.diameter = newDiameter
+    if (newRadius !== undefined) appliedSpec.radius = newRadius
+    if (newCircumference !== undefined) appliedSpec.circumference = newCircumference
+
+    let newlySpecifiedCount = 0
+    const targetSet = new Set(targetIds)
+    setRecords((prev) =>
+      prev.map((r) => {
+        const id = r.id || r.sensorEventId
+        if (!targetSet.has(id)) return r
+        const effLabel = newLabel !== undefined ? newLabel : r.label
+        const effSize = newSize !== undefined ? newSize : r.size
+        const effDiameter = newDiameter !== undefined ? newDiameter : r.diameter
+        const effRadius = newRadius !== undefined ? newRadius : r.radius
+        const effCircumference = newCircumference !== undefined ? newCircumference : r.circumference
+        const isNowSpecified = Boolean(
+          effLabel || effSize || effDiameter != null || effRadius != null || effCircumference != null,
+        )
+        if (!r.isSpecified && isNowSpecified) {
+          newlySpecifiedCount++
+        }
+        return {
+          ...r,
+          label: effLabel,
+          size: effSize,
+          diameter: effDiameter,
+          radius: effRadius,
+          circumference: effCircumference,
+          isSpecified: isNowSpecified,
+          specStatus: isNowSpecified ? 'specified' : 'unspecified',
+        }
+      }),
+    )
+
+    if (newlySpecifiedCount > 0) {
+      setSummary((prev) => ({
+        ...prev,
+        specifiedCount: (prev.specifiedCount ?? 0) + newlySpecifiedCount,
+        unspecifiedCount: Math.max(0, (prev.unspecifiedCount ?? 0) - newlySpecifiedCount),
+      }))
+    }
+
+    setFlashingRecordIds(new Set(targetIds))
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+    flashTimeoutRef.current = setTimeout(() => {
+      setFlashingRecordIds(new Set())
+    }, 150)
+
+    try {
+      await batchUpdateFn(token, {
+        sensorEventIds: targetIds,
+        appliedSpec,
+      })
+
+      setSelectedIds(new Set())
+      setBulkForm({
+        label: '',
+        size: '',
+        diameter: '',
+        radius: '',
+        circumference: '',
+      })
+      loadData({ silent: true })
+    } catch (err) {
+      setRecords(prevRecords)
+      setSummary(prevSummary)
+      setError(err.message || 'Unable to update production specifications.')
+    } finally {
+      setIsApplyingBulk(false)
+    }
+  }
+
+  const handleToggleUnspecified = () => {
+    setSpecStatusFilter((prev) => (prev === 'unspecified' ? 'all' : 'unspecified'))
+    setPage(1)
+  }
 
   // Debounce search input changes
   useEffect(() => {
@@ -399,7 +714,14 @@ export default function ProductionSection({
             </div>
           </div>
 
-          <div className="production-kpi-item" title="Unspecified Cuts">
+          <button
+            type="button"
+            className={`production-kpi-item production-kpi-btn ${specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
+            title={specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
+            aria-label="Filter unspecified cuts"
+            aria-pressed={specStatusFilter === 'unspecified'}
+            onClick={handleToggleUnspecified}
+          >
             <span className="production-kpi-icon" aria-hidden="true">
               <CircleDashed size={18} strokeWidth={1.75} color="var(--chart-warning)" />
             </span>
@@ -407,7 +729,7 @@ export default function ProductionSection({
               <span className="production-kpi-value">{summary.unspecifiedCount ?? 0}</span>
               <span className="production-kpi-label">Unspecified</span>
             </div>
-          </div>
+          </button>
         </div>
       </header>
 
@@ -495,6 +817,16 @@ export default function ProductionSection({
 
         <button
           type="button"
+          className={`production-bare-btn ${specStatusFilter === 'unspecified' ? 'production-filter-btn-active' : ''}`}
+          aria-label="Toggle unspecified cuts filter"
+          title={specStatusFilter === 'unspecified' ? 'Show all specifications' : 'Show unspecified cuts only'}
+          onClick={handleToggleUnspecified}
+        >
+          <CircleDashed size={16} strokeWidth={1.75} color="var(--chart-warning)" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
           className="production-bare-btn"
           aria-label="Refresh production logs"
           title="Refresh production logs"
@@ -505,6 +837,199 @@ export default function ProductionSection({
         </button>
       </section>
 
+      {/* Bulk Edit Strip */}
+      {canEdit && selectedIds.size > 0 && (
+        <section className="production-bulk-strip" role="region" aria-label="Bulk specification editor">
+          <div className="production-bulk-header">
+            <span className="production-bulk-count">
+              {selectedIds.size} {selectedIds.size === 1 ? 'cut' : 'cuts'} selected
+            </span>
+            <button
+              type="button"
+              className="production-bare-btn production-deselect-btn"
+              onClick={handleDeselectAll}
+              aria-label="Deselect all cuts"
+            >
+              <X size={14} aria-hidden="true" />
+              Deselect all
+            </button>
+          </div>
+
+          {isConfirmingBulk ? (
+            <div className="production-bulk-confirmation" role="alert">
+              <span>
+                Apply specifications to {selectedIds.size} {selectedIds.size === 1 ? 'cut' : 'cuts'}? Blank fields will keep their current values.
+              </span>
+              <div className="production-confirm-buttons">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleConfirmBulkApply}
+                  disabled={isApplyingBulk}
+                >
+                  {isApplyingBulk ? 'Applying...' : 'Confirm'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsConfirmingBulk(false)}
+                  disabled={isApplyingBulk}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="production-bulk-fields">
+              <input
+                type="text"
+                className="production-inline-input production-bulk-input"
+                placeholder="Label (optional)"
+                aria-label="Bulk label"
+                value={bulkForm.label}
+                maxLength={100}
+                onChange={(e) => setBulkForm((prev) => ({ ...prev, label: e.target.value }))}
+              />
+              <input
+                type="text"
+                className="production-inline-input production-bulk-input"
+                placeholder="Size (optional)"
+                aria-label="Bulk size"
+                value={bulkForm.size}
+                maxLength={50}
+                onChange={(e) => setBulkForm((prev) => ({ ...prev, size: e.target.value }))}
+              />
+              <input
+                type="number"
+                className="production-inline-input production-inline-num production-bulk-input"
+                placeholder="Diameter"
+                aria-label="Bulk diameter"
+                step="any"
+                min="0"
+                value={bulkForm.diameter}
+                onChange={(e) => setBulkForm((prev) => ({ ...prev, diameter: e.target.value }))}
+              />
+              <input
+                type="number"
+                className="production-inline-input production-inline-num production-bulk-input"
+                placeholder="Radius"
+                aria-label="Bulk radius"
+                step="any"
+                min="0"
+                value={bulkForm.radius}
+                onChange={(e) => setBulkForm((prev) => ({ ...prev, radius: e.target.value }))}
+              />
+              <input
+                type="number"
+                className="production-inline-input production-inline-num production-bulk-input"
+                placeholder="Circumference"
+                aria-label="Bulk circumference"
+                step="any"
+                min="0"
+                value={bulkForm.circumference}
+                onChange={(e) => setBulkForm((prev) => ({ ...prev, circumference: e.target.value }))}
+              />
+
+              <div className="production-bulk-tools">
+                <button
+                  type="button"
+                  className="production-bare-btn"
+                  title="Repeat last saved specification"
+                  aria-label="Repeat last saved specification"
+                  onClick={handleRepeatLastSpec}
+                >
+                  <CopyCheck size={16} aria-hidden="true" />
+                </button>
+
+                <button
+                  type="button"
+                  className={`production-bare-btn ${isCalculatorOpen ? 'production-tool-active' : ''}`}
+                  title="Geometry Calculator"
+                  aria-label="Geometry Calculator"
+                  onClick={handleOpenCalculator}
+                >
+                  <Calculator size={16} aria-hidden="true" />
+                </button>
+
+                <button
+                  type="button"
+                  className="production-bulk-apply-btn"
+                  onClick={handleBulkApplyClick}
+                  disabled={isApplyingBulk}
+                >
+                  Apply to {selectedIds.size} {selectedIds.size === 1 ? 'cut' : 'cuts'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isCalculatorOpen && (
+            <div className="production-calculator-popover" role="dialog" aria-label="Geometry Calculator">
+              <div className="production-calc-header">
+                <span className="production-calc-title">Geometry Calculator</span>
+                <button
+                  type="button"
+                  className="production-bare-btn"
+                  aria-label="Close calculator"
+                  onClick={() => setIsCalculatorOpen(false)}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </div>
+              <p className="production-calc-hint">Enter one dimension to calculate the other two.</p>
+              <div className="production-calc-inputs">
+                <label className="production-calc-label">
+                  <span>Diameter (mm)</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    aria-label="Calculator diameter"
+                    className="production-inline-input"
+                    placeholder="0.00"
+                    value={calcDimensions.diameter}
+                    onChange={(e) => handleCalcDiameterChange(e.target.value)}
+                  />
+                </label>
+                <label className="production-calc-label">
+                  <span>Radius (mm)</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    aria-label="Calculator radius"
+                    className="production-inline-input"
+                    placeholder="0.00"
+                    value={calcDimensions.radius}
+                    onChange={(e) => handleCalcRadiusChange(e.target.value)}
+                  />
+                </label>
+                <label className="production-calc-label">
+                  <span>Circumference (mm)</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    aria-label="Calculator circumference"
+                    className="production-inline-input"
+                    placeholder="0.00"
+                    value={calcDimensions.circumference}
+                    onChange={(e) => handleCalcCircumferenceChange(e.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary production-calc-apply"
+                onClick={handleApplyCalculator}
+              >
+                Apply to bulk form
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Main Table / Skeleton View */}
       {isLoading ? (
         <div className="skeleton production-skeleton" role="status" aria-label="Loading production records" />
@@ -513,6 +1038,19 @@ export default function ProductionSection({
           <table className="production-table" aria-label="Production Cuts Table">
             <thead>
               <tr>
+                {canEdit && (
+                  <th className="production-col-select">
+                    <input
+                      type="checkbox"
+                      ref={headerCheckboxRef}
+                      className="production-checkbox"
+                      checked={allPageSelected}
+                      disabled={selectableCount === 0}
+                      onChange={handleSelectAllToggle}
+                      aria-label="Select all cuts on this page"
+                    />
+                  </th>
+                )}
                 <th className="production-col-status">Status</th>
                 <th>Cut Timestamp (PHT)</th>
                 <th>Label</th>
@@ -526,17 +1064,17 @@ export default function ProductionSection({
             <tbody>
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 8 : 7} className="production-empty-state">
+                  <td colSpan={canEdit ? 9 : 7} className="production-empty-state">
                     No production records found for the selected filters.
                   </td>
                 </tr>
               ) : (
-                records.map((record) => {
+                records.map((record, index) => {
                   const rowId = record.id || record.sensorEventId
                   const isAccepted = Boolean(record.outputAccepted)
                   const isSpec = Boolean(record.isSpecified)
                   const isEditing = editingRecordId === rowId
-                  const isFlashing = flashingRecordId === rowId
+                  const isFlashing = flashingRecordId === rowId || flashingRecordIds.has(rowId)
 
                   let rowClass = ''
                   if (isEditing) rowClass = 'production-row-editing'
@@ -577,6 +1115,19 @@ export default function ProductionSection({
 
                   return (
                     <tr key={rowId} className={rowClass || undefined}>
+                      {canEdit && (
+                        <td className="production-col-select">
+                          <input
+                            type="checkbox"
+                            className="production-checkbox"
+                            checked={selectedIds.has(rowId)}
+                            disabled={!isAccepted}
+                            onChange={() => {}}
+                            onClick={(e) => handleRowCheckboxClick(e, record, index)}
+                            aria-label={`Select cut at ${record.recordedAt || record.timestamp}`}
+                          />
+                        </td>
+                      )}
                       <td className="production-col-status">
                         <div className="production-status-cell">{statusIcon}</div>
                       </td>
