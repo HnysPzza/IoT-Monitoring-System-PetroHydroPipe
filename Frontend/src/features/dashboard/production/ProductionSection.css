@@ -304,3 +304,96 @@
   border-radius: 8px;
 }
 
+/* Step 6: Action Column and Inline Editing */
+.production-col-action {
+  width: 80px;
+  text-align: center;
+}
+
+.production-table th.production-col-action {
+  text-align: center;
+}
+
+.production-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0.375rem;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--c-text-2);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.production-action-btn:hover:not(:disabled) {
+  color: var(--c-accent);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.production-action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.production-inline-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.production-save-btn:hover:not(:disabled) {
+  color: var(--c-success);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.production-cancel-btn:hover:not(:disabled) {
+  color: var(--c-danger);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.production-inline-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.production-inline-input:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+}
+
+.production-inline-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-row-editing {
+  background: rgba(56, 189, 248, 0.04);
+}
+
+.production-row-editing td {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.production-row-flash td {
+  background-color: rgba(56, 189, 248, 0.16) !important;
+  transition: background-color 150ms ease-out;
+}
+
+.production-conflict-notice {
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  color: var(--c-text);
+}
+
