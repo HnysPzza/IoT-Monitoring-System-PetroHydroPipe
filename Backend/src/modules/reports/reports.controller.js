@@ -14,13 +14,14 @@ async function getSummary(req, res) {
 }
 
 async function exportReport(req, res) {
-  const { type, date, format } = req.validated.body
-  const report = await reportsService.getSummary({ type, date })
+  const { category = 'regular', type, date, format } = req.validated.body
+  const report = await reportsService.getSummary({ category, type, date })
 
   const content = format === 'pdf'
     ? await toPdf(report)
     : await toXlsx(report)
   const filename = buildExportFilename({
+    category: report.category || category,
     reportType: type,
     selectedDate: report.selectedDate,
     format,
@@ -31,10 +32,13 @@ async function exportReport(req, res) {
     action: 'REPORT_EXPORTED',
     entityType: 'report',
     metadata: {
+      reportCategory: report.category || category,
       reportType: type,
       selectedDate: report.selectedDate,
       format,
-      rowCount: report.rows.length,
+      rowCount: report.category === 'production'
+        ? (report.productionLogs?.length ?? report.rows?.length ?? 0)
+        : (report.rows?.length ?? 0),
       periodState: report.periodState,
       observedStartAt: report.observedStartAt,
       observedEndAt: report.observedEndAt,
