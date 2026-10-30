@@ -3,7 +3,11 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { apiRequest } from '../../../shared/services/apiClient.js'
-import { getProductionLogs, updateProductionLogSpec } from './productionService.js'
+import {
+  batchUpdateProductionSpecs,
+  getProductionLogs,
+  updateProductionLogSpec,
+} from './productionService.js'
 import ProductionSection, { formatManilaDateTime, getManilaDateInputValue } from './ProductionSection.jsx'
 
 vi.mock('../../../shared/services/apiClient.js', () => ({
@@ -304,6 +308,97 @@ describe('productionService updateProductionLogSpec', () => {
   })
 })
 
+describe('productionService batchUpdateProductionSpecs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('calls apiRequest with PATCH /api/production/batch, sensorEventIds, and sanitized appliedSpec', async () => {
+    apiRequest.mockResolvedValueOnce({ updatedCount: 2, matchedCount: 2 })
+
+    await batchUpdateProductionSpecs('mock-token', {
+      sensorEventIds: ['e0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000002'],
+      appliedSpec: {
+        label: '  Batch Pipe  ',
+        size: '10 inch',
+        diameter: '273.05',
+        radius: 136.53,
+        circumference: '857.82',
+      },
+    })
+
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+    expect(apiRequest).toHaveBeenCalledWith('/api/production/batch', {
+      token: 'mock-token',
+      method: 'PATCH',
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000002'],
+        label: 'Batch Pipe',
+        size: '10 inch',
+        diameter: 273.05,
+        radius: 136.53,
+        circumference: 857.82,
+      },
+    })
+  })
+
+  it('omits blank fields in bulk update preserving existing values', async () => {
+    apiRequest.mockResolvedValueOnce({ updatedCount: 1 })
+
+    await batchUpdateProductionSpecs('mock-token', {
+      sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+      appliedSpec: {
+        label: 'New Label Only',
+        size: '',
+        diameter: '',
+        radius: undefined,
+        circumference: null,
+      },
+    })
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/production/batch', {
+      token: 'mock-token',
+      method: 'PATCH',
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        label: 'New Label Only',
+      },
+    })
+  })
+
+  it('serializes date and date range filters when sensorEventIds are not provided', async () => {
+    apiRequest.mockResolvedValueOnce({ updatedCount: 5 })
+
+    await batchUpdateProductionSpecs('mock-token', {
+      date: '2026-10-30',
+      onlyUnlabeled: true,
+      appliedSpec: { label: 'Range Pipe' },
+    })
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/production/batch', {
+      token: 'mock-token',
+      method: 'PATCH',
+      body: {
+        dateFrom: '2026-10-30',
+        dateTo: '2026-10-30',
+        onlyUnlabeled: true,
+        label: 'Range Pipe',
+      },
+    })
+  })
+
+  it('propagates API errors from batchUpdateProductionSpecs', async () => {
+    apiRequest.mockRejectedValueOnce(new Error('Batch update failed'))
+
+    await expect(
+      batchUpdateProductionSpecs('mock-token', {
+        sensorEventIds: ['e1'],
+        appliedSpec: { label: 'Pipe' },
+      }),
+    ).rejects.toThrow('Batch update failed')
+  })
+})
+
 describe('ProductionSection utilities', () => {
   it('formats Manila date input value as YYYY-MM-DD', () => {
     const val = getManilaDateInputValue()
@@ -547,10 +642,10 @@ describe('ProductionSection component', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('strictly adheres to Step 6 guardrails and permissions', async () => {
+  it('strictly adheres to production permissions and guardrails', async () => {
     const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
-    // Admin has edit buttons for accepted cuts
+    // Admin has edit buttons and selection checkboxes for accepted cuts
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
     await screen.findByText('Batch Alpha Pipe')
@@ -558,9 +653,12 @@ describe('ProductionSection component', () => {
     const editButtons = screen.getAllByRole('button', { name: /edit specification/i })
     expect(editButtons.length).toBe(2)
 
-    // No bulk edit bar or checkboxes (reserved for Step 7)
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByText(/apply to/i)).not.toBeInTheDocument()
+    // Checkboxes are rendered for accepted cuts plus header select-all
+    const checkboxes = screen.getAllByRole('checkbox')
+    expect(checkboxes.length).toBe(4) // 1 header + 2 accepted cuts + 1 disabled rejected cut
+
+    // Bulk edit strip not shown until cuts are selected
+    expect(screen.queryByRole('region', { name: 'Bulk specification editor' })).not.toBeInTheDocument()
 
     // No export button
     expect(screen.queryByRole('button', { name: /export/i })).not.toBeInTheDocument()
@@ -582,6 +680,7 @@ describe('ProductionSection component', () => {
         expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument()
         const editButtons = screen.getAllByRole('button', { name: /edit specification/i })
         expect(editButtons.length).toBe(2)
+        expect(screen.getAllByRole('checkbox').length).toBe(4)
       })
     })
 
@@ -595,6 +694,7 @@ describe('ProductionSection component', () => {
 
         expect(await screen.findByText('Batch Alpha Pipe')).toBeInTheDocument()
         expect(screen.queryByRole('columnheader', { name: 'Action' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument()
       })
@@ -862,5 +962,207 @@ describe('ProductionSection component', () => {
     // Rolled back
     expect(screen.queryByText('Temporary Pipe')).not.toBeInTheDocument()
     expect(within(kpiRegion).getByText('30')).toBeInTheDocument()
+  })
+
+  describe('Step 7: Selection, Bulk Edit, and Tools', () => {
+    it('handles row selection, header select-all, and Shift+Click range selection', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
+      const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
+      const row2Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i)
+      const rejectedCheckbox = screen.getByLabelText(/select cut at 2026-10-30T08:00:00/i)
+
+      expect(rejectedCheckbox).toBeDisabled()
+
+      // Click row 1 checkbox
+      await user.click(row1Checkbox)
+      expect(row1Checkbox).toBeChecked()
+      expect(screen.getByText('1 cut selected')).toBeInTheDocument()
+
+      // Header checkbox becomes indeterminate
+      expect(headerCheckbox.indeterminate).toBe(true)
+
+      // Shift+Click row 2
+      await user.keyboard('{Shift>}')
+      await user.click(row2Checkbox)
+      await user.keyboard('{/Shift}')
+
+      expect(row2Checkbox).toBeChecked()
+      expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
+      expect(headerCheckbox).toBeChecked()
+
+      // Deselect all button
+      await user.click(screen.getByRole('button', { name: 'Deselect all cuts' }))
+      expect(row1Checkbox).not.toBeChecked()
+      expect(row2Checkbox).not.toBeChecked()
+      expect(screen.queryByText(/cuts selected/i)).not.toBeInTheDocument()
+
+      // Header select-all toggle
+      await user.click(headerCheckbox)
+      expect(row1Checkbox).toBeChecked()
+      expect(row2Checkbox).toBeChecked()
+      expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
+
+      await user.click(headerCheckbox)
+      expect(row1Checkbox).not.toBeChecked()
+      expect(row2Checkbox).not.toBeChecked()
+      expect(screen.queryByText(/cuts selected/i)).not.toBeInTheDocument()
+    })
+
+    it('requires confirmation before applying bulk specifications', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+      const mockBatchUpdate = vi.fn().mockResolvedValue({ matchedCount: 2, updatedCount: 2 })
+
+      renderWithAuth(
+        <ProductionSection
+          loadProduction={mockLoad}
+          batchUpdateProductionSpecs={mockBatchUpdate}
+        />,
+      )
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      // Select both cuts
+      const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
+      await user.click(headerCheckbox)
+
+      expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
+
+      const labelInput = screen.getByLabelText('Bulk label')
+      await user.type(labelInput, 'Bulk Pipe Standard')
+
+      const applyBtn = screen.getByRole('button', { name: 'Apply to 2 cuts' })
+      await user.click(applyBtn)
+
+      // Confirmation prompt appears
+      expect(screen.getByText(/apply specifications to 2 cuts/i)).toBeInTheDocument()
+
+      // Cancel confirmation
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByText(/apply specifications to 2 cuts/i)).not.toBeInTheDocument()
+      expect(mockBatchUpdate).not.toHaveBeenCalled()
+
+      // Click apply again and confirm
+      await user.click(screen.getByRole('button', { name: 'Apply to 2 cuts' }))
+      await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+      await waitFor(() => {
+        expect(mockBatchUpdate).toHaveBeenCalledTimes(1)
+        expect(mockBatchUpdate).toHaveBeenCalledWith('test-token', {
+          sensorEventIds: [
+            'e0000000-0000-4000-8000-000000000001',
+            'e0000000-0000-4000-8000-000000000002',
+          ],
+          appliedSpec: {
+            label: 'Bulk Pipe Standard',
+          },
+        })
+      })
+    })
+
+    it('populates bulk form using Repeat Last Spec helper', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const row2Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i)
+      await user.click(row2Checkbox)
+
+      const repeatBtn = screen.getByRole('button', { name: 'Repeat last saved specification' })
+      await user.click(repeatBtn)
+
+      expect(screen.getByLabelText('Bulk label')).toHaveValue('Batch Alpha Pipe')
+      expect(screen.getByLabelText('Bulk size')).toHaveValue('6 inch')
+      expect(screen.getByLabelText('Bulk diameter')).toHaveValue(152.4)
+      expect(screen.getByLabelText('Bulk radius')).toHaveValue(76.2)
+      expect(screen.getByLabelText('Bulk circumference')).toHaveValue(478.78)
+    })
+
+    it('calculates dimensions using Geometry Calculator helper and applies them to form', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
+      await user.click(row1Checkbox)
+
+      const calcBtn = screen.getByRole('button', { name: 'Geometry Calculator' })
+      await user.click(calcBtn)
+
+      expect(screen.getByRole('dialog', { name: 'Geometry Calculator' })).toBeInTheDocument()
+
+      const diameterCalcInput = screen.getByLabelText('Calculator diameter')
+      await user.clear(diameterCalcInput)
+      await user.type(diameterCalcInput, '100')
+
+      expect(screen.getByLabelText('Calculator diameter')).toHaveValue(100)
+      expect(screen.getByLabelText('Calculator radius')).toHaveValue(50)
+      expect(screen.getByLabelText('Calculator circumference')).toHaveValue(314.16)
+
+      await user.click(screen.getByRole('button', { name: 'Apply to bulk form' }))
+
+      expect(screen.queryByRole('dialog', { name: 'Geometry Calculator' })).not.toBeInTheDocument()
+
+      expect(screen.getByLabelText('Bulk diameter')).toHaveValue(100)
+      expect(screen.getByLabelText('Bulk radius')).toHaveValue(50)
+      expect(screen.getByLabelText('Bulk circumference')).toHaveValue(314.16)
+    })
+
+    it('supports quick Unspecified cuts filter toggle button and KPI metric button', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const toggleBtn = screen.getByRole('button', { name: 'Toggle unspecified cuts filter' })
+      await user.click(toggleBtn)
+
+      await waitFor(() => {
+        expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+          specStatus: 'unspecified',
+        }))
+      })
+
+      const kpiBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+      await user.click(kpiBtn)
+
+      await waitFor(() => {
+        expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+          specStatus: 'all',
+        }))
+      })
+    })
+
+    it('requires at least one field when clicking apply in bulk editor', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
+      await user.click(row1Checkbox)
+
+      const applyBtn = screen.getByRole('button', { name: 'Apply to 1 cut' })
+      await user.click(applyBtn)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/provide at least one specification field/i)
+    })
   })
 })
