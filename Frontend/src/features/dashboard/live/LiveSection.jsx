@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
@@ -7,7 +6,7 @@ import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
 import { getLiveStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getLiveFeed } from './liveService.js'
-import { getProcessIdleBanner, getProcessSensorFaultBanner, presentLiveSensors } from './livePresentation.js'
+import { getProcessIdleBanner, presentLiveSensors } from './livePresentation.js'
 
 const POLL_INTERVAL_MS = 15000
 const RELATIVE_TIME_UNITS = [
@@ -40,7 +39,6 @@ function formatEventAge(value) {
 
 export default function LiveSection() {
   const { token } = useAuth()
-  const alertContext = useOutletContext()
   const [machine, setMachine] = useState(null)
   const [sensors, setSensors] = useState([])
   const [monitoring, setMonitoring] = useState({ mode: 'unknown', capturedAt: null })
@@ -117,23 +115,9 @@ export default function LiveSection() {
     () => presentLiveSensors(sensors, monitoring.mode),
     [sensors, monitoring.mode],
   )
-  const unresolvedAlerts = alertContext?.unresolvedAlerts ?? alertContext?.activeAlerts ?? []
-  const activeUnrecoveredAlerts = unresolvedAlerts.filter(
-    (alert) => !(alert?.status === 'Active' && alert.metadata?.recoveryPending === true),
-  )
-  const hasFaultOrDowntime = useMemo(
-    () => (
-      activeUnrecoveredAlerts.length > 0
-      || machine?.status === 'Downtime'
-      || machine?.status === 'Fault'
-      || Boolean(getProcessSensorFaultBanner(presentedSensors, monitoring.mode))
-      || presentedSensors.some((sensor) => sensor.displayStatus === 'Fault' || sensor.displayStatus === 'Downtime')
-    ),
-    [activeUnrecoveredAlerts.length, machine?.status, presentedSensors, monitoring.mode],
-  )
   const processIdleBanner = useMemo(
-    () => (hasFaultOrDowntime ? null : getProcessIdleBanner(presentedSensors, monitoring.mode)),
-    [hasFaultOrDowntime, presentedSensors, monitoring.mode],
+    () => getProcessIdleBanner(presentedSensors, monitoring.mode),
+    [presentedSensors, monitoring.mode],
   )
   if (isLoading && !machine) {
     return <div className="live-layout"><section className="section-card"><div className="skeleton skeleton-heading" /><div className="skeleton skeleton-panel" /></section></div>

@@ -173,15 +173,14 @@ export default function DashboardSection() {
   const overviewAlerts = orderOverviewAlerts(alertContext?.hasTrustedAlertList
     ? trustedOverviewAlerts
     : overviewData?.alerts || [])
-  const hasActiveUnrecoveredAlert = overviewAlerts.some((alert) => !isRecoveryPendingAlert(alert))
   const overviewAlertDestinations = Array.from(new Map(overviewAlerts.map((alert) => {
     const destination = getAlertDestination(alert)
     return [destination.to, destination]
   })).values())
-  const fallbackSensorFaultBanner = hasCurrentLive && !hasActiveUnrecoveredAlert
+  const fallbackSensorFaultBanner = hasCurrentLive && overviewAlerts.length === 0
     ? getProcessSensorFaultBanner(liveData.sensors, liveData.monitoringMode)
     : null
-  const processIdleBanner = hasCurrentLive && !hasActiveUnrecoveredAlert && !fallbackSensorFaultBanner
+  const processIdleBanner = hasCurrentLive
     ? getProcessIdleBanner(liveData.sensors, liveData.monitoringMode)
     : null
 
@@ -471,85 +470,85 @@ export default function DashboardSection() {
 
       {overviewDisplayState === 'empty' && hasCurrentOverview ? <OverviewEmptyState /> : null}
 
-      {hasActiveUnrecoveredAlert || (!fallbackSensorFaultBanner && !processIdleBanner && overviewAlerts.length > 0) ? (
+      {overviewAlerts.length > 0 || fallbackSensorFaultBanner || processIdleBanner ? (
         <div className="alerts-stack">
-          {(() => {
-            const primaryAlert = overviewAlerts[0]
-            const extraCount = overviewAlerts.length - 1
-            return (
-              <div
-                className={`notice dashboard-alert overview-alert-banner ${isDangerOverviewAlert(primaryAlert) ? 'notice-error' : ''}`}
-                role="alert"
-              >
-                <div className="overview-alert-lead">
-                  <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
-                  <span className="overview-alert-message">{getOverviewAlertMessage(primaryAlert)}</span>
+          {overviewAlerts.length > 0 ? (
+            (() => {
+              const primaryAlert = overviewAlerts[0]
+              const extraCount = overviewAlerts.length - 1
+              return (
+                <div
+                  className={`notice dashboard-alert overview-alert-banner ${isDangerOverviewAlert(primaryAlert) ? 'notice-error' : ''}`}
+                  role="alert"
+                >
+                  <div className="overview-alert-lead">
+                    <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
+                    <span className="overview-alert-message">{getOverviewAlertMessage(primaryAlert)}</span>
+                  </div>
+                  {extraCount > 0 ? <span className="overview-alert-count">+{extraCount} more unresolved alert{extraCount > 1 ? 's' : ''}</span> : null}
+                  {overviewAlertDestinations.map((destination) => (
+                    <Link
+                      key={destination.to}
+                      to={destination.to}
+                      className="overview-alert-more-link"
+                      aria-label={destination.label}
+                    >
+                      <span className="overview-alert-action-label">{destination.label}</span>
+                      <MoveRight size={13} aria-hidden="true" />
+                    </Link>
+                  ))}
                 </div>
-                {extraCount > 0 ? <span className="overview-alert-count">+{extraCount} more unresolved alert{extraCount > 1 ? 's' : ''}</span> : null}
-                {overviewAlertDestinations.map((destination) => (
-                  <Link
-                    key={destination.to}
-                    to={destination.to}
-                    className="overview-alert-more-link"
-                    aria-label={destination.label}
-                  >
-                    <span className="overview-alert-action-label">{destination.label}</span>
-                    <MoveRight size={13} aria-hidden="true" />
-                  </Link>
-                ))}
+              )
+            })()
+          ) : fallbackSensorFaultBanner ? (
+            <div className="notice dashboard-alert overview-alert-banner notice-error" role="alert">
+              <div className="overview-alert-lead">
+                <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
+                <span className="overview-alert-message">{fallbackSensorFaultBanner.message}</span>
               </div>
-            )
-          })()}
-        </div>
-      ) : fallbackSensorFaultBanner ? (
-        <div className="alerts-stack">
-          <div className="notice dashboard-alert overview-alert-banner notice-error" role="alert">
-            <div className="overview-alert-lead">
-              <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
-              <span className="overview-alert-message">{fallbackSensorFaultBanner.message}</span>
+              {fallbackSensorFaultBanner.extraCount > 0 ? (
+                <span className="overview-alert-count">
+                  +{fallbackSensorFaultBanner.extraCount} more faulted sensor{fallbackSensorFaultBanner.extraCount > 1 ? 's' : ''}
+                </span>
+              ) : null}
+              <Link
+                to={fallbackSensorFaultBanner.isDowntime ? '/dashboard/downtime' : '/dashboard/live'}
+                className="overview-alert-more-link"
+                aria-label={fallbackSensorFaultBanner.isDowntime ? 'View downtime records' : 'View live sensor status'}
+              >
+                <span className="overview-alert-action-label">
+                  {fallbackSensorFaultBanner.isDowntime ? 'View downtime records' : 'View live sensor status'}
+                </span>
+                <MoveRight size={13} aria-hidden="true" />
+              </Link>
             </div>
-            {fallbackSensorFaultBanner.extraCount > 0 ? (
-              <span className="overview-alert-count">
-                +{fallbackSensorFaultBanner.extraCount} more faulted sensor{fallbackSensorFaultBanner.extraCount > 1 ? 's' : ''}
-              </span>
-            ) : null}
-            <Link
-              to={fallbackSensorFaultBanner.isDowntime ? '/dashboard/downtime' : '/dashboard/live'}
-              className="overview-alert-more-link"
-              aria-label={fallbackSensorFaultBanner.isDowntime ? 'View downtime records' : 'View live sensor status'}
+          ) : null}
+
+          {processIdleBanner ? (
+            <div
+              className="notice dashboard-alert overview-alert-banner notice-idle"
+              role="status"
+              aria-live="polite"
             >
-              <span className="overview-alert-action-label">
-                {fallbackSensorFaultBanner.isDowntime ? 'View downtime records' : 'View live sensor status'}
-              </span>
-              <MoveRight size={13} aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
-      ) : processIdleBanner ? (
-        <div className="alerts-stack">
-          <div
-            className="notice dashboard-alert overview-alert-banner notice-idle"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="overview-alert-lead">
-              <PauseCircle size={16} aria-hidden="true" className="overview-alert-icon" />
-              <span className="overview-alert-message">{processIdleBanner.message}</span>
+              <div className="overview-alert-lead">
+                <PauseCircle size={16} aria-hidden="true" className="overview-alert-icon" />
+                <span className="overview-alert-message">{processIdleBanner.message}</span>
+              </div>
+              {processIdleBanner.extraCount > 0 ? (
+                <span className="overview-alert-count">
+                  +{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}
+                </span>
+              ) : null}
+              <Link
+                to="/dashboard/live"
+                className="overview-alert-more-link"
+                aria-label="View live sensor status"
+              >
+                <span className="overview-alert-action-label">View live sensor status</span>
+                <MoveRight size={13} aria-hidden="true" />
+              </Link>
             </div>
-            {processIdleBanner.extraCount > 0 ? (
-              <span className="overview-alert-count">
-                +{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}
-              </span>
-            ) : null}
-            <Link
-              to="/dashboard/live"
-              className="overview-alert-more-link"
-              aria-label="View live sensor status"
-            >
-              <span className="overview-alert-action-label">View live sensor status</span>
-              <MoveRight size={13} aria-hidden="true" />
-            </Link>
-          </div>
+          ) : null}
         </div>
       ) : null}
 

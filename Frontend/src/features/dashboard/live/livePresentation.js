@@ -99,8 +99,6 @@ export function getProcessIdleBanner(sensors = [], mode = 'unknown') {
     sensor.displayStatus ? sensor : presentLiveSensor(sensor, mode)
   ))
 
-  if (getProcessSensorFaultBanner(presented, mode)) return null
-
   const idleSensors = presented
     .filter((sensor) => PROCESS_SENSOR_CODES.has(sensor.sensorCode) && sensor.displayStatus === 'Idle')
     .map((sensor) => ({

@@ -150,7 +150,7 @@ describe('LiveSection polling', () => {
     expect(screen.queryByText(/process issue detected/i)).not.toBeInTheDocument()
   })
 
-  it('hides the idle banner and shows no fault or downtime banner when unresolved alerts exist in outlet context', async () => {
+  it('keeps the idle banner visible on live feed and shows no fault or downtime banner when unresolved alerts exist in outlet context', async () => {
     getLiveFeed.mockResolvedValue(payload())
     const { Outlet, Route, Routes } = await import('react-router')
     renderWithAuth(
@@ -172,8 +172,8 @@ describe('LiveSection polling', () => {
 
     expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
     expect(
-      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
-    ).not.toBeInTheDocument()
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('S-04 Outside Filler Wire has no pulse.')).not.toBeInTheDocument()
   })

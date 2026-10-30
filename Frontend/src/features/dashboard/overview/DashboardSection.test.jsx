@@ -621,7 +621,7 @@ describe('DashboardSection', () => {
     expect(refreshStatus).toHaveAttribute('aria-live', 'polite')
   })
 
-  it('shows the idle material changeover banner when a process sensor is idle and replaces it without stacking when a fault alert arrives', async () => {
+  it('stacks the fault alert banner and the idle material changeover banner when one sensor has an alert and another is idle', async () => {
     const user = userEvent.setup()
     const liveWithIdleS01 = livePayload()
     liveWithIdleS01.sensors[0].status = 'Idle'
@@ -650,11 +650,11 @@ describe('DashboardSection', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('S-04 Outside Filler Wire has no pulse.')
     expect(
-      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
-    ).not.toBeInTheDocument()
+      screen.getByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+    ).toBeInTheDocument()
   })
 
-  it('replaces the idle banner on overview when live sensor state transitions to Fault before an alert arrives', async () => {
+  it('replaces the idle banner on overview when that idle sensor transitions to Fault', async () => {
     const user = userEvent.setup()
     const liveWithIdleS01 = livePayload()
     liveWithIdleS01.sensors[0].status = 'Idle'
@@ -681,7 +681,7 @@ describe('DashboardSection', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows the idle banner on overview instead of a stale recoveryPending alert when a process sensor is currently idle', async () => {
+  it('stacks the recoveryPending alert banner and the idle banner on overview when a process sensor is idle', async () => {
     const liveWithIdleS01 = livePayload()
     liveWithIdleS01.sensors[0].status = 'Idle'
     getDashboardOverview.mockResolvedValue(overviewPayload())
@@ -714,6 +714,6 @@ describe('DashboardSection', () => {
     expect(
       await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
     ).toBeInTheDocument()
-    expect(screen.queryByText('This alert recovered. Acknowledgement required.')).not.toBeInTheDocument()
+    expect(screen.getByText('This alert recovered. Acknowledgement required.')).toBeInTheDocument()
   })
 })
