@@ -29,6 +29,35 @@ function report(overrides = {}) {
   }
 }
 
+function productionReport(overrides = {}) {
+  return {
+    category: 'production',
+    summary: [
+      { id: 'total-output', label: 'Total Production Output', value: '1,250 pcs', helper: 'From Spiral Mill 01' },
+      { id: 'specified-pipes', label: 'Specified Pipes', value: '1,000 pcs', helper: '80% of total output' },
+      { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: '250 pcs', helper: 'Pending specification tag' },
+      { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: '4', helper: 'Unique pipe specs produced' },
+    ],
+    periodState: 'complete',
+    metrics: {
+      totalProductionOutput: 1250,
+      specifiedPipes: 1000,
+      unspecifiedPipes: 250,
+      distinctProductSizes: 4,
+    },
+    comparison: {
+      periodState: 'complete',
+      metrics: {
+        totalProductionOutput: 1000,
+        specifiedPipes: 900,
+        unspecifiedPipes: 100,
+        distinctProductSizes: 3,
+      },
+    },
+    ...overrides,
+  }
+}
+
 describe('getReportCards', () => {
   it('returns three primary cards and merges downtime details into one secondary card', () => {
     const cards = getReportCards(report())
@@ -46,6 +75,32 @@ describe('getReportCards', () => {
       isPrimary: false,
     })
     expect(cards.find((card) => card.id === 'process-events')).toBeUndefined()
+  })
+
+  it('formats production report cards with 3 primary cards and distinct-sizes secondary card', () => {
+    const cards = getReportCards(productionReport())
+
+    expect(cards.map((card) => card.id)).toEqual([
+      'total-output',
+      'specified-pipes',
+      'unspecified-pipes',
+      'distinct-sizes',
+    ])
+    expect(cards.find((card) => card.id === 'unspecified-pipes')).toMatchObject({
+      label: 'Unspecified Pipes',
+      value: '250 pcs',
+      isWarning: true,
+      isPrimary: true,
+    })
+    expect(cards.find((card) => card.id === 'distinct-sizes')).toMatchObject({
+      label: 'Distinct Sizes',
+      value: '4',
+      isPrimary: false,
+    })
+    expect(cards.find((card) => card.id === 'total-output').delta).toMatchObject({
+      label: '+25.0%',
+      sentiment: 'positive',
+    })
   })
 
   it('keeps future values unobserved instead of fabricating downtime units', () => {
@@ -73,6 +128,7 @@ describe('getReportDelta', () => {
     expect(getReportDelta('availability', 92, 90)).toMatchObject({ label: '+2.0 pp', sentiment: 'positive' })
     expect(getReportDelta('production', 1250, 1000)).toMatchObject({ label: '+25.0%', sentiment: 'positive' })
     expect(getReportDelta('loss', 4, 2)).toMatchObject({ label: '+100.0%', sentiment: 'negative' })
+    expect(getReportDelta('unspecified-pipes', 50, 100)).toMatchObject({ label: '-50.0%', sentiment: 'positive' })
   })
 
   it('reports no baseline and no prior period without inventing a percentage', () => {
