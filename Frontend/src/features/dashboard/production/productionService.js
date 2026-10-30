@@ -49,3 +49,37 @@ export async function getProductionLogs(token, filters = {}) {
   })
 }
 
+export async function updateProductionLogSpec(token, eventId, spec = {}, expectedUpdatedAt) {
+  const sanitizeText = (val) => {
+    if (val === undefined || val === null) return null
+    const trimmed = String(val).trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  const sanitizeNumber = (val) => {
+    if (val === undefined || val === null || val === '') return null
+    const num = Number(val)
+    return isNaN(num) ? null : num
+  }
+
+  const concurrencyToken = expectedUpdatedAt !== undefined ? expectedUpdatedAt : spec.expectedUpdatedAt
+
+  const body = {
+    label: sanitizeText(spec.label),
+    size: sanitizeText(spec.size),
+    diameter: sanitizeNumber(spec.diameter),
+    radius: sanitizeNumber(spec.radius),
+    circumference: sanitizeNumber(spec.circumference),
+  }
+
+  if (concurrencyToken !== undefined) {
+    body.expectedUpdatedAt = concurrencyToken
+  }
+
+  return apiRequest(`/api/production/${eventId}`, {
+    token,
+    method: 'PATCH',
+    body,
+  })
+}
+
