@@ -11,6 +11,7 @@ const routeConfig = [
     { path: '/dashboard', module: 'dashboard' },
     { path: '/analytics', module: 'analytics' },
     { path: '/downtime', module: 'downtime' },
+    { path: '/production', module: 'production' },
     { path: '/reports', module: 'reports' },
     { path: '/audit', module: 'audit' },
 ]
