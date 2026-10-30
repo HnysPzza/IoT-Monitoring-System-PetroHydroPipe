@@ -14,8 +14,8 @@ function validSettings() {
   return {
     sensorThresholds: Object.fromEntries(constraints.sensorCodes.map((code) => [code, {
       absenceDetectionEnabled: code === 'S-01',
-      triggerSeconds: code === 'S-05' ? null : 30,
-      recoverySeconds: code === 'S-01' ? 20 : null,
+      triggerSeconds: code === 'S-05' ? null : 60,
+      recoverySeconds: code === 'S-01' ? 60 : null,
     }])),
     shiftSchedule: {
       workStart: '08:00',
@@ -38,15 +38,27 @@ describe('settings validation', () => {
     expect(input[0].name).toBe('Lunch')
   })
 
-  it('rejects S-05 activation, unmeasurable thresholds, and grace overlap', () => {
+  it('rejects S-05 activation, non-whole-minute or out-of-range thresholds, and grace overlap', () => {
     const settings = validSettings()
+    settings.sensorThresholds['S-01'] = {
+      absenceDetectionEnabled: true,
+      triggerSeconds: 90,
+      recoverySeconds: 60,
+    }
+    settings.sensorThresholds['S-02'] = {
+      absenceDetectionEnabled: true,
+      triggerSeconds: 60,
+      recoverySeconds: 360,
+    }
     settings.sensorThresholds['S-05'] = {
       absenceDetectionEnabled: true,
-      triggerSeconds: 1,
-      recoverySeconds: 1,
+      triggerSeconds: 60,
+      recoverySeconds: 60,
     }
     settings.shiftSchedule.breaks.push({ name: 'Next', startTime: '13:05', endTime: '13:20' })
     const errors = validateOperationalSettings(settings, constraints)
+    expect(errors['S-01']).toBe('Trigger must be 1-60 minutes.')
+    expect(errors['S-02']).toBe('Recovery must be 1-5 minutes.')
     expect(errors['S-05']).toMatch(/cannot use absence/i)
     expect(errors.breaks).toMatch(/no overlap/i)
   })

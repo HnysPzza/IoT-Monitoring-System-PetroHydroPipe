@@ -33,7 +33,7 @@ function settingsFixture(overrides = {}) {
     machineId: machine.id,
     timeZone: 'Asia/Manila',
     sensorThresholds: {
-      'S-01': { absenceDetectionEnabled: true, triggerSeconds: 30, recoverySeconds: 20 },
+      'S-01': { absenceDetectionEnabled: true, triggerSeconds: 120, recoverySeconds: 60 },
       'S-02': { absenceDetectionEnabled: false, triggerSeconds: 300, recoverySeconds: null },
       'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null },
       'S-04': { absenceDetectionEnabled: false, triggerSeconds: 300, recoverySeconds: null },
@@ -63,26 +63,30 @@ describe('SettingsSection operational settings', () => {
     updateOperationalSettings.mockReset()
   })
 
-  it('loads backend constraints and keeps S-05 absence controls locked', async () => {
+  it('loads backend constraints in minutes and keeps S-05 absence controls locked', async () => {
     renderWithAuth(<SettingsSection />)
 
     expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
     expect(screen.getByText(/Observe mode evaluates these values/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('S-01 trigger seconds')).toHaveAttribute('min', '10')
-    expect(screen.getByLabelText('S-01 recovery seconds')).toHaveAttribute('min', '20')
+    expect(screen.getByLabelText('S-01 trigger minutes')).toHaveAttribute('min', '1')
+    expect(screen.getByLabelText('S-01 trigger minutes')).toHaveAttribute('max', '60')
+    expect(screen.getByLabelText('S-01 trigger minutes')).toHaveValue(2)
+    expect(screen.getByLabelText('S-01 recovery minutes')).toHaveAttribute('min', '1')
+    expect(screen.getByLabelText('S-01 recovery minutes')).toHaveAttribute('max', '5')
+    expect(screen.getByLabelText('S-01 recovery minutes')).toHaveValue(1)
     expect(screen.getByText(/S-05 counts output/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('S-05 trigger seconds')).toBeDisabled()
+    expect(screen.getByLabelText('S-05 trigger minutes')).toBeDisabled()
   })
 
-  it('saves one complete versioned document with breaks ordered by start time', async () => {
+  it('converts edited minute inputs back to seconds when saving', async () => {
     const user = userEvent.setup()
     const saved = settingsFixture({ version: '2' })
     updateOperationalSettings.mockResolvedValue({ settings: saved })
     renderWithAuth(<SettingsSection />)
 
-    const trigger = await screen.findByLabelText('S-01 trigger seconds')
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
     await user.clear(trigger)
-    await user.type(trigger, '45')
+    await user.type(trigger, '5')
     await user.click(screen.getByRole('button', { name: 'Save settings' }))
 
     await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
@@ -91,7 +95,7 @@ describe('SettingsSection operational settings', () => {
     expect(machineId).toBe(machine.id)
     expect(payload.expectedVersion).toBe('1')
     expect(Object.keys(payload.sensorThresholds)).toEqual(constraints.sensorCodes)
-    expect(payload.sensorThresholds['S-01'].triggerSeconds).toBe(45)
+    expect(payload.sensorThresholds['S-01'].triggerSeconds).toBe(300)
     expect(payload.shiftSchedule.breaks.map((entry) => entry.name)).toEqual(['Morning', 'Lunch'])
     expect(await screen.findByText('Operational settings saved.')).toBeInTheDocument()
   })
@@ -101,7 +105,7 @@ describe('SettingsSection operational settings', () => {
     renderWithAuth(<SettingsSection />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/read-only/i)
-    expect(screen.getByLabelText('S-01 trigger seconds')).toBeDisabled()
+    expect(screen.getByLabelText('S-01 trigger minutes')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
   })
 
@@ -112,14 +116,30 @@ describe('SettingsSection operational settings', () => {
     updateOperationalSettings.mockRejectedValue(conflict)
     renderWithAuth(<SettingsSection />)
 
-    const trigger = await screen.findByLabelText('S-01 trigger seconds')
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
     await user.clear(trigger)
-    await user.type(trigger, '45')
+    await user.type(trigger, '5')
     await user.click(screen.getByRole('button', { name: 'Save settings' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/draft was kept/i)
-    expect(trigger).toHaveValue(45)
+    expect(trigger).toHaveValue(5)
     expect(screen.getByRole('button', { name: 'Reload latest' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
+  })
+
+  it('populates default whole-minute limits when enabling a sensor with null or sub-minute recovery', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const s03Recovery = await screen.findByLabelText('S-03 recovery minutes')
+    expect(s03Recovery).toBeDisabled()
+    expect(s03Recovery).toHaveValue(null)
+
+    const checkboxes = screen.getAllByRole('checkbox', { name: /Detect missing pulse/i })
+    await user.click(checkboxes[2])
+
+    expect(screen.getByLabelText('S-03 trigger minutes')).toHaveValue(1)
+    expect(s03Recovery).toBeEnabled()
+    expect(s03Recovery).toHaveValue(1)
   })
 })
