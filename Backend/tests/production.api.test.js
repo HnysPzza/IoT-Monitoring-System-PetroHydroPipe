@@ -42,7 +42,7 @@ const mockOutputSensor = {
 
 const sampleEvents = [
   {
-    id: 'e0000000-0000-0000-0000-000000000001',
+    id: 'e0000000-0000-4000-8000-000000000001',
     sensor_id: mockOutputSensor.id,
     machine_id: mockOutputSensor.machine_id,
     device_event_id: 'dev-evt-001',
@@ -52,7 +52,7 @@ const sampleEvents = [
     output_rejection_reason: null,
   },
   {
-    id: 'e0000000-0000-0000-0000-000000000002',
+    id: 'e0000000-0000-4000-8000-000000000002',
     sensor_id: mockOutputSensor.id,
     machine_id: mockOutputSensor.machine_id,
     device_event_id: 'dev-evt-002',
@@ -62,7 +62,7 @@ const sampleEvents = [
     output_rejection_reason: null,
   },
   {
-    id: 'e0000000-0000-0000-0000-000000000003',
+    id: 'e0000000-0000-4000-8000-000000000003',
     sensor_id: mockOutputSensor.id,
     machine_id: mockOutputSensor.machine_id,
     device_event_id: 'dev-evt-003',
@@ -72,7 +72,7 @@ const sampleEvents = [
     output_rejection_reason: 'Debounce window violated.',
   },
   {
-    id: 'e0000000-0000-0000-0000-000000000004',
+    id: 'e0000000-0000-4000-8000-000000000004',
     sensor_id: mockOutputSensor.id,
     machine_id: mockOutputSensor.machine_id,
     device_event_id: 'dev-evt-004',
@@ -82,7 +82,7 @@ const sampleEvents = [
     output_rejection_reason: null,
   },
   {
-    id: 'e0000000-0000-0000-0000-000000000005',
+    id: 'e0000000-0000-4000-8000-000000000005',
     sensor_id: mockOutputSensor.id,
     machine_id: mockOutputSensor.machine_id,
     device_event_id: 'dev-evt-005',
@@ -95,9 +95,9 @@ const sampleEvents = [
 
 const sampleSpecsMap = new Map([
   [
-    'e0000000-0000-0000-0000-000000000001',
+    'e0000000-0000-4000-8000-000000000001',
     {
-      sensor_event_id: 'e0000000-0000-0000-0000-000000000001',
+      sensor_event_id: 'e0000000-0000-4000-8000-000000000001',
       label: 'Batch Alpha Pipe',
       size: '12 inch',
       diameter: '12.50',
@@ -122,6 +122,21 @@ function createMockRepository(overrides = {}) {
       })
       return map
     },
+    updateProductionSpec: async (params) => ({
+      sensor_event_id: params.eventId,
+      label: params.label ?? null,
+      size: params.size ?? null,
+      diameter: params.diameter != null ? String(params.diameter) : null,
+      radius: params.radius != null ? String(params.radius) : null,
+      circumference: params.circumference != null ? String(params.circumference) : null,
+      updated_at: '2026-03-15T09:00:00.000Z',
+      updated_by: params.actorUserId,
+    }),
+    batchUpdateProductionSpecs: async (params) => ({
+      matched_count: params.sensorEventIds ? params.sensorEventIds.length : 5,
+      updated_count: params.sensorEventIds ? params.sensorEventIds.length : 5,
+      sensor_event_ids: params.sensorEventIds || ['e0000000-0000-4000-8000-000000000001'],
+    }),
     ...overrides,
   }
 }
@@ -199,7 +214,7 @@ test('GET /api/production default query returns accepted S-05 records only, merg
       assert.equal(record.sensorLabel, 'Production Output Cutting')
     })
 
-    const specifiedRecord = body.records.find((r) => r.id === 'e0000000-0000-0000-0000-000000000001')
+    const specifiedRecord = body.records.find((r) => r.id === 'e0000000-0000-4000-8000-000000000001')
     assert.ok(specifiedRecord)
     assert.equal(specifiedRecord.label, 'Batch Alpha Pipe')
     assert.equal(specifiedRecord.size, '12 inch')
@@ -210,7 +225,7 @@ test('GET /api/production default query returns accepted S-05 records only, merg
     assert.equal(specifiedRecord.specStatus, 'specified')
     assert.equal(specifiedRecord.isEditable, true)
 
-    const unspecifiedRecord = body.records.find((r) => r.id === 'e0000000-0000-0000-0000-000000000002')
+    const unspecifiedRecord = body.records.find((r) => r.id === 'e0000000-0000-4000-8000-000000000002')
     assert.ok(unspecifiedRecord)
     assert.equal(unspecifiedRecord.label, null)
     assert.equal(unspecifiedRecord.isSpecified, false)
@@ -242,7 +257,7 @@ test('GET /api/production filters by status, specStatus, and search', async () =
     assert.equal(allStatusRes.response.status, 200)
     assert.equal(allStatusRes.body.records.length, 4)
     assert.equal(
-      allStatusRes.body.records.find((r) => r.id === 'e0000000-0000-0000-0000-000000000005'),
+      allStatusRes.body.records.find((r) => r.id === 'e0000000-0000-4000-8000-000000000005'),
       undefined,
       'Null output_accepted events should be excluded',
     )
@@ -252,7 +267,7 @@ test('GET /api/production filters by status, specStatus, and search', async () =
     })
     assert.equal(specifiedRes.response.status, 200)
     assert.equal(specifiedRes.body.records.length, 1)
-    assert.equal(specifiedRes.body.records[0].id, 'e0000000-0000-0000-0000-000000000001')
+    assert.equal(specifiedRes.body.records[0].id, 'e0000000-0000-4000-8000-000000000001')
 
     const unspecifiedRes = await requestJson(baseUrl, '/api/production?date=2026-03-15&specStatus=unspecified', {
       headers: authHeader('Admin'),
@@ -461,4 +476,694 @@ test('GET /api/production returns safe 500 when repository fails or sensor is mi
     assert.equal(body?.error?.code, 'PRODUCTION_SENSOR_MISSING')
     assert.equal(body?.error?.message, 'Unexpected server error.')
   })
+})
+
+test('PATCH /api/production/:eventId and /batch return 401 when unauthenticated', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository(),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const singleRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      body: { label: 'New Label' },
+    })
+    assert.equal(singleRes.response.status, 401)
+    assertError(singleRes.body, 'UNAUTHENTICATED')
+
+    const batchRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        label: 'Batch Label',
+      },
+    })
+    assert.equal(batchRes.response.status, 401)
+    assertError(batchRes.body, 'UNAUTHENTICATED')
+  })
+})
+
+test('PATCH /api/production/:eventId enforces role matrix (Admin, Operation Manager, Production Supervisor only)', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository(),
+  })
+
+  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
+  const forbiddenRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+
+  await withTestServer(app, async (baseUrl) => {
+    for (const role of allowedRoles) {
+      const { response, body } = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+        method: 'PATCH',
+        headers: authHeader(role),
+        body: { label: `Spec by ${role}` },
+      })
+      assert.equal(response.status, 200, `Role ${role} should be allowed`)
+      assert.ok(body.spec)
+    }
+
+    for (const role of forbiddenRoles) {
+      const { response, body } = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+        method: 'PATCH',
+        headers: authHeader(role),
+        body: { label: 'Denied' },
+      })
+      assert.equal(response.status, 403, `Role ${role} should be forbidden`)
+      assertError(body, 'FORBIDDEN')
+    }
+  })
+})
+
+test('PATCH /api/production/batch enforces role matrix', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository(),
+  })
+
+  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
+  const forbiddenRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+
+  await withTestServer(app, async (baseUrl) => {
+    for (const role of allowedRoles) {
+      const { response, body } = await requestJson(baseUrl, '/api/production/batch', {
+        method: 'PATCH',
+        headers: authHeader(role),
+        body: {
+          sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+          label: `Batch by ${role}`,
+        },
+      })
+      assert.equal(response.status, 200, `Role ${role} should be allowed`)
+      assert.equal(typeof body.updatedCount, 'number')
+    }
+
+    for (const role of forbiddenRoles) {
+      const { response, body } = await requestJson(baseUrl, '/api/production/batch', {
+        method: 'PATCH',
+        headers: authHeader(role),
+        body: {
+          sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+          label: 'Batch Denied',
+        },
+      })
+      assert.equal(response.status, 403, `Role ${role} should be forbidden`)
+      assertError(body, 'FORBIDDEN')
+    }
+  })
+})
+
+test('Route precedence: PATCH /api/production/batch is routed to batch handler before /:eventId', async () => {
+  let calledEndpoint = null
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      updateProductionSpec: async () => {
+        calledEndpoint = 'single'
+        return {}
+      },
+      batchUpdateProductionSpecs: async () => {
+        calledEndpoint = 'batch'
+        return {
+          matched_count: 1,
+          updated_count: 1,
+          sensor_event_ids: ['e0000000-0000-4000-8000-000000000001'],
+        }
+      },
+    }),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        label: 'Precedence Check',
+      },
+    })
+
+    assert.equal(response.status, 200)
+    assert.equal(calledEndpoint, 'batch')
+    assert.equal(body.updatedCount, 1)
+  })
+})
+
+test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes blanks to null, and supports idempotent retry', async () => {
+  let capturedUpdateParams = null
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      updateProductionSpec: async (params) => {
+        capturedUpdateParams = params
+        return {
+          sensor_event_id: params.eventId,
+          label: params.label,
+          size: params.size,
+          diameter: params.diameter != null ? String(params.diameter) : null,
+          radius: params.radius != null ? String(params.radius) : null,
+          circumference: params.circumference != null ? String(params.circumference) : null,
+          updated_at: '2026-03-15T12:00:00.000Z',
+          updated_by: params.actorUserId,
+        }
+      },
+    }),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const validRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        label: '  Custom Spiral Pipe  ',
+        size: '  10 inch  ',
+        diameter: 10.5,
+        radius: 5.25,
+        circumference: 32.99,
+        expectedUpdatedAt: '2026-03-15T08:30:00.000Z',
+      },
+    })
+
+    assert.equal(validRes.response.status, 200)
+    assert.equal(validRes.response.headers.get('cache-control'), 'no-store')
+    assert.equal(capturedUpdateParams.eventId, 'e0000000-0000-4000-8000-000000000001')
+    assert.equal(capturedUpdateParams.label, 'Custom Spiral Pipe')
+    assert.equal(capturedUpdateParams.size, '10 inch')
+    assert.equal(capturedUpdateParams.diameter, 10.5)
+    assert.equal(capturedUpdateParams.radius, 5.25)
+    assert.equal(capturedUpdateParams.circumference, 32.99)
+    assert.equal(capturedUpdateParams.actorUserId, userId)
+    assert.equal(capturedUpdateParams.expectedUpdatedAt, '2026-03-15T08:30:00.000Z')
+
+    assert.deepEqual(validRes.body, {
+      spec: {
+        sensorEventId: 'e0000000-0000-4000-8000-000000000001',
+        label: 'Custom Spiral Pipe',
+        size: '10 inch',
+        diameter: 10.5,
+        radius: 5.25,
+        circumference: 32.99,
+        isSpecified: true,
+        specStatus: 'specified',
+        updatedAt: '2026-03-15T12:00:00.000Z',
+        updatedBy: userId,
+      },
+    })
+
+    const retryRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        label: 'Custom Spiral Pipe',
+        size: '10 inch',
+        diameter: 10.5,
+        radius: 5.25,
+        circumference: 32.99,
+        expectedUpdatedAt: '2026-03-15T08:30:00.000Z',
+      },
+    })
+    assert.equal(retryRes.response.status, 200)
+    assert.equal(retryRes.body.spec.label, 'Custom Spiral Pipe')
+
+    const clearRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        label: '   ',
+        size: '',
+        diameter: null,
+        radius: null,
+        circumference: null,
+      },
+    })
+
+    assert.equal(clearRes.response.status, 200)
+    assert.equal(capturedUpdateParams.label, null)
+    assert.equal(capturedUpdateParams.size, null)
+    assert.equal(capturedUpdateParams.diameter, null)
+    assert.deepEqual(clearRes.body, {
+      spec: {
+        sensorEventId: 'e0000000-0000-4000-8000-000000000001',
+        label: null,
+        size: null,
+        diameter: null,
+        radius: null,
+        circumference: null,
+        isSpecified: false,
+        specStatus: 'unspecified',
+        updatedAt: '2026-03-15T12:00:00.000Z',
+        updatedBy: userId,
+      },
+    })
+  })
+})
+
+test('Error mapping on PATCH /api/production/:eventId and /batch maps RPC error codes', async () => {
+  function makeError(code, message, status = 500) {
+    const error = new Error(message)
+    error.code = code
+    error.status = status
+    return error
+  }
+
+  const notFoundApp = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      updateProductionSpec: async () => {
+        throw makeError('PRODUCTION_RECORD_NOT_FOUND', 'Production log record not found.', 404)
+      },
+    }),
+  })
+  await withTestServer(notFoundApp, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { label: 'New' },
+    })
+    assert.equal(response.status, 404)
+    assertError(body, 'PRODUCTION_RECORD_NOT_FOUND')
+    assert.equal(body.error.message, 'Production log record not found.')
+  })
+
+  const invalidApp = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      updateProductionSpec: async () => {
+        throw makeError('PRODUCTION_SPEC_INVALID', 'Production specification cannot be updated for rejected output events.', 400)
+      },
+    }),
+  })
+  await withTestServer(invalidApp, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { label: 'New' },
+    })
+    assert.equal(response.status, 400)
+    assertError(body, 'PRODUCTION_SPEC_INVALID')
+    assert.equal(body.error.message, 'Production specification cannot be updated for rejected output events.')
+  })
+
+  const conflictApp = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      updateProductionSpec: async () => {
+        throw makeError('PRODUCTION_SPEC_CONFLICT', 'Production specification was modified by another user.', 409)
+      },
+    }),
+  })
+  await withTestServer(conflictApp, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { label: 'New', expectedUpdatedAt: '2026-03-15T08:00:00.000Z' },
+    })
+    assert.equal(response.status, 409)
+    assertError(body, 'PRODUCTION_SPEC_CONFLICT')
+    assert.equal(body.error.message, 'Production specification was modified by another user.')
+  })
+
+  const serverErrorApp = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      batchUpdateProductionSpecs: async () => {
+        throw makeError('PRODUCTION_BATCH_UPDATE_FAILED', 'Raw connection drop on internal port', 500)
+      },
+    }),
+  })
+  await withTestServer(serverErrorApp, async (baseUrl) => {
+    const { response, body } = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        label: 'Batch Spec',
+      },
+    })
+    assert.equal(response.status, 500)
+    assertError(body, 'PRODUCTION_BATCH_UPDATE_FAILED')
+    assert.equal(body.error.message, 'Unexpected server error.')
+  })
+})
+
+test('PATCH /api/production/batch supports ID array, ISO range, and date range filters with onlyUnlabeled', async () => {
+  let capturedBatchParams = null
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      batchUpdateProductionSpecs: async (params) => {
+        capturedBatchParams = params
+        return {
+          matched_count: 2,
+          updated_count: 2,
+          sensor_event_ids: params.sensorEventIds || [
+            'e0000000-0000-4000-8000-000000000001',
+            'e0000000-0000-4000-8000-000000000002',
+          ],
+        }
+      },
+    }),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const idsRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: [
+          'e0000000-0000-4000-8000-000000000001',
+          'e0000000-0000-4000-8000-000000000002',
+        ],
+        label: 'Standard Pipe',
+        size: '12 inch',
+        diameter: 12.0,
+      },
+    })
+    assert.equal(idsRes.response.status, 200)
+    assert.equal(idsRes.response.headers.get('cache-control'), 'no-store')
+    assert.equal(idsRes.body.matchedCount, 2)
+    assert.equal(idsRes.body.updatedCount, 2)
+    assert.deepEqual(capturedBatchParams.sensorEventIds, [
+      'e0000000-0000-4000-8000-000000000001',
+      'e0000000-0000-4000-8000-000000000002',
+    ])
+    assert.equal(capturedBatchParams.startedAt, null)
+    assert.equal(capturedBatchParams.endedAt, null)
+    assert.equal(capturedBatchParams.onlyUnlabeled, false)
+    assert.equal(capturedBatchParams.label, 'Standard Pipe')
+    assert.equal(capturedBatchParams.size, '12 inch')
+    assert.equal(capturedBatchParams.diameter, 12.0)
+    assert.equal(capturedBatchParams.radius, null)
+    assert.equal(capturedBatchParams.circumference, null)
+    assert.equal(capturedBatchParams.actorUserId, userId)
+
+    const isoRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        startedAt: '2026-03-15T00:00:00.000Z',
+        endedAt: '2026-03-15T12:00:00.000Z',
+        onlyUnlabeled: true,
+        label: 'Batch Iso Label',
+      },
+    })
+    assert.equal(isoRes.response.status, 200)
+    assert.equal(capturedBatchParams.sensorEventIds, null)
+    assert.equal(capturedBatchParams.startedAt, '2026-03-15T00:00:00.000Z')
+    assert.equal(capturedBatchParams.endedAt, '2026-03-15T12:00:00.000Z')
+    assert.equal(capturedBatchParams.onlyUnlabeled, true)
+    assert.equal(capturedBatchParams.label, 'Batch Iso Label')
+
+    const dateRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        dateFrom: '2026-03-10',
+        dateTo: '2026-03-15',
+        onlyUnlabeled: false,
+        size: '14 inch',
+      },
+    })
+    assert.equal(dateRes.response.status, 200)
+    assert.equal(capturedBatchParams.sensorEventIds, null)
+    assert.equal(capturedBatchParams.startedAt, '2026-03-09T16:00:00.000Z')
+    assert.equal(capturedBatchParams.endedAt, '2026-03-15T16:00:00.000Z')
+    assert.equal(capturedBatchParams.size, '14 inch')
+  })
+})
+
+test('Validation rejects invalid payloads on PATCH /api/production/:eventId and /batch', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository(),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const invalidIdRes = await requestJson(baseUrl, '/api/production/not-a-uuid', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { label: 'Valid Label' },
+    })
+    assert.equal(invalidIdRes.response.status, 400)
+    assertError(invalidIdRes.body, 'VALIDATION_ERROR')
+
+    const extraFieldSingle = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { label: 'Valid Label', maliciousField: true },
+    })
+    assert.equal(extraFieldSingle.response.status, 400)
+    assertError(extraFieldSingle.body, 'VALIDATION_ERROR')
+
+    const zeroDimRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { diameter: 0 },
+    })
+    assert.equal(zeroDimRes.response.status, 400)
+    assertError(zeroDimRes.body, 'VALIDATION_ERROR')
+
+    const negativeDimRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { radius: -5 },
+    })
+    assert.equal(negativeDimRes.response.status, 400)
+    assertError(negativeDimRes.body, 'VALIDATION_ERROR')
+
+    const roundedToZeroRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { diameter: 0.001 },
+    })
+    assert.equal(roundedToZeroRes.response.status, 400)
+    assertError(roundedToZeroRes.body, 'VALIDATION_ERROR')
+
+    const booleanDimRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { diameter: true },
+    })
+    assert.equal(booleanDimRes.response.status, 400)
+    assertError(booleanDimRes.body, 'VALIDATION_ERROR')
+
+    const arrayDimRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { diameter: [12.5] },
+    })
+    assert.equal(arrayDimRes.response.status, 400)
+    assertError(arrayDimRes.body, 'VALIDATION_ERROR')
+
+    const emptyBatchRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {},
+    })
+    assert.equal(emptyBatchRes.response.status, 400)
+    assertError(emptyBatchRes.body, 'VALIDATION_ERROR')
+
+    const bothTargetRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        startedAt: '2026-03-15T00:00:00.000Z',
+        endedAt: '2026-03-15T12:00:00.000Z',
+        label: 'Both Targets',
+      },
+    })
+    assert.equal(bothTargetRes.response.status, 400)
+    assertError(bothTargetRes.body, 'VALIDATION_ERROR')
+
+    const partialRangeRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        startedAt: '2026-03-15T00:00:00.000Z',
+        label: 'Missing endedAt',
+      },
+    })
+    assert.equal(partialRangeRes.response.status, 400)
+    assertError(partialRangeRes.body, 'VALIDATION_ERROR')
+
+    const reversedIsoRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        startedAt: '2026-03-15T12:00:00.000Z',
+        endedAt: '2026-03-15T00:00:00.000Z',
+        label: 'Reversed ISO',
+      },
+    })
+    assert.equal(reversedIsoRes.response.status, 400)
+    assertError(reversedIsoRes.body, 'VALIDATION_ERROR')
+
+    const reversedDateRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        dateFrom: '2026-03-20',
+        dateTo: '2026-03-10',
+        label: 'Reversed Date',
+      },
+    })
+    assert.equal(reversedDateRes.response.status, 400)
+    assertError(reversedDateRes.body, 'VALIDATION_ERROR')
+
+    const noSpecFieldsRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        label: '   ',
+      },
+    })
+    assert.equal(noSpecFieldsRes.response.status, 400)
+    assertError(noSpecFieldsRes.body, 'VALIDATION_ERROR')
+
+    const over500Ids = Array.from({ length: 501 }, (_, i) => {
+      const hex = i.toString(16).padStart(12, '0')
+      return `00000000-0000-4000-8000-${hex}`
+    })
+    const over500Res = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: over500Ids,
+        label: 'Too Many Records',
+      },
+    })
+    assert.equal(over500Res.response.status, 400)
+    assertError(over500Res.body, 'VALIDATION_ERROR')
+  })
+})
+
+test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs RPC invocation and error mapping', async () => {
+  delete require.cache[require.resolve('../src/modules/production/production.repository')]
+  const productionRepository = require('../src/modules/production/production.repository')
+
+  let calledRpc = null
+  let calledParams = null
+
+  const mockClient = {
+    rpc: async (name, params) => {
+      calledRpc = name
+      calledParams = params
+      return {
+        data: [
+          {
+            sensor_event_id: params.p_sensor_event_id,
+            label: params.p_label,
+            size: params.p_size,
+            diameter: params.p_diameter,
+            radius: params.p_radius,
+            circumference: params.p_circumference,
+            updated_at: '2026-03-15T12:00:00.000Z',
+            updated_by: params.p_actor_user_id,
+          },
+        ],
+        error: null,
+      }
+    },
+  }
+
+  const singleResult = await productionRepository.updateProductionSpec(
+    {
+      eventId: 'e0000000-0000-4000-8000-000000000001',
+      label: 'Pipe A',
+      size: '10 inch',
+      diameter: 10.5,
+      radius: 5.25,
+      circumference: 32.99,
+      actorUserId: userId,
+      expectedUpdatedAt: '2026-03-15T08:00:00.000Z',
+    },
+    mockClient,
+  )
+
+  assert.equal(calledRpc, 'update_production_log_spec')
+  assert.equal(calledParams.p_sensor_event_id, 'e0000000-0000-4000-8000-000000000001')
+  assert.equal(calledParams.p_label, 'Pipe A')
+  assert.equal(calledParams.p_size, '10 inch')
+  assert.equal(calledParams.p_diameter, 10.5)
+  assert.equal(calledParams.p_radius, 5.25)
+  assert.equal(calledParams.p_circumference, 32.99)
+  assert.equal(calledParams.p_actor_user_id, userId)
+  assert.equal(calledParams.p_expected_updated_at, '2026-03-15T08:00:00.000Z')
+  assert.equal(singleResult.label, 'Pipe A')
+
+  const batchMockClient = {
+    rpc: async (name, params) => {
+      calledRpc = name
+      calledParams = params
+      return {
+        data: {
+          matched_count: 3,
+          updated_count: 3,
+          sensor_event_ids: params.p_sensor_event_ids,
+        },
+        error: null,
+      }
+    },
+  }
+
+  const batchResult = await productionRepository.batchUpdateProductionSpecs(
+    {
+      sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+      startedAt: null,
+      endedAt: null,
+      onlyUnlabeled: true,
+      label: 'Batch Spec',
+      size: null,
+      diameter: null,
+      radius: null,
+      circumference: null,
+      actorUserId: userId,
+    },
+    batchMockClient,
+  )
+
+  assert.equal(calledRpc, 'batch_update_production_log_specs')
+  assert.deepEqual(calledParams.p_sensor_event_ids, ['e0000000-0000-4000-8000-000000000001'])
+  assert.equal(calledParams.p_only_unlabeled, true)
+  assert.equal(calledParams.p_label, 'Batch Spec')
+  assert.equal(calledParams.p_size, null)
+  assert.equal(batchResult.updated_count, 3)
+
+  const errorCodes = [
+    { code: 'P0002', expectedStatus: 404, expectedCode: 'PRODUCTION_RECORD_NOT_FOUND' },
+    { code: '22023', expectedStatus: 400, expectedCode: 'PRODUCTION_SPEC_INVALID' },
+    { code: '40001', expectedStatus: 409, expectedCode: 'PRODUCTION_SPEC_CONFLICT' },
+    { code: 'XX000', expectedStatus: 500, expectedCode: 'PRODUCTION_SPEC_UPDATE_FAILED' },
+  ]
+
+  for (const { code, expectedStatus, expectedCode } of errorCodes) {
+    const failingClient = {
+      rpc: async () => ({
+        data: null,
+        error: { code, message: `Database error code ${code}` },
+      }),
+    }
+
+    await assert.rejects(
+      productionRepository.updateProductionSpec(
+        { eventId: 'e0000000-0000-4000-8000-000000000001', actorUserId: userId },
+        failingClient,
+      ),
+      (err) => {
+        assert.equal(err.status, expectedStatus)
+        assert.equal(err.code, expectedCode)
+        return true
+      },
+    )
+  }
+
+  const emptyClient = {
+    rpc: async () => ({
+      data: [],
+      error: null,
+    }),
+  }
+  await assert.rejects(
+    productionRepository.updateProductionSpec(
+      { eventId: 'e0000000-0000-4000-8000-000000000001', actorUserId: userId },
+      emptyClient,
+    ),
+    (err) => {
+      assert.equal(err.status, 500)
+      assert.equal(err.code, 'PRODUCTION_SPEC_UPDATE_FAILED')
+      return true
+    },
+  )
 })

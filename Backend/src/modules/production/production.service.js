@@ -293,7 +293,79 @@ async function listProductionLogs(filters = {}, options = {}) {
   }
 }
 
+function toSpecPayload(specRow) {
+  const isSpecified = checkIsSpecified(specRow)
+  return {
+    sensorEventId: specRow.sensor_event_id,
+    label: specRow.label ?? null,
+    size: specRow.size ?? null,
+    diameter: specRow.diameter != null ? Number(specRow.diameter) : null,
+    radius: specRow.radius != null ? Number(specRow.radius) : null,
+    circumference: specRow.circumference != null ? Number(specRow.circumference) : null,
+    isSpecified,
+    specStatus: isSpecified ? 'specified' : 'unspecified',
+    updatedAt: specRow.updated_at ?? null,
+    updatedBy: specRow.updated_by ?? null,
+  }
+}
+
+async function updateProductionLogSpec({ eventId, payload, actorUserId }, options = {}) {
+  const row = await productionRepository.updateProductionSpec(
+    {
+      eventId,
+      label: payload.label ?? null,
+      size: payload.size ?? null,
+      diameter: payload.diameter ?? null,
+      radius: payload.radius ?? null,
+      circumference: payload.circumference ?? null,
+      actorUserId,
+      expectedUpdatedAt: payload.expectedUpdatedAt ?? null,
+    },
+    options.client,
+  )
+
+  return { spec: toSpecPayload(row) }
+}
+
+async function batchUpdateProductionLogSpecs({ payload, actorUserId }, options = {}) {
+  let startedAt = null
+  let endedAt = null
+
+  if (payload.startedAt && payload.endedAt) {
+    startedAt = payload.startedAt
+    endedAt = payload.endedAt
+  } else if (payload.dateFrom && payload.dateTo) {
+    startedAt = parseBusinessDate(payload.dateFrom).toISOString()
+    endedAt = addBusinessDays(parseBusinessDate(payload.dateTo), 1).toISOString()
+  }
+
+  const row = await productionRepository.batchUpdateProductionSpecs(
+    {
+      sensorEventIds: payload.sensorEventIds ?? null,
+      startedAt,
+      endedAt,
+      onlyUnlabeled: Boolean(payload.onlyUnlabeled),
+      label: payload.label ?? null,
+      size: payload.size ?? null,
+      diameter: payload.diameter ?? null,
+      radius: payload.radius ?? null,
+      circumference: payload.circumference ?? null,
+      actorUserId,
+    },
+    options.client,
+  )
+
+  return {
+    matchedCount: Number(row.matched_count ?? 0),
+    updatedCount: Number(row.updated_count ?? 0),
+    sensorEventIds: row.sensor_event_ids || [],
+  }
+}
+
 module.exports = {
   listProductionLogs,
   resolveDateWindow,
+  toSpecPayload,
+  updateProductionLogSpec,
+  batchUpdateProductionLogSpecs,
 }
