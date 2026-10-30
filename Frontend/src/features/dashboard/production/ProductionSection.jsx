@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleDashed,
   CircleSlash,
+  Pencil,
   RotateCw,
   Search,
   Tag,
+  X,
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName, getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
-import { getProductionLogs } from './productionService.js'
+import { getProductionLogs, updateProductionLogSpec } from './productionService.js'
 import './ProductionSection.css'
 
 export function getManilaDateInputValue() {
@@ -45,8 +48,16 @@ function formatDimension(value) {
   return Number(value).toFixed(2)
 }
 
-export default function ProductionSection({ loadProduction = getProductionLogs }) {
-  const { token } = useAuth()
+const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor'])
+
+export default function ProductionSection({
+  loadProduction = getProductionLogs,
+  updateProduction = updateProductionLogSpec,
+  updateProductionSpec,
+}) {
+  const updateFn = updateProductionSpec || updateProduction
+  const { token, user } = useAuth()
+  const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role)
 
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [statusFilter, setStatusFilter] = useState('accepted')
@@ -75,8 +86,26 @@ export default function ProductionSection({ loadProduction = getProductionLogs }
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState(null)
+  const [conflictNotice, setConflictNotice] = useState(null)
+
+  const [editingRecordId, setEditingRecordId] = useState(null)
+  const [editForm, setEditForm] = useState({
+    label: '',
+    size: '',
+    diameter: '',
+    radius: '',
+    circumference: '',
+  })
+  const [flashingRecordId, setFlashingRecordId] = useState(null)
 
   const requestIdRef = useRef(0)
+  const flashTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+    }
+  }, [])
 
   // Debounce search input changes
   useEffect(() => {
@@ -194,6 +223,151 @@ export default function ProductionSection({ loadProduction = getProductionLogs }
     }
   }
 
+  const handleStartEdit = (record) => {
+    const rowId = record.id || record.sensorEventId
+    setEditingRecordId(rowId)
+    setConflictNotice(null)
+    setEditForm({
+      label: record.label ?? '',
+      size: record.size ?? '',
+      diameter: record.diameter !== null && record.diameter !== undefined ? String(record.diameter) : '',
+      radius: record.radius !== null && record.radius !== undefined ? String(record.radius) : '',
+      circumference: record.circumference !== null && record.circumference !== undefined ? String(record.circumference) : '',
+    })
+  }
+
+  const handleCancel = () => {
+    setEditingRecordId(null)
+    setEditForm({
+      label: '',
+      size: '',
+      diameter: '',
+      radius: '',
+      circumference: '',
+    })
+  }
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target
+    setEditForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
+  }
+
+  const handleInputKeyDown = (e, record) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleSave(record)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      handleCancel()
+    }
+  }
+
+  const handleSave = async (record) => {
+    const rowId = record.id || record.sensorEventId
+    setEditingRecordId(null)
+
+    const prevRecords = records
+    const prevSummary = summary
+
+    const newLabel = editForm.label?.trim() || null
+    const newSize = editForm.size?.trim() || null
+    const newDiameter = editForm.diameter === '' || editForm.diameter === null ? null : Number(editForm.diameter)
+    const newRadius = editForm.radius === '' || editForm.radius === null ? null : Number(editForm.radius)
+    const newCircumference = editForm.circumference === '' || editForm.circumference === null ? null : Number(editForm.circumference)
+
+    const isNowSpecified = Boolean(newLabel || newSize || newDiameter || newRadius || newCircumference)
+    const wasSpecified = Boolean(record.isSpecified)
+
+    setRecords((prev) =>
+      prev.map((r) => {
+        if ((r.id || r.sensorEventId) === rowId) {
+          return {
+            ...r,
+            label: newLabel,
+            size: newSize,
+            diameter: newDiameter,
+            radius: newRadius,
+            circumference: newCircumference,
+            isSpecified: isNowSpecified,
+            specStatus: isNowSpecified ? 'specified' : 'unspecified',
+          }
+        }
+        return r
+      }),
+    )
+
+    if (!wasSpecified && isNowSpecified) {
+      setSummary((prev) => ({
+        ...prev,
+        specifiedCount: (prev.specifiedCount ?? 0) + 1,
+        unspecifiedCount: Math.max(0, (prev.unspecifiedCount ?? 0) - 1),
+      }))
+    } else if (wasSpecified && !isNowSpecified) {
+      setSummary((prev) => ({
+        ...prev,
+        specifiedCount: Math.max(0, (prev.specifiedCount ?? 0) - 1),
+        unspecifiedCount: (prev.unspecifiedCount ?? 0) + 1,
+      }))
+    }
+
+    setFlashingRecordId(rowId)
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+    flashTimeoutRef.current = setTimeout(() => {
+      setFlashingRecordId(null)
+    }, 150)
+
+    const payload = {
+      label: newLabel,
+      size: newSize,
+      diameter: newDiameter,
+      radius: newRadius,
+      circumference: newCircumference,
+    }
+
+    try {
+      const response = await updateFn(
+        token,
+        rowId,
+        payload,
+        record.updatedAt,
+      )
+
+      if (response?.spec) {
+        setRecords((prev) =>
+          prev.map((r) => {
+            if ((r.id || r.sensorEventId) === rowId) {
+              return {
+                ...r,
+                ...response.spec,
+                updatedAt: response.spec.updatedAt || r.updatedAt,
+              }
+            }
+            return r
+          }),
+        )
+      }
+    } catch (err) {
+      const isConflict =
+        err?.status === 409 ||
+        err?.code === 'PRODUCTION_SPEC_CONFLICT' ||
+        (err?.message && /modified by another user/i.test(err.message))
+
+      if (isConflict) {
+        setRecords(prevRecords)
+        setSummary(prevSummary)
+        setConflictNotice('Production specification was modified by another user.')
+        loadData({ silent: true })
+      } else {
+        setRecords(prevRecords)
+        setSummary(prevSummary)
+        setError(err.message || 'Unable to update production specification.')
+      }
+    }
+  }
+
   return (
     <div className="production-workspace">
       {/* Header Strip with Inline KPI counters */}
@@ -236,6 +410,25 @@ export default function ProductionSection({ loadProduction = getProductionLogs }
           </div>
         </div>
       </header>
+
+      {/* Conflict Notice */}
+      {conflictNotice ? (
+        <div className="notice notice-warning dashboard-alert production-notice production-conflict-notice" role="alert">
+          <div className="production-notice-content">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>{conflictNotice}</span>
+          </div>
+          <button
+            type="button"
+            className="production-bare-btn"
+            onClick={() => setConflictNotice(null)}
+            aria-label="Dismiss notice"
+            title="Dismiss notice"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
 
       {/* Error Notice */}
       {error ? (
@@ -327,19 +520,27 @@ export default function ProductionSection({ loadProduction = getProductionLogs }
                 <th className="production-col-num">Diameter</th>
                 <th className="production-col-num">Radius</th>
                 <th className="production-col-num">Circumference</th>
+                {canEdit && <th className="production-col-action">Action</th>}
               </tr>
             </thead>
             <tbody>
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="production-empty-state">
+                  <td colSpan={canEdit ? 8 : 7} className="production-empty-state">
                     No production records found for the selected filters.
                   </td>
                 </tr>
               ) : (
                 records.map((record) => {
+                  const rowId = record.id || record.sensorEventId
                   const isAccepted = Boolean(record.outputAccepted)
                   const isSpec = Boolean(record.isSpecified)
+                  const isEditing = editingRecordId === rowId
+                  const isFlashing = flashingRecordId === rowId
+
+                  let rowClass = ''
+                  if (isEditing) rowClass = 'production-row-editing'
+                  if (isFlashing) rowClass = rowClass ? `${rowClass} production-row-flash` : 'production-row-flash'
 
                   let statusIcon = null
                   if (!isAccepted) {
@@ -375,36 +576,143 @@ export default function ProductionSection({ loadProduction = getProductionLogs }
                   }
 
                   return (
-                    <tr key={record.id || record.sensorEventId}>
+                    <tr key={rowId} className={rowClass || undefined}>
                       <td className="production-col-status">
                         <div className="production-status-cell">{statusIcon}</div>
                       </td>
                       <td className="production-col-timestamp">
                         {formatManilaDateTime(record.recordedAt || record.timestamp)}
                       </td>
-                      <td>{record.label || <span className="production-placeholder">—</span>}</td>
-                      <td>{record.size || <span className="production-placeholder">—</span>}</td>
-                      <td className="production-col-num">
-                        {record.diameter !== null && record.diameter !== undefined ? (
-                          formatDimension(record.diameter)
-                        ) : (
-                          <span className="production-placeholder">—</span>
-                        )}
-                      </td>
-                      <td className="production-col-num">
-                        {record.radius !== null && record.radius !== undefined ? (
-                          formatDimension(record.radius)
-                        ) : (
-                          <span className="production-placeholder">—</span>
-                        )}
-                      </td>
-                      <td className="production-col-num">
-                        {record.circumference !== null && record.circumference !== undefined ? (
-                          formatDimension(record.circumference)
-                        ) : (
-                          <span className="production-placeholder">—</span>
-                        )}
-                      </td>
+                      {isEditing ? (
+                        <>
+                          <td>
+                            <input
+                              type="text"
+                              className="production-inline-input"
+                              aria-label="Specification label"
+                              name="label"
+                              value={editForm.label}
+                              maxLength={100}
+                              autoFocus
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              className="production-inline-input"
+                              aria-label="Specification size"
+                              name="size"
+                              value={editForm.size}
+                              maxLength={50}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
+                          </td>
+                          <td className="production-col-num">
+                            <input
+                              type="number"
+                              className="production-inline-input production-inline-num"
+                              aria-label="Specification diameter"
+                              name="diameter"
+                              step="any"
+                              min="0"
+                              value={editForm.diameter}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
+                          </td>
+                          <td className="production-col-num">
+                            <input
+                              type="number"
+                              className="production-inline-input production-inline-num"
+                              aria-label="Specification radius"
+                              name="radius"
+                              step="any"
+                              min="0"
+                              value={editForm.radius}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
+                          </td>
+                          <td className="production-col-num">
+                            <input
+                              type="number"
+                              className="production-inline-input production-inline-num"
+                              aria-label="Specification circumference"
+                              name="circumference"
+                              step="any"
+                              min="0"
+                              value={editForm.circumference}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td>{record.label || <span className="production-placeholder">—</span>}</td>
+                          <td>{record.size || <span className="production-placeholder">—</span>}</td>
+                          <td className="production-col-num">
+                            {record.diameter !== null && record.diameter !== undefined ? (
+                              formatDimension(record.diameter)
+                            ) : (
+                              <span className="production-placeholder">—</span>
+                            )}
+                          </td>
+                          <td className="production-col-num">
+                            {record.radius !== null && record.radius !== undefined ? (
+                              formatDimension(record.radius)
+                            ) : (
+                              <span className="production-placeholder">—</span>
+                            )}
+                          </td>
+                          <td className="production-col-num">
+                            {record.circumference !== null && record.circumference !== undefined ? (
+                              formatDimension(record.circumference)
+                            ) : (
+                              <span className="production-placeholder">—</span>
+                            )}
+                          </td>
+                        </>
+                      )}
+                      {canEdit && (
+                        <td className="production-col-action">
+                          {isEditing ? (
+                            <div className="production-inline-actions">
+                              <button
+                                type="button"
+                                className="production-action-btn production-save-btn"
+                                aria-label="Save specification"
+                                title="Save specification"
+                                onClick={() => handleSave(record)}
+                              >
+                                <Check size={16} strokeWidth={2} color="var(--c-success)" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                className="production-action-btn production-cancel-btn"
+                                aria-label="Cancel editing"
+                                title="Cancel editing"
+                                onClick={handleCancel}
+                              >
+                                <X size={16} strokeWidth={2} color="var(--c-text-3)" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ) : isAccepted ? (
+                            <button
+                              type="button"
+                              className="production-action-btn"
+                              aria-label="Edit specification"
+                              title="Edit specification"
+                              onClick={() => handleStartEdit(record)}
+                            >
+                              <Pencil size={15} strokeWidth={1.75} aria-hidden="true" />
+                            </button>
+                          ) : null}
+                        </td>
+                      )}
                     </tr>
                   )
                 })
