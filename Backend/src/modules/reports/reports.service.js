@@ -19,6 +19,7 @@ const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
+const reportsRepository = require('./reports.repository')
 
 const PROCESS_SENSOR_CODES = ['S-01', 'S-02', 'S-04']
 
@@ -82,6 +83,7 @@ function getComparisonWindow(type, currentWindow, periodState, asOf) {
 
 function getUnobservedReport(type, date, asOf) {
   return {
+    category: 'regular',
     generatedAt: asOf.toISOString(),
     reportType: type,
     selectedDate: date,
@@ -175,6 +177,7 @@ async function buildObservedReport({ type, selectedDate, machine, window, period
   const processEventTotal = eventSummary.processSensors.reduce((sum, sensor) => sum + sensor.eventCount, 0)
 
   return {
+    category: 'regular',
     generatedAt: asOf.toISOString(),
     reportType: type,
     selectedDate,
@@ -204,10 +207,337 @@ async function buildObservedReport({ type, selectedDate, machine, window, period
   }
 }
 
-async function getSummary({ type = 'daily', date, compare = false } = {}) {
-  const asOf = new Date()
+function checkIsSpecified(spec) {
+  if (!spec) return false
+  const hasLabel = spec.label != null && String(spec.label).trim() !== ''
+  const hasSize = spec.size != null && String(spec.size).trim() !== ''
+  const hasValidDimension = (val) => val != null && !isNaN(Number(val)) && Number(val) > 0
+  return (
+    hasLabel ||
+    hasSize ||
+    hasValidDimension(spec.diameter) ||
+    hasValidDimension(spec.radius) ||
+    hasValidDimension(spec.circumference)
+  )
+}
+
+function getUnobservedProductionReport(type, date, asOf) {
+  return {
+    category: 'production',
+    generatedAt: asOf.toISOString(),
+    reportType: type,
+    selectedDate: date,
+    periodState: 'future',
+    observedStartAt: null,
+    observedEndAt: null,
+    summary: [
+      { id: 'total-output', label: 'Total Production Output', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'specified-pipes', label: 'Specified Pipes', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: 'N/A', helper: 'Period not reached yet' },
+    ],
+    metrics: {
+      totalProductionOutput: null,
+      specifiedPipes: null,
+      unspecifiedPipes: null,
+      distinctProductSizes: null,
+    },
+    totalProductionOutput: null,
+    specifiedPipes: null,
+    unspecifiedPipes: null,
+    distinctProductSizes: null,
+    specBreakdown: [],
+    productionLogs: [],
+    rows: [],
+  }
+}
+
+async function buildObservedProductionReport({
+  type,
+  selectedDate,
+  machine,
+  sensor,
+  sensorLabel,
+  window,
+  periodState,
+  asOf,
+  suppliedClient,
+}) {
+  const eventsWithSpecs = await reportsRepository.findAcceptedCuttingEventsWithSpecs(
+    {
+      sensorId: sensor.id,
+      startIso: window.start.toISOString(),
+      endIso: window.end.toISOString(),
+    },
+    suppliedClient,
+  )
+
+  const sortedEvents = [...eventsWithSpecs].sort((a, b) => {
+    const timeDiff = new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    if (timeDiff !== 0) return timeDiff
+    return String(a.id || '').localeCompare(String(b.id || ''))
+  })
+
+  const groupsMap = new Map()
+  const distinctSizes = new Set()
+  let unspecifiedGroup = null
+  let specifiedPipes = 0
+  let unspecifiedPipes = 0
+
+  const productionLogs = sortedEvents.map((event) => {
+    const spec = event.spec
+    const isSpecified = checkIsSpecified(spec)
+
+    const label = spec?.label != null && String(spec.label).trim() !== '' ? String(spec.label).trim() : null
+    const size = spec?.size != null && String(spec.size).trim() !== '' ? String(spec.size).trim() : null
+    const diameter = spec?.diameter != null && !isNaN(Number(spec.diameter)) ? Number(spec.diameter) : null
+    const radius = spec?.radius != null && !isNaN(Number(spec.radius)) ? Number(spec.radius) : null
+    const circumference = spec?.circumference != null && !isNaN(Number(spec.circumference)) ? Number(spec.circumference) : null
+
+    if (isSpecified) {
+      specifiedPipes += 1
+      const groupKey = JSON.stringify([label, size, diameter, radius, circumference])
+      const existing = groupsMap.get(groupKey)
+
+      if (existing) {
+        existing.pipeCount += 1
+        if (new Date(event.recorded_at) < new Date(existing.firstCutAt)) {
+          existing.firstCutAt = event.recorded_at
+        }
+        if (new Date(event.recorded_at) > new Date(existing.lastCutAt)) {
+          existing.lastCutAt = event.recorded_at
+        }
+      } else {
+        groupsMap.set(groupKey, {
+          label,
+          size,
+          diameter,
+          radius,
+          circumference,
+          isSpecified: true,
+          pipeCount: 1,
+          firstCutAt: event.recorded_at,
+          lastCutAt: event.recorded_at,
+        })
+      }
+
+      const distinctSizeKey = (label || size)
+        ? JSON.stringify([label, size])
+        : JSON.stringify([diameter, radius, circumference])
+      distinctSizes.add(distinctSizeKey)
+    } else {
+      unspecifiedPipes += 1
+      if (unspecifiedGroup) {
+        unspecifiedGroup.pipeCount += 1
+        if (new Date(event.recorded_at) < new Date(unspecifiedGroup.firstCutAt)) {
+          unspecifiedGroup.firstCutAt = event.recorded_at
+        }
+        if (new Date(event.recorded_at) > new Date(unspecifiedGroup.lastCutAt)) {
+          unspecifiedGroup.lastCutAt = event.recorded_at
+        }
+      } else {
+        unspecifiedGroup = {
+          label: 'Unspecified / Pending Tag',
+          size: null,
+          diameter: null,
+          radius: null,
+          circumference: null,
+          isSpecified: false,
+          pipeCount: 1,
+          firstCutAt: event.recorded_at,
+          lastCutAt: event.recorded_at,
+        }
+      }
+    }
+
+    return {
+      id: event.id,
+      sensorEventId: event.id,
+      deviceEventId: event.device_event_id || null,
+      recordedAt: event.recorded_at,
+      label,
+      size,
+      diameter,
+      radius,
+      circumference,
+      isSpecified,
+      updatedBy: spec?.updated_by ?? null,
+    }
+  })
+
+  const totalProductionOutput = sortedEvents.length
+
+  const specBreakdown = Array.from(groupsMap.values())
+    .map((group) => ({
+      ...group,
+      percentageOfTotal: totalProductionOutput > 0
+        ? Number(((group.pipeCount / totalProductionOutput) * 100).toFixed(1))
+        : 0,
+    }))
+    .sort((a, b) => {
+      if (b.pipeCount !== a.pipeCount) return b.pipeCount - a.pipeCount
+      const labelComp = String(a.label || '').localeCompare(String(b.label || ''))
+      if (labelComp !== 0) return labelComp
+      const sizeComp = String(a.size || '').localeCompare(String(b.size || ''))
+      if (sizeComp !== 0) return sizeComp
+      return (a.diameter ?? 0) - (b.diameter ?? 0)
+    })
+
+  if (unspecifiedGroup) {
+    unspecifiedGroup.percentageOfTotal = totalProductionOutput > 0
+      ? Number(((unspecifiedGroup.pipeCount / totalProductionOutput) * 100).toFixed(1))
+      : 0
+    specBreakdown.push(unspecifiedGroup)
+  }
+
+  const metrics = {
+    totalProductionOutput,
+    specifiedPipes,
+    unspecifiedPipes,
+    distinctProductSizes: distinctSizes.size,
+  }
+
+  const summary = [
+    {
+      id: 'total-output',
+      label: 'Total Production Output',
+      value: `${formatNumber(totalProductionOutput)} pcs`,
+      helper: `From ${machine?.name || 'Spiral Mill 01'}`,
+    },
+    {
+      id: 'specified-pipes',
+      label: 'Specified Pipes',
+      value: `${formatNumber(specifiedPipes)} pcs`,
+      helper: `${totalProductionOutput > 0 ? Math.round((specifiedPipes / totalProductionOutput) * 100) : 0}% of total output`,
+    },
+    {
+      id: 'unspecified-pipes',
+      label: 'Unspecified Pipes',
+      value: `${formatNumber(unspecifiedPipes)} pcs`,
+      helper: 'Pending specification tag',
+    },
+    {
+      id: 'distinct-sizes',
+      label: 'Distinct Product Sizes',
+      value: String(distinctSizes.size),
+      helper: 'Unique pipe specs produced',
+    },
+  ]
+
+  return {
+    category: 'production',
+    generatedAt: asOf.toISOString(),
+    reportType: type,
+    selectedDate,
+    periodState,
+    observedStartAt: window.start.toISOString(),
+    observedEndAt: window.end.toISOString(),
+    machine: {
+      id: machine?.id || null,
+      code: machine?.machine_code || machine?.code || 'M-01',
+      name: machine?.name || 'Spiral Mill 01',
+    },
+    sensor: {
+      id: sensor?.id || null,
+      code: sensor?.sensor_code || OUTPUT_SENSOR_CODE,
+      label: sensorLabel,
+    },
+    summary,
+    metrics,
+    totalProductionOutput,
+    specifiedPipes,
+    unspecifiedPipes,
+    distinctProductSizes: distinctSizes.size,
+    specBreakdown,
+    productionLogs,
+    rows: productionLogs,
+  }
+}
+
+async function getProductionSummary({ type = 'daily', date, compare = false } = {}, options = {}) {
+  const asOf = options.asOf || new Date()
+  const selectedDate = date || formatBusinessDate(asOf)
+  const requestedWindow = getWindow(type, selectedDate)
+  const observed = getObservedWindow(requestedWindow, asOf)
+
+  if (!observed.window) {
+    return compare
+      ? { ...getUnobservedProductionReport(type, selectedDate, asOf), comparison: null }
+      : getUnobservedProductionReport(type, selectedDate, asOf)
+  }
+
+  const sensorConfig = await reportsRepository.findOutputSensor(options.client)
+  if (!sensorConfig?.id) {
+    throw createReportError(500, 'REPORT_PRODUCTION_SENSOR_MISSING', 'Production output sensor is not configured.')
+  }
+
+  const machineRecord = Array.isArray(sensorConfig.machines)
+    ? sensorConfig.machines[0]
+    : sensorConfig.machines
+
+  const machine = {
+    id: sensorConfig.machine_id || machineRecord?.id || null,
+    code: machineRecord?.machine_code || 'M-01',
+    name: machineRecord?.name || 'Spiral Mill 01',
+  }
+  const sensorLabel = getSensorLabel(OUTPUT_SENSOR_CODE, sensorConfig.label)
+  const sensor = {
+    id: sensorConfig.id,
+    sensor_code: sensorConfig.sensor_code || OUTPUT_SENSOR_CODE,
+    label: sensorLabel,
+  }
+
+  const report = await buildObservedProductionReport({
+    type,
+    selectedDate,
+    machine,
+    sensor,
+    sensorLabel,
+    window: observed.window,
+    periodState: observed.periodState,
+    asOf,
+    suppliedClient: options.client,
+  })
+
+  if (!compare) return report
+
+  const comparisonWindow = getComparisonWindow(type, requestedWindow, observed.periodState, asOf)
+  const previousReport = await buildObservedProductionReport({
+    type,
+    selectedDate: formatBusinessDate(comparisonWindow.start),
+    machine,
+    sensor,
+    sensorLabel,
+    window: comparisonWindow,
+    periodState: observed.periodState,
+    asOf,
+    suppliedClient: options.client,
+  })
+
+  return {
+    ...report,
+    comparison: {
+      periodState: observed.periodState,
+      observedStartAt: comparisonWindow.start.toISOString(),
+      observedEndAt: comparisonWindow.end.toISOString(),
+      metrics: {
+        totalProductionOutput: previousReport.metrics.totalProductionOutput,
+        specifiedPipes: previousReport.metrics.specifiedPipes,
+        unspecifiedPipes: previousReport.metrics.unspecifiedPipes,
+        distinctProductSizes: previousReport.metrics.distinctProductSizes,
+      },
+    },
+  }
+}
+
+async function getSummary({ category = 'regular', type = 'daily', date, compare = false } = {}, options = {}) {
+  if (category === 'production') {
+    return getProductionSummary({ type, date, compare }, options)
+  }
+
+  const asOf = options.asOf || new Date()
   const machine = await getMachine()
-  const selectedDate = date || formatBusinessDate()
+  const selectedDate = date || formatBusinessDate(asOf)
   const requestedWindow = getWindow(type, selectedDate)
   const observed = getObservedWindow(requestedWindow, asOf)
   if (!observed.window) {
