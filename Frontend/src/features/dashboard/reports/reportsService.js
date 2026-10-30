@@ -2,16 +2,22 @@ import { createApiError } from '../../../shared/errors/apiError.js'
 import { notifyUnauthorized } from '../../../shared/errors/unauthorizedSession.js'
 import { API_BASE_URL, apiRequest, DEFAULT_REQUEST_TIMEOUT_MS } from '../../../shared/services/apiClient.js'
 
+export const reportCategories = [
+  { id: 'regular', label: 'Regular Report' },
+  { id: 'production', label: 'Production Report' },
+]
+
 export const reportTypes = [
   { id: 'daily', label: 'Daily' },
   { id: 'weekly', label: 'Weekly' },
   { id: 'monthly', label: 'Monthly' },
 ]
 
-export function getReportSummary(token, { reportType, selectedDate, includeComparison = false }) {
+export function getReportSummary(token, { category = 'regular', reportType, selectedDate, includeComparison = false }) {
   const params = new URLSearchParams()
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
 
+  params.set('category', category)
   params.set('type', reportType)
   if (normalizedDate) params.set('date', normalizedDate)
   if (includeComparison) params.set('compare', 'true')
@@ -25,7 +31,7 @@ function getExportFilename(disposition, fallback) {
 }
 
 // Exports stream a file, not JSON, so this cannot reuse apiRequest's JSON parsing.
-export async function exportReport(token, { reportType, selectedDate, format }) {
+export async function exportReport(token, { category = 'regular', reportType, selectedDate, format }) {
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
   const path = '/api/reports/export'
 
@@ -42,7 +48,7 @@ export async function exportReport(token, { reportType, selectedDate, format }) 
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ type: reportType, date: normalizedDate, format }),
+        body: JSON.stringify({ category, type: reportType, date: normalizedDate, format }),
         signal: controller.signal,
       })
     } catch (error) {
@@ -71,9 +77,10 @@ export async function exportReport(token, { reportType, selectedDate, format }) 
     }
 
     const blob = await response.blob()
+    const prefix = category === 'production' ? 'production-report' : 'report'
     const filename = getExportFilename(
       response.headers.get('content-disposition'),
-      `report-${reportType}-${normalizedDate || 'undated'}.${format}`,
+      `${prefix}-${reportType}-${normalizedDate || 'undated'}.${format}`,
     )
 
     return { blob, filename }
