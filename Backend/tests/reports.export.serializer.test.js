@@ -11,6 +11,7 @@ const {
 
 function createReport(overrides = {}) {
   return {
+    category: 'regular',
     generatedAt: '2026-09-03T01:23:45.678Z',
     reportType: 'daily',
     selectedDate: '2026-09-02',
@@ -51,6 +52,99 @@ function createReport(overrides = {}) {
         events: 1,
         durationMinutes: 10,
         estimatedLoss: 0.5,
+      },
+    ],
+    ...overrides,
+  }
+}
+
+function createProductionReport(overrides = {}) {
+  return {
+    category: 'production',
+    generatedAt: '2026-09-03T01:23:45.678Z',
+    reportType: 'daily',
+    selectedDate: '2026-09-02',
+    periodState: 'complete',
+    observedStartAt: '2026-09-01T16:00:00.000Z',
+    observedEndAt: '2026-09-02T16:00:00.000Z',
+    machine: { id: 'm-1', code: 'M-01', name: 'Spiral Mill 01' },
+    sensor: { id: 's-5', code: 'S-05', label: 'S-05 Cutting Sensor' },
+    summary: [
+      { id: 'total-output', label: 'Total Production Output', value: '10 pcs', helper: 'From Spiral Mill 01' },
+      { id: 'specified-pipes', label: 'Specified Pipes', value: '8 pcs', helper: '80% of total output' },
+      { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: '2 pcs', helper: 'Pending specification tag' },
+      { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: '2', helper: 'Unique pipe specs produced' },
+    ],
+    metrics: {
+      totalProductionOutput: 10,
+      specifiedPipes: 8,
+      unspecifiedPipes: 2,
+      distinctProductSizes: 2,
+    },
+    totalProductionOutput: 10,
+    specifiedPipes: 8,
+    unspecifiedPipes: 2,
+    distinctProductSizes: 2,
+    specBreakdown: [
+      {
+        label: 'Grade A 6-inch',
+        size: '6 inch',
+        diameter: 168.28,
+        radius: 84.14,
+        circumference: 528.67,
+        isSpecified: true,
+        pipeCount: 5,
+        percentageOfTotal: 50.0,
+        firstCutAt: '2026-09-02T01:00:00.000Z',
+        lastCutAt: '2026-09-02T03:00:00.000Z',
+      },
+      {
+        label: 'Grade B 8-inch',
+        size: '8 inch',
+        diameter: 219.08,
+        radius: 109.54,
+        circumference: 688.26,
+        isSpecified: true,
+        pipeCount: 3,
+        percentageOfTotal: 30.0,
+        firstCutAt: '2026-09-02T04:00:00.000Z',
+        lastCutAt: '2026-09-02T05:00:00.000Z',
+      },
+      {
+        label: null,
+        size: null,
+        diameter: null,
+        radius: null,
+        circumference: null,
+        isSpecified: false,
+        pipeCount: 2,
+        percentageOfTotal: 20.0,
+        firstCutAt: '2026-09-02T06:00:00.000Z',
+        lastCutAt: '2026-09-02T07:00:00.000Z',
+      },
+    ],
+    productionLogs: [
+      {
+        id: 'evt-1',
+        deviceEventId: 101,
+        recordedAt: '2026-09-02T01:00:00.000Z',
+        label: 'Grade A 6-inch',
+        size: '6 inch',
+        diameter: 168.28,
+        radius: 84.14,
+        circumference: 528.67,
+        isSpecified: true,
+      },
+      {
+        id: 'evt-2',
+        deviceEventId: 102,
+        recordedAt: '2026-09-02T06:00:00.000Z',
+        label: null,
+        size: null,
+        diameter: null,
+        radius: null,
+        circumference: null,
+        isSpecified: false,
       },
     ],
     ...overrides,
@@ -172,9 +266,140 @@ test('buildExportFilename derives a safe deterministic filename from the request
     buildExportFilename({ reportType: 'weekly', selectedDate: '2026-09-02', format: 'xlsx' }),
     'report-weekly-2026-09-02.xlsx',
   )
+  assert.equal(
+    buildExportFilename({ category: 'regular', reportType: 'daily', selectedDate: '2026-09-02', format: 'pdf' }),
+    'report-daily-2026-09-02.pdf',
+  )
+  assert.equal(
+    buildExportFilename({ category: 'production', reportType: 'daily', selectedDate: '2026-09-02', format: 'pdf' }),
+    'production-report-daily-2026-09-02.pdf',
+  )
+  assert.equal(
+    buildExportFilename({ category: 'production', reportType: 'monthly', selectedDate: '2026-09', format: 'xlsx' }),
+    'production-report-monthly-2026-09.xlsx',
+  )
 })
 
 test('contentTypeFor maps each export format to its MIME type', () => {
   assert.equal(contentTypeFor('pdf'), 'application/pdf')
   assert.equal(contentTypeFor('xlsx'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+})
+
+test('toPdf renders valid production report with spec breakdown and cut logs', async () => {
+  const buffer = await toPdf(createProductionReport())
+
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.ok(buffer.length > 1000, `expected a substantive document, got ${buffer.length} bytes`)
+  assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+})
+
+test('toPdf renders production report with empty logs cleanly', async () => {
+  const buffer = await toPdf(createProductionReport({
+    specBreakdown: [],
+    productionLogs: [],
+    totalProductionOutput: 0,
+    specifiedPipes: 0,
+    unspecifiedPipes: 0,
+    distinctProductSizes: 0,
+  }))
+
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+})
+
+test('toPdf renders multi-page production report with large cut log history', async () => {
+  const manyLogs = Array.from({ length: 60 }, (_, i) => ({
+    id: `evt-${i}`,
+    deviceEventId: 100 + i,
+    recordedAt: new Date(Date.UTC(2026, 8, 2, 1, Math.floor(i / 2), (i % 2) * 30)).toISOString(),
+    label: i % 2 === 0 ? 'Grade A 6-inch' : null,
+    size: i % 2 === 0 ? '6 inch' : null,
+    diameter: i % 2 === 0 ? 168.28 : null,
+    radius: i % 2 === 0 ? 84.14 : null,
+    circumference: i % 2 === 0 ? 528.67 : null,
+    isSpecified: i % 2 === 0,
+  }))
+
+  const buffer = await toPdf(createProductionReport({ productionLogs: manyLogs }))
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+
+  const pdfString = buffer.toString('latin1')
+  const pageCount = (pdfString.match(/\/Type\s*\/Page\b/g) || []).length
+  assert.ok(pageCount >= 2, `expected at least 2 pages for 60 cut logs, got ${pageCount}`)
+})
+
+test('toXlsx writes a 2-worksheet production report with summary and cut logs', async () => {
+  const buffer = await toXlsx(createProductionReport())
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+
+  const summarySheet = workbook.getWorksheet('Production Summary')
+  assert.ok(summarySheet, 'expected Production Summary worksheet')
+  assert.equal(summarySheet.views[0].showGridLines, false)
+  assert.equal(summarySheet.getCell('A2').value, 'PETRO HYDRO PIPE CORP.  |  Production Output Report')
+  assert.equal(summarySheet.getCell('B8').value, 10)
+  assert.equal(summarySheet.getCell('B8').numFmt, '#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('E8').value, 8)
+  assert.equal(summarySheet.getCell('E8').numFmt, '#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('B9').value, 2)
+  assert.equal(summarySheet.getCell('B9').numFmt, '#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('E9').value, 2)
+
+  // Verify spec breakdown row
+  assert.equal(summarySheet.getCell('A13').value, 'Grade A 6-inch')
+  assert.equal(summarySheet.getCell('B13').value, '6 inch')
+  assert.equal(summarySheet.getCell('C13').value, 168.28)
+  assert.equal(summarySheet.getCell('D13').value, 84.14)
+  assert.equal(summarySheet.getCell('E13').value, 528.67)
+  assert.equal(summarySheet.getCell('F13').value, 5)
+  assert.equal(summarySheet.getCell('G13').value, 0.5)
+
+  const logsSheet = workbook.getWorksheet('Production Cut Logs')
+  assert.ok(logsSheet, 'expected Production Cut Logs worksheet')
+  assert.equal(logsSheet.getCell('A2').value, 'PETRO HYDRO PIPE CORP.  |  Production Cut Logs (S-05)')
+  assert.equal(logsSheet.getCell('B6').value, 101)
+  assert.equal(logsSheet.getCell('C6').value, 'Grade A 6-inch')
+  assert.equal(logsSheet.getCell('D6').value, '6 inch')
+  assert.equal(logsSheet.getCell('H6').value, 'Specified')
+
+  // Row 2 is unassigned
+  assert.equal(logsSheet.getCell('B7').value, 102)
+  assert.equal(logsSheet.getCell('C7').value, 'N/A')
+  assert.equal(logsSheet.getCell('H7').value, 'Pending Tag')
+})
+
+test('toXlsx preserves unobserved production report values cleanly', async () => {
+  const report = createProductionReport({
+    periodState: 'future',
+    summary: [
+      { id: 'total-output', label: 'Total Production Output', value: 'N/A' },
+      { id: 'specified-pipes', label: 'Specified Pipes', value: 'N/A' },
+      { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: 'N/A' },
+      { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: 'N/A' },
+    ],
+    metrics: {
+      totalProductionOutput: null,
+      specifiedPipes: null,
+      unspecifiedPipes: null,
+      distinctProductSizes: null,
+    },
+    totalProductionOutput: null,
+    specifiedPipes: null,
+    unspecifiedPipes: null,
+    distinctProductSizes: null,
+    specBreakdown: [],
+    productionLogs: [],
+  })
+
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+
+  const summarySheet = workbook.getWorksheet('Production Summary')
+  assert.equal(summarySheet.getCell('B8').value, 'N/A')
+  assert.equal(summarySheet.getCell('E8').value, 'N/A')
+  assert.equal(summarySheet.getCell('B9').value, 'N/A')
+  assert.equal(summarySheet.getCell('E9').value, 'N/A')
+  assert.equal(summarySheet.getCell('A13').value, 'No accepted pipe cutting events recorded for this period.')
 })
