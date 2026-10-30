@@ -4,7 +4,7 @@ import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
-import { exportReport, getReportSummary, reportTypes } from './reportsService.js'
+import { exportReport, getReportSummary, reportCategories, reportTypes } from './reportsService.js'
 import { getReportCards } from './reportsPresentation.js'
 
 function downloadBlob(blob, filename) {
@@ -25,8 +25,8 @@ function getManilaDateInputValue() {
   }).format(new Date())
 }
 
-function getQueryKey(reportType, selectedDate) {
-  return `${reportType}:${selectedDate}`
+function getQueryKey(category, reportType, selectedDate) {
+  return `${category}:${reportType}:${selectedDate}`
 }
 
 function parseLocalDate(value) {
@@ -161,6 +161,7 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
 
 export default function ReportsSection() {
   const { token } = useAuth()
+  const [category, setCategory] = useState('regular')
   const [reportType, setReportType] = useState('daily')
   const [selectedDate, setSelectedDate] = useState(getManilaDateInputValue)
   const [report, setReport] = useState(null)
@@ -179,11 +180,12 @@ export default function ReportsSection() {
   const maxCalendarDate = parseLocalDate(currentDate)
   const calendarMode = getCalendarMode(reportType)
   const calendarRangeLabel = getCalendarRangeLabel(reportType, selectedCalendarDate)
-  const queryKey = getQueryKey(reportType, selectedDate)
+  const queryKey = getQueryKey(category, reportType, selectedDate)
   const requestKey = `${token || 'anonymous'}:${queryKey}`
   const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
   const isCurrentSuccess = loadState === 'success' && hasCurrentReport
   const reportCards = hasCurrentReport ? getReportCards(report) : []
+  const isProduction = category === 'production' || report?.category === 'production'
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1
@@ -195,7 +197,7 @@ export default function ReportsSection() {
       setErrorMessage('')
 
       try {
-        const payload = await getReportSummary(token, { reportType, selectedDate, includeComparison: true })
+        const payload = await getReportSummary(token, { category, reportType, selectedDate, includeComparison: true })
         if (isCancelled || requestId !== requestIdRef.current) return
 
         const nextReport = payload.report || { summary: [], rows: [] }
@@ -226,7 +228,7 @@ export default function ReportsSection() {
     return () => {
       isCancelled = true
     }
-  }, [queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
+  }, [category, queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
 
   function retryCurrentReport() {
     setRefreshRequest((current) => current + 1)
@@ -253,7 +255,7 @@ export default function ReportsSection() {
     setExportErrorMessage('')
 
     try {
-      const { blob, filename } = await exportReport(token, { reportType, selectedDate, format })
+      const { blob, filename } = await exportReport(token, { category, reportType, selectedDate, format })
       downloadBlob(blob, filename)
       setExportState('idle')
       setExportingFormat(null)
@@ -298,6 +300,22 @@ export default function ReportsSection() {
         </div>
 
         <div className="reports-controls">
+          <fieldset className="reports-period-fieldset">
+            <legend className="sr-only">Report category</legend>
+            <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report category">
+              {reportCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  className={`trend-mode-button reports-period-button ${category === cat.id ? 'is-selected' : ''}`}
+                  type="button"
+                  aria-pressed={category === cat.id}
+                  onClick={() => setCategory(cat.id)}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <fieldset className="reports-period-fieldset">
             <legend className="sr-only">Report period</legend>
             <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report period">
@@ -392,83 +410,177 @@ export default function ReportsSection() {
         </>
       ) : null}
 
-      {loadState !== 'error' ? (
-        <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
-          <div className="section-heading">
-            <div>
-              <p className="section-eyebrow">Process activity</p>
-              <h2 id="reports-process-title">Events by process sensor</h2>
-            </div>
-          </div>
+      {isProduction ? (
+        <>
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-specs-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Product distribution</p>
+                  <h2 id="reports-specs-title">Output by product specification</h2>
+                </div>
+              </div>
 
-          <div className="account-table-wrap">
-            <table className="account-table reports-table">
-              <thead>
-                <tr>
-                  <th scope="col">Sensor</th>
-                  <th scope="col">Recorded events</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
-                  <tr key={sensor.sensorCode}>
-                    <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
-                    <td data-label="Recorded events">{sensor.eventCount ?? 'Not observed'}</td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan="2">{hasCurrentReport && report.periodState === 'future' ? 'Process events not observed yet.' : hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-
-      {loadState !== 'error' ? (
-        <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
-          <div className="section-heading">
-            <div>
-              <p className="section-eyebrow">Grouped output</p>
-              <h2 id="reports-table-title">Downtime by cause and sensor</h2>
-            </div>
-          </div>
-
-          <div className="account-table-wrap">
-            <table className="account-table reports-table">
-              <thead>
-                <tr>
-                  <th scope="col">Cause</th>
-                  <th scope="col">Sensor</th>
-                  <th scope="col">Events</th>
-                  <th scope="col">Duration</th>
-                  <th scope="col">Estimated Loss</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadState === 'loading' && !hasCurrentReport ? (
-                  <tr>
-                    <td colSpan="5">Loading report rows...</td>
-                  </tr>
-                ) : hasCurrentReport && report.rows.length === 0 ? (
-                  <tr>
-                    <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
-                  </tr>
-                ) : hasCurrentReport ? (
-                  report.rows.map((row) => (
-                    <tr key={`${row.cause}-${row.sensor}`}>
-                      <td data-label="Cause">{row.cause}</td>
-                      <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
-                      <td data-label="Events">{row.events}</td>
-                      <td data-label="Duration">{row.durationMinutes} min</td>
-                      <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Product Label</th>
+                      <th scope="col">Size</th>
+                      <th scope="col">Diameter</th>
+                      <th scope="col">Radius</th>
+                      <th scope="col">Circumference</th>
+                      <th scope="col">Quantity</th>
                     </tr>
-                  ))
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
+                  </thead>
+                  <tbody>
+                    {loadState === 'loading' && !hasCurrentReport ? (
+                      <tr><td colSpan="6">Loading specification breakdown...</td></tr>
+                    ) : hasCurrentReport && (!report.specBreakdown || report.specBreakdown.length === 0) ? (
+                      <tr><td colSpan="6">{report.periodState === 'future' ? 'Output not observed yet.' : 'No accepted pipe cutting events recorded for this period.'}</td></tr>
+                    ) : hasCurrentReport ? (
+                      report.specBreakdown.map((group, index) => (
+                        <tr key={group.label || group.size || index}>
+                          <td data-label="Product Label">{group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : 'N/A')}</td>
+                          <td data-label="Size">{group.size || 'N/A'}</td>
+                          <td data-label="Diameter">{group.diameter !== null && group.diameter !== undefined ? `${group.diameter} mm` : 'N/A'}</td>
+                          <td data-label="Radius">{group.radius !== null && group.radius !== undefined ? `${group.radius} mm` : 'N/A'}</td>
+                          <td data-label="Circumference">{group.circumference !== null && group.circumference !== undefined ? `${group.circumference} mm` : 'N/A'}</td>
+                          <td data-label="Quantity">{group.pipeCount} pcs ({group.percentageOfTotal}%)</td>
+                        </tr>
+                      ))
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-cuts-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Cut history</p>
+                  <h2 id="reports-cuts-title">S-05 cutting events</h2>
+                </div>
+              </div>
+
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Cut Time</th>
+                      <th scope="col">Event ID</th>
+                      <th scope="col">Label</th>
+                      <th scope="col">Size</th>
+                      <th scope="col">Diameter</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadState === 'loading' && !hasCurrentReport ? (
+                      <tr><td colSpan="6">Loading cutting events...</td></tr>
+                    ) : hasCurrentReport && (!report.productionLogs || report.productionLogs.length === 0) ? (
+                      <tr><td colSpan="6">{report.periodState === 'future' ? 'Pipe cuts not observed yet.' : 'No pipe cutting events registered for this period.'}</td></tr>
+                    ) : hasCurrentReport ? (
+                      report.productionLogs.map((log) => (
+                        <tr key={log.id || log.deviceEventId}>
+                          <td data-label="Cut Time">{formatSuccessfulUpdate(new Date(log.recordedAt))}</td>
+                          <td data-label="Event ID">{log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')}</td>
+                          <td data-label="Label">{log.label || 'N/A'}</td>
+                          <td data-label="Size">{log.size || 'N/A'}</td>
+                          <td data-label="Diameter">{log.diameter !== null && log.diameter !== undefined ? `${log.diameter} mm` : 'N/A'}</td>
+                          <td data-label="Status">{log.isSpecified ? 'Specified' : 'Pending Tag'}</td>
+                        </tr>
+                      ))
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Process activity</p>
+                  <h2 id="reports-process-title">Events by process sensor</h2>
+                </div>
+              </div>
+
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Sensor</th>
+                      <th scope="col">Recorded events</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
+                      <tr key={sensor.sensorCode}>
+                        <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
+                        <td data-label="Recorded events">{sensor.eventCount ?? 'Not observed'}</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan="2">{hasCurrentReport && report.periodState === 'future' ? 'Process events not observed yet.' : hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Grouped output</p>
+                  <h2 id="reports-table-title">Downtime by cause and sensor</h2>
+                </div>
+              </div>
+
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Cause</th>
+                      <th scope="col">Sensor</th>
+                      <th scope="col">Events</th>
+                      <th scope="col">Duration</th>
+                      <th scope="col">Estimated Loss</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadState === 'loading' && !hasCurrentReport ? (
+                      <tr>
+                        <td colSpan="5">Loading report rows...</td>
+                      </tr>
+                    ) : hasCurrentReport && report.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
+                      </tr>
+                    ) : hasCurrentReport ? (
+                      report.rows.map((row) => (
+                        <tr key={`${row.cause}-${row.sensor}`}>
+                          <td data-label="Cause">{row.cause}</td>
+                          <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
+                          <td data-label="Events">{row.events}</td>
+                          <td data-label="Duration">{row.durationMinutes} min</td>
+                          <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
+                        </tr>
+                      ))
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
