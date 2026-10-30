@@ -5,6 +5,17 @@ const logger = require('../../utils/logger')
 const DEFAULT_AUDIT_LIMIT = 25
 const MAX_AUDIT_LIMIT = 100
 
+const SENSITIVE_METADATA_KEYS = new Set([
+  'password',
+  'passwordHash',
+  'token',
+  'refreshToken',
+  'accessToken',
+  'secret',
+  'apiKey',
+  'credential',
+])
+
 function createAuditError(status, code, message) {
   const error = new Error(message)
   error.status = status
@@ -22,6 +33,101 @@ function getRoleName(userRecord) {
   return userRecord.roles?.name || null
 }
 
+function parseNumericField(value) {
+  if (value == null || typeof value === 'boolean') return null
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed === '') return null
+    const num = Number(trimmed)
+    return Number.isFinite(num) ? num : null
+  }
+  return null
+}
+
+function sanitizeText(value) {
+  if (value == null || typeof value === 'boolean') return null
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString()
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : null
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  return null
+}
+
+function sanitizeProductionSpec(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null
+
+  const sanitized = {}
+  if (spec.label !== undefined) sanitized.label = sanitizeText(spec.label)
+  if (spec.size !== undefined) sanitized.size = sanitizeText(spec.size)
+  if (spec.diameter !== undefined) sanitized.diameter = parseNumericField(spec.diameter)
+  if (spec.radius !== undefined) sanitized.radius = parseNumericField(spec.radius)
+  if (spec.circumference !== undefined) sanitized.circumference = parseNumericField(spec.circumference)
+  return sanitized
+}
+
+function sanitizeAuditMetadata(action, rawMetadata) {
+  if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
+    return {}
+  }
+
+  if (action === 'PRODUCTION_SPEC_UPDATED') {
+    return {
+      sensorCode: sanitizeText(rawMetadata.sensorCode),
+      machineCode: sanitizeText(rawMetadata.machineCode),
+      recordedAt: sanitizeText(rawMetadata.recordedAt),
+      label: sanitizeText(rawMetadata.label),
+      size: sanitizeText(rawMetadata.size),
+      diameter: parseNumericField(rawMetadata.diameter),
+      radius: parseNumericField(rawMetadata.radius),
+      circumference: parseNumericField(rawMetadata.circumference),
+      previous: sanitizeProductionSpec(rawMetadata.previous),
+    }
+  }
+
+  if (action === 'PRODUCTION_SPEC_BATCH_UPDATED') {
+    const batchMeta = {
+      sensorCode: sanitizeText(rawMetadata.sensorCode) || 'S-05',
+      matchedCount: parseNumericField(rawMetadata.matchedCount) ?? 0,
+      updatedCount: parseNumericField(rawMetadata.updatedCount) ?? 0,
+      onlyUnlabeled: Boolean(rawMetadata.onlyUnlabeled),
+      sensorEventIds: Array.isArray(rawMetadata.sensorEventIds)
+        ? rawMetadata.sensorEventIds.map(sanitizeText).filter(Boolean)
+        : [],
+      appliedSpec: sanitizeProductionSpec(rawMetadata.appliedSpec) || {},
+    }
+    if (rawMetadata.machineCode !== undefined) {
+      batchMeta.machineCode = sanitizeText(rawMetadata.machineCode)
+    }
+    return batchMeta
+  }
+
+  const cleaned = {}
+  for (const [key, value] of Object.entries(rawMetadata)) {
+    if (!SENSITIVE_METADATA_KEYS.has(key)) {
+      cleaned[key] = value
+    }
+  }
+  return cleaned
+}
+
+function isPulseEvent(action, metadata) {
+  if (action === 'SENSOR_PULSE') return true
+  if (action === 'IOT_EVENT_RECEIVED') {
+    const eventType = String(metadata?.eventType || metadata?.event_type || metadata?.signal || '').trim().toLowerCase()
+    return eventType === 'pulse'
+  }
+  return false
+}
+
 function toAuditLogResponse(logRecord) {
   return {
     id: logRecord.id,
@@ -36,7 +142,7 @@ function toAuditLogResponse(logRecord) {
         role: getRoleName(logRecord.users),
       }
       : null,
-    metadata: logRecord.metadata || {},
+    metadata: sanitizeAuditMetadata(logRecord.action, logRecord.metadata),
     createdAt: logRecord.created_at,
   }
 }
@@ -98,9 +204,11 @@ async function listAuditLogs(filters = {}) {
     throw createAuditError(500, 'AUDIT_QUERY_FAILED', 'Unable to load audit logs.')
   }
 
+  const filteredData = (data || []).filter((record) => !isPulseEvent(record.action, record.metadata))
+
   const total = count || 0
   const totalPages = Math.max(Math.ceil(total / limit), 1)
-  const affectedUserIds = [...new Set(data
+  const affectedUserIds = [...new Set(filteredData
     .filter((record) => record.entity_type === 'user' && record.entity_id)
     .map((record) => record.entity_id))]
   let affectedUsersById = new Map()
@@ -119,7 +227,7 @@ async function listAuditLogs(filters = {}) {
   }
 
   return {
-    logs: data.map((record) => ({
+    logs: filteredData.map((record) => ({
       ...toAuditLogResponse(record),
       targetUser: record.entity_type === 'user' && affectedUsersById.has(record.entity_id)
         ? { username: affectedUsersById.get(record.entity_id).username }
@@ -137,6 +245,11 @@ async function listAuditLogs(filters = {}) {
 }
 
 async function recordAuditLog({ userId = null, action, entityType, entityId = null, metadata = {} }) {
+  if (isPulseEvent(action, metadata)) {
+    return null
+  }
+
+  const sanitizedMetadata = sanitizeAuditMetadata(action, metadata)
   const supabase = getSupabaseClient()
   const { error } = await supabase
     .from('audit_logs')
@@ -145,7 +258,7 @@ async function recordAuditLog({ userId = null, action, entityType, entityId = nu
       action,
       entity_type: entityType,
       entity_id: entityId,
-      metadata,
+      metadata: sanitizedMetadata,
     })
 
   if (error) {
@@ -155,6 +268,9 @@ async function recordAuditLog({ userId = null, action, entityType, entityId = nu
 }
 
 module.exports = {
+  isPulseEvent,
   listAuditLogs,
   recordAuditLog,
+  sanitizeAuditMetadata,
+  toAuditLogResponse,
 }
