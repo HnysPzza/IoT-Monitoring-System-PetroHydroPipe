@@ -4,6 +4,12 @@ const PRIMARY_METRICS = [
   { id: 'loss', label: 'Estimated Loss' },
 ]
 
+const PRODUCTION_PRIMARY_METRICS = [
+  { id: 'total-output', metricKey: 'totalProductionOutput', label: 'Total Output' },
+  { id: 'specified-pipes', metricKey: 'specifiedPipes', label: 'Specified Pipes' },
+  { id: 'unspecified-pipes', metricKey: 'unspecifiedPipes', label: 'Unspecified Pipes' },
+]
+
 function getSummaryItem(summaryById, id, fallbackLabel) {
   return summaryById[id] || {
     id,
@@ -29,7 +35,7 @@ function getMetricValue(report, id, summaryItem) {
 
 function getDeltaSentiment(metricId, direction) {
   if (direction === 'flat' || direction === 'unknown') return 'neutral'
-  const favorableDirection = metricId === 'loss' ? 'down' : 'up'
+  const favorableDirection = (metricId === 'loss' || metricId === 'unspecified-pipes') ? 'down' : 'up'
   return direction === favorableDirection ? 'positive' : 'negative'
 }
 
@@ -96,6 +102,38 @@ export function getReportCards(report = {}) {
   const summaryById = Object.fromEntries((report.summary || []).map((item) => [item.id, item]))
   const comparisonMetrics = report.comparison?.metrics
   const hasComparison = Boolean(report.comparison)
+
+  if (report.category === 'production') {
+    const primaryCards = PRODUCTION_PRIMARY_METRICS.map(({ id, metricKey, label }) => {
+      const item = getSummaryItem(summaryById, id, label)
+      const currentValue = report.metrics?.[metricKey] ?? parseSummaryNumber(item.value)
+      const previousValue = comparisonMetrics?.[metricKey]
+
+      return {
+        ...item,
+        id,
+        label,
+        isPrimary: true,
+        isWarning: id === 'unspecified-pipes' && Number.isFinite(currentValue) && currentValue > 0,
+        delta: getReportDelta(id, currentValue, previousValue, hasComparison),
+      }
+    })
+
+    const distinctSizesItem = getSummaryItem(summaryById, 'distinct-sizes', 'Distinct Sizes')
+    const distinctSizesCurrent = report.metrics?.distinctProductSizes ?? parseSummaryNumber(distinctSizesItem.value)
+    const distinctSizesPrevious = comparisonMetrics?.distinctProductSizes
+
+    return [
+      ...primaryCards,
+      {
+        ...distinctSizesItem,
+        id: 'distinct-sizes',
+        label: 'Distinct Sizes',
+        isPrimary: false,
+        delta: getReportDelta('distinct-sizes', distinctSizesCurrent, distinctSizesPrevious, hasComparison),
+      },
+    ]
+  }
 
   const primaryCards = PRIMARY_METRICS.map(({ id, label }) => {
     const item = getSummaryItem(summaryById, id, label)
