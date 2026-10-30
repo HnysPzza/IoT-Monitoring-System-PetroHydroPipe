@@ -83,3 +83,64 @@ export async function updateProductionLogSpec(token, eventId, spec = {}, expecte
   })
 }
 
+export async function batchUpdateProductionSpecs(
+  token,
+  { sensorEventIds, appliedSpec = {}, onlyUnlabeled, date, dateFrom, dateTo } = {},
+) {
+  const sanitizeText = (val) => {
+    if (val === undefined || val === null) return undefined
+    const trimmed = String(val).trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  }
+
+  const sanitizeNumber = (val) => {
+    if (val === undefined || val === null || val === '') return undefined
+    const num = Number(val)
+    return isNaN(num) ? undefined : num
+  }
+
+  const body = {}
+
+  if (Array.isArray(sensorEventIds) && sensorEventIds.length > 0) {
+    body.sensorEventIds = sensorEventIds
+  } else if (dateFrom && dateTo) {
+    body.dateFrom = dateFrom
+    body.dateTo = dateTo
+  } else if (date) {
+    body.dateFrom = date
+    body.dateTo = date
+  }
+
+  if (onlyUnlabeled !== undefined) {
+    body.onlyUnlabeled = Boolean(onlyUnlabeled)
+  }
+
+  const spec = appliedSpec || {}
+  const rawLabel = spec.label !== undefined ? spec.label : arguments[1]?.label
+  const rawSize = spec.size !== undefined ? spec.size : arguments[1]?.size
+  const rawDiameter = spec.diameter !== undefined ? spec.diameter : arguments[1]?.diameter
+  const rawRadius = spec.radius !== undefined ? spec.radius : arguments[1]?.radius
+  const rawCircumference = spec.circumference !== undefined ? spec.circumference : arguments[1]?.circumference
+
+  const cleanLabel = sanitizeText(rawLabel)
+  if (cleanLabel !== undefined) body.label = cleanLabel
+
+  const cleanSize = sanitizeText(rawSize)
+  if (cleanSize !== undefined) body.size = cleanSize
+
+  const cleanDiameter = sanitizeNumber(rawDiameter)
+  if (cleanDiameter !== undefined) body.diameter = cleanDiameter
+
+  const cleanRadius = sanitizeNumber(rawRadius)
+  if (cleanRadius !== undefined) body.radius = cleanRadius
+
+  const cleanCircumference = sanitizeNumber(rawCircumference)
+  if (cleanCircumference !== undefined) body.circumference = cleanCircumference
+
+  return apiRequest('/api/production/batch', {
+    token,
+    method: 'PATCH',
+    body,
+  })
+}
+
