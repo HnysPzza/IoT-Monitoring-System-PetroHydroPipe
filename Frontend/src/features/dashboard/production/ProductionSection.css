@@ -1,0 +1,306 @@
+/* ProductionSection.css — Flat, Containerless Layout for S-05 Production Logs */
+
+.production-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+/* Header Strip: Title & Subtitle on left, Inline KPI counters on right */
+.production-header-strip {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.production-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.production-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-text-3);
+  margin: 0;
+}
+
+.production-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0;
+}
+
+.production-subtitle {
+  font-size: 0.875rem;
+  color: var(--c-text-2);
+  margin: 0;
+}
+
+/* Inline KPIs: Bare icons + neutral text, zero box containers */
+.production-kpi-strip {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.production-kpi-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.production-kpi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.production-kpi-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-kpi-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.production-kpi-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
+/* Filter Strip: Single-line controls */
+.production-filter-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.25rem 0;
+}
+
+.production-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 220px;
+  flex: 1 1 240px;
+}
+
+.production-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--c-text-3);
+  pointer-events: none;
+}
+
+.production-search-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem 0.5rem 2.25rem;
+  font-size: 0.875rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.production-search-input:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+}
+
+.production-search-input::placeholder {
+  color: var(--c-text-3);
+}
+
+.production-date-input,
+.production-select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.production-date-input:focus,
+.production-select:focus {
+  border-color: var(--c-accent);
+}
+
+.production-select {
+  cursor: pointer;
+}
+
+.production-bare-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--c-text-2);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.production-bare-btn:hover:not(:disabled) {
+  color: var(--c-text);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.production-bare-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Error State */
+.production-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.production-notice-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Data Table Container */
+.production-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-surface);
+}
+
+.production-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.production-table th {
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-text-2);
+  background: rgba(15, 23, 42, 0.4);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+}
+
+.production-table td {
+  padding: 0.875rem 1rem;
+  color: var(--c-text);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+}
+
+.production-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.production-table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.04);
+}
+
+/* Tabular Numeric Columns */
+.production-col-timestamp,
+.production-col-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.production-col-num {
+  text-align: right;
+}
+
+.production-table th.production-col-num {
+  text-align: right;
+}
+
+.production-col-status {
+  width: 44px;
+  text-align: center;
+}
+
+.production-status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.production-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.production-placeholder {
+  color: var(--c-text-3);
+}
+
+.production-empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--c-text-2);
+  font-style: italic;
+}
+
+/* Pagination Footer */
+.production-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0.25rem;
+  font-size: 0.875rem;
+  color: var(--c-text-2);
+}
+
+.production-pagination-info {
+  font-variant-numeric: tabular-nums;
+}
+
+.production-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Skeleton Loading */
+.production-skeleton {
+  min-height: 320px;
+  width: 100%;
+  border-radius: 8px;
+}
+

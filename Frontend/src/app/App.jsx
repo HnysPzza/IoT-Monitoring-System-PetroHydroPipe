@@ -16,6 +16,7 @@ const DashboardSection = lazy(() => import('../features/dashboard/overview/Dashb
 const DowntimeSection = lazy(() => import('../features/dashboard/downtime/DowntimeSection.jsx'))
 const LiveSection = lazy(() => import('../features/dashboard/live/LiveSection.jsx'))
 const MachinesSection = lazy(() => import('../features/dashboard/machines/MachinesSection.jsx'))
+const ProductionSection = lazy(() => import('../features/dashboard/production/ProductionSection.jsx'))
 const ReportsSection = lazy(() => import('../features/dashboard/reports/ReportsSection.jsx'))
 const SettingsSection = lazy(() => import('../features/dashboard/settings/SettingsSection.jsx'))
 const UsersSection = lazy(() => import('../features/dashboard/users/UsersSection.jsx'))
@@ -108,6 +109,16 @@ export default function App() {
               <LazyDashboardRoute>
                 <DowntimeSection />
               </LazyDashboardRoute>
+            }
+          />
+          <Route
+            path="production"
+            element={
+              <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']}>
+                <LazyDashboardRoute>
+                  <ProductionSection />
+                </LazyDashboardRoute>
+              </RequireRole>
             }
           />
           <Route
