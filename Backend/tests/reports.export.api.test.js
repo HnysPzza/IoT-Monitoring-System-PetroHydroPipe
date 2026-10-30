@@ -16,6 +16,7 @@ function authHeader(role) {
 }
 
 const REPORT = {
+  category: 'regular',
   generatedAt: '2026-09-03T01:23:45.678Z',
   reportType: 'daily',
   selectedDate: '2026-09-02',
@@ -51,6 +52,71 @@ function loadExportApp({ summaryCalls, auditCalls }) {
     'src/modules/reports/reports.service.js': {
       getSummary: async (query) => {
         summaryCalls.push(query)
+        if (query.category === 'production') {
+          return {
+            category: 'production',
+            generatedAt: '2026-09-03T01:23:45.678Z',
+            reportType: query.type || 'daily',
+            selectedDate: query.date || '2026-09-02',
+            periodState: 'complete',
+            observedStartAt: '2026-09-01T16:00:00.000Z',
+            observedEndAt: '2026-09-02T16:00:00.000Z',
+            machine: { id: 'm-1', code: 'M-01', name: 'Spiral Mill 01' },
+            sensor: { id: 's-5', code: 'S-05', label: 'S-05 Cutting Sensor' },
+            summary: [
+              { id: 'total-output', label: 'Total Production Output', value: '10 pcs', helper: 'From Spiral Mill 01' },
+            ],
+            metrics: {
+              totalProductionOutput: 10,
+              specifiedPipes: 8,
+              unspecifiedPipes: 2,
+              distinctProductSizes: 2,
+            },
+            totalProductionOutput: 10,
+            specifiedPipes: 8,
+            unspecifiedPipes: 2,
+            distinctProductSizes: 2,
+            specBreakdown: [
+              {
+                label: 'Grade A 6-inch',
+                size: '6 inch',
+                diameter: 168.28,
+                radius: 84.14,
+                circumference: 528.67,
+                isSpecified: true,
+                pipeCount: 8,
+                percentageOfTotal: 80.0,
+                firstCutAt: '2026-09-02T01:00:00.000Z',
+                lastCutAt: '2026-09-02T03:00:00.000Z',
+              },
+            ],
+            productionLogs: [
+              {
+                id: 'evt-1',
+                deviceEventId: 101,
+                recordedAt: '2026-09-02T01:00:00.000Z',
+                label: 'Grade A 6-inch',
+                size: '6 inch',
+                diameter: 168.28,
+                radius: 84.14,
+                circumference: 528.67,
+                isSpecified: true,
+              },
+              {
+                id: 'evt-2',
+                deviceEventId: 102,
+                recordedAt: '2026-09-02T02:00:00.000Z',
+                label: null,
+                size: null,
+                diameter: null,
+                radius: null,
+                circumference: null,
+                isSpecified: false,
+              },
+            ],
+            rows: [],
+          }
+        }
         return { ...REPORT, rows: [...REPORT.rows] }
       },
     },
@@ -154,6 +220,57 @@ test('Export API streams a formatted XLSX workbook and records its format in the
     assert.equal(auditCalls.length, 1)
     assert.equal(auditCalls[0].action, 'REPORT_EXPORTED')
     assert.equal(auditCalls[0].metadata.format, 'xlsx')
+    assert.equal(auditCalls[0].metadata.reportCategory, 'regular')
+  })
+})
+
+test('Export API exports production report with category parameter and production filename', async () => {
+  const summaryCalls = []
+  const auditCalls = []
+  const app = loadExportApp({ summaryCalls, auditCalls })
+
+  await withTestServer(app, async (baseUrl) => {
+    // 1. Export Production PDF
+    const pdfResponse = await requestExport(
+      baseUrl,
+      { category: 'production', type: 'daily', date: '2026-09-02', format: 'pdf' },
+      authHeader('Admin'),
+    )
+
+    assert.equal(pdfResponse.status, 200)
+    assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf')
+    assert.equal(pdfResponse.headers.get('content-disposition'), 'attachment; filename="production-report-daily-2026-09-02.pdf"')
+
+    const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer())
+    assert.equal(pdfBuffer.subarray(0, 5).toString('utf8'), '%PDF-')
+
+    // 2. Export Production XLSX
+    const xlsxResponse = await requestExport(
+      baseUrl,
+      { category: 'production', type: 'weekly', date: '2026-09-02', format: 'xlsx' },
+      authHeader('Operation Manager'),
+    )
+
+    assert.equal(xlsxResponse.status, 200)
+    assert.equal(xlsxResponse.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    assert.equal(xlsxResponse.headers.get('content-disposition'), 'attachment; filename="production-report-weekly-2026-09-02.xlsx"')
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(await xlsxResponse.arrayBuffer()))
+    const summarySheet = workbook.getWorksheet('Production Summary')
+    assert.ok(summarySheet)
+    assert.equal(summarySheet.getCell('B8').value, 10)
+
+    // Verify summary calls received category: 'production'
+    assert.equal(summaryCalls[0].category, 'production')
+    assert.equal(summaryCalls[1].category, 'production')
+
+    // Verify audit logs record reportCategory: 'production' and rowCount from productionLogs
+    assert.equal(auditCalls.length, 2)
+    assert.equal(auditCalls[0].metadata.reportCategory, 'production')
+    assert.equal(auditCalls[0].metadata.rowCount, 2)
+    assert.equal(auditCalls[1].metadata.reportCategory, 'production')
+    assert.equal(auditCalls[1].metadata.rowCount, 2)
   })
 })
 
