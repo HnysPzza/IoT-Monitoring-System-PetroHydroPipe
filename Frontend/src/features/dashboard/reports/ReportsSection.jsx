@@ -5,7 +5,46 @@ import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 import { exportReport, getReportSummary, reportCategories, reportTypes } from './reportsService.js'
-import { getReportCards } from './reportsPresentation.js'
+import { formatDimension, formatPercentage, formatTonnage, getReportCards } from './reportsPresentation.js'
+import '../production/ProductionSection.css'
+
+function renderSpecCustomer(group) {
+  if (group?.customer && String(group.customer).trim() !== '') {
+    return group.customer
+  }
+  if (group?.isSpecified === false) {
+    return 'Unspecified / Pending Tag'
+  }
+  if (group?.label && String(group.label).trim() !== '') {
+    return group.label
+  }
+  return <span className="production-placeholder">—</span>
+}
+
+function renderCutLogCustomer(log) {
+  if (log?.customer && String(log.customer).trim() !== '') {
+    return log.customer
+  }
+  if (log?.label && String(log.label).trim() !== '') {
+    return log.label
+  }
+  return <span className="production-placeholder">—</span>
+}
+
+function renderDimension(val) {
+  const formatted = formatDimension(val)
+  return formatted !== null ? formatted : <span className="production-placeholder">—</span>
+}
+
+function renderTonnage(val) {
+  const formatted = formatTonnage(val)
+  return formatted !== null ? formatted : <span className="production-placeholder">—</span>
+}
+
+function renderPipeNumber(log) {
+  const num = log?.pipeNumber ?? log?.pipe_number
+  return num !== null && num !== undefined && num !== '' ? num : <span className="production-placeholder">—</span>
+}
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
@@ -542,28 +581,46 @@ export default function ReportsSection() {
                 <table className="account-table reports-table">
                   <thead>
                     <tr>
-                      <th scope="col">Product Label</th>
-                      <th scope="col">Size</th>
-                      <th scope="col">Diameter</th>
-                      <th scope="col">Radius</th>
-                      <th scope="col">Circumference</th>
-                      <th scope="col">Quantity</th>
+                      <th scope="col">Customer</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Diameter (OD mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Thickness (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Length (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Total Tons</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Quantity</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>% of Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadState === 'loading' && !hasCurrentReport ? (
-                      <tr><td colSpan="6">Loading specification breakdown...</td></tr>
+                      <tr><td colSpan="7">Loading specification breakdown...</td></tr>
                     ) : hasCurrentReport && (!report.specBreakdown || report.specBreakdown.length === 0) ? (
-                      <tr><td colSpan="6">{report.periodState === 'future' ? 'Output not observed yet.' : 'No accepted pipe cutting events recorded for this period.'}</td></tr>
+                      <tr><td colSpan="7">{report.periodState === 'future' ? 'Output not observed yet.' : 'No accepted pipe cutting events recorded for this period.'}</td></tr>
                     ) : hasCurrentReport ? (
                       report.specBreakdown.map((group, index) => (
-                        <tr key={group.label || group.size || index}>
-                          <td data-label="Product Label">{group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : 'N/A')}</td>
-                          <td data-label="Size">{group.size || 'N/A'}</td>
-                          <td data-label="Diameter">{group.diameter !== null && group.diameter !== undefined ? `${group.diameter} mm` : 'N/A'}</td>
-                          <td data-label="Radius">{group.radius !== null && group.radius !== undefined ? `${group.radius} mm` : 'N/A'}</td>
-                          <td data-label="Circumference">{group.circumference !== null && group.circumference !== undefined ? `${group.circumference} mm` : 'N/A'}</td>
-                          <td data-label="Quantity">{group.pipeCount} pcs ({group.percentageOfTotal}%)</td>
+                        <tr key={group.customer || group.label || group.size || index}>
+                          <td data-label="Customer">{renderSpecCustomer(group)}</td>
+                          <td data-label="Diameter (OD mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(group.diameter)}
+                          </td>
+                          <td data-label="Thickness (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(group.thickness)}
+                          </td>
+                          <td data-label="Length (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(group.length)}
+                          </td>
+                          <td data-label="Total Tons" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderTonnage(group.totalTonnage ?? group.tonnage)}
+                          </td>
+                          <td data-label="Quantity" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {group.pipeCount !== null && group.pipeCount !== undefined
+                              ? `${group.pipeCount} pcs`
+                              : <span className="production-placeholder">—</span>}
+                          </td>
+                          <td data-label="% of Total" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {group.percentageOfTotal !== null && group.percentageOfTotal !== undefined
+                              ? formatPercentage(group.percentageOfTotal)
+                              : <span className="production-placeholder">—</span>}
+                          </td>
                         </tr>
                       ))
                     ) : null}
@@ -587,31 +644,49 @@ export default function ReportsSection() {
                   <thead>
                     <tr>
                       <th scope="col">Cut Time</th>
-                      <th scope="col">Event ID</th>
-                      <th scope="col">Label</th>
-                      <th scope="col">Size</th>
-                      <th scope="col">Diameter</th>
+                      <th scope="col">Customer</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Diameter (OD mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Thickness (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Length (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Pipe #</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Tons</th>
                       <th scope="col">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadState === 'loading' && !hasCurrentReport ? (
-                      <tr><td colSpan="6">Loading cutting events...</td></tr>
+                      <tr><td colSpan="8">Loading cutting events...</td></tr>
                     ) : hasCurrentReport && (!report.productionLogs || report.productionLogs.length === 0) ? (
-                      <tr><td colSpan="6">{report.periodState === 'future' ? 'Pipe cuts not observed yet.' : 'No pipe cutting events registered for this period.'}</td></tr>
+                      <tr><td colSpan="8">{report.periodState === 'future' ? 'Pipe cuts not observed yet.' : 'No pipe cutting events registered for this period.'}</td></tr>
                     ) : hasCurrentReport ? (
-                      report.productionLogs.map((log) => (
-                        <tr key={log.id || log.deviceEventId}>
-                          <td data-label="Cut Time">
+                      report.productionLogs.map((log, index) => (
+                        <tr key={log.id || log.deviceEventId || log.sensorEventId || index}>
+                          <td data-label="Cut Time" className="production-col-timestamp tabular-data">
                             {log.recordedAt && !Number.isNaN(new Date(log.recordedAt).getTime())
                               ? formatSuccessfulUpdate(new Date(log.recordedAt))
                               : 'N/A'}
                           </td>
-                          <td data-label="Event ID">{log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')}</td>
-                          <td data-label="Label">{log.label || 'N/A'}</td>
-                          <td data-label="Size">{log.size || 'N/A'}</td>
-                          <td data-label="Diameter">{log.diameter !== null && log.diameter !== undefined ? `${log.diameter} mm` : 'N/A'}</td>
-                          <td data-label="Status">{log.isSpecified ? 'Specified' : 'Pending Tag'}</td>
+                          <td data-label="Customer">{renderCutLogCustomer(log)}</td>
+                          <td data-label="Diameter (OD mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(log.diameter)}
+                          </td>
+                          <td data-label="Thickness (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(log.thickness)}
+                          </td>
+                          <td data-label="Length (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(log.length)}
+                          </td>
+                          <td data-label="Pipe #" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderPipeNumber(log)}
+                          </td>
+                          <td data-label="Tons" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderTonnage(log.tonnage ?? log.singleTonnage)}
+                          </td>
+                          <td data-label="Status">
+                            <span className={`production-status-badge ${log.isSpecified ? 'green' : 'amber'}`}>
+                              {log.isSpecified ? 'Specified' : 'Pending Tag'}
+                            </span>
+                          </td>
                         </tr>
                       ))
                     ) : null}

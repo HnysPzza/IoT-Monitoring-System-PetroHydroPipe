@@ -89,21 +89,23 @@ function productionReportPayload({
   periodState = 'complete',
   specBreakdown = [
     {
-      label: 'Grade A 6-inch',
-      size: '6 inch',
-      diameter: 168.28,
-      radius: 84.14,
-      circumference: 528.67,
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      totalTonnage: 9.2104,
+      singleTonnage: 1.1513,
       isSpecified: true,
       pipeCount: 8,
       percentageOfTotal: 80.0,
     },
     {
-      label: null,
-      size: null,
+      customer: null,
       diameter: null,
-      radius: null,
-      circumference: null,
+      thickness: null,
+      length: null,
+      totalTonnage: null,
+      singleTonnage: null,
       isSpecified: false,
       pipeCount: 2,
       percentageOfTotal: 20.0,
@@ -114,18 +116,24 @@ function productionReportPayload({
       id: 'evt-1',
       deviceEventId: 101,
       recordedAt: '2026-09-02T01:00:00.000Z',
-      label: 'Grade A 6-inch',
-      size: '6 inch',
-      diameter: 168.28,
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipeNumber: 1001,
+      tonnage: 1.1513,
       isSpecified: true,
     },
     {
       id: 'evt-2',
       deviceEventId: 102,
       recordedAt: '2026-09-02T02:00:00.000Z',
-      label: null,
-      size: null,
+      customer: null,
       diameter: null,
+      thickness: null,
+      length: null,
+      pipeNumber: null,
+      tonnage: null,
       isSpecified: false,
     },
   ],
@@ -479,10 +487,45 @@ describe('ReportsSection request states', () => {
     // Check Production Report sections
     expect(await screen.findByText('Output by product specification')).toBeInTheDocument()
     expect(screen.getByText('S-05 cutting events')).toBeInTheDocument()
-    expect(screen.getAllByText('Grade A 6-inch').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getAllByText('168.28 mm').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('8 pcs (80%)')).toBeInTheDocument()
+
+    // Specification Breakdown Table Headers: [Customer, Diameter (OD mm), Thickness (mm), Length (mm), Total Tons, Quantity, % of Total]
+    expect(screen.getAllByRole('columnheader', { name: 'Customer' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('columnheader', { name: 'Diameter (OD mm)' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('columnheader', { name: 'Thickness (mm)' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('columnheader', { name: 'Length (mm)' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByRole('columnheader', { name: 'Total Tons' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Quantity' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '% of Total' })).toBeInTheDocument()
+
+    // Production Cut Log Table Headers: [Cut Time, Customer, Diameter (OD mm), Thickness (mm), Length (mm), Pipe #, Tons, Status]
+    expect(screen.getByRole('columnheader', { name: 'Cut Time' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Pipe #' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Tons' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
+
+    // Assert Absence of legacy circle columns in production report tables
+    expect(screen.queryByRole('columnheader', { name: 'Radius' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Circumference' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Product Label' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Size' })).not.toBeInTheDocument()
+
+    // Verify formatted pipe spec row values
+    expect(screen.getAllByText('MCWD').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('625.40').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('12.70').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('6000.00').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('9.2104')).toBeInTheDocument()
+    expect(screen.getByText('1001')).toBeInTheDocument()
+    expect(screen.getByText('1.1513')).toBeInTheDocument()
+    expect(screen.getAllByText('8 pcs').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('80.0%')).toBeInTheDocument()
     expect(screen.getByText('Unspecified / Pending Tag')).toBeInTheDocument()
+    expect(screen.getByText('Specified')).toBeInTheDocument()
+    expect(screen.getByText('Pending Tag')).toBeInTheDocument()
+
+    // Missing or null values render clean dash —
+    const placeholders = screen.getAllByText('—')
+    expect(placeholders.length).toBeGreaterThanOrEqual(5)
 
     // Regular report tables should not be rendered
     expect(screen.queryByText('Events by process sensor')).not.toBeInTheDocument()
@@ -559,18 +602,26 @@ describe('ReportsSection request states', () => {
           id: 'evt-null-date',
           deviceEventId: 201,
           recordedAt: null,
+          customer: 'Pipe with null date',
           label: 'Pipe with null date',
-          size: '4 inch',
           diameter: 114.3,
+          thickness: 6.0,
+          length: 6000,
+          pipeNumber: 201,
+          tonnage: 0.0962,
           isSpecified: true,
         },
         {
           id: 'evt-invalid-date',
           deviceEventId: 202,
           recordedAt: 'not-a-valid-timestamp',
+          customer: 'Pipe with invalid date',
           label: 'Pipe with invalid date',
-          size: '4 inch',
           diameter: 114.3,
+          thickness: 6.0,
+          length: 6000,
+          pipeNumber: 202,
+          tonnage: 0.0962,
           isSpecified: true,
         },
       ],
@@ -685,5 +736,75 @@ describe('ReportsSection request states', () => {
       revokeObjectURLSpy.mockRestore()
       clickSpy.mockRestore()
     }
+  })
+
+  it('exports production report in XLSX format when Excel is selected', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+    exportReport.mockResolvedValue({
+      blob: new Blob(['xlsx-binary'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      filename: 'production-report-daily-2026-08-31.xlsx',
+    })
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+    await screen.findByText('Output by product specification')
+    await selectExportFormat(user, 'xlsx')
+
+    expect(exportReport).toHaveBeenCalledWith('test-token', {
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      format: 'xlsx',
+    })
+  })
+
+  it('verifies numeric columns in production tables are right-aligned with tabular-data class', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+    await screen.findByText('Output by product specification')
+
+    // Find table cells with tabular-data
+    const tabularCells = document.querySelectorAll('td.tabular-data, th.tabular-data')
+    expect(tabularCells.length).toBeGreaterThanOrEqual(10)
+
+    // Diameter, Thickness, Length, Total Tons headers have tabular-data and production-col-num
+    const diamHeaders = screen.getAllByRole('columnheader', { name: 'Diameter (OD mm)' })
+    expect(diamHeaders[0]).toHaveClass('tabular-data', 'production-col-num')
+
+    const tonsHeader = screen.getByRole('columnheader', { name: 'Total Tons' })
+    expect(tonsHeader).toHaveClass('tabular-data', 'production-col-num')
+
+    // Tons cell formatting: 4 decimal places with tabular-data
+    const tonsCell = screen.getByText('9.2104')
+    expect(tonsCell).toHaveClass('tabular-data', 'production-col-num')
+
+    // Quantity cell formatting: right-aligned with tabular-data
+    const qtyCells = screen.getAllByText('8 pcs')
+    const qtyCell = Array.from(qtyCells).find((el) => el.tagName === 'TD')
+    expect(qtyCell).toHaveClass('tabular-data', 'production-col-num')
+  })
+
+  it('renders clean dash placeholders with production-placeholder class for missing values', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+    await screen.findByText('Output by product specification')
+
+    const placeholders = document.querySelectorAll('.production-placeholder')
+    expect(placeholders.length).toBeGreaterThanOrEqual(5)
+    placeholders.forEach((placeholder) => {
+      expect(placeholder.textContent).toBe('—')
+    })
   })
 })

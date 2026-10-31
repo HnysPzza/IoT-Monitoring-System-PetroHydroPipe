@@ -99,6 +99,27 @@ function getDowntimeValue(summaryById) {
   return `${events} ${eventLabel} · ${duration} min`
 }
 
+export function formatDimension(value) {
+  if (value === null || value === undefined) return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return num.toFixed(2)
+}
+
+export function formatTonnage(value) {
+  if (value === null || value === undefined) return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return num.toFixed(4)
+}
+
+export function formatPercentage(value) {
+  if (value === null || value === undefined) return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return `${num.toFixed(1)}%`
+}
+
 export function getReportCards(report = {}) {
   const summaryById = Object.fromEntries((report.summary || []).map((item) => [item.id, item]))
   const comparisonMetrics = report.comparison?.metrics
@@ -121,15 +142,25 @@ export function getReportCards(report = {}) {
     })
 
     const distinctSizesItem = getSummaryItem(summaryById, 'distinct-sizes', 'Distinct Sizes')
+    const secondaryCards = []
+    if (summaryById['total-tonnage']) {
+      secondaryCards.push({
+        ...summaryById['total-tonnage'],
+        id: 'total-tonnage',
+        label: summaryById['total-tonnage'].label || 'Total Tonnage',
+        isPrimary: false,
+      })
+    }
+    secondaryCards.push({
+      ...distinctSizesItem,
+      id: 'distinct-sizes',
+      label: 'Distinct Sizes',
+      isPrimary: false,
+    })
 
     return [
       ...primaryCards,
-      {
-        ...distinctSizesItem,
-        id: 'distinct-sizes',
-        label: 'Distinct Sizes',
-        isPrimary: false,
-      },
+      ...secondaryCards,
     ]
   }
 
