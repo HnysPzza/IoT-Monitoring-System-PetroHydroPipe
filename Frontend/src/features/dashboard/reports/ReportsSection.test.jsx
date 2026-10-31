@@ -206,6 +206,11 @@ async function selectReportDate(user, dateName) {
   await user.click(await screen.findByRole('button', { name: dateName }))
 }
 
+async function selectReportCategory(user, categoryLabel) {
+  await user.click(await screen.findByRole('button', { name: 'Filter report type' }))
+  await user.click(await screen.findByRole('menuitem', { name: categoryLabel }))
+}
+
 describe('ReportsSection request states', () => {
   beforeEach(() => {
     getReportSummary.mockReset()
@@ -460,10 +465,13 @@ describe('ReportsSection request states', () => {
 
     expect(await screen.findByText('Production Count')).toBeInTheDocument()
 
-    const prodButton = screen.getByRole('button', { name: 'Production Report' })
+    const filterButton = screen.getByRole('button', { name: 'Filter report type' })
+    await user.click(filterButton)
+
+    const prodButton = screen.getByRole('menuitem', { name: 'Production Report' })
+    expect(prodButton).toHaveAttribute('aria-checked', 'false')
     await user.click(prodButton)
 
-    expect(prodButton).toHaveAttribute('aria-pressed', 'true')
     expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
       category: 'production',
     }))
@@ -491,8 +499,7 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    const prodButton = await screen.findByRole('button', { name: 'Production Report' })
-    await user.click(prodButton)
+    await selectReportCategory(user, 'Production Report')
 
     await screen.findByText('Output by product specification')
     await selectExportFormat(user, 'pdf')
@@ -511,8 +518,7 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    const prodButton = await screen.findByRole('button', { name: 'Production Report' })
-    await user.click(prodButton)
+    await selectReportCategory(user, 'Production Report')
 
     expect(await screen.findByText('Period not reached yet. No values have been observed.')).toBeInTheDocument()
     expect(screen.getByText('Output not observed yet.')).toBeInTheDocument()
@@ -534,15 +540,12 @@ describe('ReportsSection request states', () => {
 
     expect(await screen.findByText('Production Count')).toBeInTheDocument()
 
-    const prodButton = screen.getByRole('button', { name: 'Production Report' })
-    await user.click(prodButton)
+    await selectReportCategory(user, 'Production Report')
 
     expect(await screen.findByText('Output by product specification')).toBeInTheDocument()
 
-    const regButton = screen.getByRole('button', { name: 'Regular Report' })
-    await user.click(regButton)
+    await selectReportCategory(user, 'Regular Report')
 
-    expect(regButton).toHaveAttribute('aria-pressed', 'true')
     expect(await screen.findByText('Events by process sensor')).toBeInTheDocument()
     expect(screen.getByText('Downtime by cause and sensor')).toBeInTheDocument()
     expect(screen.queryByText('Output by product specification')).not.toBeInTheDocument()
@@ -575,14 +578,77 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    const prodButton = await screen.findByRole('button', { name: 'Production Report' })
-    await user.click(prodButton)
+    await selectReportCategory(user, 'Production Report')
 
     await screen.findByText('Output by product specification')
     const naCells = screen.getAllByText('N/A')
     expect(naCells.length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Pipe with null date')).toBeInTheDocument()
     expect(screen.getByText('Pipe with invalid date')).toBeInTheDocument()
+  })
+
+  it('opens Gemini-style popover filter menu with funnel icon, showing active category checkmark and closing on escape or outside click', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(reportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    const funnelButton = await screen.findByRole('button', { name: 'Filter report type' })
+    expect(funnelButton).toBeInTheDocument()
+    expect(funnelButton.querySelector('svg.preview-icon')).toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+
+    // Popover is closed initially
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+
+    // Open popover
+    await user.click(funnelButton)
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'true')
+    const popover = screen.getByRole('menu', { name: 'Report category' })
+    expect(popover).toHaveClass('reports-filter-popover')
+    expect(popover).toHaveClass('rounded-2xl')
+
+    // Active item (Regular Report) has checkmark and active styling
+    const regularItem = screen.getByRole('menuitem', { name: 'Regular Report' })
+    expect(regularItem).toHaveClass('is-active')
+    expect(regularItem).toHaveAttribute('aria-checked', 'true')
+    expect(regularItem.querySelector('svg')).toBeInTheDocument()
+
+    // Production Report is inactive
+    const prodItem = screen.getByRole('menuitem', { name: 'Production Report' })
+    expect(prodItem).not.toHaveClass('is-active')
+    expect(prodItem).toHaveAttribute('aria-checked', 'false')
+
+    // Close on Escape key
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+
+    // Open again and test arrow navigation
+    await user.click(funnelButton)
+    expect(screen.getByRole('menu', { name: 'Report category' })).toBeInTheDocument()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Production Report' })).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+
+    // Close by clicking outside
+    await user.click(document.body)
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+
+    // Open and verify close on focus loss (e.g. tabbing out)
+    await user.click(funnelButton)
+    expect(screen.getByRole('menu', { name: 'Report category' })).toBeInTheDocument()
+    await user.tab()
+    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('menuitem', { name: 'Production Report' })).toHaveFocus()
+    await user.tab()
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('triggers blob download by appending anchor to body and deferring URL revocation', async () => {
@@ -602,6 +668,7 @@ describe('ReportsSection request states', () => {
       renderWithAuth(<ReportsSection />)
 
       await screen.findByText('Production Count')
+      revokeObjectURLSpy.mockClear()
       await selectExportFormat(user, 'pdf')
 
       expect(appendChildSpy).toHaveBeenCalledWith(expect.any(HTMLAnchorElement))

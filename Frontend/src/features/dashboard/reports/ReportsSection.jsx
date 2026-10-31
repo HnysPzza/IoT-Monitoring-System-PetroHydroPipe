@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
@@ -166,6 +166,131 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
   )
 }
 
+function ReportCategoryFilter({ category, onSelectCategory }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef(null)
+  const buttonRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setIsOpen(false)
+        buttonRef.current?.focus()
+        return
+      }
+
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const items = containerRef.current?.querySelectorAll('[role="menuitem"]')
+        if (!items || items.length === 0) return
+        const activeIdx = Array.from(items).indexOf(document.activeElement)
+        const nextIdx = event.key === 'ArrowDown'
+          ? (activeIdx + 1) % items.length
+          : (activeIdx - 1 + items.length) % items.length
+        items[nextIdx]?.focus()
+      }
+    }
+
+    function handlePointerDown(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+
+    function handleFocusOut(event) {
+      if (containerRef.current && !containerRef.current.contains(event.relatedTarget)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('focusout', handleFocusOut)
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [isOpen])
+
+  function handleSelect(categoryId) {
+    onSelectCategory(categoryId)
+    setIsOpen(false)
+    buttonRef.current?.focus()
+  }
+
+  const activeCategory = reportCategories.find((cat) => cat.id === category)
+
+  return (
+    <div className="reports-filter-container" ref={containerRef}>
+      <button
+        ref={buttonRef}
+        className={`reports-funnel-trigger ${isOpen ? 'is-active' : ''}`}
+        type="button"
+        aria-label="Filter report type"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls="reports-filter-menu"
+        title={`Filter report type (Current: ${activeCategory?.label || 'Regular Report'})`}
+        onClick={() => setIsOpen((prev) => !prev)}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="lucide lucide-funnel preview-icon"
+          aria-hidden="true"
+        >
+          <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />
+        </svg>
+      </button>
+
+      {isOpen ? (
+        <div
+          id="reports-filter-menu"
+          className="reports-filter-popover rounded-2xl p-2 min-w-[220px] shadow-lg"
+          role="menu"
+          aria-label="Report category"
+        >
+          <div className="reports-filter-popover-list" role="none">
+            {reportCategories.map((cat) => {
+              const isSelected = category === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${
+                    isSelected ? 'is-active' : ''
+                  }`}
+                  type="button"
+                  role="menuitem"
+                  aria-checked={isSelected}
+                  onClick={() => handleSelect(cat.id)}
+                >
+                  <span className="reports-filter-item-left">
+                    <span className="reports-filter-dot" aria-hidden="true" />
+                    <span className="reports-filter-item-label">{cat.label}</span>
+                  </span>
+                  {isSelected ? <Check size={16} className="reports-filter-check" aria-hidden="true" /> : null}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function ReportsSection() {
   const { token } = useAuth()
   const [category, setCategory] = useState('regular')
@@ -307,22 +432,7 @@ export default function ReportsSection() {
         </div>
 
         <div className="reports-controls">
-          <fieldset className="reports-period-fieldset">
-            <legend className="sr-only">Report category</legend>
-            <div className="trend-mode-toggle reports-period-toggle reports-category-toggle" role="group" aria-label="Report category">
-              {reportCategories.map((cat) => (
-                <button
-                  key={cat.id}
-                  className={`trend-mode-button reports-period-button ${category === cat.id ? 'is-selected' : ''}`}
-                  type="button"
-                  aria-pressed={category === cat.id}
-                  onClick={() => setCategory(cat.id)}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
+          <ReportCategoryFilter category={category} onSelectCategory={setCategory} />
           <fieldset className="reports-period-fieldset">
             <legend className="sr-only">Report period</legend>
             <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report period">
