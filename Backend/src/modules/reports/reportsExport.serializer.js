@@ -9,7 +9,12 @@ const COMPANY_SUBTITLE = 'Industrial Steel Pipe Manufacturing • IoT Machine Mo
 const COMPANY_ADDRESS = 'Dunggoan, Danao City, Cebu, Philippines 6004'
 const MACHINE_LABEL = 'Spiral Mill 01 (M-01)'
 
-const LOGO_PATH = path.resolve(__dirname, '../../../../Frontend/public/assets/logo.png')
+const CANONICAL_BACKEND_LOGO = path.resolve(__dirname, '../../assets/logo.png')
+const MONOREPO_FRONTEND_FALLBACK = path.resolve(__dirname, '../../../../Frontend/public/assets/logo.png')
+
+const LOGO_PATH = process.env.REPORT_LOGO_PATH
+  ? path.resolve(process.env.REPORT_LOGO_PATH)
+  : (fs.existsSync(CANONICAL_BACKEND_LOGO) ? CANONICAL_BACKEND_LOGO : MONOREPO_FRONTEND_FALLBACK)
 
 const COLOR = {
   primary: '#0F172A',
@@ -29,6 +34,12 @@ const COLOR = {
 
 function pdfText(value) {
   return value === null || value === undefined || value === '' ? NOT_AVAILABLE : String(value)
+}
+
+function formatDimension(value) {
+  if (value === null || value === undefined || value === '') return NOT_AVAILABLE
+  const num = Number(value)
+  return Number.isFinite(num) ? num.toFixed(2) : NOT_AVAILABLE
 }
 
 function formatManilaDate(dateStr) {
@@ -303,9 +314,9 @@ function renderProductionSections(doc, report, printableWidth) {
   const specRows = specBreakdown.map((group) => {
     const labelText = group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : NOT_AVAILABLE)
     const sizeText = group.size || NOT_AVAILABLE
-    const diameterText = group.diameter !== null && group.diameter !== undefined ? Number(group.diameter).toFixed(2) : NOT_AVAILABLE
-    const radiusText = group.radius !== null && group.radius !== undefined ? Number(group.radius).toFixed(2) : NOT_AVAILABLE
-    const circText = group.circumference !== null && group.circumference !== undefined ? Number(group.circumference).toFixed(2) : NOT_AVAILABLE
+    const diameterText = formatDimension(group.diameter)
+    const radiusText = formatDimension(group.radius)
+    const circText = formatDimension(group.circumference)
     const countText = `${group.pipeCount} pcs (${group.percentageOfTotal}%)`
 
     return [labelText, sizeText, diameterText, radiusText, circText, countText]
@@ -351,12 +362,12 @@ function renderProductionSections(doc, report, printableWidth) {
   const logs = Array.isArray(report.productionLogs) ? report.productionLogs : []
   const logRows = logs.map((log) => [
     formatManilaDate(log.recordedAt),
-    log.deviceEventId || log.id || NOT_AVAILABLE,
+    log.deviceEventId ?? (log.id ? String(log.id) : NOT_AVAILABLE),
     log.label || (log.isSpecified ? NOT_AVAILABLE : 'Pending Tag'),
     log.size || NOT_AVAILABLE,
-    log.diameter !== null && log.diameter !== undefined ? Number(log.diameter).toFixed(2) : NOT_AVAILABLE,
-    log.radius !== null && log.radius !== undefined ? Number(log.radius).toFixed(2) : NOT_AVAILABLE,
-    log.circumference !== null && log.circumference !== undefined ? Number(log.circumference).toFixed(2) : NOT_AVAILABLE,
+    formatDimension(log.diameter),
+    formatDimension(log.radius),
+    formatDimension(log.circumference),
   ])
 
   renderGenericTable(doc, {
@@ -465,6 +476,7 @@ function renderRegularSections(doc, report, printableWidth) {
   })
 }
 
+// ponytail: synchronous in-memory buffer ceiling: 10k events upgrade: stream via PassThrough to response
 function toPdf(report) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -548,7 +560,8 @@ function toPdf(report) {
 
 function buildExportFilename({ category = 'regular', reportType, selectedDate, format }) {
   const prefix = category === 'production' ? 'production-report' : 'report'
-  return `${prefix}-${reportType}-${selectedDate || 'undated'}.${format}`
+  const raw = `${prefix}-${reportType}-${selectedDate || 'undated'}.${format}`
+  return raw.replace(/[^a-zA-Z0-9._-]/g, '')
 }
 
 function contentTypeFor(format) {

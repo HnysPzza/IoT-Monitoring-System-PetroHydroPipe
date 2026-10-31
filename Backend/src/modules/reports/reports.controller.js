@@ -8,14 +8,14 @@ const {
 } = require('./reportsExport.serializer')
 
 async function getSummary(req, res) {
-  const report = await reportsService.getSummary(req.validated.query)
+  const report = await reportsService.getSummary(req.validated.query, { maxLogs: 200 })
   res.set('Cache-Control', 'no-store')
   res.json({ report })
 }
 
 async function exportReport(req, res) {
   const { category = 'regular', type, date, format } = req.validated.body
-  const report = await reportsService.getSummary({ category, type, date })
+  const report = await reportsService.getSummary({ category, type, date }, { isExport: true, maxLogs: null })
 
   const content = format === 'pdf'
     ? await toPdf(report)

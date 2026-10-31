@@ -1,6 +1,7 @@
 import { createApiError } from '../../../shared/errors/apiError.js'
 import { notifyUnauthorized } from '../../../shared/errors/unauthorizedSession.js'
 import { API_BASE_URL, apiRequest, DEFAULT_REQUEST_TIMEOUT_MS } from '../../../shared/services/apiClient.js'
+import { assertSessionCurrent, getSessionContext, refreshSessionOnce } from '../../../shared/services/sessionRefresh.js'
 
 export const reportCategories = [
   { id: 'regular', label: 'Regular Report' },
@@ -34,6 +35,13 @@ function getExportFilename(disposition, fallback) {
 export async function exportReport(token, { category = 'regular', reportType, selectedDate, format }) {
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
   const path = '/api/reports/export'
+  const sessionContext = getSessionContext(token)
+  let activeToken = token
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+  const requestBody = JSON.stringify({ category, type: reportType, date: normalizedDate, format })
 
   const controller = new AbortController()
   const timeoutId = globalThis.setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS)
@@ -44,14 +52,29 @@ export async function exportReport(token, { category = 'regular', reportType, se
     try {
       response = await fetch(`${API_BASE_URL}${path}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ category, type: reportType, date: normalizedDate, format }),
+        credentials: 'include',
+        headers: requestHeaders,
+        body: requestBody,
         signal: controller.signal,
       })
+
+      if (response.status === 401) {
+        assertSessionCurrent(sessionContext)
+        const refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
+
+        if (refreshedToken && refreshedToken !== token) {
+          activeToken = refreshedToken
+          response = await fetch(`${API_BASE_URL}${path}`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { ...requestHeaders, Authorization: `Bearer ${refreshedToken}` },
+            body: requestBody,
+            signal: controller.signal,
+          })
+        }
+      }
     } catch (error) {
+      if (error?.code === 'SESSION_CHANGED') throw error
       if (error?.name === 'AbortError') {
         throw createApiError('The export request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
       }
@@ -72,7 +95,7 @@ export async function exportReport(token, { category = 'regular', reportType, se
         response.status,
         payload,
       )
-      notifyUnauthorized(error, { token, path })
+      notifyUnauthorized(error, { token: activeToken, path })
       throw error
     }
 

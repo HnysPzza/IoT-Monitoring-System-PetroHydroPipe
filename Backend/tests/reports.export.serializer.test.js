@@ -403,3 +403,163 @@ test('toXlsx preserves unobserved production report values cleanly', async () =>
   assert.equal(summarySheet.getCell('E9').value, 'N/A')
   assert.equal(summarySheet.getCell('A13').value, 'No accepted pipe cutting events recorded for this period.')
 })
+
+test('toPdf renders deviceEventId 0 correctly without falling back to id', async () => {
+  const report = createProductionReport({
+    productionLogs: [
+      {
+        id: 'evt-uuid-fallback',
+        deviceEventId: 0,
+        recordedAt: '2026-09-02T01:00:00.000Z',
+        label: 'Pipe 0',
+        size: '6 inch',
+        diameter: 100,
+        radius: 50,
+        circumference: 314.16,
+        isSpecified: true,
+      },
+    ],
+  })
+  const buffer = await toPdf(report)
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+})
+
+test('toXlsx renders deviceEventId 0 in cut logs correctly', async () => {
+  const report = createProductionReport({
+    productionLogs: [
+      {
+        id: 'evt-uuid-fallback',
+        deviceEventId: 0,
+        recordedAt: '2026-09-02T01:00:00.000Z',
+        label: 'Pipe 0',
+        size: '6 inch',
+        diameter: 100,
+        radius: 50,
+        circumference: 314.16,
+        isSpecified: true,
+      },
+    ],
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const logsSheet = workbook.getWorksheet('Production Cut Logs')
+  assert.equal(logsSheet.getCell('B6').value, 0)
+})
+
+test('toPdf handles malformed and non-finite diameter gracefully with N/A', async () => {
+  const report = createProductionReport({
+    specBreakdown: [
+      {
+        label: 'Malformed Pipe',
+        size: 'Custom',
+        diameter: NaN,
+        radius: 'invalid',
+        circumference: Infinity,
+        isSpecified: true,
+        pipeCount: 1,
+        percentageOfTotal: 100,
+      },
+    ],
+    productionLogs: [
+      {
+        id: 'evt-1',
+        deviceEventId: 1,
+        recordedAt: '2026-09-02T01:00:00.000Z',
+        label: 'Malformed Pipe',
+        size: 'Custom',
+        diameter: NaN,
+        radius: 'invalid',
+        circumference: Infinity,
+        isSpecified: true,
+      },
+    ],
+  })
+  const buffer = await toPdf(report)
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+})
+
+test('toXlsx regular workbook displays machine name in cell D3 for future unobserved periods', async () => {
+  const report = createReport({
+    periodState: 'future',
+    machine: { id: 'm-01', code: 'M-01', name: 'Spiral Mill 01' },
+    summary: [
+      { id: 'production', label: 'Production Count', value: 'N/A', helper: 'Period not reached yet' },
+    ],
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.getWorksheet('Operational Report')
+  assert.equal(sheet.getCell('D3').value, 'Spiral Mill 01')
+})
+
+test('toXlsx escapes spreadsheet formula injection payloads with leading single quote', async () => {
+  const report = createProductionReport({
+    specBreakdown: [
+      {
+        label: '=cmd|/C calc!A0',
+        size: '+1234567890',
+        diameter: 100,
+        radius: 50,
+        circumference: 314.16,
+        isSpecified: true,
+        pipeCount: 1,
+        percentageOfTotal: 100,
+      },
+    ],
+    productionLogs: [
+      {
+        id: 'evt-1',
+        deviceEventId: '@SUM(1+1)',
+        recordedAt: '2026-09-02T01:00:00.000Z',
+        label: '-10% Discount',
+        size: '=2+5',
+        diameter: 100,
+        radius: 50,
+        circumference: 314.16,
+        isSpecified: true,
+      },
+    ],
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+
+  const summarySheet = workbook.getWorksheet('Production Summary')
+  assert.equal(summarySheet.getCell('A13').value, "'=cmd|/C calc!A0")
+  assert.equal(summarySheet.getCell('B13').value, "'+1234567890")
+
+  const logsSheet = workbook.getWorksheet('Production Cut Logs')
+  assert.equal(logsSheet.getCell('B6').value, "'@SUM(1+1)")
+  assert.equal(logsSheet.getCell('C6').value, "'-10% Discount")
+  assert.equal(logsSheet.getCell('D6').value, "'=2+5")
+})
+
+test('toXlsx suppresses process sensor table headers when processSensors is empty', async () => {
+  const report = createReport({
+    processSensors: [],
+    rows: [],
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.getWorksheet('Operational Report')
+
+  assert.notEqual(sheet.getCell('A12').value, 'Process Sensor Activity')
+  assert.equal(sheet.getCell('A13').value, 'Downtime Records')
+})
+
+test('buildExportFilename sanitizes path traversal, CRLF, and special characters', () => {
+  assert.equal(
+    buildExportFilename({
+      category: 'production',
+      reportType: '../../daily\r\nSet-Cookie:bad',
+      selectedDate: '2026-09-02"; DROP TABLE--',
+      format: 'xlsx',
+    }),
+    'production-report-....dailySet-Cookiebad-2026-09-02DROPTABLE--.xlsx',
+  )
+})

@@ -9,7 +9,11 @@ const {
   startOfBusinessMonth,
   startOfBusinessWeek,
 } = require('../../shared/businessTime')
-const { getSensorLabel, OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
+const {
+  getSensorLabel,
+  OUTPUT_SENSOR_CODE,
+  PROCESS_SENSOR_CODES,
+} = require('../../shared/sensorIdentity')
 const {
   attributeMachineDowntime,
   calculateMachineMetrics,
@@ -20,8 +24,6 @@ const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
 const reportsRepository = require('./reports.repository')
-
-const PROCESS_SENSOR_CODES = ['S-01', 'S-02', 'S-04']
 
 function createReportError(status, code, message) {
   const error = new Error(message)
@@ -116,6 +118,7 @@ function getUnobservedReport(type, date, asOf) {
   }
 }
 
+// ponytail: single machine monitoring ceiling: 1 machine (M-01) upgrade: multi-machine selector
 async function getMachine() {
   const { data, error } = await getSupabaseClient()
     .from('machines')
@@ -207,17 +210,23 @@ async function buildObservedReport({ type, selectedDate, machine, window, period
   }
 }
 
+function parsePositiveDimension(val) {
+  if (val == null) return null
+  if (typeof val === 'string' && val.trim() === '') return null
+  const num = Number(val)
+  return Number.isFinite(num) && num > 0 ? num : null
+}
+
 function checkIsSpecified(spec) {
   if (!spec) return false
   const hasLabel = spec.label != null && String(spec.label).trim() !== ''
   const hasSize = spec.size != null && String(spec.size).trim() !== ''
-  const hasValidDimension = (val) => val != null && !isNaN(Number(val)) && Number(val) > 0
   return (
     hasLabel ||
     hasSize ||
-    hasValidDimension(spec.diameter) ||
-    hasValidDimension(spec.radius) ||
-    hasValidDimension(spec.circumference)
+    parsePositiveDimension(spec.diameter) !== null ||
+    parsePositiveDimension(spec.radius) !== null ||
+    parsePositiveDimension(spec.circumference) !== null
   )
 }
 
@@ -230,6 +239,16 @@ function getUnobservedProductionReport(type, date, asOf) {
     periodState: 'future',
     observedStartAt: null,
     observedEndAt: null,
+    machine: {
+      id: null,
+      code: 'M-01',
+      name: 'Spiral Mill 01',
+    },
+    sensor: {
+      id: null,
+      code: OUTPUT_SENSOR_CODE,
+      label: getSensorLabel(OUTPUT_SENSOR_CODE),
+    },
     summary: [
       { id: 'total-output', label: 'Total Production Output', value: 'N/A', helper: 'Period not reached yet' },
       { id: 'specified-pipes', label: 'Specified Pipes', value: 'N/A', helper: 'Period not reached yet' },
@@ -262,6 +281,8 @@ async function buildObservedProductionReport({
   periodState,
   asOf,
   suppliedClient,
+  metricsOnly = false,
+  maxLogs = 200,
 }) {
   const eventsWithSpecs = await reportsRepository.findAcceptedCuttingEventsWithSpecs(
     {
@@ -283,91 +304,95 @@ async function buildObservedProductionReport({
   let unspecifiedGroup = null
   let specifiedPipes = 0
   let unspecifiedPipes = 0
+  const productionLogs = []
 
-  const productionLogs = sortedEvents.map((event) => {
+  for (const event of sortedEvents) {
     const spec = event.spec
     const isSpecified = checkIsSpecified(spec)
 
     const label = spec?.label != null && String(spec.label).trim() !== '' ? String(spec.label).trim() : null
     const size = spec?.size != null && String(spec.size).trim() !== '' ? String(spec.size).trim() : null
-    const diameter = spec?.diameter != null && !isNaN(Number(spec.diameter)) ? Number(spec.diameter) : null
-    const radius = spec?.radius != null && !isNaN(Number(spec.radius)) ? Number(spec.radius) : null
-    const circumference = spec?.circumference != null && !isNaN(Number(spec.circumference)) ? Number(spec.circumference) : null
+    const diameter = parsePositiveDimension(spec?.diameter)
+    const radius = parsePositiveDimension(spec?.radius)
+    const circumference = parsePositiveDimension(spec?.circumference)
 
     if (isSpecified) {
       specifiedPipes += 1
-      const groupKey = JSON.stringify([label, size, diameter, radius, circumference])
-      const existing = groupsMap.get(groupKey)
+      if (!metricsOnly) {
+        const groupKey = JSON.stringify([label, size, diameter, radius, circumference])
+        const existing = groupsMap.get(groupKey)
 
-      if (existing) {
-        existing.pipeCount += 1
-        if (new Date(event.recorded_at) < new Date(existing.firstCutAt)) {
-          existing.firstCutAt = event.recorded_at
-        }
-        if (new Date(event.recorded_at) > new Date(existing.lastCutAt)) {
+        if (existing) {
+          existing.pipeCount += 1
           existing.lastCutAt = event.recorded_at
+        } else {
+          groupsMap.set(groupKey, {
+            label,
+            size,
+            diameter,
+            radius,
+            circumference,
+            isSpecified: true,
+            pipeCount: 1,
+            firstCutAt: event.recorded_at,
+            lastCutAt: event.recorded_at,
+          })
         }
-      } else {
-        groupsMap.set(groupKey, {
-          label,
-          size,
-          diameter,
-          radius,
-          circumference,
-          isSpecified: true,
-          pipeCount: 1,
-          firstCutAt: event.recorded_at,
-          lastCutAt: event.recorded_at,
-        })
       }
 
-      const distinctSizeKey = (label || size)
-        ? JSON.stringify([label, size])
-        : JSON.stringify([diameter, radius, circumference])
-      distinctSizes.add(distinctSizeKey)
+      let distinctSizeKey = null
+      if (size) {
+        distinctSizeKey = JSON.stringify(['size', size])
+      } else if (diameter != null || radius != null || circumference != null) {
+        distinctSizeKey = JSON.stringify(['dimensions', diameter, radius, circumference])
+      } else if (label) {
+        distinctSizeKey = JSON.stringify(['label', label])
+      }
+      if (distinctSizeKey) {
+        distinctSizes.add(distinctSizeKey)
+      }
     } else {
       unspecifiedPipes += 1
-      if (unspecifiedGroup) {
-        unspecifiedGroup.pipeCount += 1
-        if (new Date(event.recorded_at) < new Date(unspecifiedGroup.firstCutAt)) {
-          unspecifiedGroup.firstCutAt = event.recorded_at
-        }
-        if (new Date(event.recorded_at) > new Date(unspecifiedGroup.lastCutAt)) {
+      if (!metricsOnly) {
+        if (unspecifiedGroup) {
+          unspecifiedGroup.pipeCount += 1
           unspecifiedGroup.lastCutAt = event.recorded_at
-        }
-      } else {
-        unspecifiedGroup = {
-          label: 'Unspecified / Pending Tag',
-          size: null,
-          diameter: null,
-          radius: null,
-          circumference: null,
-          isSpecified: false,
-          pipeCount: 1,
-          firstCutAt: event.recorded_at,
-          lastCutAt: event.recorded_at,
+        } else {
+          unspecifiedGroup = {
+            label: 'Unspecified / Pending Tag',
+            size: null,
+            diameter: null,
+            radius: null,
+            circumference: null,
+            isSpecified: false,
+            pipeCount: 1,
+            firstCutAt: event.recorded_at,
+            lastCutAt: event.recorded_at,
+          }
         }
       }
     }
 
-    return {
-      id: event.id,
-      sensorEventId: event.id,
-      deviceEventId: event.device_event_id || null,
-      recordedAt: event.recorded_at,
-      label,
-      size,
-      diameter,
-      radius,
-      circumference,
-      isSpecified,
-      updatedBy: spec?.updated_by ?? null,
+    if (!metricsOnly) {
+      productionLogs.push({
+        id: event.id,
+        sensorEventId: event.id,
+        deviceEventId: event.device_event_id ?? null,
+        recordedAt: event.recorded_at,
+        label,
+        size,
+        diameter,
+        radius,
+        circumference,
+        isSpecified,
+        updatedBy: spec?.updated_by ?? null,
+      })
     }
-  })
+  }
 
   const totalProductionOutput = sortedEvents.length
 
-  const specBreakdown = Array.from(groupsMap.values())
+  const specBreakdown = metricsOnly ? [] : Array.from(groupsMap.values())
     .map((group) => ({
       ...group,
       percentageOfTotal: totalProductionOutput > 0
@@ -383,12 +408,16 @@ async function buildObservedProductionReport({
       return (a.diameter ?? 0) - (b.diameter ?? 0)
     })
 
-  if (unspecifiedGroup) {
+  if (!metricsOnly && unspecifiedGroup) {
     unspecifiedGroup.percentageOfTotal = totalProductionOutput > 0
       ? Number(((unspecifiedGroup.pipeCount / totalProductionOutput) * 100).toFixed(1))
       : 0
     specBreakdown.push(unspecifiedGroup)
   }
+
+  const returnedLogs = (!metricsOnly && maxLogs && maxLogs > 0 && productionLogs.length > maxLogs)
+    ? productionLogs.slice(-maxLogs)
+    : productionLogs
 
   const metrics = {
     totalProductionOutput,
@@ -449,8 +478,8 @@ async function buildObservedProductionReport({
     unspecifiedPipes,
     distinctProductSizes: distinctSizes.size,
     specBreakdown,
-    productionLogs,
-    rows: productionLogs,
+    productionLogs: returnedLogs,
+    rows: returnedLogs,
   }
 }
 
@@ -497,6 +526,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     periodState: observed.periodState,
     asOf,
     suppliedClient: options.client,
+    maxLogs: options.maxLogs !== undefined ? options.maxLogs : 200,
   })
 
   if (!compare) return report
@@ -512,6 +542,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     periodState: observed.periodState,
     asOf,
     suppliedClient: options.client,
+    metricsOnly: true,
   })
 
   return {

@@ -633,3 +633,202 @@ test('production report throws controlled error when repository query fails', as
   )
 })
 
+test('production report parses positive dimensions strictly, treating empty strings, whitespace, 0, and negatives as null', async () => {
+  const sensorEvents = [
+    { id: 'ev-1', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, event_type: 'pulse', recorded_at: '2026-08-09T01:00:00.000Z', output_accepted: true },
+    { id: 'ev-2', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, event_type: 'pulse', recorded_at: '2026-08-09T02:00:00.000Z', output_accepted: true },
+  ]
+  const productionSpecs = [
+    { sensor_event_id: 'ev-1', label: '', size: '   ', diameter: '0', radius: '   ', circumference: '' },
+    { sensor_event_id: 'ev-2', label: 'Tag 2', size: '4 inch', diameter: '50.5', radius: '-5', circumference: 'Infinity' },
+  ]
+
+  const fakeSupabase = createFakeSupabase({ sensorEvents, productionSpecs })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ category: 'production', type: 'daily', date: '2026-08-09' })
+
+  assert.equal(report.specifiedPipes, 1)
+  assert.equal(report.unspecifiedPipes, 1)
+  const log1 = report.productionLogs.find((l) => l.id === 'ev-1')
+  assert.equal(log1.diameter, null)
+  assert.equal(log1.radius, null)
+  assert.equal(log1.circumference, null)
+  assert.equal(log1.isSpecified, false)
+
+  const log2 = report.productionLogs.find((l) => l.id === 'ev-2')
+  assert.equal(log2.diameter, 50.5)
+  assert.equal(log2.radius, null)
+  assert.equal(log2.circumference, null)
+  assert.equal(log2.isSpecified, true)
+})
+
+test('production report groups identical pipe sizes with different heat/batch labels under the same distinct size', async () => {
+  const sensorEvents = [
+    { id: 'ev-1', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, event_type: 'pulse', recorded_at: '2026-08-09T01:00:00.000Z', output_accepted: true },
+    { id: 'ev-2', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, event_type: 'pulse', recorded_at: '2026-08-09T02:00:00.000Z', output_accepted: true },
+    { id: 'ev-3', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, event_type: 'pulse', recorded_at: '2026-08-09T03:00:00.000Z', output_accepted: true },
+  ]
+  const productionSpecs = [
+    { sensor_event_id: 'ev-1', label: 'Heat Batch 001', size: '6 inch' },
+    { sensor_event_id: 'ev-2', label: 'Heat Batch 002', size: '6 inch' },
+    { sensor_event_id: 'ev-3', label: 'Heat Batch 003', size: '8 inch' },
+  ]
+
+  const fakeSupabase = createFakeSupabase({ sensorEvents, productionSpecs })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({ category: 'production', type: 'daily', date: '2026-08-09' })
+
+  assert.equal(report.totalProductionOutput, 3)
+  assert.equal(report.specifiedPipes, 3)
+  assert.equal(report.distinctProductSizes, 2)
+})
+
+test('production report summary caps productionLogs at 200 cuts while export returns complete logs', async () => {
+  const sensorEvents = []
+  const productionSpecs = []
+  for (let i = 0; i < 250; i++) {
+    const id = `ev-${String(i).padStart(3, '0')}`
+    sensorEvents.push({
+      id,
+      sensor_id: 'sensor-s05-id',
+      machine_id: MACHINE_ID,
+      device_event_id: i,
+      event_type: 'pulse',
+      recorded_at: new Date(Date.parse('2026-08-09T00:00:00.000Z') + i * 60000).toISOString(),
+      output_accepted: true,
+    })
+    productionSpecs.push({
+      sensor_event_id: id,
+      label: `Pipe ${i}`,
+      size: '6 inch',
+    })
+  }
+
+  const fakeSupabase = createFakeSupabase({ sensorEvents, productionSpecs })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const summaryReport = await reportsService.getSummary({ category: 'production', type: 'daily', date: '2026-08-09' })
+  assert.equal(summaryReport.totalProductionOutput, 250)
+  assert.equal(summaryReport.productionLogs.length, 200)
+  assert.equal(summaryReport.productionLogs[0].deviceEventId, 50)
+  assert.equal(summaryReport.productionLogs[199].deviceEventId, 249)
+
+  const exportReport = await reportsService.getSummary({ category: 'production', type: 'daily', date: '2026-08-09' }, { maxLogs: null })
+  assert.equal(exportReport.totalProductionOutput, 250)
+  assert.equal(exportReport.productionLogs.length, 250)
+  assert.equal(exportReport.productionLogs[0].deviceEventId, 0)
+})
+
+test('future production report provides complete machine and sensor stubs', async () => {
+  const fakeSupabase = createFakeSupabase()
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({
+    category: 'production',
+    type: 'daily',
+    date: '2026-12-31',
+  }, { asOf: new Date('2026-08-09T00:00:00.000Z') })
+
+  assert.equal(report.periodState, 'future')
+  assert.ok(report.machine)
+  assert.equal(report.machine.code, 'M-01')
+  assert.equal(report.machine.name, 'Spiral Mill 01')
+  assert.ok(report.sensor)
+  assert.equal(report.sensor.code, 'S-05')
+  assert.ok(report.sensor.label)
+})
+
+test('repository error preserves original database error cause', async () => {
+  const dbError = new Error('Connection terminated unexpectedly.')
+  dbError.code = '57P01'
+
+  const fakeSupabase = createFakeSupabase({
+    eventsError: dbError,
+  })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  try {
+    await reportsService.getSummary({ category: 'production', type: 'daily', date: '2026-08-09' })
+    assert.fail('Expected query to fail')
+  } catch (err) {
+    assert.equal(err.code, 'REPORT_PRODUCTION_EVENTS_QUERY_FAILED')
+    assert.equal(err.cause, dbError)
+    assert.equal(err.cause.code, '57P01')
+  }
+})
+
+test('comparison period query optimizes payload with metricsOnly', async () => {
+  let callCount = 0
+  const fakeSupabase = createFakeSupabase()
+  fakeSupabase.from = (tableName) => {
+    const query = createFakeSupabase().from(tableName)
+    if (tableName === 'sensor_events') {
+      callCount += 1
+      const count = callCount === 1 ? 5 : 3
+      const events = Array.from({ length: count }, (_, i) => ({
+        id: `ev-${callCount}-${i}`,
+        sensor_id: 'sensor-s05-id',
+        machine_id: MACHINE_ID,
+        event_type: 'pulse',
+        recorded_at: '2026-08-09T01:00:00.000Z',
+        output_accepted: true,
+      }))
+      query.then = (resolve) => resolve({ data: events, error: null })
+    }
+    return query
+  }
+
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const report = await reportsService.getSummary({
+    category: 'production',
+    type: 'daily',
+    date: '2026-08-09',
+    compare: true,
+  }, { asOf: new Date('2026-08-10T00:00:00.000Z') })
+
+  assert.ok(report.comparison)
+  assert.equal(report.totalProductionOutput, 5)
+  assert.equal(report.comparison.metrics.totalProductionOutput, 3)
+})
+
+test('sensorIdentity derives PROCESS_SENSOR_CODES excluding S-03 and S-05', () => {
+  const { PROCESS_SENSOR_CODES, OUTPUT_SENSOR_CODE } = require('../src/shared/sensorIdentity')
+  assert.deepEqual(PROCESS_SENSOR_CODES, ['S-01', 'S-02', 'S-04'])
+  assert.equal(OUTPUT_SENSOR_CODE, 'S-05')
+  assert.ok(!PROCESS_SENSOR_CODES.includes('S-03'))
+  assert.ok(!PROCESS_SENSOR_CODES.includes('S-05'))
+})
+
+test('findAcceptedCuttingEvents throws REPORT_PRODUCTION_EVENT_LIMIT_EXCEEDED when exceeding MAX_PAGES', async () => {
+  const reportsRepo = require('../src/modules/reports/reports.repository')
+  const fakeClient = {
+    from() {
+      return {
+        select() { return this },
+        eq() { return this },
+        gte() { return this },
+        lt() { return this },
+        order() { return this },
+        range() {
+          return Promise.resolve({
+            data: Array.from({ length: 500 }, (_, i) => ({ id: `ev-${i}`, recorded_at: '2026-08-09T01:00:00.000Z' })),
+            error: null,
+          })
+        },
+      }
+    },
+  }
+
+  await assert.rejects(
+    async () => reportsRepo.findAcceptedCuttingEvents({
+      sensorId: 'sensor-1',
+      startIso: '2026-08-09T00:00:00.000Z',
+      endIso: '2026-08-10T00:00:00.000Z',
+    }, fakeClient),
+    (err) => err.code === 'REPORT_PRODUCTION_EVENT_LIMIT_EXCEEDED' && err.status === 500,
+  )
+})
+

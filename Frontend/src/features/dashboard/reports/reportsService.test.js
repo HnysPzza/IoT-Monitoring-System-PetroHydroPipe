@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { exportReport, getReportSummary, reportCategories } from './reportsService.js'
 import { setUnauthorizedHandler } from '../../../shared/errors/unauthorizedSession.js'
+import { setSessionRefresher } from '../../../shared/services/sessionRefresh.js'
 
 function exportResponse(body, {
   status = 200,
@@ -86,6 +87,7 @@ describe('getReportSummary', () => {
 describe('exportReport', () => {
   afterEach(() => {
     setUnauthorizedHandler(null, null)
+    setSessionRefresher(null)
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -104,10 +106,38 @@ describe('exportReport', () => {
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toContain('/api/reports/export')
     expect(options.method).toBe('POST')
+    expect(options.credentials).toBe('include')
     expect(options.headers.Authorization).toBe('Bearer test-token')
     expect(JSON.parse(options.body)).toEqual({ category: 'regular', type: 'daily', date: '2026-09-02', format: 'pdf' })
 
     expect(result.filename).toBe('report-daily-2026-09-02.pdf')
+    expect(result.blob).toBeInstanceOf(Blob)
+  })
+
+  it('refreshes session and retries export when first attempt returns 401', async () => {
+    setSessionRefresher(async () => 'refreshed-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(exportResponse('%PDF-refreshed'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await exportReport('initial-token', {
+      reportType: 'daily',
+      selectedDate: '2026-09-02',
+      format: 'pdf',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [, firstOptions] = fetchMock.mock.calls[0]
+    expect(firstOptions.headers.Authorization).toBe('Bearer initial-token')
+    expect(firstOptions.credentials).toBe('include')
+
+    const [, secondOptions] = fetchMock.mock.calls[1]
+    expect(secondOptions.headers.Authorization).toBe('Bearer refreshed-token')
+    expect(secondOptions.credentials).toBe('include')
     expect(result.blob).toBeInstanceOf(Blob)
   })
 

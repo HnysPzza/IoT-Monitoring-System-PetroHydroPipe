@@ -93,9 +93,10 @@ function getDowntimeValue(summaryById) {
   const durationValue = getSummaryItem(summaryById, 'duration', 'Downtime Duration').value
   if (eventValue === 'N/A' || durationValue === 'N/A') return 'N/A'
 
-  const events = String(eventValue).replace(/\s+events?$/i, '')
-  const duration = String(durationValue).replace(/\s+minutes?$/i, '')
-  return `${events} events · ${duration}`
+  const events = String(eventValue).replace(/\s*(?:events?)$/i, '')
+  const duration = String(durationValue).replace(/\s*(?:minutes?|mins?)$/i, '')
+  const eventLabel = events === '1' ? 'event' : 'events'
+  return `${events} ${eventLabel} · ${duration} min`
 }
 
 export function getReportCards(report = {}) {
@@ -120,8 +121,6 @@ export function getReportCards(report = {}) {
     })
 
     const distinctSizesItem = getSummaryItem(summaryById, 'distinct-sizes', 'Distinct Sizes')
-    const distinctSizesCurrent = report.metrics?.distinctProductSizes ?? parseSummaryNumber(distinctSizesItem.value)
-    const distinctSizesPrevious = comparisonMetrics?.distinctProductSizes
 
     return [
       ...primaryCards,
@@ -130,7 +129,6 @@ export function getReportCards(report = {}) {
         id: 'distinct-sizes',
         label: 'Distinct Sizes',
         isPrimary: false,
-        delta: getReportDelta('distinct-sizes', distinctSizesCurrent, distinctSizesPrevious, hasComparison),
       },
     ]
   }

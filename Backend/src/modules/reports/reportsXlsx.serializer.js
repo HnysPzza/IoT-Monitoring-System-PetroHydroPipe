@@ -12,6 +12,13 @@ function numericValue(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function escapeFormula(value) {
+  if (typeof value === 'string' && /^[=+@-]/.test(value)) {
+    return `'${value}`
+  }
+  return value
+}
+
 function numberFormatFor(value, numberFormat) {
   return Number.isInteger(value) ? numberFormat.replace(/\.#+/, '') : numberFormat
 }
@@ -231,8 +238,8 @@ async function renderProductionWorkbook(workbook, report) {
   } else {
     specBreakdown.forEach((group, index) => {
       const row = summarySheet.getRow(13 + index)
-      const label = group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : 'N/A')
-      const size = group.size || 'N/A'
+      const label = escapeFormula(group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : 'N/A'))
+      const size = escapeFormula(group.size || 'N/A')
       const diameter = numericValue(group.diameter) ?? 'N/A'
       const radius = numericValue(group.radius) ?? 'N/A'
       const circumference = numericValue(group.circumference) ?? 'N/A'
@@ -337,9 +344,11 @@ async function renderProductionWorkbook(workbook, report) {
     productionLogs.forEach((log, index) => {
       const row = logsSheet.getRow(6 + index)
       const recordedAt = formatManilaDate(log.recordedAt)
-      const eventRef = log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')
-      const label = log.label || 'N/A'
-      const size = log.size || 'N/A'
+      const eventRef = typeof log.deviceEventId === 'string'
+        ? escapeFormula(log.deviceEventId)
+        : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A'))
+      const label = escapeFormula(log.label || 'N/A')
+      const size = escapeFormula(log.size || 'N/A')
       const diameter = numericValue(log.diameter) ?? 'N/A'
       const radius = numericValue(log.radius) ?? 'N/A'
       const circumference = numericValue(log.circumference) ?? 'N/A'
@@ -392,8 +401,7 @@ async function renderRegularWorkbook(workbook, report) {
   sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' }
   sheet.getRow(2).height = 25
 
-  const productionSummary = report.summary?.find((item) => item.id === 'production')
-  const machineLabel = String(productionSummary?.helper || '').replace(/^From\s+/, '')
+  const machineLabel = report.machine?.name || 'Spiral Mill 01'
   sheet.mergeCells('A3:C3')
   const reportTypeLabel = report.reportType
     ? String(report.reportType).charAt(0).toUpperCase() + String(report.reportType).slice(1) + ' report'
@@ -478,25 +486,28 @@ async function renderRegularWorkbook(workbook, report) {
     }
   })
 
-  sheet.mergeCells('A12:E12')
-  sheet.getCell('A12').value = 'Process Sensor Activity'
-  sheet.getCell('A12').font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-  sheet.getCell('A12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  sheet.getCell('A12').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
-  sheet.getRow(13).values = ['Code', 'Sensor', 'Events', null, null]
-  sheet.mergeCells('C13:E13')
-  styleTableHeader(sheet.getRow(13))
+  const hasProcessSensors = Boolean(processSensors.length)
+  if (hasProcessSensors) {
+    sheet.mergeCells('A12:E12')
+    sheet.getCell('A12').value = 'Process Sensor Activity'
+    sheet.getCell('A12').font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
+    sheet.getCell('A12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
+    sheet.getCell('A12').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
+    sheet.getRow(13).values = ['Code', 'Sensor', 'Events', null, null]
+    sheet.mergeCells('C13:E13')
+    styleTableHeader(sheet.getRow(13))
 
-  processSensors.forEach((sensor, index) => {
-    const row = sheet.getRow(14 + index)
-    row.values = [sensor.sensorCode || 'N/A', sensor.sensorLabel || 'N/A', numericValue(sensor.eventCount) ?? 'N/A']
-    sheet.mergeCells('C' + row.number + ':E' + row.number)
-    styleTableBody(row)
-    row.getCell(3).alignment = { vertical: 'middle', horizontal: 'right' }
-    if (typeof row.getCell(3).value === 'number') row.getCell(3).numFmt = '#,##0'
-  })
+    processSensors.forEach((sensor, index) => {
+      const row = sheet.getRow(14 + index)
+      row.values = [escapeFormula(sensor.sensorCode || 'N/A'), escapeFormula(sensor.sensorLabel || 'N/A'), numericValue(sensor.eventCount) ?? 'N/A']
+      sheet.mergeCells('C' + row.number + ':E' + row.number)
+      styleTableBody(row)
+      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'right' }
+      if (typeof row.getCell(3).value === 'number') row.getCell(3).numFmt = '#,##0'
+    })
+  }
 
-  const downtimeSectionRow = Math.max(18, 15 + processSensors.length)
+  const downtimeSectionRow = hasProcessSensors ? Math.max(18, 15 + processSensors.length) : 13
   sheet.mergeCells('A' + downtimeSectionRow + ':E' + downtimeSectionRow)
   sheet.getCell('A' + downtimeSectionRow).value = 'Downtime Records'
   sheet.getCell('A' + downtimeSectionRow).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
@@ -520,7 +531,13 @@ async function renderRegularWorkbook(workbook, report) {
   } else {
     downtimeRows.forEach((item, index) => {
       const row = sheet.getRow(headerRowNumber + 1 + index)
-      row.values = [item.cause || 'N/A', item.sensor || 'N/A', numericValue(item.events) ?? 'N/A', numericValue(item.durationMinutes) ?? 'N/A', numericValue(item.estimatedLoss) ?? 'N/A']
+      row.values = [
+        escapeFormula(item.cause || 'N/A'),
+        escapeFormula(item.sensor || 'N/A'),
+        numericValue(item.events) ?? 'N/A',
+        numericValue(item.durationMinutes) ?? 'N/A',
+        numericValue(item.estimatedLoss) ?? 'N/A',
+      ]
       styleTableBody(row)
       for (const column of [3, 4, 5]) {
         row.getCell(column).alignment = { vertical: 'middle', horizontal: 'right' }
@@ -533,6 +550,7 @@ async function renderRegularWorkbook(workbook, report) {
   }
 }
 
+// ponytail: synchronous in-memory buffer ceiling: 10k events upgrade: stream via PassThrough to response
 async function toXlsx(report) {
   const workbook = new ExcelJS.Workbook()
 

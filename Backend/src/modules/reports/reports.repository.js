@@ -2,12 +2,15 @@ const { getSupabaseClient } = require('../../database/client')
 const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const PAGE_SIZE = 500
-const CHUNK_SIZE = 500
+const CHUNK_SIZE = 100
 
-function createRepositoryError(code, message) {
+function createRepositoryError(code, message, dbError = null) {
   const error = new Error(message)
   error.status = 500
   error.code = code
+  if (dbError) {
+    error.cause = dbError
+  }
   return error
 }
 
@@ -20,7 +23,7 @@ async function findOutputSensor(suppliedClient) {
     .maybeSingle()
 
   if (error) {
-    throw createRepositoryError('REPORT_PRODUCTION_SENSOR_QUERY_FAILED', 'Unable to load production sensor configuration.')
+    throw createRepositoryError('REPORT_PRODUCTION_SENSOR_QUERY_FAILED', 'Unable to load production sensor configuration.', error)
   }
 
   return data
@@ -33,6 +36,7 @@ async function findAcceptedCuttingEvents({ sensorId, startIso, endIso }, supplie
 
   const supabase = suppliedClient || getSupabaseClient()
   const records = []
+  // ponytail: paginated query capped at 100k events ceiling: 100000 events upgrade: cursor pagination or streaming background worker
   const MAX_PAGES = 200
 
   for (let from = 0; ; from += PAGE_SIZE) {
@@ -49,12 +53,18 @@ async function findAcceptedCuttingEvents({ sensorId, startIso, endIso }, supplie
       .range(from, from + PAGE_SIZE - 1)
 
     if (error) {
-      throw createRepositoryError('REPORT_PRODUCTION_EVENTS_QUERY_FAILED', 'Unable to load production log records.')
+      throw createRepositoryError('REPORT_PRODUCTION_EVENTS_QUERY_FAILED', 'Unable to load production log records.', error)
     }
 
     const page = data || []
     records.push(...page)
-    if (page.length < PAGE_SIZE || from / PAGE_SIZE >= MAX_PAGES) break
+    if (page.length < PAGE_SIZE) break
+    if (from / PAGE_SIZE + 1 >= MAX_PAGES) {
+      throw createRepositoryError(
+        'REPORT_PRODUCTION_EVENT_LIMIT_EXCEEDED',
+        'Production event query exceeded maximum limit of 100,000 events.',
+      )
+    }
   }
 
   return records
@@ -77,7 +87,7 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
       .in('sensor_event_id', chunk)
 
     if (error) {
-      throw createRepositoryError('REPORT_PRODUCTION_SPECS_QUERY_FAILED', 'Unable to load production specifications.')
+      throw createRepositoryError('REPORT_PRODUCTION_SPECS_QUERY_FAILED', 'Unable to load production specifications.', error)
     }
 
     if (data) {
@@ -93,7 +103,7 @@ async function findAcceptedCuttingEventsWithSpecs({ sensorId, startIso, endIso }
   if (!resolvedSensorId) {
     const sensorConfig = await findOutputSensor(suppliedClient)
     if (!sensorConfig?.id) {
-      throw createRepositoryError('REPORT_PRODUCTION_SENSOR_NOT_FOUND', 'Production output sensor is not configured.')
+      throw createRepositoryError('REPORT_PRODUCTION_SENSOR_MISSING', 'Production output sensor is not configured.')
     }
     resolvedSensorId = sensorConfig.id
   }

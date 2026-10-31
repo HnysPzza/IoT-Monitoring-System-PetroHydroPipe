@@ -519,4 +519,104 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('Pipe cuts not observed yet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
   })
+
+  it('switches back from Production Report to Regular Report cleanly', async () => {
+    const user = userEvent.setup()
+    const regularSummary = reportPayload()
+    const productionSummary = productionReportPayload()
+
+    getReportSummary
+      .mockResolvedValueOnce(regularSummary)
+      .mockResolvedValueOnce(productionSummary)
+      .mockResolvedValueOnce(regularSummary)
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText('Production Count')).toBeInTheDocument()
+
+    const prodButton = screen.getByRole('button', { name: 'Production Report' })
+    await user.click(prodButton)
+
+    expect(await screen.findByText('Output by product specification')).toBeInTheDocument()
+
+    const regButton = screen.getByRole('button', { name: 'Regular Report' })
+    await user.click(regButton)
+
+    expect(regButton).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByText('Events by process sensor')).toBeInTheDocument()
+    expect(screen.getByText('Downtime by cause and sensor')).toBeInTheDocument()
+    expect(screen.queryByText('Output by product specification')).not.toBeInTheDocument()
+  })
+
+  it('renders N/A for invalid or null cut timestamps in production cut logs', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload({
+      productionLogs: [
+        {
+          id: 'evt-null-date',
+          deviceEventId: 201,
+          recordedAt: null,
+          label: 'Pipe with null date',
+          size: '4 inch',
+          diameter: 114.3,
+          isSpecified: true,
+        },
+        {
+          id: 'evt-invalid-date',
+          deviceEventId: 202,
+          recordedAt: 'not-a-valid-timestamp',
+          label: 'Pipe with invalid date',
+          size: '4 inch',
+          diameter: 114.3,
+          isSpecified: true,
+        },
+      ],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    const prodButton = await screen.findByRole('button', { name: 'Production Report' })
+    await user.click(prodButton)
+
+    await screen.findByText('Output by product specification')
+    const naCells = screen.getAllByText('N/A')
+    expect(naCells.length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Pipe with null date')).toBeInTheDocument()
+    expect(screen.getByText('Pipe with invalid date')).toBeInTheDocument()
+  })
+
+  it('triggers blob download by appending anchor to body and deferring URL revocation', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(reportPayload())
+    exportReport.mockResolvedValue({
+      blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+      filename: 'report-daily-2026-08-31.pdf',
+    })
+
+    const appendChildSpy = vi.spyOn(document.body, 'appendChild')
+    const removeChildSpy = vi.spyOn(document.body, 'removeChild')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    try {
+      renderWithAuth(<ReportsSection />)
+
+      await screen.findByText('Production Count')
+      await selectExportFormat(user, 'pdf')
+
+      expect(appendChildSpy).toHaveBeenCalledWith(expect.any(HTMLAnchorElement))
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+      expect(removeChildSpy).toHaveBeenCalledWith(expect.any(HTMLAnchorElement))
+      expect(revokeObjectURLSpy).not.toHaveBeenCalled()
+
+      await waitFor(() => {
+        expect(revokeObjectURLSpy).toHaveBeenCalledTimes(1)
+      }, { timeout: 2000 })
+    } finally {
+      appendChildSpy.mockRestore()
+      removeChildSpy.mockRestore()
+      revokeObjectURLSpy.mockRestore()
+      clickSpy.mockRestore()
+    }
+  })
 })

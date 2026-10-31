@@ -12,8 +12,15 @@ function downloadBlob(blob, filename) {
   const link = document.createElement('a')
   link.href = url
   link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+  document.body.appendChild(link)
+  try {
+    link.click()
+  } finally {
+    document.body.removeChild(link)
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, 1000)
+  }
 }
 
 function getManilaDateInputValue() {
@@ -185,7 +192,7 @@ export default function ReportsSection() {
   const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
   const isCurrentSuccess = loadState === 'success' && hasCurrentReport
   const reportCards = hasCurrentReport ? getReportCards(report) : []
-  const isProduction = category === 'production' || report?.category === 'production'
+  const isProduction = category === 'production'
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1
@@ -302,7 +309,7 @@ export default function ReportsSection() {
         <div className="reports-controls">
           <fieldset className="reports-period-fieldset">
             <legend className="sr-only">Report category</legend>
-            <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report category">
+            <div className="trend-mode-toggle reports-period-toggle reports-category-toggle" role="group" aria-label="Report category">
               {reportCategories.map((cat) => (
                 <button
                   key={cat.id}
@@ -485,7 +492,11 @@ export default function ReportsSection() {
                     ) : hasCurrentReport ? (
                       report.productionLogs.map((log) => (
                         <tr key={log.id || log.deviceEventId}>
-                          <td data-label="Cut Time">{formatSuccessfulUpdate(new Date(log.recordedAt))}</td>
+                          <td data-label="Cut Time">
+                            {log.recordedAt && !Number.isNaN(new Date(log.recordedAt).getTime())
+                              ? formatSuccessfulUpdate(new Date(log.recordedAt))
+                              : 'N/A'}
+                          </td>
                           <td data-label="Event ID">{log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')}</td>
                           <td data-label="Label">{log.label || 'N/A'}</td>
                           <td data-label="Size">{log.size || 'N/A'}</td>
@@ -564,8 +575,8 @@ export default function ReportsSection() {
                         <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
                       </tr>
                     ) : hasCurrentReport ? (
-                      report.rows.map((row) => (
-                        <tr key={`${row.cause}-${row.sensor}`}>
+                      report.rows.map((row, index) => (
+                        <tr key={`${row.cause || ''}-${row.sensor || ''}-${row.id || index}`}>
                           <td data-label="Cause">{row.cause}</td>
                           <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
                           <td data-label="Events">{row.events}</td>

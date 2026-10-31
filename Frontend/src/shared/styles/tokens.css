@@ -3496,6 +3496,10 @@ button:disabled {
   background: transparent;
 }
 
+.trend-mode-toggle.reports-category-toggle {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .reports-controls-card .reports-period-button {
   min-width: 0;
   min-height: 44px;
@@ -3735,7 +3739,7 @@ button:disabled {
   }
 
   .reports-controls {
-    grid-template-columns: minmax(240px, 312px) minmax(200px, 260px) auto;
+    grid-template-columns: minmax(160px, 220px) minmax(180px, 240px) minmax(180px, 1fr) auto;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
@@ -3743,6 +3747,11 @@ button:disabled {
 
   .trend-mode-toggle.reports-period-toggle {
     grid-template-columns: repeat(3, minmax(76px, 1fr));
+    width: 100%;
+  }
+
+  .trend-mode-toggle.reports-category-toggle {
+    grid-template-columns: repeat(2, minmax(76px, 1fr));
     width: 100%;
   }
 

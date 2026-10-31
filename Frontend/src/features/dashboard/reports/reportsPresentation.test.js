@@ -121,6 +121,37 @@ describe('getReportCards', () => {
     expect(cards.find((card) => card.id === 'downtime').value).toBe('N/A')
     expect(cards.find((card) => card.id === 'production').delta.label).toBe('Not observed')
   })
+
+  it('formats downtime value with singular grammar for 1 event and handles minutes/mins/min suffixes', () => {
+    const cards1 = getReportCards(report({
+      summary: [
+        { id: 'production', label: 'Production Count', value: '100 pcs', helper: '' },
+        { id: 'events', label: 'Downtime Events', value: '1', helper: '' },
+        { id: 'duration', label: 'Downtime Duration', value: '15 minutes', helper: '' },
+        { id: 'availability', label: 'Availability', value: '95%', helper: '' },
+        { id: 'loss', label: 'Estimated Loss', value: '0 pcs', helper: '' },
+      ],
+    }))
+    expect(cards1.find((card) => card.id === 'downtime').value).toBe('1 event · 15 min')
+
+    const cards2 = getReportCards(report({
+      summary: [
+        { id: 'production', label: 'Production Count', value: '100 pcs', helper: '' },
+        { id: 'events', label: 'Downtime Events', value: '4', helper: '' },
+        { id: 'duration', label: 'Downtime Duration', value: '45 mins', helper: '' },
+        { id: 'availability', label: 'Availability', value: '90%', helper: '' },
+        { id: 'loss', label: 'Estimated Loss', value: '0 pcs', helper: '' },
+      ],
+    }))
+    expect(cards2.find((card) => card.id === 'downtime').value).toBe('4 events · 45 min')
+  })
+
+  it('ensures distinct-sizes secondary card omits delta even when comparison data is present', () => {
+    const cards = getReportCards(productionReport())
+    const distinctSizesCard = cards.find((card) => card.id === 'distinct-sizes')
+    expect(distinctSizesCard).toBeDefined()
+    expect(distinctSizesCard.delta).toBeUndefined()
+  })
 })
 
 describe('getReportDelta', () => {
