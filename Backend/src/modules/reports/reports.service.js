@@ -23,6 +23,7 @@ const { getOverlappingDowntime } = require('../downtime/downtime.repository')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { aggregateSensorEvents } = require('../../shared/sensorEventAggregation.repository')
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
+const { calculatePipeTonnage } = require('../production/production.service')
 const reportsRepository = require('./reports.repository')
 
 function createReportError(status, code, message) {
@@ -219,12 +220,21 @@ function parsePositiveDimension(val) {
 
 function checkIsSpecified(spec) {
   if (!spec) return false
+  const hasCustomer = spec.customer != null && String(spec.customer).trim() !== ''
+  const hasDiameter = parsePositiveDimension(spec.diameter) !== null
+  const hasThickness = parsePositiveDimension(spec.thickness) !== null
+  const hasLength = parsePositiveDimension(spec.length) !== null
+  const hasPipeNumber = spec.pipe_number != null || spec.pipeNumber != null
   const hasLabel = spec.label != null && String(spec.label).trim() !== ''
   const hasSize = spec.size != null && String(spec.size).trim() !== ''
   return (
+    hasCustomer ||
+    hasDiameter ||
+    hasThickness ||
+    hasLength ||
+    hasPipeNumber ||
     hasLabel ||
     hasSize ||
-    parsePositiveDimension(spec.diameter) !== null ||
     parsePositiveDimension(spec.radius) !== null ||
     parsePositiveDimension(spec.circumference) !== null
   )
@@ -251,17 +261,20 @@ function getUnobservedProductionReport(type, date, asOf) {
     },
     summary: [
       { id: 'total-output', label: 'Total Production Output', value: 'N/A', helper: 'Period not reached yet' },
+      { id: 'total-tonnage', label: 'Total Production Tonnage (tons)', value: 'N/A', helper: 'Period not reached yet' },
       { id: 'specified-pipes', label: 'Specified Pipes', value: 'N/A', helper: 'Period not reached yet' },
       { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: 'N/A', helper: 'Period not reached yet' },
       { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: 'N/A', helper: 'Period not reached yet' },
     ],
     metrics: {
       totalProductionOutput: null,
+      totalTonnage: null,
       specifiedPipes: null,
       unspecifiedPipes: null,
       distinctProductSizes: null,
     },
     totalProductionOutput: null,
+    totalTonnage: null,
     specifiedPipes: null,
     unspecifiedPipes: null,
     distinctProductSizes: null,
@@ -304,22 +317,41 @@ async function buildObservedProductionReport({
   let unspecifiedGroup = null
   let specifiedPipes = 0
   let unspecifiedPipes = 0
+  let accumulatedTonnage = 0
   const productionLogs = []
 
   for (const event of sortedEvents) {
     const spec = event.spec
     const isSpecified = checkIsSpecified(spec)
 
+    const customer = spec?.customer != null && String(spec.customer).trim() !== '' ? String(spec.customer).trim() : null
+    const diameter = parsePositiveDimension(spec?.diameter)
+    const thickness = parsePositiveDimension(spec?.thickness)
+    const length = parsePositiveDimension(spec?.length)
+    const pipeNumber = spec?.pipe_number != null
+      ? Number(spec.pipe_number)
+      : (spec?.pipeNumber != null ? Number(spec.pipeNumber) : null)
+    const singleTonnage = calculatePipeTonnage(diameter, thickness, length)
+
     const label = spec?.label != null && String(spec.label).trim() !== '' ? String(spec.label).trim() : null
     const size = spec?.size != null && String(spec.size).trim() !== '' ? String(spec.size).trim() : null
-    const diameter = parsePositiveDimension(spec?.diameter)
     const radius = parsePositiveDimension(spec?.radius)
     const circumference = parsePositiveDimension(spec?.circumference)
 
     if (isSpecified) {
       specifiedPipes += 1
+      if (singleTonnage != null) {
+        accumulatedTonnage += singleTonnage
+      }
+
       if (!metricsOnly) {
-        const groupKey = JSON.stringify([label, size, diameter, radius, circumference])
+        const groupKey = JSON.stringify([
+          customer,
+          diameter,
+          thickness,
+          length,
+          (!customer && diameter == null && thickness == null && length == null) ? (size || label) : null,
+        ])
         const existing = groupsMap.get(groupKey)
 
         if (existing) {
@@ -327,11 +359,13 @@ async function buildObservedProductionReport({
           existing.lastCutAt = event.recorded_at
         } else {
           groupsMap.set(groupKey, {
+            customer,
+            diameter,
+            thickness,
+            length,
+            singleTonnage,
             label,
             size,
-            diameter,
-            radius,
-            circumference,
             isSpecified: true,
             pipeCount: 1,
             firstCutAt: event.recorded_at,
@@ -341,12 +375,16 @@ async function buildObservedProductionReport({
       }
 
       let distinctSizeKey = null
-      if (size) {
-        distinctSizeKey = JSON.stringify(['size', size])
-      } else if (diameter != null || radius != null || circumference != null) {
-        distinctSizeKey = JSON.stringify(['dimensions', diameter, radius, circumference])
+      if (diameter != null || thickness != null || length != null) {
+        distinctSizeKey = JSON.stringify(['dims', diameter, thickness, length])
+      } else if (customer) {
+        distinctSizeKey = JSON.stringify(['customer', customer])
+      } else if (size) {
+        distinctSizeKey = JSON.stringify(['legacy-size', size])
+      } else if (radius != null || circumference != null) {
+        distinctSizeKey = JSON.stringify(['legacy-circle', radius, circumference])
       } else if (label) {
-        distinctSizeKey = JSON.stringify(['label', label])
+        distinctSizeKey = JSON.stringify(['legacy-label', label])
       }
       if (distinctSizeKey) {
         distinctSizes.add(distinctSizeKey)
@@ -359,11 +397,14 @@ async function buildObservedProductionReport({
           unspecifiedGroup.lastCutAt = event.recorded_at
         } else {
           unspecifiedGroup = {
+            customer: 'Unspecified / Pending Tag',
+            diameter: null,
+            thickness: null,
+            length: null,
+            singleTonnage: null,
+            totalTonnage: null,
             label: 'Unspecified / Pending Tag',
             size: null,
-            diameter: null,
-            radius: null,
-            circumference: null,
             isSpecified: false,
             pipeCount: 1,
             firstCutAt: event.recorded_at,
@@ -379,9 +420,14 @@ async function buildObservedProductionReport({
         sensorEventId: event.id,
         deviceEventId: event.device_event_id ?? null,
         recordedAt: event.recorded_at,
+        customer,
+        diameter,
+        thickness,
+        length,
+        pipeNumber,
+        tonnage: singleTonnage,
         label,
         size,
-        diameter,
         radius,
         circumference,
         isSpecified,
@@ -391,21 +437,27 @@ async function buildObservedProductionReport({
   }
 
   const totalProductionOutput = sortedEvents.length
+  const totalTonnage = Math.round(accumulatedTonnage * 10000) / 10000
 
   const specBreakdown = metricsOnly ? [] : Array.from(groupsMap.values())
     .map((group) => ({
       ...group,
+      totalTonnage: group.singleTonnage != null
+        ? Math.round(group.singleTonnage * group.pipeCount * 10000) / 10000
+        : null,
       percentageOfTotal: totalProductionOutput > 0
         ? Number(((group.pipeCount / totalProductionOutput) * 100).toFixed(1))
         : 0,
     }))
     .sort((a, b) => {
       if (b.pipeCount !== a.pipeCount) return b.pipeCount - a.pipeCount
-      const labelComp = String(a.label || '').localeCompare(String(b.label || ''))
-      if (labelComp !== 0) return labelComp
-      const sizeComp = String(a.size || '').localeCompare(String(b.size || ''))
-      if (sizeComp !== 0) return sizeComp
-      return (a.diameter ?? 0) - (b.diameter ?? 0)
+      const custComp = String(a.customer || '').localeCompare(String(b.customer || ''))
+      if (custComp !== 0) return custComp
+      const diamComp = (a.diameter ?? 0) - (b.diameter ?? 0)
+      if (diamComp !== 0) return diamComp
+      const thickComp = (a.thickness ?? 0) - (b.thickness ?? 0)
+      if (thickComp !== 0) return thickComp
+      return (a.length ?? 0) - (b.length ?? 0)
     })
 
   if (!metricsOnly && unspecifiedGroup) {
@@ -421,6 +473,7 @@ async function buildObservedProductionReport({
 
   const metrics = {
     totalProductionOutput,
+    totalTonnage,
     specifiedPipes,
     unspecifiedPipes,
     distinctProductSizes: distinctSizes.size,
@@ -432,6 +485,12 @@ async function buildObservedProductionReport({
       label: 'Total Production Output',
       value: `${formatNumber(totalProductionOutput)} pcs`,
       helper: `From ${machine?.name || 'Spiral Mill 01'}`,
+    },
+    {
+      id: 'total-tonnage',
+      label: 'Total Production Tonnage (tons)',
+      value: `${totalTonnage.toFixed(4)} tons`,
+      helper: 'Calculated metric tons',
     },
     {
       id: 'specified-pipes',
@@ -474,6 +533,7 @@ async function buildObservedProductionReport({
     summary,
     metrics,
     totalProductionOutput,
+    totalTonnage,
     specifiedPipes,
     unspecifiedPipes,
     distinctProductSizes: distinctSizes.size,
@@ -553,6 +613,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
       observedEndAt: comparisonWindow.end.toISOString(),
       metrics: {
         totalProductionOutput: previousReport.metrics.totalProductionOutput,
+        totalTonnage: previousReport.metrics.totalTonnage,
         specifiedPipes: previousReport.metrics.specifiedPipes,
         unspecifiedPipes: previousReport.metrics.unspecifiedPipes,
         distinctProductSizes: previousReport.metrics.distinctProductSizes,

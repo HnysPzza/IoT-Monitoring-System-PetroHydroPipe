@@ -189,11 +189,15 @@ async function renderProductionWorkbook(workbook, report) {
   const summaryGrid = [
     [
       ['Total Production Output', numericValue(report.metrics?.totalProductionOutput), '#,##0 "pcs"'],
-      ['Specified Pipes', numericValue(report.metrics?.specifiedPipes), '#,##0 "pcs"'],
+      ['Total Production Tonnage (tons)', numericValue(report.metrics?.totalTonnage ?? report.totalTonnage), '#,##0.0000 "tons"'],
     ],
     [
+      ['Specified Pipes', numericValue(report.metrics?.specifiedPipes), '#,##0 "pcs"'],
       ['Unspecified Pipes', numericValue(report.metrics?.unspecifiedPipes), '#,##0 "pcs"'],
+    ],
+    [
       ['Distinct Product Sizes', numericValue(report.metrics?.distinctProductSizes), '#,##0'],
+      ['Tag Coverage', totalOut && totalOut > 0 && specPipes !== null ? Math.round((specPipes / totalOut) * 100) / 100 : null, '0.0%'],
     ],
   ]
 
@@ -223,7 +227,7 @@ async function renderProductionWorkbook(workbook, report) {
   summarySheet.getCell('A11').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
 
   const specHeaderRow = summarySheet.getRow(12)
-  specHeaderRow.values = ['Product Label', 'Size', 'Diameter (mm)', 'Radius (mm)', 'Circumference (mm)', 'Quantity (pcs)', '% of Total']
+  specHeaderRow.values = ['Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Quantity (pcs)', 'Total Tons', '% of Total']
   styleTableHeader(specHeaderRow)
 
   const specBreakdown = Array.isArray(report.specBreakdown) ? report.specBreakdown : []
@@ -238,22 +242,32 @@ async function renderProductionWorkbook(workbook, report) {
   } else {
     specBreakdown.forEach((group, index) => {
       const row = summarySheet.getRow(13 + index)
-      const label = escapeFormula(group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : 'N/A'))
-      const size = escapeFormula(group.size || 'N/A')
+      const customer = escapeFormula(group.customer || (group.isSpecified === false ? 'Unspecified / Pending Tag' : (group.label || 'N/A')))
       const diameter = numericValue(group.diameter) ?? 'N/A'
-      const radius = numericValue(group.radius) ?? 'N/A'
-      const circumference = numericValue(group.circumference) ?? 'N/A'
+      const thickness = numericValue(group.thickness) ?? 'N/A'
+      const length = numericValue(group.length) ?? 'N/A'
       const count = numericValue(group.pipeCount) ?? 0
+      const totalTons = numericValue(group.totalTonnage) ?? 'N/A'
       const pct = numericValue(group.percentageOfTotal) !== null ? group.percentageOfTotal / 100 : 'N/A'
 
-      row.values = [label, size, diameter, radius, circumference, count, pct]
+      row.values = [customer, diameter, thickness, length, count, totalTons, pct]
       styleTableBody(row)
 
-      for (const colIdx of [3, 4, 5, 6]) {
+      for (const colIdx of [2, 3, 4]) {
         row.getCell(colIdx).alignment = { vertical: 'middle', horizontal: 'right' }
         if (typeof row.getCell(colIdx).value === 'number') {
-          row.getCell(colIdx).numFmt = colIdx === 6 ? '#,##0' : '#,##0.##'
+          row.getCell(colIdx).numFmt = '#,##0.##'
         }
+      }
+
+      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' }
+      if (typeof row.getCell(5).value === 'number') {
+        row.getCell(5).numFmt = '#,##0'
+      }
+
+      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' }
+      if (typeof row.getCell(6).value === 'number') {
+        row.getCell(6).numFmt = '#,##0.0000'
       }
 
       row.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
@@ -263,21 +277,24 @@ async function renderProductionWorkbook(workbook, report) {
     })
 
     const totalRow = summarySheet.getRow(13 + specBreakdown.length)
+    const totalTons = numericValue(report.totalTonnage) ?? 0
     totalRow.values = [
       'TOTAL ACCEPTED OUTPUT',
-      'All Pipe Sizes',
       '-',
       '-',
       '-',
       numericValue(report.totalProductionOutput) ?? 0,
+      totalTons,
       1.0,
     ]
     styleTableBody(totalRow)
     totalRow.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-    totalRow.getCell(2).font = { name: 'Arial', size: 10, italic: true, color: { argb: COLOR.ink } }
+    totalRow.getCell(5).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
+    totalRow.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' }
+    totalRow.getCell(5).numFmt = '#,##0'
     totalRow.getCell(6).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
     totalRow.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' }
-    totalRow.getCell(6).numFmt = '#,##0'
+    totalRow.getCell(6).numFmt = '#,##0.0000'
     totalRow.getCell(7).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
     totalRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
     totalRow.getCell(7).numFmt = '0.0%'
@@ -298,12 +315,12 @@ async function renderProductionWorkbook(workbook, report) {
 
   logsSheet.columns = [
     { width: 26 },
-    { width: 16 },
     { width: 26 },
+    { width: 18 },
     { width: 16 },
     { width: 16 },
     { width: 16 },
-    { width: 20 },
+    { width: 18 },
     { width: 16 },
   ]
   logsSheet.views = [{ state: 'frozen', ySplit: 5, topLeftCell: 'A6', activeCell: 'A6', showGridLines: false }]
@@ -328,7 +345,16 @@ async function renderProductionWorkbook(workbook, report) {
   logsSheet.getRow(3).height = 28
 
   const logHeaderRow = logsSheet.getRow(5)
-  logHeaderRow.values = ['Cut Timestamp (PST)', 'Event Ref', 'Product Label', 'Size', 'Diameter (mm)', 'Radius (mm)', 'Circumference (mm)', 'Tag Status']
+  logHeaderRow.values = [
+    'Cut Timestamp (PST)',
+    'Customer',
+    'Diameter (OD) mm',
+    'Thickness mm',
+    'Length mm',
+    'Pipe #',
+    'Tons',
+    'Status',
+  ]
   styleTableHeader(logHeaderRow)
 
   const productionLogs = Array.isArray(report.productionLogs) ? report.productionLogs : []
@@ -344,26 +370,38 @@ async function renderProductionWorkbook(workbook, report) {
     productionLogs.forEach((log, index) => {
       const row = logsSheet.getRow(6 + index)
       const recordedAt = formatManilaDate(log.recordedAt)
-      const eventRef = typeof log.deviceEventId === 'string'
-        ? escapeFormula(log.deviceEventId)
-        : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A'))
-      const label = escapeFormula(log.label || 'N/A')
-      const size = escapeFormula(log.size || 'N/A')
+      const customer = escapeFormula(log.customer || (log.isSpecified ? (log.label || 'N/A') : 'Pending Tag'))
       const diameter = numericValue(log.diameter) ?? 'N/A'
-      const radius = numericValue(log.radius) ?? 'N/A'
-      const circumference = numericValue(log.circumference) ?? 'N/A'
-      const tagStatus = log.isSpecified ? 'Specified' : 'Pending Tag'
+      const thickness = numericValue(log.thickness) ?? 'N/A'
+      const length = numericValue(log.length) ?? 'N/A'
+      const pipeNum = log.pipeNumber != null && Number.isFinite(Number(log.pipeNumber))
+        ? Number(log.pipeNumber)
+        : (typeof log.deviceEventId === 'string'
+            ? escapeFormula(log.deviceEventId)
+            : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')))
+      const tons = numericValue(log.tonnage) ?? 'N/A'
+      const status = log.isSpecified ? 'Specified' : 'Pending Tag'
 
-      row.values = [recordedAt, eventRef, label, size, diameter, radius, circumference, tagStatus]
+      row.values = [recordedAt, customer, diameter, thickness, length, pipeNum, tons, status]
       styleTableBody(row)
 
-      row.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' }
-      for (const colIdx of [5, 6, 7]) {
+      for (const colIdx of [3, 4, 5]) {
         row.getCell(colIdx).alignment = { vertical: 'middle', horizontal: 'right' }
         if (typeof row.getCell(colIdx).value === 'number') {
           row.getCell(colIdx).numFmt = '#,##0.##'
         }
       }
+
+      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' }
+      if (typeof row.getCell(6).value === 'number') {
+        row.getCell(6).numFmt = '#,##0'
+      }
+
+      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
+      if (typeof row.getCell(7).value === 'number') {
+        row.getCell(7).numFmt = '#,##0.0000'
+      }
+
       row.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }
     })
   }

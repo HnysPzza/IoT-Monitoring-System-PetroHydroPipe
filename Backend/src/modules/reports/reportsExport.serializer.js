@@ -311,34 +311,44 @@ function renderProductionSections(doc, report, printableWidth) {
   renderSectionHeader(doc, '2. Production Breakdown by Pipe Specification')
 
   const specColumns = [
-    { label: 'Product Label', width: 133.28, bold: true },
-    { label: 'Size', width: 75 },
-    { label: 'Diameter (mm)', width: 75, align: 'right' },
-    { label: 'Radius (mm)', width: 70, align: 'right' },
-    { label: 'Circumference (mm)', width: 85, align: 'right' },
-    { label: 'Quantity (pcs)', width: 85, align: 'right', bold: true, color: COLOR.secondary },
+    { label: 'Customer', width: 110, bold: true },
+    { label: 'Diameter (OD)', width: 70, align: 'right' },
+    { label: 'Thickness (mm)', width: 65, align: 'right' },
+    { label: 'Length (mm)', width: 65, align: 'right' },
+    { label: 'Quantity (pcs)', width: 65, align: 'right', bold: true, color: COLOR.secondary },
+    { label: 'Total Tons', width: 75, align: 'right', bold: true },
+    { label: '% of Total', width: 73.28, align: 'right' },
   ]
 
   const specBreakdown = Array.isArray(report.specBreakdown) ? report.specBreakdown : []
   const specRows = specBreakdown.map((group) => {
-    const labelText = group.label || (group.isSpecified === false ? 'Unspecified / Pending Tag' : NOT_AVAILABLE)
-    const sizeText = group.size || NOT_AVAILABLE
+    const customerText = group.customer || (group.isSpecified === false ? 'Unspecified / Pending Tag' : (group.label || NOT_AVAILABLE))
     const diameterText = formatDimension(group.diameter)
-    const radiusText = formatDimension(group.radius)
-    const circText = formatDimension(group.circumference)
-    const countText = `${group.pipeCount} pcs (${group.percentageOfTotal}%)`
+    const thicknessText = formatDimension(group.thickness)
+    const lengthText = formatDimension(group.length)
+    const countText = `${group.pipeCount} pcs`
+    const tonsText = group.totalTonnage != null && Number.isFinite(Number(group.totalTonnage))
+      ? Number(group.totalTonnage).toFixed(4)
+      : NOT_AVAILABLE
+    const pctText = group.percentageOfTotal != null && Number.isFinite(Number(group.percentageOfTotal))
+      ? `${Number(group.percentageOfTotal).toFixed(1)}%`
+      : '0.0%'
 
-    return [labelText, sizeText, diameterText, radiusText, circText, countText]
+    return [customerText, diameterText, thicknessText, lengthText, countText, tonsText, pctText]
   })
 
   if (specRows.length > 0) {
+    const totalTons = report.totalTonnage != null && Number.isFinite(Number(report.totalTonnage))
+      ? Number(report.totalTonnage).toFixed(4)
+      : '-'
     specRows.push([
       'TOTAL ACCEPTED OUTPUT',
-      'All Pipe Sizes',
       '-',
       '-',
       '-',
       `${report.totalProductionOutput ?? 0} pcs`,
+      totalTons,
+      '100.0%',
     ])
   }
 
@@ -359,23 +369,34 @@ function renderProductionSections(doc, report, printableWidth) {
   renderSectionHeader(doc, '3. Chronological Pipe Cut Log (S-05)')
 
   const logColumns = [
-    { label: 'Cut Timestamp (PST)', width: 125 },
-    { label: 'Product Label', width: 138.28 },
-    { label: 'Size', width: 60 },
-    { label: 'Diameter (mm)', width: 65, align: 'right' },
-    { label: 'Radius (mm)', width: 60, align: 'right' },
-    { label: 'Circumference (mm)', width: 75, align: 'right' },
+    { label: 'Cut Timestamp (PST)', width: 110 },
+    { label: 'Customer', width: 95 },
+    { label: 'Diameter (OD)', width: 65, align: 'right' },
+    { label: 'Thickness', width: 60, align: 'right' },
+    { label: 'Length', width: 60, align: 'right' },
+    { label: 'Pipe #', width: 65, align: 'center' },
+    { label: 'Tons', width: 68.28, align: 'right' },
   ]
 
   const logs = Array.isArray(report.productionLogs) ? report.productionLogs : []
-  const logRows = logs.map((log) => [
-    formatManilaDate(log.recordedAt),
-    log.label || (log.isSpecified ? NOT_AVAILABLE : 'Pending Tag'),
-    log.size || NOT_AVAILABLE,
-    formatDimension(log.diameter),
-    formatDimension(log.radius),
-    formatDimension(log.circumference),
-  ])
+  const logRows = logs.map((log) => {
+    const timestampText = formatManilaDate(log.recordedAt)
+    const customerText = log.customer || (log.isSpecified ? (log.label || NOT_AVAILABLE) : 'Pending Tag')
+    const diameterText = formatDimension(log.diameter)
+    const thicknessText = formatDimension(log.thickness)
+    const lengthText = formatDimension(log.length)
+    const pipeNumberVal = log.pipeNumber != null
+      ? log.pipeNumber
+      : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : null))
+    const pipeNumberText = pipeNumberVal != null
+      ? (typeof pipeNumberVal === 'number' ? `#${pipeNumberVal}` : String(pipeNumberVal))
+      : NOT_AVAILABLE
+    const tonsText = log.tonnage != null && Number.isFinite(Number(log.tonnage))
+      ? Number(log.tonnage).toFixed(4)
+      : NOT_AVAILABLE
+
+    return [timestampText, customerText, diameterText, thicknessText, lengthText, pipeNumberText, tonsText]
+  })
 
   renderGenericTable(doc, {
     columns: logColumns,

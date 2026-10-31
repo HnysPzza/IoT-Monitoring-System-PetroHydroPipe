@@ -83,7 +83,7 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
     const chunk = uniqueIds.slice(i, i + CHUNK_SIZE)
     const { data, error } = await supabase
       .from('production_item_specs')
-      .select('sensor_event_id, label, size, diameter, radius, circumference, updated_at, updated_by')
+      .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, label, size, radius, circumference, updated_at, updated_by')
       .in('sensor_event_id', chunk)
 
     if (error) {

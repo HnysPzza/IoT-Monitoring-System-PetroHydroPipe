@@ -71,27 +71,33 @@ function createProductionReport(overrides = {}) {
     sensor: { id: 's-5', code: 'S-05', label: 'S-05 Cutting Sensor' },
     summary: [
       { id: 'total-output', label: 'Total Production Output', value: '10 pcs', helper: 'From Spiral Mill 01' },
+      { id: 'total-tonnage', label: 'Total Production Tonnage (tons)', value: '14.7196 tons', helper: 'Calculated metric tons' },
       { id: 'specified-pipes', label: 'Specified Pipes', value: '8 pcs', helper: '80% of total output' },
       { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: '2 pcs', helper: 'Pending specification tag' },
       { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: '2', helper: 'Unique pipe specs produced' },
     ],
     metrics: {
       totalProductionOutput: 10,
+      totalTonnage: 14.7196,
       specifiedPipes: 8,
       unspecifiedPipes: 2,
       distinctProductSizes: 2,
     },
     totalProductionOutput: 10,
+    totalTonnage: 14.7196,
     specifiedPipes: 8,
     unspecifiedPipes: 2,
     distinctProductSizes: 2,
     specBreakdown: [
       {
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        singleTonnage: 1.1513,
+        totalTonnage: 5.7565,
         label: 'Grade A 6-inch',
         size: '6 inch',
-        diameter: 168.28,
-        radius: 84.14,
-        circumference: 528.67,
         isSpecified: true,
         pipeCount: 5,
         percentageOfTotal: 50.0,
@@ -99,11 +105,14 @@ function createProductionReport(overrides = {}) {
         lastCutAt: '2026-09-02T03:00:00.000Z',
       },
       {
+        customer: 'Regan Industrial',
+        diameter: 1020.0,
+        thickness: 10.0,
+        length: 12000,
+        singleTonnage: 2.9877,
+        totalTonnage: 8.9631,
         label: 'Grade B 8-inch',
         size: '8 inch',
-        diameter: 219.08,
-        radius: 109.54,
-        circumference: 688.26,
         isSpecified: true,
         pipeCount: 3,
         percentageOfTotal: 30.0,
@@ -111,11 +120,14 @@ function createProductionReport(overrides = {}) {
         lastCutAt: '2026-09-02T05:00:00.000Z',
       },
       {
+        customer: 'Unspecified / Pending Tag',
+        diameter: null,
+        thickness: null,
+        length: null,
+        singleTonnage: null,
+        totalTonnage: null,
         label: null,
         size: null,
-        diameter: null,
-        radius: null,
-        circumference: null,
         isSpecified: false,
         pipeCount: 2,
         percentageOfTotal: 20.0,
@@ -128,22 +140,28 @@ function createProductionReport(overrides = {}) {
         id: 'evt-1',
         deviceEventId: 101,
         recordedAt: '2026-09-02T01:00:00.000Z',
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 101,
+        tonnage: 1.1513,
         label: 'Grade A 6-inch',
         size: '6 inch',
-        diameter: 168.28,
-        radius: 84.14,
-        circumference: 528.67,
         isSpecified: true,
       },
       {
         id: 'evt-2',
         deviceEventId: 102,
         recordedAt: '2026-09-02T06:00:00.000Z',
+        customer: null,
+        diameter: null,
+        thickness: null,
+        length: null,
+        pipeNumber: null,
+        tonnage: null,
         label: null,
         size: null,
-        diameter: null,
-        radius: null,
-        circumference: null,
         isSpecified: false,
       },
     ],
@@ -340,32 +358,36 @@ test('toXlsx writes a 2-worksheet production report with summary and cut logs', 
   assert.equal(summarySheet.getCell('A2').value, 'PETRO HYDRO PIPE CORP.  |  Production Output Report')
   assert.equal(summarySheet.getCell('B8').value, 10)
   assert.equal(summarySheet.getCell('B8').numFmt, '#,##0 "pcs"')
-  assert.equal(summarySheet.getCell('E8').value, 8)
-  assert.equal(summarySheet.getCell('E8').numFmt, '#,##0 "pcs"')
-  assert.equal(summarySheet.getCell('B9').value, 2)
+  assert.equal(summarySheet.getCell('E8').value, 14.7196)
+  assert.equal(summarySheet.getCell('E8').numFmt, '#,##0.0000 "tons"')
+  assert.equal(summarySheet.getCell('B9').value, 8)
   assert.equal(summarySheet.getCell('B9').numFmt, '#,##0 "pcs"')
   assert.equal(summarySheet.getCell('E9').value, 2)
+  assert.equal(summarySheet.getCell('E9').numFmt, '#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('B10').value, 2)
 
   // Verify spec breakdown row
-  assert.equal(summarySheet.getCell('A13').value, 'Grade A 6-inch')
-  assert.equal(summarySheet.getCell('B13').value, '6 inch')
-  assert.equal(summarySheet.getCell('C13').value, 168.28)
-  assert.equal(summarySheet.getCell('D13').value, 84.14)
-  assert.equal(summarySheet.getCell('E13').value, 528.67)
-  assert.equal(summarySheet.getCell('F13').value, 5)
+  assert.equal(summarySheet.getCell('A13').value, 'MCWD')
+  assert.equal(summarySheet.getCell('B13').value, 625.4)
+  assert.equal(summarySheet.getCell('C13').value, 12.7)
+  assert.equal(summarySheet.getCell('D13').value, 6000)
+  assert.equal(summarySheet.getCell('E13').value, 5)
+  assert.equal(summarySheet.getCell('F13').value, 5.7565)
   assert.equal(summarySheet.getCell('G13').value, 0.5)
 
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
   assert.ok(logsSheet, 'expected Production Cut Logs worksheet')
   assert.equal(logsSheet.getCell('A2').value, 'PETRO HYDRO PIPE CORP.  |  Production Cut Logs (S-05)')
-  assert.equal(logsSheet.getCell('B6').value, 101)
-  assert.equal(logsSheet.getCell('C6').value, 'Grade A 6-inch')
-  assert.equal(logsSheet.getCell('D6').value, '6 inch')
+  assert.equal(logsSheet.getCell('B6').value, 'MCWD')
+  assert.equal(logsSheet.getCell('C6').value, 625.4)
+  assert.equal(logsSheet.getCell('D6').value, 12.7)
+  assert.equal(logsSheet.getCell('E6').value, 6000)
+  assert.equal(logsSheet.getCell('F6').value, 101)
+  assert.equal(logsSheet.getCell('G6').value, 1.1513)
   assert.equal(logsSheet.getCell('H6').value, 'Specified')
 
   // Row 2 is unassigned
-  assert.equal(logsSheet.getCell('B7').value, 102)
-  assert.equal(logsSheet.getCell('C7').value, 'N/A')
+  assert.equal(logsSheet.getCell('B7').value, 'Pending Tag')
   assert.equal(logsSheet.getCell('H7').value, 'Pending Tag')
 })
 
@@ -374,17 +396,20 @@ test('toXlsx preserves unobserved production report values cleanly', async () =>
     periodState: 'future',
     summary: [
       { id: 'total-output', label: 'Total Production Output', value: 'N/A' },
+      { id: 'total-tonnage', label: 'Total Production Tonnage (tons)', value: 'N/A' },
       { id: 'specified-pipes', label: 'Specified Pipes', value: 'N/A' },
       { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: 'N/A' },
       { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: 'N/A' },
     ],
     metrics: {
       totalProductionOutput: null,
+      totalTonnage: null,
       specifiedPipes: null,
       unspecifiedPipes: null,
       distinctProductSizes: null,
     },
     totalProductionOutput: null,
+    totalTonnage: null,
     specifiedPipes: null,
     unspecifiedPipes: null,
     distinctProductSizes: null,
@@ -441,11 +466,11 @@ test('toXlsx renders deviceEventId 0 in cut logs correctly', async () => {
         id: 'evt-uuid-fallback',
         deviceEventId: 0,
         recordedAt: '2026-09-02T01:00:00.000Z',
-        label: 'Pipe 0',
-        size: '6 inch',
+        customer: 'MCWD',
+        pipeNumber: null,
         diameter: 100,
-        radius: 50,
-        circumference: 314.16,
+        thickness: 10,
+        length: 6000,
         isSpecified: true,
       },
     ],
@@ -454,7 +479,7 @@ test('toXlsx renders deviceEventId 0 in cut logs correctly', async () => {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
-  assert.equal(logsSheet.getCell('B6').value, 0)
+  assert.equal(logsSheet.getCell('F6').value, 0)
 })
 
 test('toPdf handles malformed and non-finite diameter gracefully with N/A', async () => {
@@ -509,11 +534,12 @@ test('toXlsx escapes spreadsheet formula injection payloads with leading single 
   const report = createProductionReport({
     specBreakdown: [
       {
-        label: '=cmd|/C calc!A0',
-        size: '+1234567890',
+        customer: '=cmd|/C calc!A0',
         diameter: 100,
-        radius: 50,
-        circumference: 314.16,
+        thickness: 10,
+        length: 6000,
+        singleTonnage: 0.1332,
+        totalTonnage: 0.1332,
         isSpecified: true,
         pipeCount: 1,
         percentageOfTotal: 100,
@@ -524,11 +550,12 @@ test('toXlsx escapes spreadsheet formula injection payloads with leading single 
         id: 'evt-1',
         deviceEventId: '@SUM(1+1)',
         recordedAt: '2026-09-02T01:00:00.000Z',
-        label: '-10% Discount',
-        size: '=2+5',
+        customer: '-10% Discount',
+        pipeNumber: null,
         diameter: 100,
-        radius: 50,
-        circumference: 314.16,
+        thickness: 10,
+        length: 6000,
+        tonnage: 0.1332,
         isSpecified: true,
       },
     ],
@@ -539,12 +566,10 @@ test('toXlsx escapes spreadsheet formula injection payloads with leading single 
 
   const summarySheet = workbook.getWorksheet('Production Summary')
   assert.equal(summarySheet.getCell('A13').value, "'=cmd|/C calc!A0")
-  assert.equal(summarySheet.getCell('B13').value, "'+1234567890")
 
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
-  assert.equal(logsSheet.getCell('B6').value, "'@SUM(1+1)")
-  assert.equal(logsSheet.getCell('C6').value, "'-10% Discount")
-  assert.equal(logsSheet.getCell('D6').value, "'=2+5")
+  assert.equal(logsSheet.getCell('B6').value, "'-10% Discount")
+  assert.equal(logsSheet.getCell('F6').value, "'@SUM(1+1)")
 })
 
 test('toXlsx suppresses process sensor table headers when processSensors is empty', async () => {
@@ -572,3 +597,26 @@ test('buildExportFilename sanitizes path traversal, CRLF, and special characters
     'production-report-....dailySet-Cookiebad-2026-09-02DROPTABLE--.xlsx',
   )
 })
+
+test('production reports completely exclude Radius and Circumference from PDF and Excel outputs', async () => {
+  const report = createProductionReport()
+  const pdfBuffer = await toPdf(report)
+  const pdfText = pdfBuffer.toString('latin1')
+  assert.equal(pdfText.includes('Radius'), false, 'PDF must not mention Radius')
+  assert.equal(pdfText.includes('Circumference'), false, 'PDF must not mention Circumference')
+
+  const xlsxBuffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(xlsxBuffer)
+  const summarySheet = workbook.getWorksheet('Production Summary')
+  const logsSheet = workbook.getWorksheet('Production Cut Logs')
+
+  const summaryHeaders = summarySheet.getRow(12).values.filter(Boolean)
+  assert.deepEqual(summaryHeaders, ['Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Quantity (pcs)', 'Total Tons', '% of Total'])
+  assert.equal(summaryHeaders.some((h) => String(h).includes('Radius') || String(h).includes('Circumference')), false)
+
+  const logHeaders = logsSheet.getRow(5).values.filter(Boolean)
+  assert.deepEqual(logHeaders, ['Cut Timestamp (PST)', 'Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Pipe #', 'Tons', 'Status'])
+  assert.equal(logHeaders.some((h) => String(h).includes('Radius') || String(h).includes('Circumference')), false)
+})
+

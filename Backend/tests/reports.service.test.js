@@ -388,9 +388,13 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
   const productionSpecs = [
     {
       sensor_event_id: 'event-1',
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipe_number: 101,
       label: 'Pipe A',
       size: '2 inch',
-      diameter: 2,
       radius: 1,
       circumference: 6.28,
       updated_at: '2026-08-09T01:10:00.000Z',
@@ -398,9 +402,13 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
     },
     {
       sensor_event_id: 'event-2',
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipe_number: 102,
       label: 'Pipe A',
       size: '2 inch',
-      diameter: 2,
       radius: 1,
       circumference: 6.28,
       updated_at: '2026-08-09T02:10:00.000Z',
@@ -419,24 +427,34 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
   assert.equal(report.periodState, 'complete')
 
   assert.equal(report.totalProductionOutput, 3)
+  assert.equal(report.totalTonnage, 2.3026)
   assert.equal(report.specifiedPipes, 2)
   assert.equal(report.unspecifiedPipes, 1)
   assert.equal(report.distinctProductSizes, 1)
 
   assert.deepEqual(report.metrics, {
     totalProductionOutput: 3,
+    totalTonnage: 2.3026,
     specifiedPipes: 2,
     unspecifiedPipes: 1,
     distinctProductSizes: 1,
   })
 
+  const tonnageCard = report.summary.find((s) => s.id === 'total-tonnage')
+  assert.equal(tonnageCard.value, '2.3026 tons')
+
   assert.equal(report.specBreakdown.length, 2)
   const specifiedGroup = report.specBreakdown[0]
+  assert.equal(specifiedGroup.customer, 'MCWD')
+  assert.equal(specifiedGroup.diameter, 625.4)
+  assert.equal(specifiedGroup.thickness, 12.7)
+  assert.equal(specifiedGroup.length, 6000)
+  assert.equal(specifiedGroup.singleTonnage, 1.1513)
+  assert.equal(specifiedGroup.totalTonnage, 2.3026)
   assert.equal(specifiedGroup.label, 'Pipe A')
   assert.equal(specifiedGroup.size, '2 inch')
-  assert.equal(specifiedGroup.diameter, 2)
-  assert.equal(specifiedGroup.radius, 1)
-  assert.equal(specifiedGroup.circumference, 6.28)
+  assert.equal(specifiedGroup.radius, undefined)
+  assert.equal(specifiedGroup.circumference, undefined)
   assert.equal(specifiedGroup.pipeCount, 2)
   assert.equal(specifiedGroup.percentageOfTotal, 66.7)
   assert.equal(specifiedGroup.firstCutAt, '2026-08-09T01:00:00.000Z')
@@ -444,6 +462,12 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
   assert.equal(specifiedGroup.isSpecified, true)
 
   const unspecifiedGroup = report.specBreakdown[1]
+  assert.equal(unspecifiedGroup.customer, 'Unspecified / Pending Tag')
+  assert.equal(unspecifiedGroup.diameter, null)
+  assert.equal(unspecifiedGroup.thickness, null)
+  assert.equal(unspecifiedGroup.length, null)
+  assert.equal(unspecifiedGroup.singleTonnage, null)
+  assert.equal(unspecifiedGroup.totalTonnage, null)
   assert.equal(unspecifiedGroup.label, 'Unspecified / Pending Tag')
   assert.equal(unspecifiedGroup.size, null)
   assert.equal(unspecifiedGroup.pipeCount, 1)
@@ -454,8 +478,16 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
 
   assert.equal(report.productionLogs.length, 3)
   assert.equal(report.productionLogs[0].deviceEventId, 'DEV-101')
+  assert.equal(report.productionLogs[0].customer, 'MCWD')
+  assert.equal(report.productionLogs[0].diameter, 625.4)
+  assert.equal(report.productionLogs[0].thickness, 12.7)
+  assert.equal(report.productionLogs[0].length, 6000)
+  assert.equal(report.productionLogs[0].pipeNumber, 101)
+  assert.equal(report.productionLogs[0].tonnage, 1.1513)
   assert.equal(report.productionLogs[0].isSpecified, true)
   assert.equal(report.productionLogs[2].deviceEventId, 'DEV-103')
+  assert.equal(report.productionLogs[2].customer, null)
+  assert.equal(report.productionLogs[2].tonnage, null)
   assert.equal(report.productionLogs[2].isSpecified, false)
 })
 
@@ -493,6 +525,8 @@ test('future production report returns unobserved values without querying events
   assert.equal(report.observedStartAt, null)
   assert.equal(report.observedEndAt, null)
   assert.equal(report.metrics.totalProductionOutput, null)
+  assert.equal(report.metrics.totalTonnage, null)
+  assert.equal(report.totalTonnage, null)
   assert.equal(report.metrics.specifiedPipes, null)
   assert.equal(report.metrics.unspecifiedPipes, null)
   assert.equal(report.metrics.distinctProductSizes, null)
