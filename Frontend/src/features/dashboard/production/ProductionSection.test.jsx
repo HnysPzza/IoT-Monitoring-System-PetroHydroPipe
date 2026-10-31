@@ -9,6 +9,7 @@ import {
   updateProductionLogSpec,
 } from './productionService.js'
 import { dashboardPageMeta, navItems } from '../../../shared/constants/dashboardMeta.js'
+import '../../../shared/components/ui/Calendar.jsx'
 import ProductionSection, { formatManilaDateTime, getManilaDateInputValue } from './ProductionSection.jsx'
 
 vi.mock('../../../shared/services/apiClient.js', () => ({
@@ -572,7 +573,7 @@ describe('ProductionSection component', () => {
     expect(screen.queryByRole('columnheader', { name: /circumference/i })).not.toBeInTheDocument()
   })
 
-  it('handles date filter changes and queries with updated date', async () => {
+  it('handles date filter changes via calendar popover and queries with updated date', async () => {
     const user = userEvent.setup()
     const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
@@ -580,16 +581,41 @@ describe('ProductionSection component', () => {
 
     await screen.findByText('Maynilad Water')
 
-    const dateInput = screen.getByLabelText('Filter by date')
-    await user.clear(dateInput)
-    await user.type(dateInput, '2026-10-25')
+    const dateTrigger = screen.getByLabelText('Filter by date')
+    expect(dateTrigger).toHaveClass('trend-calendar-trigger')
+    await user.click(dateTrigger)
+
+    const calendarDialog = await screen.findByRole('dialog', { name: 'Select production date' })
+    const dayButtons = await within(calendarDialog).findAllByRole('button')
+    const activeDay = dayButtons.find((btn) => !btn.disabled && /^\d+$/.test(btn.textContent.trim()))
+    expect(activeDay).toBeDefined()
+    await user.click(activeDay)
 
     await waitFor(() => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-        date: '2026-10-25',
         page: 1,
       }))
     })
+  })
+
+  it('clears date filter and queries with undefined date', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+
+    const clearBtn = screen.getByRole('button', { name: 'Clear date filter' })
+    await user.click(clearBtn)
+
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        date: undefined,
+        page: 1,
+      }))
+    })
+    expect(screen.queryByRole('button', { name: 'Clear date filter' })).not.toBeInTheDocument()
   })
 
   it('handles cut status filter changes', async () => {

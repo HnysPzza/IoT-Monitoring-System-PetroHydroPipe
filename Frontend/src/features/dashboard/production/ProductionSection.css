@@ -253,6 +253,85 @@
   background: var(--prod-border-subtle);
 }
 
+/* Reusable Calendar Control */
+.production-date-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.production-date-wrapper .trend-calendar-control {
+  min-width: 0;
+  width: auto;
+}
+
+.production-date-wrapper .trend-calendar-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 10px;
+  gap: 8px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  color: #0F172A;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.production-date-wrapper .trend-calendar-trigger:hover,
+.production-date-wrapper .trend-calendar-trigger[data-state='open'] {
+  border-color: #93C5FD;
+  background: #F8FAFC;
+}
+
+.production-date-wrapper .trend-calendar-trigger:focus-visible {
+  outline: 2px solid var(--prod-accent);
+  outline-offset: 1px;
+}
+
+.production-date-wrapper .trend-calendar-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  line-height: 1.1;
+  text-align: left;
+}
+
+.production-date-wrapper .trend-calendar-kicker {
+  color: var(--prod-text-secondary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.production-date-wrapper .trend-calendar-value {
+  color: #0F172A;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.production-date-wrapper .trend-calendar-chevron {
+  color: var(--prod-text-secondary);
+  flex-shrink: 0;
+}
+
+.production-date-clear-btn {
+  color: var(--prod-text-secondary);
+}
+
+.production-date-clear-btn:hover:not(:disabled) {
+  color: #EF4444 !important;
+  background: #FEF2F2 !important;
+  border-color: #FCA5A5 !important;
+}
+
 .production-date-input {
   height: 38px;
   padding: 0 0.75rem;
@@ -1122,6 +1201,33 @@ input[type="number"] {
   background: var(--prod-surface);
   border-color: var(--prod-border);
   color: var(--prod-text-primary);
+}
+
+:root[data-theme='dark'] .production-date-wrapper .trend-calendar-trigger {
+  background: var(--prod-surface);
+  border-color: var(--prod-border);
+  color: var(--prod-text-primary);
+}
+
+:root[data-theme='dark'] .production-date-wrapper .trend-calendar-trigger:hover,
+:root[data-theme='dark'] .production-date-wrapper .trend-calendar-trigger[data-state='open'] {
+  border-color: rgba(96, 165, 250, 0.46);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme='dark'] .production-date-wrapper .trend-calendar-value {
+  color: var(--prod-text-primary);
+}
+
+:root[data-theme='dark'] .production-date-wrapper .trend-calendar-kicker,
+:root[data-theme='dark'] .production-date-wrapper .trend-calendar-chevron {
+  color: var(--prod-text-placeholder);
+}
+
+:root[data-theme='dark'] .production-date-clear-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #F87171 !important;
 }
 
 :root[data-theme='dark'] .production-dropdown-popover {

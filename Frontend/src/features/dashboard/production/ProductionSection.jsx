@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
+import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import {
   batchUpdateProductionSpecs,
   getProductionLogs,
@@ -31,6 +32,26 @@ export function getManilaDateInputValue() {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date())
+}
+
+export function parseProductionDate(value) {
+  if (!value) return undefined
+  const [year, month, day] = String(value).split('-').map(Number)
+  if (!year || !month || !day) return undefined
+  return new Date(year, month - 1, day)
+}
+
+export function formatProductionDateInput(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function formatProductionDateLabel(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export function formatManilaDateTime(isoString) {
@@ -565,6 +586,21 @@ export default function ProductionSection({
     setPage(1)
   }
 
+  const selectedProductionDate = parseProductionDate(dateFilter)
+  const maxProductionDate = parseProductionDate(getManilaDateInputValue())
+  const dateRangeLabel = selectedProductionDate ? formatProductionDateLabel(selectedProductionDate) : 'All Dates'
+
+  const handleCalendarDateChange = (date) => {
+    if (!date) return
+    setDateFilter(formatProductionDateInput(date))
+    setPage(1)
+  }
+
+  const handleClearDateFilter = () => {
+    setDateFilter('')
+    setPage(1)
+  }
+
   const handleStatusChange = (e) => {
     setStatusFilter(e.target.value)
     setPage(1)
@@ -897,13 +933,30 @@ export default function ProductionSection({
           ) : null}
         </div>
 
-        <input
-          type="date"
-          className="production-date-input"
-          aria-label="Filter by date"
-          value={dateFilter}
-          onChange={handleDateChange}
-        />
+        <div className="production-date-wrapper">
+          <TrendCalendarControl
+            mode="day"
+            accessibleLabel="Select production date"
+            triggerAriaLabel="Filter by date"
+            triggerLabel="DATE"
+            selectedDate={selectedProductionDate}
+            maxDate={maxProductionDate}
+            rangeLabel={dateRangeLabel}
+            onDateChange={handleCalendarDateChange}
+            popoverClassName="production-calendar-popover"
+          />
+          {dateFilter ? (
+            <button
+              type="button"
+              className="production-square-btn production-date-clear-btn"
+              aria-label="Clear date filter"
+              title="Clear date filter"
+              onClick={handleClearDateFilter}
+            >
+              <X size={15} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
 
         <CustomDropdown
           id="production-status-filter"
