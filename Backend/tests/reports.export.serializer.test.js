@@ -404,7 +404,7 @@ test('toXlsx preserves unobserved production report values cleanly', async () =>
   assert.equal(summarySheet.getCell('A13').value, 'No accepted pipe cutting events recorded for this period.')
 })
 
-test('toPdf renders deviceEventId 0 correctly without falling back to id', async () => {
+test('toPdf renders cut logs without event ref column even when deviceEventId is 0 or fallback', async () => {
   const report = createProductionReport({
     productionLogs: [
       {
@@ -423,6 +423,15 @@ test('toPdf renders deviceEventId 0 correctly without falling back to id', async
   const buffer = await toPdf(report)
   assert.ok(Buffer.isBuffer(buffer))
   assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+})
+
+test('toPdf renders header with company profile and monitoring system without plant line or spiral mill', async () => {
+  const buffer = await toPdf(createProductionReport())
+  assert.ok(Buffer.isBuffer(buffer))
+  assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
+
+  const pdfRaw = buffer.toString('latin1')
+  assert.equal(pdfRaw.includes('Plant Line:'), false)
 })
 
 test('toXlsx renders deviceEventId 0 in cut logs correctly', async () => {

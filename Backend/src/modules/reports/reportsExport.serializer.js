@@ -4,10 +4,12 @@ const fs = require('fs')
 
 const NOT_AVAILABLE = 'Not available'
 
-const COMPANY_NAME = 'PETRO HYDRO PIPE CORP.'
-const COMPANY_SUBTITLE = 'Industrial Steel Pipe Manufacturing • IoT Machine Monitoring Division'
-const COMPANY_ADDRESS = 'Dunggoan, Danao City, Cebu, Philippines 6004'
-const MACHINE_LABEL = 'Spiral Mill 01 (M-01)'
+const COMPANY_NAME = 'Petro Hydro Pipes Corporation'
+const COMPANY_SUBTITLE = 'Spiral Welded Steel Pipe Manufacturer'
+const COMPANY_ADDRESS = 'Dunggoan, Danao City 6004 Cebu, Philippines'
+const COMPANY_PHONE = '(032)888-6519/+639687080116'
+const COMPANY_WEBSITE = 'http://petrohydropipes.com/ph'
+const SYSTEM_LABEL = 'Monitoring System'
 
 const CANONICAL_BACKEND_LOGO = path.resolve(__dirname, '../../assets/logo.png')
 const MONOREPO_FRONTEND_FALLBACK = path.resolve(__dirname, '../../../../Frontend/public/assets/logo.png')
@@ -65,25 +67,30 @@ function renderOfficialHeader(doc, report) {
   const left = doc.page.margins.left
   const top = doc.page.margins.top
   const printableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
-  const logoWidth = 44
-  const logoGap = 12
+  const logoWidth = 32
+  const logoHeight = 24
+  const logoGap = 10
   const textLeft = fs.existsSync(LOGO_PATH) ? left + logoWidth + logoGap : left
 
   if (fs.existsSync(LOGO_PATH)) {
     try {
-      doc.image(LOGO_PATH, left, top, { width: logoWidth, height: logoWidth })
+      doc.image(LOGO_PATH, left, top + 2, { fit: [logoWidth, logoHeight] })
     } catch {
       // Fallback cleanly if the image format fails to decode
     }
   }
 
   // Company Brand & Facility Info
-  doc.font('Helvetica-Bold').fontSize(13).fillColor(COLOR.primary)
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(COLOR.primary)
     .text(COMPANY_NAME, textLeft, top, { lineBreak: false })
   doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLOR.textMuted)
-    .text(COMPANY_SUBTITLE, textLeft, top + 16, { lineBreak: false })
-  doc.font('Helvetica').fontSize(7.2).fillColor(COLOR.textLight)
-    .text(`${COMPANY_ADDRESS}  •  Plant Line: ${MACHINE_LABEL}`, textLeft, top + 27, { lineBreak: false })
+    .text(COMPANY_SUBTITLE, textLeft, top + 13, { lineBreak: false })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(COMPANY_ADDRESS, textLeft, top + 23, { lineBreak: false })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(COMPANY_PHONE, textLeft, top + 32, { lineBreak: false })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.secondary)
+    .text(COMPANY_WEBSITE, textLeft, top + 41, { lineBreak: false })
 
   // Right-aligned Document Title & Metadata
   const isProduction = report.category === 'production'
@@ -92,15 +99,17 @@ function renderOfficialHeader(doc, report) {
   const refCode = `${prefix}-${(report.reportType || 'DAILY').toUpperCase()}-${(report.selectedDate || '').replace(/[^a-zA-Z0-9]/g, '') || 'UNDATED'}`
   const rightColX = left + printableWidth - 230
 
-  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLOR.secondary)
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(COLOR.secondary)
     .text(docTitle, rightColX, top, { width: 230, align: 'right' })
-  doc.font('Helvetica').fontSize(7.2).fillColor(COLOR.textLight)
-    .text(`Doc Ref: ${refCode}`, rightColX, top + 14, { width: 230, align: 'right' })
-  doc.font('Helvetica').fontSize(7.2).fillColor(COLOR.textLight)
-    .text(`Generated: ${formatManilaDate(report.generatedAt)}`, rightColX, top + 25, { width: 230, align: 'right' })
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLOR.primary)
+    .text(SYSTEM_LABEL, rightColX, top + 13, { width: 230, align: 'right' })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(`Doc Ref: ${refCode}`, rightColX, top + 23, { width: 230, align: 'right' })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(`Generated: ${formatManilaDate(report.generatedAt)}`, rightColX, top + 32, { width: 230, align: 'right' })
 
   // Top Rule Divider
-  const dividerY = top + 46
+  const dividerY = top + 52
   doc.moveTo(left, dividerY).lineTo(left + printableWidth, dividerY)
     .lineWidth(1.5).strokeColor(COLOR.secondary).stroke()
 
@@ -124,13 +133,13 @@ function renderMetadataCard(doc, report) {
     ? [
       { label: 'REPORT TYPE & DATE', val: `${(report.reportType || 'Daily').toUpperCase()} (${pdfText(report.selectedDate)})` },
       { label: 'OBSERVATION STATUS', val: (report.periodState || 'complete').toUpperCase() },
-      { label: 'TARGET MACHINE', val: MACHINE_LABEL },
+      { label: 'SYSTEM', val: SYSTEM_LABEL },
       { label: 'CUTTING SENSOR', val: report.sensor?.label || 'S-05 Cutting Sensor' },
     ]
     : [
       { label: 'REPORT TYPE & DATE', val: `${(report.reportType || 'Daily').toUpperCase()} (${pdfText(report.selectedDate)})` },
       { label: 'OBSERVATION STATUS', val: (report.periodState || 'complete').toUpperCase() },
-      { label: 'TARGET MACHINE', val: MACHINE_LABEL },
+      { label: 'SYSTEM', val: SYSTEM_LABEL },
       { label: 'LOSS ESTIMATE BASIS', val: `${Math.ceil((report.lossEstimateBasis?.ratePiecesPerMinute ?? 0.05) * 60)} pcs/hr (${report.lossEstimateBasis?.source || 'configured'})` },
     ]
 
@@ -350,19 +359,17 @@ function renderProductionSections(doc, report, printableWidth) {
   renderSectionHeader(doc, '3. Chronological Pipe Cut Log (S-05)')
 
   const logColumns = [
-    { label: 'Cut Timestamp (PST)', width: 115 },
-    { label: 'Event Ref', width: 68, bold: true, color: COLOR.secondary },
-    { label: 'Product Label', width: 100 },
+    { label: 'Cut Timestamp (PST)', width: 125 },
+    { label: 'Product Label', width: 138.28 },
     { label: 'Size', width: 60 },
-    { label: 'Diameter (mm)', width: 60, align: 'right' },
-    { label: 'Radius (mm)', width: 55, align: 'right' },
-    { label: 'Circumference (mm)', width: 65.28, align: 'right' },
+    { label: 'Diameter (mm)', width: 65, align: 'right' },
+    { label: 'Radius (mm)', width: 60, align: 'right' },
+    { label: 'Circumference (mm)', width: 75, align: 'right' },
   ]
 
   const logs = Array.isArray(report.productionLogs) ? report.productionLogs : []
   const logRows = logs.map((log) => [
     formatManilaDate(log.recordedAt),
-    log.deviceEventId ?? (log.id ? String(log.id) : NOT_AVAILABLE),
     log.label || (log.isSpecified ? NOT_AVAILABLE : 'Pending Tag'),
     log.size || NOT_AVAILABLE,
     formatDimension(log.diameter),
