@@ -1148,6 +1148,7 @@ button:disabled {
   }
 }
 
+.sidebar-link.is-notebook-dot:hover .sidebar-link-icon,
 .sidebar-link.is-logs:hover .sidebar-link-icon {
   transform: translateX(2px);
 }

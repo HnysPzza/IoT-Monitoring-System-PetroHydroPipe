@@ -37,6 +37,7 @@ import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alerts
 
 import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
 import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.jsx'
+import { NotebookDot } from '../../../shared/components/NotebookDot.jsx'
 import UsersActionProvider from '../users/UsersActionProvider.jsx'
 
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
@@ -59,6 +60,7 @@ const icons = {
   users: Users,
   monitor: Monitor,
   logs: Logs,
+  'notebook-dot': NotebookDot,
   settings: Settings,
 }
 

@@ -150,12 +150,14 @@ describe('AdminDashboard alerts', () => {
     const reportsIcon = screen.getByRole('link', { name: 'Reports' }).querySelector('svg')
     const analyticsIcon = screen.getByRole('link', { name: 'Analytics' }).querySelector('svg')
     const auditLogIcon = screen.getByRole('link', { name: 'Audit Log' }).querySelector('svg')
+    const productionLogsIcon = screen.getByRole('link', { name: 'Production Logs' }).querySelector('svg')
 
     expect(liveFeedIcon).toHaveClass('lucide-rss')
     expect(reportsIcon).toHaveClass('lucide-chart-column')
     expect(analyticsIcon).toHaveClass('lucide-chart-no-axes-combined')
     expect(auditLogIcon).toHaveClass('lucide-logs')
     expect(auditLogIcon).toHaveAttribute('stroke-width', '2.25')
+    expect(productionLogsIcon).toHaveClass('lucide-notebook-dot')
   })
 
   it('keeps the sidebar scrollbar visible while navigation is being scrolled', () => {

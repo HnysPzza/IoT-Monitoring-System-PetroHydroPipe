@@ -27,7 +27,7 @@ export const navItems = [
   {
     label: 'Production Logs',
     to: '/dashboard/production',
-    icon: 'logs',
+    icon: 'notebook-dot',
     group: 'monitor',
     roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
     subtitle: 'Track S-05 cutting pulses and pipe specifications.',
