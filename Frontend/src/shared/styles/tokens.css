@@ -3473,11 +3473,168 @@ button:disabled {
 }
 
 .reports-controls {
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: stretch;
-  justify-content: initial;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 12px;
+}
+
+.reports-filter-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.reports-funnel-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  color: var(--c-text-2);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 160ms var(--ease-std), color 160ms var(--ease-std);
+}
+
+.reports-funnel-trigger:hover:not(:disabled),
+.reports-funnel-trigger.is-active,
+.reports-funnel-trigger[aria-expanded='true'] {
+  color: var(--c-text);
+  background: var(--hover-bg);
+}
+
+.reports-funnel-trigger:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.reports-funnel-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+
+.reports-filter-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  max-width: calc(100vw - 32px);
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: #1e1f20;
+  color: #e3e3e3;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  animation: reports-popover-enter 160ms var(--ease-std);
+}
+
+:root[data-theme='light'] .reports-filter-popover {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  color: #1e293b;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes reports-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.reports-filter-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reports-filter-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.reports-filter-popover-item:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme='light'] .reports-filter-popover-item:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+
+.reports-filter-popover-item.is-active {
+  background-color: #2b2c2f;
+  color: #ffffff;
+}
+
+:root[data-theme='light'] .reports-filter-popover-item.is-active {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+}
+
+.reports-filter-popover-item:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: -2px;
+}
+
+.reports-filter-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.reports-filter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+  transition: background-color 150ms ease;
+}
+
+.reports-filter-popover-item.is-active .reports-filter-dot {
+  background-color: var(--c-primary, #38bdf8);
+}
+
+:root[data-theme='light'] .reports-filter-dot {
+  background-color: #94a3b8;
+}
+
+:root[data-theme='light'] .reports-filter-popover-item.is-active .reports-filter-dot {
+  background-color: #1d4ed8;
+}
+
+.reports-filter-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  flex-shrink: 0;
+  margin-left: 12px;
 }
 
 .reports-period-fieldset {
@@ -3485,6 +3642,7 @@ button:disabled {
   margin: 0;
   padding: 0;
   border: 0;
+  flex: 0 0 auto;
 }
 
 .trend-mode-toggle.reports-period-toggle {
@@ -3531,12 +3689,32 @@ button:disabled {
 }
 
 .reports-controls .trend-calendar-control {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
+  flex: 0 0 auto;
 }
 
 .reports-controls .trend-calendar-trigger {
-  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  gap: 10px;
+  padding: 6px 12px;
+}
+
+.reports-controls .trend-calendar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.reports-controls .trend-calendar-chevron {
+  flex-shrink: 0;
 }
 
 .reports-downtime-card {
@@ -3740,9 +3918,10 @@ button:disabled {
   }
 
   .reports-controls {
-    grid-template-columns: minmax(160px, 220px) minmax(180px, 240px) minmax(180px, 1fr) auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 10px;
   }
 
@@ -6525,10 +6704,13 @@ button:disabled {
     padding: 20px;
   }
 
-  .downtime-controls-card,
-  .reports-controls {
+  .downtime-controls-card {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .reports-controls {
+    align-items: center;
   }
 
   .trend-mode-toggle,
