@@ -947,6 +947,12 @@ input[type="number"] {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
+.production-inline-input.production-inline-num,
+.production-inline-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .production-row-editing {
   background: rgba(37, 99, 235, 0.08);
 }

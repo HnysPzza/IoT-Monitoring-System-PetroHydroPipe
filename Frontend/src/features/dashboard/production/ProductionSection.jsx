@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 import {
   batchUpdateProductionSpecs,
   getProductionLogs,
@@ -49,8 +50,25 @@ export function formatManilaDateTime(isoString) {
 }
 
 function formatDimension(value) {
-  if (value === null || value === undefined || isNaN(Number(value))) return '—'
+  if (value === null || value === undefined || isNaN(Number(value))) return null
   return Number(value).toFixed(2)
+}
+
+function formatTonnage(value) {
+  if (value === null || value === undefined || isNaN(Number(value))) return null
+  return Number(value).toFixed(4)
+}
+
+function calculatePipeTonnage(diameter, thickness, length) {
+  if (diameter == null || thickness == null || length == null) return null
+  const d = Number(diameter)
+  const t = Number(thickness)
+  const l = Number(length)
+  if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
+  if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
+  const weightKgPerMeter = (d - t) * t * 0.02466
+  const totalWeightTons = (weightKgPerMeter * l) / 1000000
+  return Math.round(totalWeightTons * 10000) / 10000
 }
 
 const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor'])
@@ -221,20 +239,19 @@ export default function ProductionSection({
 
   const [editingRecordId, setEditingRecordId] = useState(null)
   const [editForm, setEditForm] = useState({
-    label: '',
-    size: '',
+    customer: '',
     diameter: '',
-    radius: '',
-    circumference: '',
+    thickness: '',
+    length: '',
+    pipeNumber: '',
   })
   const [flashingRecordId, setFlashingRecordId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkForm, setBulkForm] = useState({
-    label: '',
-    size: '',
+    customer: '',
     diameter: '',
-    radius: '',
-    circumference: '',
+    thickness: '',
+    length: '',
   })
   const [isConfirmingBulk, setIsConfirmingBulk] = useState(false)
   const [isApplyingBulk, setIsApplyingBulk] = useState(false)
@@ -331,41 +348,28 @@ export default function ProductionSection({
     const lastSpec = records.find(
       (r) =>
         r.isSpecified ||
-        Boolean(r.label || r.size || r.diameter != null || r.radius != null || r.circumference != null),
+        Boolean(
+          (r.customer && String(r.customer).trim()) ||
+          r.diameter != null ||
+          r.thickness != null ||
+          r.length != null,
+        ),
     )
     if (!lastSpec) return
     setBulkForm({
-      label: lastSpec.label || '',
-      size: lastSpec.size || '',
+      customer: lastSpec.customer || '',
       diameter: lastSpec.diameter !== null && lastSpec.diameter !== undefined ? String(lastSpec.diameter) : '',
-      radius: lastSpec.radius !== null && lastSpec.radius !== undefined ? String(lastSpec.radius) : '',
-      circumference:
-        lastSpec.circumference !== null && lastSpec.circumference !== undefined ? String(lastSpec.circumference) : '',
+      thickness: lastSpec.thickness !== null && lastSpec.thickness !== undefined ? String(lastSpec.thickness) : '',
+      length: lastSpec.length !== null && lastSpec.length !== undefined ? String(lastSpec.length) : '',
     })
-  }
-
-  const handleBulkDiameterChange = (e) => {
-    const val = e.target.value
-    setBulkForm((prev) => ({ ...prev, diameter: val }))
-  }
-
-  const handleBulkRadiusChange = (e) => {
-    const val = e.target.value
-    setBulkForm((prev) => ({ ...prev, radius: val }))
-  }
-
-  const handleBulkCircumferenceChange = (e) => {
-    const val = e.target.value
-    setBulkForm((prev) => ({ ...prev, circumference: val }))
   }
 
   const handleBulkApplyClick = () => {
     const hasField = Boolean(
-      bulkForm.label.trim() ||
-        bulkForm.size.trim() ||
+      bulkForm.customer.trim() ||
         (bulkForm.diameter !== '' && !isNaN(Number(bulkForm.diameter))) ||
-        (bulkForm.radius !== '' && !isNaN(Number(bulkForm.radius))) ||
-        (bulkForm.circumference !== '' && !isNaN(Number(bulkForm.circumference))),
+        (bulkForm.thickness !== '' && !isNaN(Number(bulkForm.thickness))) ||
+        (bulkForm.length !== '' && !isNaN(Number(bulkForm.length))),
     )
     if (!hasField) {
       setError('Provide at least one specification field to update.')
@@ -384,23 +388,19 @@ export default function ProductionSection({
     const prevRecords = records
     const prevSummary = summary
 
-    const newLabel = bulkForm.label.trim() || undefined
-    const newSize = bulkForm.size.trim() || undefined
+    const newCustomer = bulkForm.customer.trim() || undefined
     const newDiameter =
       bulkForm.diameter !== '' && !isNaN(Number(bulkForm.diameter)) ? Number(bulkForm.diameter) : undefined
-    const newRadius =
-      bulkForm.radius !== '' && !isNaN(Number(bulkForm.radius)) ? Number(bulkForm.radius) : undefined
-    const newCircumference =
-      bulkForm.circumference !== '' && !isNaN(Number(bulkForm.circumference))
-        ? Number(bulkForm.circumference)
-        : undefined
+    const newThickness =
+      bulkForm.thickness !== '' && !isNaN(Number(bulkForm.thickness)) ? Number(bulkForm.thickness) : undefined
+    const newLength =
+      bulkForm.length !== '' && !isNaN(Number(bulkForm.length)) ? Number(bulkForm.length) : undefined
 
     const appliedSpec = {}
-    if (newLabel !== undefined) appliedSpec.label = newLabel
-    if (newSize !== undefined) appliedSpec.size = newSize
+    if (newCustomer !== undefined) appliedSpec.customer = newCustomer
     if (newDiameter !== undefined) appliedSpec.diameter = newDiameter
-    if (newRadius !== undefined) appliedSpec.radius = newRadius
-    if (newCircumference !== undefined) appliedSpec.circumference = newCircumference
+    if (newThickness !== undefined) appliedSpec.thickness = newThickness
+    if (newLength !== undefined) appliedSpec.length = newLength
 
     let newlySpecifiedCount = 0
     const targetSet = new Set(targetIds)
@@ -408,24 +408,28 @@ export default function ProductionSection({
       prev.map((r) => {
         const id = r.id || r.sensorEventId
         if (!targetSet.has(id)) return r
-        const effLabel = newLabel !== undefined ? newLabel : r.label
-        const effSize = newSize !== undefined ? newSize : r.size
+        const effCustomer = newCustomer !== undefined ? newCustomer : r.customer
         const effDiameter = newDiameter !== undefined ? newDiameter : r.diameter
-        const effRadius = newRadius !== undefined ? newRadius : r.radius
-        const effCircumference = newCircumference !== undefined ? newCircumference : r.circumference
+        const effThickness = newThickness !== undefined ? newThickness : r.thickness
+        const effLength = newLength !== undefined ? newLength : r.length
+        const effTonnage = calculatePipeTonnage(effDiameter, effThickness, effLength)
         const isNowSpecified = Boolean(
-          effLabel || effSize || effDiameter != null || effRadius != null || effCircumference != null,
+          (effCustomer && effCustomer.trim() !== '') ||
+          effDiameter != null ||
+          effThickness != null ||
+          effLength != null ||
+          r.pipeNumber != null,
         )
         if (!r.isSpecified && isNowSpecified) {
           newlySpecifiedCount++
         }
         return {
           ...r,
-          label: effLabel,
-          size: effSize,
+          customer: effCustomer,
           diameter: effDiameter,
-          radius: effRadius,
-          circumference: effCircumference,
+          thickness: effThickness,
+          length: effLength,
+          tonnage: effTonnage,
           isSpecified: isNowSpecified,
           specStatus: isNowSpecified ? 'specified' : 'unspecified',
         }
@@ -454,11 +458,10 @@ export default function ProductionSection({
 
       setSelectedIds(new Set())
       setBulkForm({
-        label: '',
-        size: '',
+        customer: '',
         diameter: '',
-        radius: '',
-        circumference: '',
+        thickness: '',
+        length: '',
       })
       setAnnouncement(`Applied specifications to ${targetIds.length} cuts.`)
       loadData({ silent: true })
@@ -597,22 +600,22 @@ export default function ProductionSection({
     setEditingRecordId(rowId)
     setConflictNotice(null)
     setEditForm({
-      label: record.label ?? '',
-      size: record.size ?? '',
+      customer: record.customer ?? '',
       diameter: record.diameter !== null && record.diameter !== undefined ? String(record.diameter) : '',
-      radius: record.radius !== null && record.radius !== undefined ? String(record.radius) : '',
-      circumference: record.circumference !== null && record.circumference !== undefined ? String(record.circumference) : '',
+      thickness: record.thickness !== null && record.thickness !== undefined ? String(record.thickness) : '',
+      length: record.length !== null && record.length !== undefined ? String(record.length) : '',
+      pipeNumber: record.pipeNumber !== null && record.pipeNumber !== undefined ? String(record.pipeNumber) : '',
     })
   }
 
   const handleCancel = () => {
     setEditingRecordId(null)
     setEditForm({
-      label: '',
-      size: '',
+      customer: '',
       diameter: '',
-      radius: '',
-      circumference: '',
+      thickness: '',
+      length: '',
+      pipeNumber: '',
     })
   }
 
@@ -641,13 +644,21 @@ export default function ProductionSection({
     const prevRecords = records
     const prevSummary = summary
 
-    const newLabel = editForm.label?.trim() || null
-    const newSize = editForm.size?.trim() || null
+    const newCustomer = editForm.customer?.trim() || null
     const newDiameter = editForm.diameter === '' || editForm.diameter === null ? null : Number(editForm.diameter)
-    const newRadius = editForm.radius === '' || editForm.radius === null ? null : Number(editForm.radius)
-    const newCircumference = editForm.circumference === '' || editForm.circumference === null ? null : Number(editForm.circumference)
+    const newThickness = editForm.thickness === '' || editForm.thickness === null ? null : Number(editForm.thickness)
+    const newLength = editForm.length === '' || editForm.length === null ? null : Number(editForm.length)
+    const newPipeNumber =
+      editForm.pipeNumber === '' || editForm.pipeNumber === null ? null : parseInt(editForm.pipeNumber, 10)
+    const newTonnage = calculatePipeTonnage(newDiameter, newThickness, newLength)
 
-    const isNowSpecified = Boolean(newLabel || newSize || newDiameter || newRadius || newCircumference)
+    const isNowSpecified = Boolean(
+      newCustomer ||
+        newDiameter != null ||
+        newThickness != null ||
+        newLength != null ||
+        newPipeNumber != null,
+    )
     const wasSpecified = Boolean(record.isSpecified)
 
     setRecords((prev) =>
@@ -655,11 +666,12 @@ export default function ProductionSection({
         if ((r.id || r.sensorEventId) === rowId) {
           return {
             ...r,
-            label: newLabel,
-            size: newSize,
+            customer: newCustomer,
             diameter: newDiameter,
-            radius: newRadius,
-            circumference: newCircumference,
+            thickness: newThickness,
+            length: newLength,
+            pipeNumber: newPipeNumber,
+            tonnage: newTonnage,
             isSpecified: isNowSpecified,
             specStatus: isNowSpecified ? 'specified' : 'unspecified',
           }
@@ -689,11 +701,11 @@ export default function ProductionSection({
     }, 150)
 
     const payload = {
-      label: newLabel,
-      size: newSize,
+      customer: newCustomer,
       diameter: newDiameter,
-      radius: newRadius,
-      circumference: newCircumference,
+      thickness: newThickness,
+      length: newLength,
+      pipeNumber: newPipeNumber,
     }
 
     try {
@@ -708,10 +720,24 @@ export default function ProductionSection({
         setRecords((prev) =>
           prev.map((r) => {
             if ((r.id || r.sensorEventId) === rowId) {
+              const updatedDiameter = response.spec.diameter != null ? Number(response.spec.diameter) : newDiameter
+              const updatedThickness = response.spec.thickness != null ? Number(response.spec.thickness) : newThickness
+              const updatedLength = response.spec.length != null ? Number(response.spec.length) : newLength
+              const updatedPipeNumber =
+                response.spec.pipe_number != null
+                  ? Number(response.spec.pipe_number)
+                  : response.spec.pipeNumber != null
+                    ? Number(response.spec.pipeNumber)
+                    : newPipeNumber
               return {
                 ...r,
-                ...response.spec,
-                updatedAt: response.spec.updatedAt || r.updatedAt,
+                customer: response.spec.customer ?? newCustomer,
+                diameter: updatedDiameter,
+                thickness: updatedThickness,
+                length: updatedLength,
+                pipeNumber: updatedPipeNumber,
+                tonnage: calculatePipeTonnage(updatedDiameter, updatedThickness, updatedLength),
+                updatedAt: response.spec.updatedAt || response.spec.updated_at || r.updatedAt,
               }
             }
             return r
@@ -738,6 +764,8 @@ export default function ProductionSection({
     }
   }
 
+  const sensorLabel = getSensorLabel('S-05', 'Production Output Cutting')
+
   return (
     <div className="production-workspace">
       {/* Screen Reader Announcements */}
@@ -748,7 +776,7 @@ export default function ProductionSection({
       {/* Header Strip with Eyebrow, Main Heading, and Clean Unified KPI Pills */}
       <header className="production-header-strip">
         <div className="production-title-group">
-          <p className="production-eyebrow">S-05 · PRODUCTION OUTPUT CUTTING · SPIRAL MILL 01</p>
+          <p className="production-eyebrow">{`S-05 · ${sensorLabel.toUpperCase()} · SPIRAL MILL 01`}</p>
           <h1 className="production-title">Production Logs</h1>
         </div>
 
@@ -845,7 +873,7 @@ export default function ProductionSection({
           <input
             type="search"
             className="production-search-input"
-            placeholder="Search label, size, or ID..."
+            placeholder="Search customer, pipe #, or ID..."
             aria-label="Search production cuts"
             value={searchInput}
             maxLength={100}
@@ -973,54 +1001,45 @@ export default function ProductionSection({
               <input
                 type="text"
                 className="production-bulk-input"
-                placeholder="Label"
-                aria-label="Bulk label"
-                value={bulkForm.label}
+                placeholder="Customer / Client"
+                aria-label="Bulk customer"
+                value={bulkForm.customer}
                 maxLength={100}
-                onChange={(e) => setBulkForm((prev) => ({ ...prev, label: e.target.value }))}
-              />
-              <input
-                type="text"
-                className="production-bulk-input"
-                placeholder="Size"
-                aria-label="Bulk size"
-                value={bulkForm.size}
-                maxLength={50}
-                onChange={(e) => setBulkForm((prev) => ({ ...prev, size: e.target.value }))}
+                onChange={(e) => setBulkForm((prev) => ({ ...prev, customer: e.target.value }))}
               />
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
-                  placeholder="Diameter"
+                  placeholder="Diameter (OD)"
                   aria-label="Bulk diameter"
                   step="any"
                   min="0"
                   value={bulkForm.diameter}
-                  onChange={handleBulkDiameterChange}
+                  onChange={(e) => setBulkForm((prev) => ({ ...prev, diameter: e.target.value }))}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
-                  placeholder="Radius"
-                  aria-label="Bulk radius"
+                  placeholder="Thickness"
+                  aria-label="Bulk thickness"
                   step="any"
                   min="0"
-                  value={bulkForm.radius}
-                  onChange={handleBulkRadiusChange}
+                  value={bulkForm.thickness}
+                  onChange={(e) => setBulkForm((prev) => ({ ...prev, thickness: e.target.value }))}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
-                  placeholder="Circumference"
-                  aria-label="Bulk circumference"
+                  placeholder="Length"
+                  aria-label="Bulk length"
                   step="any"
                   min="0"
-                  value={bulkForm.circumference}
-                  onChange={handleBulkCircumferenceChange}
+                  value={bulkForm.length}
+                  onChange={(e) => setBulkForm((prev) => ({ ...prev, length: e.target.value }))}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1073,19 +1092,20 @@ export default function ProductionSection({
                   </th>
                 )}
                 <th className="production-col-status">Status</th>
-                <th>Cut Timestamp (PHT)</th>
-                <th>Label</th>
-                <th>Size</th>
-                <th className="production-col-num">Diameter</th>
-                <th className="production-col-num">Radius</th>
-                <th className="production-col-num">Circumference</th>
+                <th>Cut Time</th>
+                <th>Customer</th>
+                <th className="production-col-num tabular-data">Diameter (OD mm)</th>
+                <th className="production-col-num tabular-data">Thickness (mm)</th>
+                <th className="production-col-num tabular-data">Length (mm)</th>
+                <th className="production-col-num tabular-data">Pipe #</th>
+                <th className="production-col-num tabular-data">Tons</th>
                 {canEdit && <th className="production-col-action">Action</th>}
               </tr>
             </thead>
             <tbody>
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 9 : 7} className="production-empty-state">
+                  <td colSpan={canEdit ? 10 : 8} className="production-empty-state">
                     No production records found for the selected filters.
                   </td>
                 </tr>
@@ -1171,23 +1191,11 @@ export default function ProductionSection({
                             <input
                               type="text"
                               className="production-inline-input"
-                              aria-label="Specification label"
-                              name="label"
-                              value={editForm.label}
+                              aria-label="Specification customer"
+                              name="customer"
+                              value={editForm.customer}
                               maxLength={100}
                               autoFocus
-                              onChange={handleInputChange}
-                              onKeyDown={(e) => handleInputKeyDown(e, record)}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              className="production-inline-input"
-                              aria-label="Specification size"
-                              name="size"
-                              value={editForm.size}
-                              maxLength={50}
                               onChange={handleInputChange}
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
@@ -1209,11 +1217,11 @@ export default function ProductionSection({
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
-                              aria-label="Specification radius"
-                              name="radius"
+                              aria-label="Specification thickness"
+                              name="thickness"
                               step="any"
                               min="0"
-                              value={editForm.radius}
+                              value={editForm.thickness}
                               onChange={handleInputChange}
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
@@ -1222,20 +1230,46 @@ export default function ProductionSection({
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
-                              aria-label="Specification circumference"
-                              name="circumference"
+                              aria-label="Specification length"
+                              name="length"
                               step="any"
                               min="0"
-                              value={editForm.circumference}
+                              value={editForm.length}
                               onChange={handleInputChange}
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
                           </td>
+                          <td className="production-col-num tabular-data">
+                            <input
+                              type="number"
+                              className="production-inline-input production-inline-num tabular-data"
+                              aria-label="Specification pipe number"
+                              name="pipeNumber"
+                              step="1"
+                              min="1"
+                              value={editForm.pipeNumber}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
+                          </td>
+                          <td className="production-col-num tabular-data">
+                            {(() => {
+                              const calculatedTonnage = calculatePipeTonnage(
+                                editForm.diameter,
+                                editForm.thickness,
+                                editForm.length,
+                              )
+                              return calculatedTonnage != null ? (
+                                formatTonnage(calculatedTonnage)
+                              ) : (
+                                <span className="production-placeholder">—</span>
+                              )
+                            })()}
+                          </td>
                         </>
                       ) : (
                         <>
-                          <td>{record.label || <span className="production-placeholder">—</span>}</td>
-                          <td>{record.size || <span className="production-placeholder">—</span>}</td>
+                          <td>{record.customer || <span className="production-placeholder">—</span>}</td>
                           <td className="production-col-num tabular-data">
                             {record.diameter !== null && record.diameter !== undefined ? (
                               formatDimension(record.diameter)
@@ -1244,15 +1278,29 @@ export default function ProductionSection({
                             )}
                           </td>
                           <td className="production-col-num tabular-data">
-                            {record.radius !== null && record.radius !== undefined ? (
-                              formatDimension(record.radius)
+                            {record.thickness !== null && record.thickness !== undefined ? (
+                              formatDimension(record.thickness)
                             ) : (
                               <span className="production-placeholder">—</span>
                             )}
                           </td>
                           <td className="production-col-num tabular-data">
-                            {record.circumference !== null && record.circumference !== undefined ? (
-                              formatDimension(record.circumference)
+                            {record.length !== null && record.length !== undefined ? (
+                              formatDimension(record.length)
+                            ) : (
+                              <span className="production-placeholder">—</span>
+                            )}
+                          </td>
+                          <td className="production-col-num tabular-data">
+                            {record.pipeNumber !== null && record.pipeNumber !== undefined ? (
+                              record.pipeNumber
+                            ) : (
+                              <span className="production-placeholder">—</span>
+                            )}
+                          </td>
+                          <td className="production-col-num tabular-data">
+                            {record.tonnage !== null && record.tonnage !== undefined ? (
+                              formatTonnage(record.tonnage)
                             ) : (
                               <span className="production-placeholder">—</span>
                             )}

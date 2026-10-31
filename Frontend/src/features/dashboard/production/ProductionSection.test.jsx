@@ -51,11 +51,14 @@ const mockProductionPayload = {
       isEditable: true,
       isSpecified: true,
       specStatus: 'specified',
+      customer: 'Maynilad Water',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipeNumber: 1001,
+      tonnage: 1.1513,
       label: 'Batch Alpha Pipe',
       size: '6 inch',
-      diameter: 152.4,
-      radius: 76.2,
-      circumference: 478.78,
       updatedAt: '2026-10-30T06:30:00.000Z',
     },
     {
@@ -73,11 +76,14 @@ const mockProductionPayload = {
       isEditable: true,
       isSpecified: false,
       specStatus: 'unspecified',
+      customer: null,
+      diameter: null,
+      thickness: null,
+      length: null,
+      pipeNumber: null,
+      tonnage: null,
       label: null,
       size: null,
-      diameter: null,
-      radius: null,
-      circumference: null,
       updatedAt: null,
     },
     {
@@ -95,11 +101,14 @@ const mockProductionPayload = {
       isEditable: false,
       isSpecified: false,
       specStatus: 'rejected',
+      customer: null,
+      diameter: null,
+      thickness: null,
+      length: null,
+      pipeNumber: null,
+      tonnage: null,
       label: null,
       size: null,
-      diameter: null,
-      radius: null,
-      circumference: null,
       updatedAt: null,
     },
   ],
@@ -192,6 +201,32 @@ describe('productionService', () => {
     })
   })
 
+  it('normalizes records including customer, diameter, thickness, length, pipeNumber, and tonnage', async () => {
+    apiRequest.mockResolvedValueOnce({
+      records: [
+        {
+          id: 'e1',
+          customer: '  Petro Hydro  ',
+          diameter: '625.4',
+          thickness: '12.7',
+          length: '6000',
+          pipe_number: '101',
+          tonnage: '1.1513',
+        },
+      ],
+    })
+
+    const payload = await getProductionLogs('mock-token')
+    expect(payload.records[0]).toMatchObject({
+      customer: 'Petro Hydro',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipeNumber: 101,
+      tonnage: 1.1513,
+    })
+  })
+
   it('propagates API client errors', async () => {
     apiRequest.mockRejectedValueOnce(new Error('Network failure'))
 
@@ -204,15 +239,15 @@ describe('productionService updateProductionLogSpec', () => {
     vi.clearAllMocks()
   })
 
-  it('calls apiRequest with PATCH, flat body, and expectedUpdatedAt', async () => {
-    apiRequest.mockResolvedValueOnce({ spec: { label: 'Updated Pipe' } })
+  it('calls apiRequest with PATCH, flat body with pipe specs, and expectedUpdatedAt', async () => {
+    apiRequest.mockResolvedValueOnce({ spec: { customer: 'Maynilad Water' } })
 
     const spec = {
-      label: 'Batch Beta Pipe',
-      size: '8 inch',
-      diameter: 203.2,
-      radius: 101.6,
-      circumference: 638.37,
+      customer: 'Maynilad Water',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipeNumber: 1001,
     }
     const expectedUpdatedAt = '2026-10-30T06:30:00.000Z'
 
@@ -223,18 +258,18 @@ describe('productionService updateProductionLogSpec', () => {
       token: 'mock-token',
       method: 'PATCH',
       body: {
-        label: 'Batch Beta Pipe',
-        size: '8 inch',
-        diameter: 203.2,
-        radius: 101.6,
-        circumference: 638.37,
+        customer: 'Maynilad Water',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 1001,
         expectedUpdatedAt: '2026-10-30T06:30:00.000Z',
       },
     })
   })
 
   it('handles null and undefined specification fields and optional expectedUpdatedAt', async () => {
-    apiRequest.mockResolvedValueOnce({ spec: { label: null } })
+    apiRequest.mockResolvedValueOnce({ spec: { customer: null } })
 
     await updateProductionLogSpec('mock-token', 'e0000000-0000-4000-8000-000000000001', {})
 
@@ -242,27 +277,27 @@ describe('productionService updateProductionLogSpec', () => {
       token: 'mock-token',
       method: 'PATCH',
       body: {
-        label: null,
-        size: null,
+        customer: null,
         diameter: null,
-        radius: null,
-        circumference: null,
+        thickness: null,
+        length: null,
+        pipeNumber: null,
       },
     })
   })
 
   it('converts empty strings to null and numeric strings to numbers', async () => {
-    apiRequest.mockResolvedValueOnce({ spec: { label: null } })
+    apiRequest.mockResolvedValueOnce({ spec: { customer: null } })
 
     await updateProductionLogSpec(
       'mock-token',
       'e0000000-0000-4000-8000-000000000001',
       {
-        label: '   ',
-        size: '',
-        diameter: '152.4',
-        radius: '',
-        circumference: 478.78,
+        customer: '   ',
+        diameter: '625.4',
+        thickness: '',
+        length: '6000',
+        pipeNumber: '1001',
       },
       null,
     )
@@ -271,14 +306,36 @@ describe('productionService updateProductionLogSpec', () => {
       token: 'mock-token',
       method: 'PATCH',
       body: {
-        label: null,
-        size: null,
-        diameter: 152.4,
-        radius: null,
-        circumference: 478.78,
+        customer: null,
+        diameter: 625.4,
+        thickness: null,
+        length: 6000,
+        pipeNumber: 1001,
         expectedUpdatedAt: null,
       },
     })
+  })
+
+  it('strictly excludes legacy radius and circumference from outbound body', async () => {
+    apiRequest.mockResolvedValueOnce({ spec: { customer: 'Client X' } })
+
+    await updateProductionLogSpec(
+      'mock-token',
+      'e0000000-0000-4000-8000-000000000001',
+      {
+        customer: 'Client X',
+        diameter: 500,
+        thickness: 10,
+        length: 6000,
+        pipeNumber: 55,
+        radius: 250,
+        circumference: 1570.8,
+      },
+    )
+
+    const callArgs = apiRequest.mock.calls[0]
+    expect(callArgs[1].body.radius).toBeUndefined()
+    expect(callArgs[1].body.circumference).toBeUndefined()
   })
 
   it('propagates HTTP 409 conflict ApiError from apiRequest', async () => {
@@ -291,7 +348,7 @@ describe('productionService updateProductionLogSpec', () => {
       updateProductionLogSpec(
         'mock-token',
         'e0000000-0000-4000-8000-000000000001',
-        { label: 'Pipe' },
+        { customer: 'Maynilad' },
         '2026-10-30T06:30:00.000Z',
       ),
     ).rejects.toMatchObject({
@@ -304,7 +361,7 @@ describe('productionService updateProductionLogSpec', () => {
     apiRequest.mockRejectedValueOnce(new Error('Network error'))
 
     await expect(
-      updateProductionLogSpec('mock-token', 'e0000000-0000-4000-8000-000000000001', { label: 'Pipe' }),
+      updateProductionLogSpec('mock-token', 'e0000000-0000-4000-8000-000000000001', { customer: 'Maynilad' }),
     ).rejects.toThrow('Network error')
   })
 })
@@ -320,11 +377,10 @@ describe('productionService batchUpdateProductionSpecs', () => {
     await batchUpdateProductionSpecs('mock-token', {
       sensorEventIds: ['e0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000002'],
       appliedSpec: {
-        label: '  Batch Pipe  ',
-        size: '10 inch',
-        diameter: '273.05',
-        radius: 136.53,
-        circumference: '857.82',
+        customer: '  Maynilad Water  ',
+        diameter: '625.4',
+        thickness: '12.7',
+        length: '6000',
       },
     })
 
@@ -334,11 +390,10 @@ describe('productionService batchUpdateProductionSpecs', () => {
       method: 'PATCH',
       body: {
         sensorEventIds: ['e0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000002'],
-        label: 'Batch Pipe',
-        size: '10 inch',
-        diameter: 273.05,
-        radius: 136.53,
-        circumference: 857.82,
+        customer: 'Maynilad Water',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
       },
     })
   })
@@ -349,11 +404,10 @@ describe('productionService batchUpdateProductionSpecs', () => {
     await batchUpdateProductionSpecs('mock-token', {
       sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
       appliedSpec: {
-        label: 'New Label Only',
-        size: '',
+        customer: 'New Customer Only',
         diameter: '',
-        radius: undefined,
-        circumference: null,
+        thickness: undefined,
+        length: null,
       },
     })
 
@@ -362,7 +416,7 @@ describe('productionService batchUpdateProductionSpecs', () => {
       method: 'PATCH',
       body: {
         sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
-        label: 'New Label Only',
+        customer: 'New Customer Only',
       },
     })
   })
@@ -373,7 +427,7 @@ describe('productionService batchUpdateProductionSpecs', () => {
     await batchUpdateProductionSpecs('mock-token', {
       date: '2026-10-30',
       onlyUnlabeled: true,
-      appliedSpec: { label: 'Range Pipe' },
+      appliedSpec: { customer: 'Range Customer' },
     })
 
     expect(apiRequest).toHaveBeenCalledWith('/api/production/batch', {
@@ -383,9 +437,31 @@ describe('productionService batchUpdateProductionSpecs', () => {
         dateFrom: '2026-10-30',
         dateTo: '2026-10-30',
         onlyUnlabeled: true,
-        label: 'Range Pipe',
+        customer: 'Range Customer',
       },
     })
+  })
+
+  it('strictly excludes radius, circumference, and pipeNumber from batchUpdate body', async () => {
+    apiRequest.mockResolvedValueOnce({ updatedCount: 1 })
+
+    await batchUpdateProductionSpecs('mock-token', {
+      sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+      appliedSpec: {
+        customer: 'Valid Customer',
+        diameter: 500,
+        thickness: 10,
+        length: 6000,
+        pipeNumber: 101,
+        radius: 250,
+        circumference: 1570,
+      },
+    })
+
+    const callBody = apiRequest.mock.calls[0][1].body
+    expect(callBody.radius).toBeUndefined()
+    expect(callBody.circumference).toBeUndefined()
+    expect(callBody.pipeNumber).toBeUndefined()
   })
 
   it('propagates API errors from batchUpdateProductionSpecs', async () => {
@@ -394,7 +470,7 @@ describe('productionService batchUpdateProductionSpecs', () => {
     await expect(
       batchUpdateProductionSpecs('mock-token', {
         sensorEventIds: ['e1'],
-        appliedSpec: { label: 'Pipe' },
+        appliedSpec: { customer: 'Pipe' },
       }),
     ).rejects.toThrow('Batch update failed')
   })
@@ -449,11 +525,12 @@ describe('ProductionSection component', () => {
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
     // Wait for row 1
-    expect(await screen.findByText('Batch Alpha Pipe')).toBeInTheDocument()
-    expect(screen.getByText('6 inch')).toBeInTheDocument()
-    expect(screen.getByText('152.40')).toBeInTheDocument()
-    expect(screen.getByText('76.20')).toBeInTheDocument()
-    expect(screen.getByText('478.78')).toBeInTheDocument()
+    expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
+    expect(screen.getByText('625.40')).toBeInTheDocument()
+    expect(screen.getByText('12.70')).toBeInTheDocument()
+    expect(screen.getByText('6000.00')).toBeInTheDocument()
+    expect(screen.getByText('1001')).toBeInTheDocument()
+    expect(screen.getByText('1.1513')).toBeInTheDocument()
     expect(screen.getByText('2026-10-30 14:30:00')).toBeInTheDocument()
 
     // Status icon assertions
@@ -471,13 +548,37 @@ describe('ProductionSection component', () => {
     expect(placeholders.length).toBeGreaterThanOrEqual(5)
   })
 
+  it('renders 10-column table structure and strictly excludes radius and circumference headers', async () => {
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
+
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent.trim())
+    expect(headers).toEqual([
+      '',
+      'Status',
+      'Cut Time',
+      'Customer',
+      'Diameter (OD mm)',
+      'Thickness (mm)',
+      'Length (mm)',
+      'Pipe #',
+      'Tons',
+      'Action',
+    ])
+    expect(screen.queryByRole('columnheader', { name: /radius/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /circumference/i })).not.toBeInTheDocument()
+  })
+
   it('handles date filter changes and queries with updated date', async () => {
     const user = userEvent.setup()
     const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
 
     const dateInput = screen.getByLabelText('Filter by date')
     await user.clear(dateInput)
@@ -497,7 +598,7 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
 
     const statusSelect = screen.getByLabelText('Filter by cut status')
     await user.click(statusSelect)
@@ -517,7 +618,7 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
 
     const specSelect = screen.getByLabelText('Filter by specification status')
     await user.click(specSelect)
@@ -537,14 +638,14 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
 
     const searchInput = screen.getByLabelText('Search production cuts')
-    await user.type(searchInput, 'Batch Beta{Enter}')
+    await user.type(searchInput, 'Maynilad{Enter}')
 
     await waitFor(() => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-        search: 'Batch Beta',
+        search: 'Maynilad',
         page: 1,
       }))
     })
@@ -563,11 +664,12 @@ describe('ProductionSection component', () => {
             recordedAt: '2026-10-30T09:00:00.000Z',
             outputAccepted: true,
             isSpecified: true,
-            label: 'Page Two Pipe',
-            size: '8 inch',
+            customer: 'Page Two Pipe Customer',
             diameter: 203.2,
-            radius: 101.6,
-            circumference: 638.37,
+            thickness: 6.4,
+            length: 6000,
+            pipeNumber: 2001,
+            tonnage: 0.1865,
           },
         ],
         pagination: {
@@ -598,7 +700,7 @@ describe('ProductionSection component', () => {
       }))
     })
 
-    expect(await screen.findByText('Page Two Pipe', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(await screen.findByText('Page Two Pipe Customer', {}, { timeout: 4000 })).toBeInTheDocument()
     expect(screen.getByText('Page 2 of 2 · 42 records')).toBeInTheDocument()
   })
 
@@ -641,7 +743,7 @@ describe('ProductionSection component', () => {
     const retryBtn = within(alert).getByRole('button', { name: 'Retry' })
     await user.click(retryBtn)
 
-    expect(await screen.findByText('Batch Alpha Pipe')).toBeInTheDocument()
+    expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -651,7 +753,7 @@ describe('ProductionSection component', () => {
     // Admin has edit buttons and selection checkboxes for accepted cuts
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
 
     const editButtons = screen.getAllByRole('button', { name: /edit specification/i })
     expect(editButtons.length).toBe(2)
@@ -679,7 +781,7 @@ describe('ProductionSection component', () => {
           authValue: { user: { role } },
         })
 
-        expect(await screen.findByText('Batch Alpha Pipe')).toBeInTheDocument()
+        expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
         expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument()
         const editButtons = screen.getAllByRole('button', { name: /edit specification/i })
         expect(editButtons.length).toBe(2)
@@ -695,7 +797,7 @@ describe('ProductionSection component', () => {
           authValue: { user: { role } },
         })
 
-        expect(await screen.findByText('Batch Alpha Pipe')).toBeInTheDocument()
+        expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
         expect(screen.queryByRole('columnheader', { name: 'Action' })).not.toBeInTheDocument()
         expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument()
@@ -709,7 +811,7 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     const rows = screen.getAllByRole('row')
     const rejectedRow = rows[3]
 
@@ -724,24 +826,28 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     const editButtons = screen.getAllByRole('button', { name: /edit specification/i })
     await user.click(editButtons[0])
 
-    const labelInput = screen.getByLabelText('Specification label')
-    expect(labelInput).toHaveValue('Batch Alpha Pipe')
-
-    const sizeInput = screen.getByLabelText('Specification size')
-    expect(sizeInput).toHaveValue('6 inch')
+    const customerInput = screen.getByLabelText('Specification customer')
+    expect(customerInput).toHaveValue('Maynilad Water')
 
     const diameterInput = screen.getByLabelText('Specification diameter')
-    expect(diameterInput).toHaveValue(152.4)
+    expect(diameterInput).toHaveValue(625.4)
 
-    const radiusInput = screen.getByLabelText('Specification radius')
-    expect(radiusInput).toHaveValue(76.2)
+    const thicknessInput = screen.getByLabelText('Specification thickness')
+    expect(thicknessInput).toHaveValue(12.7)
 
-    const circumferenceInput = screen.getByLabelText('Specification circumference')
-    expect(circumferenceInput).toHaveValue(478.78)
+    const lengthInput = screen.getByLabelText('Specification length')
+    expect(lengthInput).toHaveValue(6000)
+
+    const pipeNumberInput = screen.getByLabelText('Specification pipe number')
+    expect(pipeNumberInput).toHaveValue(1001)
+
+    expect(screen.queryByLabelText('Specification tons')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Specification radius')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Specification circumference')).not.toBeInTheDocument()
 
     expect(screen.getByRole('button', { name: 'Save specification' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel editing' })).toBeInTheDocument()
@@ -753,24 +859,32 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     await user.click(screen.getAllByRole('button', { name: /edit specification/i })[0])
 
-    const labelInput = screen.getByLabelText('Specification label')
-    const sizeInput = screen.getByLabelText('Specification size')
+    const customerInput = screen.getByLabelText('Specification customer')
     const diameterInput = screen.getByLabelText('Specification diameter')
+    const thicknessInput = screen.getByLabelText('Specification thickness')
+    const lengthInput = screen.getByLabelText('Specification length')
+    const pipeNumberInput = screen.getByLabelText('Specification pipe number')
 
-    labelInput.focus()
-    expect(labelInput).toHaveFocus()
-
-    await user.tab()
-    expect(sizeInput).toHaveFocus()
+    customerInput.focus()
+    expect(customerInput).toHaveFocus()
 
     await user.tab()
     expect(diameterInput).toHaveFocus()
 
+    await user.tab()
+    expect(thicknessInput).toHaveFocus()
+
+    await user.tab()
+    expect(lengthInput).toHaveFocus()
+
+    await user.tab()
+    expect(pipeNumberInput).toHaveFocus()
+
     await user.tab({ shift: true })
-    expect(sizeInput).toHaveFocus()
+    expect(lengthInput).toHaveFocus()
   })
 
   it('saves inline edit on Enter key press', async () => {
@@ -779,11 +893,12 @@ describe('ProductionSection component', () => {
     const mockUpdate = vi.fn().mockResolvedValue({
       spec: {
         sensorEventId: 'e0000000-0000-4000-8000-000000000001',
-        label: 'Batch Alpha 2',
-        size: '6 inch',
-        diameter: 152.4,
-        radius: 76.2,
-        circumference: 478.78,
+        customer: 'Manila Water Corp',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 1001,
+        tonnage: 1.1513,
         isSpecified: true,
         specStatus: 'specified',
         updatedAt: '2026-10-30T09:00:00.000Z',
@@ -792,24 +907,24 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     await user.click(screen.getAllByRole('button', { name: /edit specification/i })[0])
 
-    const labelInput = screen.getByLabelText('Specification label')
-    await user.clear(labelInput)
-    await user.type(labelInput, 'Batch Alpha 2{Enter}')
+    const customerInput = screen.getByLabelText('Specification customer')
+    await user.clear(customerInput)
+    await user.type(customerInput, 'Manila Water Corp{Enter}')
 
     await waitFor(() => {
       expect(mockUpdate).toHaveBeenCalledWith(
         'test-token',
         'e0000000-0000-4000-8000-000000000001',
-        expect.objectContaining({ label: 'Batch Alpha 2' }),
+        expect.objectContaining({ customer: 'Manila Water Corp' }),
         '2026-10-30T06:30:00.000Z',
       )
     })
 
-    expect(await screen.findByText('Batch Alpha 2')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Specification label')).not.toBeInTheDocument()
+    expect(await screen.findByText('Manila Water Corp')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Specification customer')).not.toBeInTheDocument()
   })
 
   it('cancels inline edit on Escape key press and restores previous values', async () => {
@@ -819,16 +934,16 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     await user.click(screen.getAllByRole('button', { name: /edit specification/i })[0])
 
-    const labelInput = screen.getByLabelText('Specification label')
-    await user.clear(labelInput)
-    await user.type(labelInput, 'Unsaved Modified Label{Escape}')
+    const customerInput = screen.getByLabelText('Specification customer')
+    await user.clear(customerInput)
+    await user.type(customerInput, 'Unsaved Modified Customer{Escape}')
 
     expect(mockUpdate).not.toHaveBeenCalled()
-    expect(screen.queryByLabelText('Specification label')).not.toBeInTheDocument()
-    expect(screen.getByText('Batch Alpha Pipe')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Specification customer')).not.toBeInTheDocument()
+    expect(screen.getByText('Maynilad Water')).toBeInTheDocument()
   })
 
   it('cancels inline edit on Cancel button click', async () => {
@@ -838,17 +953,17 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     await user.click(screen.getAllByRole('button', { name: /edit specification/i })[0])
 
-    const labelInput = screen.getByLabelText('Specification label')
-    await user.clear(labelInput)
-    await user.type(labelInput, 'Discarded Label')
+    const customerInput = screen.getByLabelText('Specification customer')
+    await user.clear(customerInput)
+    await user.type(customerInput, 'Discarded Customer')
     await user.click(screen.getByRole('button', { name: 'Cancel editing' }))
 
     expect(mockUpdate).not.toHaveBeenCalled()
-    expect(screen.queryByLabelText('Specification label')).not.toBeInTheDocument()
-    expect(screen.getByText('Batch Alpha Pipe')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Specification customer')).not.toBeInTheDocument()
+    expect(screen.getByText('Maynilad Water')).toBeInTheDocument()
   })
 
   it('optimistically updates row values and applies 150ms flash class upon save', async () => {
@@ -862,16 +977,16 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     const editButtons = screen.getAllByRole('button', { name: /edit specification/i })
     await user.click(editButtons[1]) // row 2 was unspecified
 
-    const labelInput = screen.getByLabelText('Specification label')
-    await user.type(labelInput, 'Optimistic Pipe')
+    const customerInput = screen.getByLabelText('Specification customer')
+    await user.type(customerInput, 'Optimistic Pipe Customer')
     await user.click(screen.getByRole('button', { name: 'Save specification' }))
 
     // Immediate optimistic update
-    expect(screen.getByText('Optimistic Pipe')).toBeInTheDocument()
+    expect(screen.getByText('Optimistic Pipe Customer')).toBeInTheDocument()
     const rows = screen.getAllByRole('row')
     const editedRow = rows[2]
     expect(editedRow).toHaveClass('production-row-flash')
@@ -880,11 +995,12 @@ describe('ProductionSection component', () => {
     resolveUpdate({
       spec: {
         sensorEventId: 'e0000000-0000-4000-8000-000000000002',
-        label: 'Optimistic Pipe',
-        size: null,
+        customer: 'Optimistic Pipe Customer',
         diameter: null,
-        radius: null,
-        circumference: null,
+        thickness: null,
+        length: null,
+        pipeNumber: null,
+        tonnage: null,
         isSpecified: true,
         specStatus: 'specified',
         updatedAt: '2026-10-30T10:00:00.000Z',
@@ -909,7 +1025,7 @@ describe('ProductionSection component', () => {
         records: [
           {
             ...mockProductionPayload.records[0],
-            label: 'Server Updated Batch Pipe',
+            customer: 'Server Updated Pipe Customer',
             updatedAt: '2026-10-30T08:00:00.000Z',
           },
           ...mockProductionPayload.records.slice(1),
@@ -920,12 +1036,12 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     await user.click(screen.getAllByRole('button', { name: /edit specification/i })[0])
 
-    const labelInput = screen.getByLabelText('Specification label')
-    await user.clear(labelInput)
-    await user.type(labelInput, 'Conflicting Change')
+    const customerInput = screen.getByLabelText('Specification customer')
+    await user.clear(customerInput)
+    await user.type(customerInput, 'Conflicting Change')
     await user.click(screen.getByRole('button', { name: 'Save specification' }))
 
     // Assert conflict notice alert
@@ -938,7 +1054,7 @@ describe('ProductionSection component', () => {
     })
 
     // Assert server value is rendered after reload
-    expect(await screen.findByText('Server Updated Batch Pipe')).toBeInTheDocument()
+    expect(await screen.findByText('Server Updated Pipe Customer')).toBeInTheDocument()
     expect(screen.queryByText('Conflicting Change')).not.toBeInTheDocument()
   })
 
@@ -949,13 +1065,13 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
 
-    await screen.findByText('Batch Alpha Pipe')
+    await screen.findByText('Maynilad Water')
     const kpiRegion = screen.getByRole('region', { name: 'Production Summary Metrics' })
     expect(within(kpiRegion).getByText('30')).toBeInTheDocument() // specified count
 
     await user.click(screen.getAllByRole('button', { name: /edit specification/i })[1]) // row 2 (unspecified)
-    const labelInput = screen.getByLabelText('Specification label')
-    await user.type(labelInput, 'Temporary Pipe')
+    const customerInput = screen.getByLabelText('Specification customer')
+    await user.type(customerInput, 'Temporary Pipe Customer')
     await user.click(screen.getByRole('button', { name: 'Save specification' }))
 
     // Error alert displayed
@@ -963,7 +1079,7 @@ describe('ProductionSection component', () => {
     expect(alert).toHaveTextContent('Network connection dropped')
 
     // Rolled back
-    expect(screen.queryByText('Temporary Pipe')).not.toBeInTheDocument()
+    expect(screen.queryByText('Temporary Pipe Customer')).not.toBeInTheDocument()
     expect(within(kpiRegion).getByText('30')).toBeInTheDocument()
   })
 
@@ -974,7 +1090,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
       const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
@@ -1030,7 +1146,7 @@ describe('ProductionSection component', () => {
         />,
       )
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       // Select both cuts
       const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
@@ -1038,10 +1154,12 @@ describe('ProductionSection component', () => {
 
       expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
 
-      const labelInput = screen.getByLabelText('Bulk label')
-      expect(labelInput).toHaveAttribute('placeholder', 'Label')
-      expect(screen.getByLabelText('Bulk size')).toHaveAttribute('placeholder', 'Size')
-      await user.type(labelInput, 'Bulk Pipe Standard')
+      const customerInput = screen.getByLabelText('Bulk customer')
+      expect(customerInput).toHaveAttribute('placeholder', 'Customer / Client')
+      expect(screen.getByLabelText('Bulk diameter')).toHaveAttribute('placeholder', 'Diameter (OD)')
+      expect(screen.getByLabelText('Bulk thickness')).toHaveAttribute('placeholder', 'Thickness')
+      expect(screen.getByLabelText('Bulk length')).toHaveAttribute('placeholder', 'Length')
+      await user.type(customerInput, 'Bulk Pipe Standard Customer')
 
       const applyBtn = screen.getByRole('button', { name: 'Apply to 2 cuts' })
       await user.click(applyBtn)
@@ -1066,7 +1184,7 @@ describe('ProductionSection component', () => {
             'e0000000-0000-4000-8000-000000000002',
           ],
           appliedSpec: {
-            label: 'Bulk Pipe Standard',
+            customer: 'Bulk Pipe Standard Customer',
           },
         })
       })
@@ -1078,7 +1196,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const row2Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i)
       await user.click(row2Checkbox)
@@ -1086,11 +1204,10 @@ describe('ProductionSection component', () => {
       const repeatBtn = screen.getByRole('button', { name: 'Repeat last saved specification' })
       await user.click(repeatBtn)
 
-      expect(screen.getByLabelText('Bulk label')).toHaveValue('Batch Alpha Pipe')
-      expect(screen.getByLabelText('Bulk size')).toHaveValue('6 inch')
-      expect(screen.getByLabelText('Bulk diameter')).toHaveValue(152.4)
-      expect(screen.getByLabelText('Bulk radius')).toHaveValue(76.2)
-      expect(screen.getByLabelText('Bulk circumference')).toHaveValue(478.78)
+      expect(screen.getByLabelText('Bulk customer')).toHaveValue('Maynilad Water')
+      expect(screen.getByLabelText('Bulk diameter')).toHaveValue(625.4)
+      expect(screen.getByLabelText('Bulk thickness')).toHaveValue(12.7)
+      expect(screen.getByLabelText('Bulk length')).toHaveValue(6000)
     })
 
     it('allows editing individual bulk dimension inputs independently without auto-calculation', async () => {
@@ -1099,7 +1216,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
       await user.click(row1Checkbox)
@@ -1107,45 +1224,42 @@ describe('ProductionSection component', () => {
       expect(screen.queryByRole('button', { name: 'Geometry Calculator' })).not.toBeInTheDocument()
 
       const diameterInput = screen.getByLabelText('Bulk diameter')
-      const radiusInput = screen.getByLabelText('Bulk radius')
-      const circumferenceInput = screen.getByLabelText('Bulk circumference')
+      const thicknessInput = screen.getByLabelText('Bulk thickness')
+      const lengthInput = screen.getByLabelText('Bulk length')
 
       // Typing diameter updates only diameter
       await user.clear(diameterInput)
-      await user.type(diameterInput, '100')
+      await user.type(diameterInput, '500')
 
-      expect(diameterInput).toHaveValue(100)
-      expect(radiusInput).toHaveValue(null)
-      expect(circumferenceInput).toHaveValue(null)
+      expect(diameterInput).toHaveValue(500)
+      expect(thicknessInput).toHaveValue(null)
+      expect(lengthInput).toHaveValue(null)
 
-      // Typing radius updates only radius
-      await user.clear(radiusInput)
-      await user.type(radiusInput, '25')
+      // Typing thickness updates only thickness
+      await user.clear(thicknessInput)
+      await user.type(thicknessInput, '10')
 
-      expect(diameterInput).toHaveValue(100)
-      expect(radiusInput).toHaveValue(25)
-      expect(circumferenceInput).toHaveValue(null)
+      expect(diameterInput).toHaveValue(500)
+      expect(thicknessInput).toHaveValue(10)
+      expect(lengthInput).toHaveValue(null)
 
-      // Typing circumference updates only circumference
-      await user.clear(circumferenceInput)
-      await user.type(circumferenceInput, '314.16')
+      // Typing length updates only length
+      await user.clear(lengthInput)
+      await user.type(lengthInput, '6000')
 
-      expect(diameterInput).toHaveValue(100)
-      expect(radiusInput).toHaveValue(25)
-      expect(circumferenceInput).toHaveValue(314.16)
+      expect(diameterInput).toHaveValue(500)
+      expect(thicknessInput).toHaveValue(10)
+      expect(lengthInput).toHaveValue(6000)
 
-      // Clearing diameter does not clear other fields
-      await user.clear(diameterInput)
-      expect(diameterInput).toHaveValue(null)
-      expect(radiusInput).toHaveValue(25)
-      expect(circumferenceInput).toHaveValue(314.16)
+      // Verify absence of radius and circumference inputs
+      expect(screen.queryByLabelText('Bulk radius')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Bulk circumference')).not.toBeInTheDocument()
 
-      // Verify all 5 inputs have placeholders
-      expect(screen.getByLabelText('Bulk label')).toHaveAttribute('placeholder', 'Label')
-      expect(screen.getByLabelText('Bulk size')).toHaveAttribute('placeholder', 'Size')
-      expect(diameterInput).toHaveAttribute('placeholder', 'Diameter')
-      expect(radiusInput).toHaveAttribute('placeholder', 'Radius')
-      expect(circumferenceInput).toHaveAttribute('placeholder', 'Circumference')
+      // Verify all 4 inputs have placeholders
+      expect(screen.getByLabelText('Bulk customer')).toHaveAttribute('placeholder', 'Customer / Client')
+      expect(diameterInput).toHaveAttribute('placeholder', 'Diameter (OD)')
+      expect(thicknessInput).toHaveAttribute('placeholder', 'Thickness')
+      expect(lengthInput).toHaveAttribute('placeholder', 'Length')
 
       // Verify mm unit suffixes are pinned inside wrappers
       const unitBadges = screen.getAllByText('mm')
@@ -1167,7 +1281,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const toggleBtn = screen.getByRole('button', { name: 'Toggle unspecified cuts filter' })
       await user.click(toggleBtn)
@@ -1194,7 +1308,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
       await user.click(row1Checkbox)
@@ -1213,15 +1327,15 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       // 1. Eyebrow has plain text with no leading icon
       const eyebrow = screen.getByText('S-05 · PRODUCTION OUTPUT CUTTING · SPIRAL MILL 01')
       expect(eyebrow.tagName).toBe('P')
       expect(eyebrow.querySelector('svg')).toBeNull()
 
-      // 2. Cut Timestamp header has no Clock icon
-      const timestampHeader = screen.getByRole('columnheader', { name: 'Cut Timestamp (PHT)' })
+      // 2. Cut Time header has no Clock icon
+      const timestampHeader = screen.getByRole('columnheader', { name: 'Cut Time' })
       expect(timestampHeader.querySelector('svg')).toBeNull()
 
       // 3. Bulk header indicator has no checkbox icon
@@ -1241,7 +1355,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
       expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
@@ -1284,7 +1398,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const acceptedBtn = screen.getByRole('button', { name: 'Total accepted cuts' })
       expect(acceptedBtn).toHaveClass('production-kpi-pill', 'accepted')
@@ -1310,7 +1424,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
       expect(statusTrigger).not.toHaveClass('production-filter-btn-active')
@@ -1336,7 +1450,7 @@ describe('ProductionSection component', () => {
 
       renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-      await screen.findByText('Batch Alpha Pipe')
+      await screen.findByText('Maynilad Water')
 
       const timestampCell = screen.getByRole('cell', { name: '—' })
       expect(timestampCell).toHaveClass('production-col-timestamp', 'tabular-data')
