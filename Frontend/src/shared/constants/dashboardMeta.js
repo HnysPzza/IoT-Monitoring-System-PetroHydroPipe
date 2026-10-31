@@ -30,7 +30,6 @@ export const navItems = [
     icon: 'notebook-dot',
     group: 'monitor',
     roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
-    subtitle: 'Track S-05 cutting pulses and pipe specifications.',
   },
   {
     label: 'Analytics',
@@ -104,7 +103,6 @@ export const dashboardPageMeta = {
   },
   '/dashboard/production': {
     title: 'Production Logs',
-    subtitle: 'Track S-05 cutting pulses and pipe specifications.',
   },
   '/dashboard/reports': {
     title: 'Reports',

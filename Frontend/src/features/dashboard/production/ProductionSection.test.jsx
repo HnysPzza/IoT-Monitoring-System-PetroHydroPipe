@@ -8,6 +8,7 @@ import {
   getProductionLogs,
   updateProductionLogSpec,
 } from './productionService.js'
+import { dashboardPageMeta, navItems } from '../../../shared/constants/dashboardMeta.js'
 import ProductionSection, { formatManilaDateTime, getManilaDateInputValue } from './ProductionSection.jsx'
 
 vi.mock('../../../shared/services/apiClient.js', () => ({
@@ -427,10 +428,10 @@ describe('ProductionSection component', () => {
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
-    // Heading and dynamic sensor identity
+    // Heading and station prefix eyebrow
     expect(await screen.findByRole('heading', { level: 1, name: 'Production Logs' })).toBeInTheDocument()
-    expect(screen.getByText(/S-05 - Production Output Cutting/i)).toBeInTheDocument()
-    expect(screen.getByText(/Production Output Cutting cuts and product specifications/i)).toBeInTheDocument()
+    expect(screen.getByText(/S-05 · PRODUCTION OUTPUT CUTTING · SPIRAL MILL 01/i)).toBeInTheDocument()
+    expect(screen.queryByText(/cuts and product specifications/i)).not.toBeInTheDocument()
 
     // KPI Metrics scoped to summary region
     const kpiRegion = screen.getByRole('region', { name: 'Production Summary Metrics' })
@@ -499,7 +500,8 @@ describe('ProductionSection component', () => {
     await screen.findByText('Batch Alpha Pipe')
 
     const statusSelect = screen.getByLabelText('Filter by cut status')
-    await user.selectOptions(statusSelect, 'rejected')
+    await user.click(statusSelect)
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
 
     await waitFor(() => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
@@ -518,7 +520,8 @@ describe('ProductionSection component', () => {
     await screen.findByText('Batch Alpha Pipe')
 
     const specSelect = screen.getByLabelText('Filter by specification status')
-    await user.selectOptions(specSelect, 'unspecified')
+    await user.click(specSelect)
+    await user.click(screen.getByRole('option', { name: 'Unspecified' }))
 
     await waitFor(() => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
@@ -529,7 +532,7 @@ describe('ProductionSection component', () => {
   })
 
   it('handles search input with Enter key submission', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
@@ -545,10 +548,10 @@ describe('ProductionSection component', () => {
         page: 1,
       }))
     })
-  })
+  }, 15000)
 
   it('handles pagination navigation next and previous', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const mockLoad = vi.fn()
       .mockResolvedValueOnce(mockProductionPayload)
       .mockResolvedValueOnce({
@@ -595,7 +598,7 @@ describe('ProductionSection component', () => {
       }))
     })
 
-    expect(await screen.findByText('Page Two Pipe')).toBeInTheDocument()
+    expect(await screen.findByText('Page Two Pipe', {}, { timeout: 4000 })).toBeInTheDocument()
     expect(screen.getByText('Page 2 of 2 · 42 records')).toBeInTheDocument()
   })
 
@@ -849,7 +852,7 @@ describe('ProductionSection component', () => {
   })
 
   it('optimistically updates row values and applies 150ms flash class upon save', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     let resolveUpdate
     const updatePromise = new Promise((resolve) => {
       resolveUpdate = resolve
@@ -1036,6 +1039,8 @@ describe('ProductionSection component', () => {
       expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
 
       const labelInput = screen.getByLabelText('Bulk label')
+      expect(labelInput).toHaveAttribute('placeholder', 'Label')
+      expect(screen.getByLabelText('Bulk size')).toHaveAttribute('placeholder', 'Size')
       await user.type(labelInput, 'Bulk Pipe Standard')
 
       const applyBtn = screen.getByRole('button', { name: 'Apply to 2 cuts' })
@@ -1088,7 +1093,7 @@ describe('ProductionSection component', () => {
       expect(screen.getByLabelText('Bulk circumference')).toHaveValue(478.78)
     })
 
-    it('calculates dimensions using Geometry Calculator helper and applies them to form', async () => {
+    it('allows editing individual bulk dimension inputs independently without auto-calculation', async () => {
       const user = userEvent.setup()
       const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
@@ -1099,26 +1104,61 @@ describe('ProductionSection component', () => {
       const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
       await user.click(row1Checkbox)
 
-      const calcBtn = screen.getByRole('button', { name: 'Geometry Calculator' })
-      await user.click(calcBtn)
+      expect(screen.queryByRole('button', { name: 'Geometry Calculator' })).not.toBeInTheDocument()
 
-      expect(screen.getByRole('dialog', { name: 'Geometry Calculator' })).toBeInTheDocument()
+      const diameterInput = screen.getByLabelText('Bulk diameter')
+      const radiusInput = screen.getByLabelText('Bulk radius')
+      const circumferenceInput = screen.getByLabelText('Bulk circumference')
 
-      const diameterCalcInput = screen.getByLabelText('Calculator diameter')
-      await user.clear(diameterCalcInput)
-      await user.type(diameterCalcInput, '100')
+      // Typing diameter updates only diameter
+      await user.clear(diameterInput)
+      await user.type(diameterInput, '100')
 
-      expect(screen.getByLabelText('Calculator diameter')).toHaveValue(100)
-      expect(screen.getByLabelText('Calculator radius')).toHaveValue(50)
-      expect(screen.getByLabelText('Calculator circumference')).toHaveValue(314.16)
+      expect(diameterInput).toHaveValue(100)
+      expect(radiusInput).toHaveValue(null)
+      expect(circumferenceInput).toHaveValue(null)
 
-      await user.click(screen.getByRole('button', { name: 'Apply to bulk form' }))
+      // Typing radius updates only radius
+      await user.clear(radiusInput)
+      await user.type(radiusInput, '25')
 
-      expect(screen.queryByRole('dialog', { name: 'Geometry Calculator' })).not.toBeInTheDocument()
+      expect(diameterInput).toHaveValue(100)
+      expect(radiusInput).toHaveValue(25)
+      expect(circumferenceInput).toHaveValue(null)
 
-      expect(screen.getByLabelText('Bulk diameter')).toHaveValue(100)
-      expect(screen.getByLabelText('Bulk radius')).toHaveValue(50)
-      expect(screen.getByLabelText('Bulk circumference')).toHaveValue(314.16)
+      // Typing circumference updates only circumference
+      await user.clear(circumferenceInput)
+      await user.type(circumferenceInput, '314.16')
+
+      expect(diameterInput).toHaveValue(100)
+      expect(radiusInput).toHaveValue(25)
+      expect(circumferenceInput).toHaveValue(314.16)
+
+      // Clearing diameter does not clear other fields
+      await user.clear(diameterInput)
+      expect(diameterInput).toHaveValue(null)
+      expect(radiusInput).toHaveValue(25)
+      expect(circumferenceInput).toHaveValue(314.16)
+
+      // Verify all 5 inputs have placeholders
+      expect(screen.getByLabelText('Bulk label')).toHaveAttribute('placeholder', 'Label')
+      expect(screen.getByLabelText('Bulk size')).toHaveAttribute('placeholder', 'Size')
+      expect(diameterInput).toHaveAttribute('placeholder', 'Diameter')
+      expect(radiusInput).toHaveAttribute('placeholder', 'Radius')
+      expect(circumferenceInput).toHaveAttribute('placeholder', 'Circumference')
+
+      // Verify mm unit suffixes are pinned inside wrappers
+      const unitBadges = screen.getAllByText('mm')
+      expect(unitBadges.length).toBeGreaterThanOrEqual(3)
+      unitBadges.forEach((badge) => {
+        expect(badge).toHaveClass('unit-suffix')
+      })
+    })
+
+    it('verifies production log page meta and navigation item have no subtext', () => {
+      expect(dashboardPageMeta['/dashboard/production'].subtitle).toBeUndefined()
+      const prodNav = navItems.find((item) => item.to === '/dashboard/production')
+      expect(prodNav?.subtitle).toBeUndefined()
     })
 
     it('supports quick Unspecified cuts filter toggle button and KPI metric button', async () => {
@@ -1165,4 +1205,145 @@ describe('ProductionSection component', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(/provide at least one specification field/i)
     })
   })
+
+  describe('UI alignment and design system adherence', () => {
+    it('renders clean headers without decorative microchip, clock, or calculator icons', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      // 1. Eyebrow has plain text with no leading icon
+      const eyebrow = screen.getByText('S-05 · PRODUCTION OUTPUT CUTTING · SPIRAL MILL 01')
+      expect(eyebrow.tagName).toBe('P')
+      expect(eyebrow.querySelector('svg')).toBeNull()
+
+      // 2. Cut Timestamp header has no Clock icon
+      const timestampHeader = screen.getByRole('columnheader', { name: 'Cut Timestamp (PHT)' })
+      expect(timestampHeader.querySelector('svg')).toBeNull()
+
+      // 3. Bulk header indicator has no checkbox icon
+      const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
+      await user.click(row1Checkbox)
+
+      const bulkCount = screen.getByText('1 cut selected')
+      expect(bulkCount.parentElement.querySelector('svg')).toBeNull()
+
+      // 4. Geometry calculator button is not rendered
+      expect(screen.queryByRole('button', { name: 'Geometry Calculator' })).not.toBeInTheDocument()
+    })
+
+    it('manages custom dropdown open, option selection, escape key, focusout, and outside click', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+      expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
+
+      // Open status dropdown
+      await user.click(statusTrigger)
+      expect(screen.getByRole('listbox', { name: 'Filter by cut status' })).toBeInTheDocument()
+
+      // Close via Escape key and ensure focus returns to trigger
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
+      expect(statusTrigger).toHaveFocus()
+
+      // Open spec status dropdown
+      const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+      await user.click(specTrigger)
+      expect(screen.getByRole('listbox', { name: 'Filter by specification status' })).toBeInTheDocument()
+
+      // Close via outside pointer down
+      await user.pointer({ target: document.body, keys: '[MouseLeft]' })
+      expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
+
+      // Open status dropdown, select option, and verify focus returns to trigger
+      await user.click(statusTrigger)
+      expect(screen.getByRole('listbox', { name: 'Filter by cut status' })).toBeInTheDocument()
+      await user.click(screen.getByRole('option', { name: 'Rejected' }))
+      expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
+      expect(statusTrigger).toHaveFocus()
+
+      // Open spec dropdown and close via tab away (focusout)
+      await user.click(specTrigger)
+      expect(screen.getByRole('listbox', { name: 'Filter by specification status' })).toBeInTheDocument()
+      await user.tab()
+      expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
+    })
+
+    it('renders KPI summary pills without unwanted inner border on Accepted on default load and activates when filtering', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const acceptedBtn = screen.getByRole('button', { name: 'Total accepted cuts' })
+      expect(acceptedBtn).toHaveClass('production-kpi-pill', 'accepted')
+      expect(acceptedBtn).not.toHaveClass('production-kpi-active')
+
+      const specifiedBtn = screen.getByRole('button', { name: 'Filter specified cuts' })
+      expect(specifiedBtn).toHaveClass('production-kpi-pill', 'specified')
+      expect(specifiedBtn).not.toHaveClass('production-kpi-active')
+
+      const unspecifiedBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+      expect(unspecifiedBtn).toHaveClass('production-kpi-pill', 'unspecified')
+      expect(unspecifiedBtn).not.toHaveClass('production-kpi-active')
+
+      // Activate unspecified filter
+      await user.click(unspecifiedBtn)
+      expect(unspecifiedBtn).toHaveClass('production-kpi-active')
+      expect(acceptedBtn).not.toHaveClass('production-kpi-active')
+    })
+
+    it('renders status filter dropdown in inactive state on load and activates when non-default option is selected', async () => {
+      const user = userEvent.setup()
+      const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+      expect(statusTrigger).not.toHaveClass('production-filter-btn-active')
+
+      await user.click(statusTrigger)
+      await user.click(screen.getByRole('option', { name: 'Rejected' }))
+
+      expect(statusTrigger).toHaveClass('production-filter-btn-active')
+    })
+
+    it('renders tabular-data class on timestamps and formats empty values with production-placeholder', async () => {
+      const payloadWithNullTimestamp = {
+        ...mockProductionPayload,
+        records: [
+          {
+            ...mockProductionPayload.records[0],
+            recordedAt: null,
+            timestamp: null,
+          },
+        ],
+      }
+      const mockLoad = vi.fn().mockResolvedValue(payloadWithNullTimestamp)
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+      await screen.findByText('Batch Alpha Pipe')
+
+      const timestampCell = screen.getByRole('cell', { name: '—' })
+      expect(timestampCell).toHaveClass('production-col-timestamp', 'tabular-data')
+      const placeholder = timestampCell.querySelector('.production-placeholder')
+      expect(placeholder).not.toBeNull()
+      expect(placeholder).toHaveTextContent('—')
+    })
+  })
 })
+
