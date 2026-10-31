@@ -22,11 +22,11 @@ async function streamAlerts(req, res) {
     res,
     streamName: 'alerts',
     allowedRoles: DASHBOARD_STREAM_ROLES,
-    allowedEventNames: ['alert.created', 'alert.updated', 'alert.acknowledged', 'alert.resolved'],
+    allowedEventNames: ['alert.created', 'alert.updated', 'alert.acknowledged', 'alert.resolved', 'sensor.status'],
     subscribe: alertsService.subscribeToAlertEvents,
     toClientEvent: (event) => ({
       type: event.type,
-      payload: { alert: event.alert },
+      payload: event.type === 'sensor.status' ? { live: event.live } : { alert: event.alert },
     }),
   })
 }

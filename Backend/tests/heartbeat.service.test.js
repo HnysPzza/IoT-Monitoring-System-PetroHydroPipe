@@ -42,7 +42,7 @@ function heartbeatPayload(overrides = {}) {
   }
 }
 
-function loadService({ data, error = null, calls = [] } = {}) {
+function loadService({ data, error = null, calls = [], liveStatusRequests = [] } = {}) {
   clearSourceCache()
   const client = {
     rpc(functionName, args) {
@@ -54,6 +54,7 @@ function loadService({ data, error = null, calls = [] } = {}) {
   mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
   mockModule('src/modules/alerts/alerts.service.js', { publishAlertAction: () => true })
   mockModule('src/modules/downtime/downtime.service.js', { publishDowntimeEvent: () => true })
+  mockModule('src/modules/iot/liveStatusPublisher.js', { requestLiveStatusPublish: () => liveStatusRequests.push(true) })
   return require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
 }
 
@@ -139,5 +140,26 @@ test('heartbeat service maps validation, conflict, and database errors without e
       () => service.createHeartbeat({ sensor: sensorRecord(), payload: heartbeatPayload() }),
       expected,
     )
+  }
+})
+
+test('applied heartbeat requests a live status publish', async () => {
+  const liveStatusRequests = []
+  const service = loadService({ data: validResult(), liveStatusRequests })
+  await service.createHeartbeat({ sensor: sensorRecord(), payload: heartbeatPayload() })
+
+  assert.equal(liveStatusRequests.length, 1)
+})
+
+test('duplicate or stale heartbeat does not request a live status publish', async () => {
+  for (const outcome of [
+    validResult({ duplicate: true, state_applied: false }),
+    validResult({ stale: true, state_applied: false }),
+  ]) {
+    const liveStatusRequests = []
+    const service = loadService({ data: outcome, liveStatusRequests })
+    await service.createHeartbeat({ sensor: sensorRecord(), payload: heartbeatPayload() })
+
+    assert.equal(liveStatusRequests.length, 0)
   }
 })

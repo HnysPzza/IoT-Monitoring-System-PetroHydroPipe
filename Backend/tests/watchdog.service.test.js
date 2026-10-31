@@ -305,3 +305,25 @@ test('uncooperative timed-out work cannot overlap a later watchdog cycle', async
   assert.equal(runner.status().running, false)
   assert.equal(runner.status().inFlight, true)
 })
+
+test('watchdog service notifies onCycleEvaluated on successful cycle evaluation', async () => {
+  let cycleEvaluatedCalls = 0
+  const metrics = createWatchdogMetrics()
+  const result = cycleResult([evaluation(1)], { online: 1, healthy: 1 })
+  const service = createWatchdogService({
+    watchdogRepository: { evaluateCycle: async () => result },
+    publisher: () => 0,
+    serviceLogger: { error: () => {}, warn: () => {} },
+    onCycleEvaluated: () => { cycleEvaluatedCalls += 1 },
+  })
+
+  await service.runCycle({
+    evaluatedAt: '2026-08-22T04:00:00.000Z',
+    mode: 'observe',
+    staleAfterSeconds: 30,
+    signal: new AbortController().signal,
+    metrics,
+  })
+
+  assert.equal(cycleEvaluatedCalls, 1)
+})

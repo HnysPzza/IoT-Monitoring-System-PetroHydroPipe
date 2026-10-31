@@ -39,6 +39,7 @@ import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
 import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.jsx'
 import { NotebookDot } from '../../../shared/components/NotebookDot.jsx'
 import UsersActionProvider from '../users/UsersActionProvider.jsx'
+import { useLiveFeedStream } from '../live/useLiveFeedStream.js'
 
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
 const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
@@ -164,6 +165,11 @@ export default function AdminDashboard() {
   const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
   const matchedNavItem = navItems.find((item) => item.to === normalizedPathname)
   const isRouteForbidden = Boolean(matchedNavItem && !matchedNavItem.roles.includes(user?.role))
+  const liveFeed = useLiveFeedStream(isRouteForbidden ? null : token, {
+    isFallbackPolling: alertConnectionStatus === 'polling',
+  })
+  const liveFeedRef = useRef(liveFeed)
+  liveFeedRef.current = liveFeed
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
@@ -433,7 +439,15 @@ export default function AdminDashboard() {
     void loadAlertState()
     const unsubscribe = subscribeToAlerts(token, {
       onEvent: (event) => {
-        if (!isMounted || typeof event?.type !== 'string' || !event.type.startsWith('alert.')) return
+        if (!isMounted || typeof event?.type !== 'string') return
+
+        if (event.type === 'sensor.status') {
+          if (event.payload?.live) liveFeedRef.current.applyEvent(event.payload.live)
+          else liveFeedRef.current.reload()
+          return
+        }
+
+        if (!event.type.startsWith('alert.')) return
 
         if (
           !ALERT_STREAM_EVENT_TYPES.has(event.type)
@@ -448,7 +462,10 @@ export default function AdminDashboard() {
       },
       onFallback: startFallbackPolling,
       onOpen: () => {
-        if (isMounted) scheduleAlertReload()
+        if (isMounted) {
+          scheduleAlertReload()
+          liveFeedRef.current.reload()
+        }
       },
       onRecovery: stopFallbackPolling,
       onStatusChange: (status) => {
@@ -528,7 +545,7 @@ export default function AdminDashboard() {
   if (isRouteForbidden) {
     return (
       <main className="dashboard-shell">
-        <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList }} />
+        <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
       </main>
     )
   }
@@ -647,7 +664,9 @@ export default function AdminDashboard() {
             />
             <div>
               <h1 className="topbar-label">{pageMeta.title}</h1>
-              <p className="topbar-subtitle">{pageMeta.subtitle}</p>
+              {pageMeta.subtitle ? (
+                <p className="topbar-subtitle">{pageMeta.subtitle}</p>
+              ) : null}
             </div>
           </div>
 
@@ -827,7 +846,7 @@ export default function AdminDashboard() {
         <section className="dashboard-content">
           {/* Nested /dashboard routes render here. */}
           <UsersActionProvider>
-            <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList }} />
+            <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
           </UsersActionProvider>
         </section>
       </div>

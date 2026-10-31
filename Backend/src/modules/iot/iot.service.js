@@ -7,6 +7,7 @@ const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentit
 const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
 const { publishIngestionTransitions } = require('../operations/transitionPublisher')
+const { requestLiveStatusPublish } = require('./liveStatusPublisher')
 const { RESERVED_METADATA_KEYS } = require('./iot.model')
 
 const DUMMY_DEVICE_KEY_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
@@ -529,6 +530,7 @@ async function createSensorEvent({ sensor, payload }) {
 
   if (processing.state_applied) {
     publishIngestionTransitions({ sensor, machine, processing })
+    requestLiveStatusPublish()
   }
 
   return toEventResponse(eventRecord, sensor, processing)
@@ -542,6 +544,9 @@ async function createHeartbeat({ sensor, payload }) {
   }
 
   const processing = await processHeartbeat({ sensor, machine, payload })
+  if (processing.state_applied) {
+    requestLiveStatusPublish()
+  }
   return toHeartbeatResponse(processing, sensor)
 }
 
@@ -593,4 +598,5 @@ module.exports = {
   createHeartbeat,
   createSensorEvent,
   getLiveFeed,
+  requestLiveStatusPublish,
 }

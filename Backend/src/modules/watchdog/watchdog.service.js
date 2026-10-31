@@ -1,6 +1,7 @@
 const logger = require('../../utils/logger')
 const repository = require('./watchdog.repository')
 const { publishTransitionDescriptors } = require('../operations/transitionPublisher')
+const { requestLiveStatusPublish } = require('../iot/liveStatusPublisher')
 
 const CONNECTIVITY_STATES = new Set(['unknown', 'online', 'offline'])
 const DETECTION_STATES = new Set(['disabled', 'suspended', 'healthy', 'grace', 'downtime', 'recovering'])
@@ -80,6 +81,7 @@ function createWatchdogService({
   watchdogRepository = repository,
   publisher = publishTransitionDescriptors,
   serviceLogger = logger,
+  onCycleEvaluated = requestLiveStatusPublish,
 } = {}) {
   return {
     async runCycle({ evaluatedAt, mode, staleAfterSeconds, signal, metrics }) {
@@ -123,6 +125,14 @@ function createWatchdogService({
       }
       if (successfulSensors === 0) {
         throw createWatchdogServiceError('WATCHDOG_ALL_SENSOR_EVALUATIONS_FAILED', 'All watchdog sensor evaluations failed.')
+      }
+
+      if (typeof onCycleEvaluated === 'function') {
+        try {
+          onCycleEvaluated()
+        } catch {
+          serviceLogger.error('WATCHDOG_CYCLE_EVALUATED_HOOK_FAILED', {})
+        }
       }
 
       return {

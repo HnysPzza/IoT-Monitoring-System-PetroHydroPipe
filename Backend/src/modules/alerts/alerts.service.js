@@ -77,6 +77,27 @@ function publishAlertAction(action, alert) {
   return published
 }
 
+function publishSensorStatus(live) {
+  if (!live || typeof live !== 'object') {
+    logger.error('SENSOR_STATUS_SSE_INVALID', {})
+    return false
+  }
+
+  const event = { type: 'sensor.status', live }
+  let published = true
+
+  alertEvents.rawListeners('alert').forEach((listener) => {
+    try {
+      listener.call(alertEvents, event)
+    } catch {
+      published = false
+      logger.error('SENSOR_STATUS_SSE_PUBLISH_FAILED', {})
+    }
+  })
+
+  return published
+}
+
 function subscribeToAlertEvents(listener) {
   alertEvents.on('alert', listener)
 
@@ -155,5 +176,6 @@ module.exports = {
   acknowledgeAlert,
   listAlerts,
   publishAlertAction,
+  publishSensorStatus,
   subscribeToAlertEvents,
 }

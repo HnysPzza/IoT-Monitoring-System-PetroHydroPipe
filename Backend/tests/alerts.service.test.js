@@ -325,3 +325,36 @@ test('a committed acknowledgement with an unexpected transition descriptor is re
     },
   }])
 })
+
+test('sensor status publication emits the live snapshot on the alert channel', () => {
+  const logs = []
+  const alertsService = loadAlertService({ logs, rpcResults: {} })
+  const events = []
+  const stopThrowing = alertsService.subscribeToAlertEvents(() => {
+    throw new Error('listener failed')
+  })
+  const stopHealthy = alertsService.subscribeToAlertEvents((event) => events.push(event))
+  const live = { machine: { status: 'Running' }, sensors: [], monitoring: { capturedAt: '2026-10-31T00:00:00.000Z' } }
+
+  const published = alertsService.publishSensorStatus(live)
+  stopThrowing()
+  stopHealthy()
+
+  assert.equal(published, false)
+  assert.deepEqual(events, [{ type: 'sensor.status', live }])
+  assert.deepEqual(logs, [{ code: 'SENSOR_STATUS_SSE_PUBLISH_FAILED', metadata: {} }])
+})
+
+test('sensor status publication rejects a missing snapshot', () => {
+  const logs = []
+  const alertsService = loadAlertService({ logs, rpcResults: {} })
+  const events = []
+  const unsubscribe = alertsService.subscribeToAlertEvents((event) => events.push(event))
+
+  const published = alertsService.publishSensorStatus(null)
+  unsubscribe()
+
+  assert.equal(published, false)
+  assert.deepEqual(events, [])
+  assert.deepEqual(logs, [{ code: 'SENSOR_STATUS_SSE_INVALID', metadata: {} }])
+})

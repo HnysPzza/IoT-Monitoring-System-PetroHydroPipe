@@ -95,13 +95,13 @@ describe('LiveSection polling', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(getLiveFeed).toHaveBeenCalledTimes(1)
 
-    await act(async () => { vi.advanceTimersByTime(15000); await Promise.resolve() })
+    await act(async () => { vi.advanceTimersByTime(60000); await Promise.resolve() })
     expect(getLiveFeed).toHaveBeenCalledTimes(2)
-    await act(async () => { vi.advanceTimersByTime(45000); await Promise.resolve() })
+    await act(async () => { vi.advanceTimersByTime(60000); await Promise.resolve() })
     expect(getLiveFeed).toHaveBeenCalledTimes(2)
 
     await act(async () => { pending.resolve(payload()); await Promise.resolve() })
-    await act(async () => { vi.advanceTimersByTime(15000); await Promise.resolve() })
+    await act(async () => { vi.advanceTimersByTime(60000); await Promise.resolve() })
     expect(getLiveFeed).toHaveBeenCalledTimes(3)
   })
 

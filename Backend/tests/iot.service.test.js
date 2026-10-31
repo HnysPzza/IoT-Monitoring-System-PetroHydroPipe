@@ -155,6 +155,7 @@ function loadIotService({
   downtimePublishError = null,
   logs = [],
   envOverrides = {},
+  liveStatusRequests = [],
 } = {}) {
   clearSourceCache()
   const sensorRecord = sensorRecordOverride !== undefined
@@ -200,6 +201,7 @@ function loadIotService({
       return true
     },
   })
+  mockModule('src/modules/iot/liveStatusPublisher.js', { requestLiveStatusPublish: () => liveStatusRequests.push(true) })
   mockModule('src/utils/logger.js', {
     error: (code, metadata) => logs.push({ code, metadata }),
     info: () => {},
@@ -1069,4 +1071,29 @@ test('live feed fails closed on database and malformed snapshot results', async 
     () => loadLiveFeedService({ data: { private: 'invalid' } }).getLiveFeed(),
     { status: 500, code: 'LIVE_SNAPSHOT_INVALID' },
   )
+})
+
+test('applied sensor events request a live status publish after the RPC commits', async () => {
+  const liveStatusRequests = []
+  await createTestEvent('idle', 'idle', { liveStatusRequests })
+
+  assert.equal(liveStatusRequests.length, 1)
+})
+
+test('duplicate, stale, and failed sensor events do not request a live status publish', async () => {
+  for (const options of [
+    { processingOverrides: { duplicate: true, state_applied: false, downtime_action: null } },
+    { processingOverrides: { stale: true, state_applied: false, downtime_action: null } },
+  ]) {
+    const liveStatusRequests = []
+    await createTestEvent('pulse', 'active', { ...options, liveStatusRequests })
+    assert.equal(liveStatusRequests.length, 0)
+  }
+
+  const liveStatusRequests = []
+  await assert.rejects(createTestEvent('pulse', 'active', {
+    rpcError: { code: 'XX000', message: 'database unavailable' },
+    liveStatusRequests,
+  }))
+  assert.equal(liveStatusRequests.length, 0)
 })
