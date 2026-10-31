@@ -98,9 +98,13 @@ const sampleSpecsMap = new Map([
     'e0000000-0000-4000-8000-000000000001',
     {
       sensor_event_id: 'e0000000-0000-4000-8000-000000000001',
+      customer: 'MCWD',
+      diameter: '625.40',
+      thickness: '12.70',
+      length: '6000.00',
+      pipe_number: 101,
       label: 'Batch Alpha Pipe',
       size: '12 inch',
-      diameter: '12.50',
       radius: '6.25',
       circumference: '39.27',
       updated_at: '2026-03-15T08:30:00.000Z',
@@ -124,9 +128,13 @@ function createMockRepository(overrides = {}) {
     },
     updateProductionSpec: async (params) => ({
       sensor_event_id: params.eventId,
+      customer: params.customer ?? null,
+      diameter: params.diameter != null ? String(params.diameter) : null,
+      thickness: params.thickness != null ? String(params.thickness) : null,
+      length: params.length != null ? String(params.length) : null,
+      pipe_number: params.pipeNumber != null ? params.pipeNumber : null,
       label: params.label ?? null,
       size: params.size ?? null,
-      diameter: params.diameter != null ? String(params.diameter) : null,
       radius: params.radius != null ? String(params.radius) : null,
       circumference: params.circumference != null ? String(params.circumference) : null,
       updated_at: '2026-03-15T09:00:00.000Z',
@@ -205,6 +213,7 @@ test('GET /api/production default query returns accepted S-05 records only, merg
     assert.equal(body.summary.specifiedCount, 1)
     assert.equal(body.summary.unspecifiedCount, 2)
     assert.equal(body.summary.rejectedCount, 1)
+    assert.equal(body.summary.totalTonnage, 1.1513)
 
     assert.equal(body.records.length, 3)
     body.records.forEach((record) => {
@@ -216,9 +225,14 @@ test('GET /api/production default query returns accepted S-05 records only, merg
 
     const specifiedRecord = body.records.find((r) => r.id === 'e0000000-0000-4000-8000-000000000001')
     assert.ok(specifiedRecord)
+    assert.equal(specifiedRecord.customer, 'MCWD')
+    assert.equal(specifiedRecord.diameter, 625.4)
+    assert.equal(specifiedRecord.thickness, 12.7)
+    assert.equal(specifiedRecord.length, 6000)
+    assert.equal(specifiedRecord.pipeNumber, 101)
+    assert.equal(specifiedRecord.tonnage, 1.1513)
     assert.equal(specifiedRecord.label, 'Batch Alpha Pipe')
     assert.equal(specifiedRecord.size, '12 inch')
-    assert.equal(specifiedRecord.diameter, 12.5)
     assert.equal(specifiedRecord.radius, 6.25)
     assert.equal(specifiedRecord.circumference, 39.27)
     assert.equal(specifiedRecord.isSpecified, true)
@@ -227,6 +241,12 @@ test('GET /api/production default query returns accepted S-05 records only, merg
 
     const unspecifiedRecord = body.records.find((r) => r.id === 'e0000000-0000-4000-8000-000000000002')
     assert.ok(unspecifiedRecord)
+    assert.equal(unspecifiedRecord.customer, null)
+    assert.equal(unspecifiedRecord.diameter, null)
+    assert.equal(unspecifiedRecord.thickness, null)
+    assert.equal(unspecifiedRecord.length, null)
+    assert.equal(unspecifiedRecord.pipeNumber, null)
+    assert.equal(unspecifiedRecord.tonnage, null)
     assert.equal(unspecifiedRecord.label, null)
     assert.equal(unspecifiedRecord.isSpecified, false)
     assert.equal(unspecifiedRecord.specStatus, 'unspecified')
@@ -281,6 +301,20 @@ test('GET /api/production filters by status, specStatus, and search', async () =
     assert.equal(searchRes.response.status, 200)
     assert.equal(searchRes.body.records.length, 1)
     assert.equal(searchRes.body.records[0].label, 'Batch Alpha Pipe')
+
+    const searchCustomerRes = await requestJson(baseUrl, '/api/production?date=2026-03-15&search=mcwd', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(searchCustomerRes.response.status, 200)
+    assert.equal(searchCustomerRes.body.records.length, 1)
+    assert.equal(searchCustomerRes.body.records[0].customer, 'MCWD')
+
+    const searchPipeNumRes = await requestJson(baseUrl, '/api/production?date=2026-03-15&search=101', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(searchPipeNumRes.response.status, 200)
+    assert.equal(searchPipeNumRes.body.records.length, 1)
+    assert.equal(searchPipeNumRes.body.records[0].pipeNumber, 101)
   })
 })
 
@@ -349,6 +383,7 @@ test('GET /api/production handles future date with periodState: future and null 
       specifiedCount: null,
       unspecifiedCount: null,
       rejectedCount: null,
+      totalTonnage: null,
     })
     assert.equal(singleDate.body.pagination.total, 0)
     assert.equal(singleDate.body.pagination.totalPages, 1)
@@ -614,11 +649,15 @@ test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes bla
         capturedUpdateParams = params
         return {
           sensor_event_id: params.eventId,
-          label: params.label,
-          size: params.size,
+          customer: params.customer,
           diameter: params.diameter != null ? String(params.diameter) : null,
-          radius: params.radius != null ? String(params.radius) : null,
-          circumference: params.circumference != null ? String(params.circumference) : null,
+          thickness: params.thickness != null ? String(params.thickness) : null,
+          length: params.length != null ? String(params.length) : null,
+          pipe_number: params.pipeNumber != null ? params.pipeNumber : null,
+          label: null,
+          size: null,
+          radius: null,
+          circumference: null,
           updated_at: '2026-03-15T12:00:00.000Z',
           updated_by: params.actorUserId,
         }
@@ -631,11 +670,11 @@ test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes bla
       method: 'PATCH',
       headers: authHeader('Admin'),
       body: {
-        label: '  Custom Spiral Pipe  ',
-        size: '  10 inch  ',
-        diameter: 10.5,
-        radius: 5.25,
-        circumference: 32.99,
+        customer: '  MCWD  ',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: '101',
         expectedUpdatedAt: '2026-03-15T08:30:00.000Z',
       },
     })
@@ -643,22 +682,27 @@ test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes bla
     assert.equal(validRes.response.status, 200)
     assert.equal(validRes.response.headers.get('cache-control'), 'no-store')
     assert.equal(capturedUpdateParams.eventId, 'e0000000-0000-4000-8000-000000000001')
-    assert.equal(capturedUpdateParams.label, 'Custom Spiral Pipe')
-    assert.equal(capturedUpdateParams.size, '10 inch')
-    assert.equal(capturedUpdateParams.diameter, 10.5)
-    assert.equal(capturedUpdateParams.radius, 5.25)
-    assert.equal(capturedUpdateParams.circumference, 32.99)
+    assert.equal(capturedUpdateParams.customer, 'MCWD')
+    assert.equal(capturedUpdateParams.diameter, 625.4)
+    assert.equal(capturedUpdateParams.thickness, 12.7)
+    assert.equal(capturedUpdateParams.length, 6000)
+    assert.equal(capturedUpdateParams.pipeNumber, 101)
     assert.equal(capturedUpdateParams.actorUserId, userId)
     assert.equal(capturedUpdateParams.expectedUpdatedAt, '2026-03-15T08:30:00.000Z')
 
     assert.deepEqual(validRes.body, {
       spec: {
         sensorEventId: 'e0000000-0000-4000-8000-000000000001',
-        label: 'Custom Spiral Pipe',
-        size: '10 inch',
-        diameter: 10.5,
-        radius: 5.25,
-        circumference: 32.99,
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 101,
+        tonnage: 1.1513,
+        label: null,
+        size: null,
+        radius: null,
+        circumference: null,
         isSpecified: true,
         specStatus: 'specified',
         updatedAt: '2026-03-15T12:00:00.000Z',
@@ -670,39 +714,47 @@ test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes bla
       method: 'PATCH',
       headers: authHeader('Admin'),
       body: {
-        label: 'Custom Spiral Pipe',
-        size: '10 inch',
-        diameter: 10.5,
-        radius: 5.25,
-        circumference: 32.99,
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 101,
         expectedUpdatedAt: '2026-03-15T08:30:00.000Z',
       },
     })
     assert.equal(retryRes.response.status, 200)
-    assert.equal(retryRes.body.spec.label, 'Custom Spiral Pipe')
+    assert.equal(retryRes.body.spec.customer, 'MCWD')
+    assert.equal(retryRes.body.spec.tonnage, 1.1513)
 
     const clearRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
       method: 'PATCH',
       headers: authHeader('Admin'),
       body: {
-        label: '   ',
-        size: '',
+        customer: '   ',
         diameter: null,
-        radius: null,
-        circumference: null,
+        thickness: null,
+        length: null,
+        pipeNumber: null,
       },
     })
 
     assert.equal(clearRes.response.status, 200)
-    assert.equal(capturedUpdateParams.label, null)
-    assert.equal(capturedUpdateParams.size, null)
+    assert.equal(capturedUpdateParams.customer, null)
     assert.equal(capturedUpdateParams.diameter, null)
+    assert.equal(capturedUpdateParams.thickness, null)
+    assert.equal(capturedUpdateParams.length, null)
+    assert.equal(capturedUpdateParams.pipeNumber, null)
     assert.deepEqual(clearRes.body, {
       spec: {
         sensorEventId: 'e0000000-0000-4000-8000-000000000001',
+        customer: null,
+        diameter: null,
+        thickness: null,
+        length: null,
+        pipeNumber: null,
+        tonnage: null,
         label: null,
         size: null,
-        diameter: null,
         radius: null,
         circumference: null,
         isSpecified: false,
@@ -825,9 +877,10 @@ test('PATCH /api/production/batch supports ID array, ISO range, and date range f
           'e0000000-0000-4000-8000-000000000001',
           'e0000000-0000-4000-8000-000000000002',
         ],
-        label: 'Standard Pipe',
-        size: '12 inch',
-        diameter: 12.0,
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
       },
     })
     assert.equal(idsRes.response.status, 200)
@@ -841,11 +894,10 @@ test('PATCH /api/production/batch supports ID array, ISO range, and date range f
     assert.equal(capturedBatchParams.startedAt, null)
     assert.equal(capturedBatchParams.endedAt, null)
     assert.equal(capturedBatchParams.onlyUnlabeled, false)
-    assert.equal(capturedBatchParams.label, 'Standard Pipe')
-    assert.equal(capturedBatchParams.size, '12 inch')
-    assert.equal(capturedBatchParams.diameter, 12.0)
-    assert.equal(capturedBatchParams.radius, null)
-    assert.equal(capturedBatchParams.circumference, null)
+    assert.equal(capturedBatchParams.customer, 'MCWD')
+    assert.equal(capturedBatchParams.diameter, 625.4)
+    assert.equal(capturedBatchParams.thickness, 12.7)
+    assert.equal(capturedBatchParams.length, 6000)
     assert.equal(capturedBatchParams.actorUserId, userId)
 
     const isoRes = await requestJson(baseUrl, '/api/production/batch', {
@@ -855,7 +907,7 @@ test('PATCH /api/production/batch supports ID array, ISO range, and date range f
         startedAt: '2026-03-15T00:00:00.000Z',
         endedAt: '2026-03-15T12:00:00.000Z',
         onlyUnlabeled: true,
-        label: 'Batch Iso Label',
+        customer: 'Batch Customer',
       },
     })
     assert.equal(isoRes.response.status, 200)
@@ -863,7 +915,7 @@ test('PATCH /api/production/batch supports ID array, ISO range, and date range f
     assert.equal(capturedBatchParams.startedAt, '2026-03-15T00:00:00.000Z')
     assert.equal(capturedBatchParams.endedAt, '2026-03-15T12:00:00.000Z')
     assert.equal(capturedBatchParams.onlyUnlabeled, true)
-    assert.equal(capturedBatchParams.label, 'Batch Iso Label')
+    assert.equal(capturedBatchParams.customer, 'Batch Customer')
 
     const dateRes = await requestJson(baseUrl, '/api/production/batch', {
       method: 'PATCH',
@@ -872,14 +924,14 @@ test('PATCH /api/production/batch supports ID array, ISO range, and date range f
         dateFrom: '2026-03-10',
         dateTo: '2026-03-15',
         onlyUnlabeled: false,
-        size: '14 inch',
+        diameter: 1020.0,
       },
     })
     assert.equal(dateRes.response.status, 200)
     assert.equal(capturedBatchParams.sensorEventIds, null)
     assert.equal(capturedBatchParams.startedAt, '2026-03-09T16:00:00.000Z')
     assert.equal(capturedBatchParams.endedAt, '2026-03-15T16:00:00.000Z')
-    assert.equal(capturedBatchParams.size, '14 inch')
+    assert.equal(capturedBatchParams.diameter, 1020.0)
   })
 })
 
@@ -1001,6 +1053,76 @@ test('Validation rejects invalid payloads on PATCH /api/production/:eventId and 
     assert.equal(reversedDateRes.response.status, 400)
     assertError(reversedDateRes.body, 'VALIDATION_ERROR')
 
+    const customerTooLongRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { customer: 'A'.repeat(101) },
+    })
+    assert.equal(customerTooLongRes.response.status, 400)
+    assertError(customerTooLongRes.body, 'VALIDATION_ERROR')
+
+    const zeroThicknessRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { thickness: 0 },
+    })
+    assert.equal(zeroThicknessRes.response.status, 400)
+    assertError(zeroThicknessRes.body, 'VALIDATION_ERROR')
+
+    const negativeThicknessRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { thickness: -1.5 },
+    })
+    assert.equal(negativeThicknessRes.response.status, 400)
+    assertError(negativeThicknessRes.body, 'VALIDATION_ERROR')
+
+    const zeroLengthRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { length: 0 },
+    })
+    assert.equal(zeroLengthRes.response.status, 400)
+    assertError(zeroLengthRes.body, 'VALIDATION_ERROR')
+
+    const zeroPipeNumRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { pipeNumber: 0 },
+    })
+    assert.equal(zeroPipeNumRes.response.status, 400)
+    assertError(zeroPipeNumRes.body, 'VALIDATION_ERROR')
+
+    const floatPipeNumRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { pipeNumber: 10.5 },
+    })
+    assert.equal(floatPipeNumRes.response.status, 400)
+    assertError(floatPipeNumRes.body, 'VALIDATION_ERROR')
+
+    const batchWithPipeNum = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        pipeNumber: 101,
+      },
+    })
+    assert.equal(batchWithPipeNum.response.status, 400)
+    assertError(batchWithPipeNum.body, 'VALIDATION_ERROR')
+
+    const batchBlankCustomer = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000001'],
+        customer: '   ',
+      },
+    })
+    assert.equal(batchBlankCustomer.response.status, 400)
+    assertError(batchBlankCustomer.body, 'VALIDATION_ERROR')
+
     const noSpecFieldsRes = await requestJson(baseUrl, '/api/production/batch', {
       method: 'PATCH',
       headers: authHeader('Admin'),
@@ -1044,11 +1166,15 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
         data: [
           {
             sensor_event_id: params.p_sensor_event_id,
-            label: params.p_label,
-            size: params.p_size,
+            customer: params.p_customer,
             diameter: params.p_diameter,
-            radius: params.p_radius,
-            circumference: params.p_circumference,
+            thickness: params.p_thickness,
+            length: params.p_length,
+            pipe_number: params.p_pipe_number,
+            label: null,
+            size: null,
+            radius: null,
+            circumference: null,
             updated_at: '2026-03-15T12:00:00.000Z',
             updated_by: params.p_actor_user_id,
           },
@@ -1061,11 +1187,11 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
   const singleResult = await productionRepository.updateProductionSpec(
     {
       eventId: 'e0000000-0000-4000-8000-000000000001',
-      label: 'Pipe A',
-      size: '10 inch',
-      diameter: 10.5,
-      radius: 5.25,
-      circumference: 32.99,
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipeNumber: 101,
       actorUserId: userId,
       expectedUpdatedAt: '2026-03-15T08:00:00.000Z',
     },
@@ -1074,14 +1200,14 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
 
   assert.equal(calledRpc, 'update_production_log_spec')
   assert.equal(calledParams.p_sensor_event_id, 'e0000000-0000-4000-8000-000000000001')
-  assert.equal(calledParams.p_label, 'Pipe A')
-  assert.equal(calledParams.p_size, '10 inch')
-  assert.equal(calledParams.p_diameter, 10.5)
-  assert.equal(calledParams.p_radius, 5.25)
-  assert.equal(calledParams.p_circumference, 32.99)
+  assert.equal(calledParams.p_customer, 'MCWD')
+  assert.equal(calledParams.p_diameter, 625.4)
+  assert.equal(calledParams.p_thickness, 12.7)
+  assert.equal(calledParams.p_length, 6000)
+  assert.equal(calledParams.p_pipe_number, 101)
   assert.equal(calledParams.p_actor_user_id, userId)
   assert.equal(calledParams.p_expected_updated_at, '2026-03-15T08:00:00.000Z')
-  assert.equal(singleResult.label, 'Pipe A')
+  assert.equal(singleResult.customer, 'MCWD')
 
   const batchMockClient = {
     rpc: async (name, params) => {
@@ -1104,11 +1230,10 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
       startedAt: null,
       endedAt: null,
       onlyUnlabeled: true,
-      label: 'Batch Spec',
-      size: null,
-      diameter: null,
-      radius: null,
-      circumference: null,
+      customer: 'Batch Corp',
+      diameter: 1020,
+      thickness: 10,
+      length: 12000,
       actorUserId: userId,
     },
     batchMockClient,
@@ -1117,8 +1242,10 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
   assert.equal(calledRpc, 'batch_update_production_log_specs')
   assert.deepEqual(calledParams.p_sensor_event_ids, ['e0000000-0000-4000-8000-000000000001'])
   assert.equal(calledParams.p_only_unlabeled, true)
-  assert.equal(calledParams.p_label, 'Batch Spec')
-  assert.equal(calledParams.p_size, null)
+  assert.equal(calledParams.p_customer, 'Batch Corp')
+  assert.equal(calledParams.p_diameter, 1020)
+  assert.equal(calledParams.p_thickness, 10)
+  assert.equal(calledParams.p_length, 12000)
   assert.equal(batchResult.updated_count, 3)
 
   const errorCodes = [
@@ -1166,4 +1293,49 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
       return true
     },
   )
+})
+
+test('calculatePipeTonnage pure helper computes metric tonnage correctly and handles boundary invariants', () => {
+  const { calculatePipeTonnage } = require('../src/modules/production/production.service')
+
+  // Reference MCWD case: OD 625.4, Thickness 12.7, Length 6000 -> 1.1513 tons
+  const mcwdTons = calculatePipeTonnage(625.4, 12.7, 6000)
+  assert.equal(mcwdTons, 1.1513)
+
+  // String coerced inputs
+  assert.equal(calculatePipeTonnage('625.4', '12.7', '6000'), 1.1513)
+  assert.equal(calculatePipeTonnage('  625.4  ', ' 12.7 ', ' 6000 '), 1.1513)
+
+  // Another real pipe spec: OD 1020, Thickness 10, Length 12000
+  assert.equal(calculatePipeTonnage(1020, 10, 12000), 2.9888)
+
+  // Invariant 1: Missing or blank inputs return null
+  assert.equal(calculatePipeTonnage(null, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, undefined, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, 12.7, null), null)
+  assert.equal(calculatePipeTonnage('', 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage('   ', 12.7, 6000), null)
+
+  // Invariant 2: Non-finite inputs return null
+  assert.equal(calculatePipeTonnage(NaN, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, Infinity, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, 12.7, -Infinity), null)
+  assert.equal(calculatePipeTonnage('not-a-number', 12.7, 6000), null)
+
+  // Invariant 3: Non-positive dimensions return null
+  assert.equal(calculatePipeTonnage(0, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(-625.4, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, 0, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, -12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(625.4, 12.7, 0), null)
+  assert.equal(calculatePipeTonnage(625.4, 12.7, -6000), null)
+
+  // Invariant 4: OD <= Thickness returns null
+  assert.equal(calculatePipeTonnage(12.7, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(10.0, 12.7, 6000), null)
+
+  // Invariant 5: Invalid types (booleans, objects, arrays) return null
+  assert.equal(calculatePipeTonnage(true, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage([625.4], 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage({ od: 625.4 }, 12.7, 6000), null)
 })

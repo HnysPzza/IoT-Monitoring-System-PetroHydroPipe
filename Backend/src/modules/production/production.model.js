@@ -12,6 +12,32 @@ const size = z.preprocess(
   z.string().trim().min(1).max(50, 'Specification size cannot exceed 50 characters.').nullable().optional(),
 )
 
+const customer = z.preprocess(
+  (val) => (typeof val === 'string' && val.trim() === '' ? null : val),
+  z.string().trim().min(1).max(100, 'Customer name cannot exceed 100 characters.').nullable().optional(),
+)
+
+const pipeNumber = z.preprocess(
+  (val) => {
+    if (val === undefined) return undefined
+    if (val === null) return null
+    if (typeof val === 'string') {
+      const trimmed = val.trim()
+      return trimmed === '' ? null : Number(trimmed)
+    }
+    if (typeof val === 'number') {
+      return val
+    }
+    return NaN
+  },
+  z
+    .number()
+    .int('Pipe number must be an integer.')
+    .gt(0, 'Pipe number must be greater than zero.')
+    .nullable()
+    .optional(),
+)
+
 const dimension = z.preprocess(
   (val) => {
     if (val === undefined) return undefined
@@ -78,26 +104,50 @@ const listProductionLogsSchema = z.object({
     }),
 })
 
+const updateProductionSpecBodySchema = z
+  .object({
+    customer,
+    diameter: dimension,
+    thickness: dimension,
+    length: dimension,
+    pipeNumber,
+    expectedUpdatedAt: z
+      .string()
+      .datetime({ offset: true, message: 'Invalid expectedUpdatedAt timestamp.' })
+      .nullable()
+      .optional(),
+    label,
+    size,
+    radius: dimension,
+    circumference: dimension,
+  })
+  .strict()
+  .refine(
+    (data) => {
+      return (
+        data.customer !== undefined ||
+        data.diameter !== undefined ||
+        data.thickness !== undefined ||
+        data.length !== undefined ||
+        data.pipeNumber !== undefined ||
+        data.label !== undefined ||
+        data.size !== undefined ||
+        data.radius !== undefined ||
+        data.circumference !== undefined
+      )
+    },
+    {
+      message: 'Provide at least one specification field to update.',
+    },
+  )
+
 const updateProductionSpecSchema = z.object({
   params: z
     .object({
       eventId: z.string().uuid('Invalid production event ID.'),
     })
     .strict(),
-  body: z
-    .object({
-      label,
-      size,
-      diameter: dimension,
-      radius: dimension,
-      circumference: dimension,
-      expectedUpdatedAt: z
-        .string()
-        .datetime({ offset: true, message: 'Invalid expectedUpdatedAt timestamp.' })
-        .nullable()
-        .optional(),
-    })
-    .strict(),
+  body: updateProductionSpecBodySchema,
 })
 
 const batchUpdateBodySchema = z
@@ -112,9 +162,12 @@ const batchUpdateBodySchema = z
     dateFrom: z.string().date('Invalid start date.').optional(),
     dateTo: z.string().date('Invalid end date.').optional(),
     onlyUnlabeled: z.boolean().default(false),
+    customer,
+    diameter: dimension,
+    thickness: dimension,
+    length: dimension,
     label,
     size,
-    diameter: dimension,
     radius: dimension,
     circumference: dimension,
   })
@@ -163,9 +216,12 @@ const batchUpdateBodySchema = z
   })
   .refine((data) => {
     return (
+      data.customer != null ||
+      data.diameter != null ||
+      data.thickness != null ||
+      data.length != null ||
       data.label != null ||
       data.size != null ||
-      data.diameter != null ||
       data.radius != null ||
       data.circumference != null
     )
@@ -178,7 +234,13 @@ const batchUpdateProductionSpecSchema = z.object({
 })
 
 module.exports = {
+  customer,
+  pipeNumber,
+  dimension,
   listProductionLogsSchema,
+  updateProductionSpecBodySchema,
   updateProductionSpecSchema,
+  batchUpdateBodySchema,
+  batchUpdateProductionSpecsBodySchema: batchUpdateBodySchema,
   batchUpdateProductionSpecSchema,
 }

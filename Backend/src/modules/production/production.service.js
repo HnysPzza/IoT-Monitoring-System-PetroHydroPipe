@@ -47,12 +47,39 @@ function resolveDateWindow(filters, asOf) {
   return { start, end }
 }
 
+function calculatePipeTonnage(diameter, thickness, length) {
+  if (diameter == null || thickness == null || length == null) return null
+  if (typeof diameter !== 'number' && typeof diameter !== 'string') return null
+  if (typeof thickness !== 'number' && typeof thickness !== 'string') return null
+  if (typeof length !== 'number' && typeof length !== 'string') return null
+
+  if (typeof diameter === 'string' && diameter.trim() === '') return null
+  if (typeof thickness === 'string' && thickness.trim() === '') return null
+  if (typeof length === 'string' && length.trim() === '') return null
+
+  const d = Number(diameter)
+  const t = Number(thickness)
+  const l = Number(length)
+
+  if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
+  if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
+
+  const weightKgPerMeter = (d - t) * t * 0.02466
+  const totalWeightTons = (weightKgPerMeter * l) / 1000000
+  return Math.round(totalWeightTons * 10000) / 10000
+}
+
 function checkIsSpecified(spec) {
   if (!spec) return false
-  return (
+  return Boolean(
+    (spec.customer != null && String(spec.customer).trim() !== '') ||
+    spec.diameter != null ||
+    spec.thickness != null ||
+    spec.length != null ||
+    spec.pipe_number != null ||
+    spec.pipeNumber != null ||
     (spec.label != null && String(spec.label).trim() !== '') ||
     (spec.size != null && String(spec.size).trim() !== '') ||
-    spec.diameter != null ||
     spec.radius != null ||
     spec.circumference != null
   )
@@ -60,6 +87,14 @@ function checkIsSpecified(spec) {
 
 function toProductionRecord(event, spec, machine, sensorLabel) {
   const isSpecified = Boolean(event.output_accepted && checkIsSpecified(spec))
+  const diameter = spec?.diameter != null ? Number(spec.diameter) : null
+  const thickness = spec?.thickness != null ? Number(spec.thickness) : null
+  const length = spec?.length != null ? Number(spec.length) : null
+  const pipeNumber = spec?.pipe_number != null
+    ? Number(spec.pipe_number)
+    : (spec?.pipeNumber != null ? Number(spec.pipeNumber) : null)
+  const tonnage = calculatePipeTonnage(diameter, thickness, length)
+
   return {
     id: event.id,
     sensorEventId: event.id,
@@ -75,9 +110,14 @@ function toProductionRecord(event, spec, machine, sensorLabel) {
     isEditable: Boolean(event.output_accepted),
     isSpecified,
     specStatus: !event.output_accepted ? 'rejected' : (isSpecified ? 'specified' : 'unspecified'),
+    customer: spec?.customer ?? null,
+    diameter,
+    thickness,
+    length,
+    pipeNumber,
+    tonnage,
     label: spec?.label ?? null,
     size: spec?.size ?? null,
-    diameter: spec?.diameter != null ? Number(spec.diameter) : null,
     radius: spec?.radius != null ? Number(spec.radius) : null,
     circumference: spec?.circumference != null ? Number(spec.circumference) : null,
     updatedAt: spec?.updated_at ?? null,
@@ -98,10 +138,12 @@ function countAcceptedInRange(events, range) {
 function matchesSearch(record, query) {
   if (!query) return true
   const lower = query.toLowerCase()
-  if (record.label && record.label.toLowerCase().includes(lower)) return true
-  if (record.size && record.size.toLowerCase().includes(lower)) return true
+  if (record.customer && record.customer.toLowerCase().includes(lower)) return true
+  if (record.pipeNumber != null && String(record.pipeNumber).toLowerCase().includes(lower)) return true
   if (record.deviceEventId && String(record.deviceEventId).toLowerCase().includes(lower)) return true
   if (record.id && String(record.id).toLowerCase().includes(lower)) return true
+  if (record.label && record.label.toLowerCase().includes(lower)) return true
+  if (record.size && record.size.toLowerCase().includes(lower)) return true
   return false
 }
 
@@ -151,6 +193,7 @@ async function listProductionLogs(filters = {}, options = {}) {
         specifiedCount: null,
         unspecifiedCount: null,
         rejectedCount: null,
+        totalTonnage: null,
       },
       records: [],
       pagination: {
@@ -215,6 +258,7 @@ async function listProductionLogs(filters = {}, options = {}) {
   let specifiedCount = 0
   let unspecifiedCount = 0
   let rejectedCount = 0
+  let sumTonnage = 0
 
   const allRecords = windowEvents.map((event) => {
     const spec = specsMap.get(event.id) || null
@@ -227,6 +271,9 @@ async function listProductionLogs(filters = {}, options = {}) {
       } else {
         unspecifiedCount += 1
       }
+      if (record.tonnage != null) {
+        sumTonnage += record.tonnage
+      }
     } else {
       rejectedCount += 1
     }
@@ -234,12 +281,15 @@ async function listProductionLogs(filters = {}, options = {}) {
     return record
   })
 
+  const totalTonnage = Math.round(sumTonnage * 10000) / 10000
+
   const summary = {
     totalAcceptedToday,
     totalAccepted,
     specifiedCount,
     unspecifiedCount,
     rejectedCount,
+    totalTonnage,
   }
 
   const statusFilter = filters.status || 'accepted'
@@ -295,11 +345,24 @@ async function listProductionLogs(filters = {}, options = {}) {
 
 function toSpecPayload(specRow) {
   const isSpecified = checkIsSpecified(specRow)
+  const diameter = specRow.diameter != null ? Number(specRow.diameter) : null
+  const thickness = specRow.thickness != null ? Number(specRow.thickness) : null
+  const length = specRow.length != null ? Number(specRow.length) : null
+  const pipeNumber = specRow.pipe_number != null
+    ? Number(specRow.pipe_number)
+    : (specRow.pipeNumber != null ? Number(specRow.pipeNumber) : null)
+  const tonnage = calculatePipeTonnage(diameter, thickness, length)
+
   return {
     sensorEventId: specRow.sensor_event_id,
+    customer: specRow.customer ?? null,
+    diameter,
+    thickness,
+    length,
+    pipeNumber,
+    tonnage,
     label: specRow.label ?? null,
     size: specRow.size ?? null,
-    diameter: specRow.diameter != null ? Number(specRow.diameter) : null,
     radius: specRow.radius != null ? Number(specRow.radius) : null,
     circumference: specRow.circumference != null ? Number(specRow.circumference) : null,
     isSpecified,
@@ -313,11 +376,11 @@ async function updateProductionLogSpec({ eventId, payload, actorUserId }, option
   const row = await productionRepository.updateProductionSpec(
     {
       eventId,
-      label: payload.label ?? null,
-      size: payload.size ?? null,
+      customer: payload.customer ?? null,
       diameter: payload.diameter ?? null,
-      radius: payload.radius ?? null,
-      circumference: payload.circumference ?? null,
+      thickness: payload.thickness ?? null,
+      length: payload.length ?? null,
+      pipeNumber: payload.pipeNumber ?? null,
       actorUserId,
       expectedUpdatedAt: payload.expectedUpdatedAt ?? null,
     },
@@ -345,11 +408,10 @@ async function batchUpdateProductionLogSpecs({ payload, actorUserId }, options =
       startedAt,
       endedAt,
       onlyUnlabeled: Boolean(payload.onlyUnlabeled),
-      label: payload.label ?? null,
-      size: payload.size ?? null,
+      customer: payload.customer ?? null,
       diameter: payload.diameter ?? null,
-      radius: payload.radius ?? null,
-      circumference: payload.circumference ?? null,
+      thickness: payload.thickness ?? null,
+      length: payload.length ?? null,
       actorUserId,
     },
     options.client,
@@ -363,8 +425,11 @@ async function batchUpdateProductionLogSpecs({ payload, actorUserId }, options =
 }
 
 module.exports = {
+  calculatePipeTonnage,
+  checkIsSpecified,
   listProductionLogs,
   resolveDateWindow,
+  toProductionRecord,
   toSpecPayload,
   updateProductionLogSpec,
   batchUpdateProductionLogSpecs,

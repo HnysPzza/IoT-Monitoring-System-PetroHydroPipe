@@ -91,7 +91,7 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
     const chunk = eventIds.slice(i, i + CHUNK_SIZE)
     const { data, error } = await supabase
       .from('production_item_specs')
-      .select('sensor_event_id, label, size, diameter, radius, circumference, updated_at, updated_by')
+      .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, label, size, radius, circumference, updated_at, updated_by')
       .in('sensor_event_id', chunk)
 
     if (error) {
@@ -107,17 +107,17 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
 }
 
 async function updateProductionSpec(
-  { eventId, label, size, diameter, radius, circumference, actorUserId, expectedUpdatedAt },
+  { eventId, customer, diameter, thickness, length, pipeNumber, actorUserId, expectedUpdatedAt },
   suppliedClient,
 ) {
   const supabase = suppliedClient || getSupabaseClient()
   const { data, error } = await supabase.rpc('update_production_log_spec', {
     p_sensor_event_id: eventId,
-    p_label: label ?? null,
-    p_size: size ?? null,
+    p_customer: customer ?? null,
     p_diameter: diameter ?? null,
-    p_radius: radius ?? null,
-    p_circumference: circumference ?? null,
+    p_thickness: thickness ?? null,
+    p_length: length ?? null,
+    p_pipe_number: pipeNumber ?? null,
     p_actor_user_id: actorUserId,
     p_expected_updated_at: expectedUpdatedAt ?? null,
   })
@@ -135,7 +135,7 @@ async function updateProductionSpec(
 }
 
 async function batchUpdateProductionSpecs(
-  { sensorEventIds, startedAt, endedAt, onlyUnlabeled, label, size, diameter, radius, circumference, actorUserId },
+  { sensorEventIds, startedAt, endedAt, onlyUnlabeled, customer, diameter, thickness, length, actorUserId },
   suppliedClient,
 ) {
   const supabase = suppliedClient || getSupabaseClient()
@@ -144,11 +144,10 @@ async function batchUpdateProductionSpecs(
     p_started_at: startedAt ?? null,
     p_ended_at: endedAt ?? null,
     p_only_unlabeled: Boolean(onlyUnlabeled),
-    p_label: label ?? null,
-    p_size: size ?? null,
+    p_customer: customer ?? null,
     p_diameter: diameter ?? null,
-    p_radius: radius ?? null,
-    p_circumference: circumference ?? null,
+    p_thickness: thickness ?? null,
+    p_length: length ?? null,
     p_actor_user_id: actorUserId,
   })
 
