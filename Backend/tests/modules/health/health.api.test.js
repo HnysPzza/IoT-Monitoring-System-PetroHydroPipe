@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const http = require('node:http')
 const test = require('node:test')
-const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
+const { loadAppWithMocks, requestJson, withTestServer } = require('../../helpers/appTestUtils')
 
 function withEnvironment(overrides, action) {
   const previous = Object.fromEntries(
@@ -21,7 +21,7 @@ function withEnvironment(overrides, action) {
     })
 }
 
-function startReadinessServer({ status = 200, body = '50', delayMs = 0 } = {}) {
+function startReadinessServer({ status = 200, body = '51', delayMs = 0 } = {}) {
   let observeCancellation
   const cancellation = new Promise((resolve) => { observeCancellation = resolve })
   const server = http.createServer((request, response) => {
