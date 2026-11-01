@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-const { createEmailService } = require('../src/modules/email/email.service')
+const { createEmailService } = require('../../../src/modules/email/email.service')
 
 function configured() {
   return {
