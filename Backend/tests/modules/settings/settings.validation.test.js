@@ -6,7 +6,7 @@ const {
   patchSettingsSchema,
   settingsParamsSchema,
   shiftScheduleSchema,
-} = require('../src/modules/settings/settings.model')
+} = require('../../../src/modules/settings/settings.model')
 
 const machineId = '10000000-0000-4000-8000-000000000001'
 
