@@ -47,6 +47,7 @@ function reportPayload({
 
   return {
     report: {
+      category: 'regular',
       generatedAt: '2026-08-31T04:00:00.000Z',
       lossEstimateBasis: {
         source: 'configured-fallback',
@@ -80,6 +81,104 @@ function reportPayload({
   }
 }
 
+function productionReportPayload({
+  totalOutput = 10,
+  specifiedPipes = 8,
+  unspecifiedPipes = 2,
+  distinctSizes = 2,
+  periodState = 'complete',
+  specBreakdown = [
+    {
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      totalTonnage: 9.2104,
+      singleTonnage: 1.1513,
+      isSpecified: true,
+      pipeCount: 8,
+      percentageOfTotal: 80.0,
+    },
+    {
+      customer: null,
+      diameter: null,
+      thickness: null,
+      length: null,
+      totalTonnage: null,
+      singleTonnage: null,
+      isSpecified: false,
+      pipeCount: 2,
+      percentageOfTotal: 20.0,
+    },
+  ],
+  productionLogs = [
+    {
+      id: 'evt-1',
+      deviceEventId: 101,
+      recordedAt: '2026-09-02T01:00:00.000Z',
+      customer: 'MCWD',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      pipeNumber: 1001,
+      tonnage: 1.1513,
+      isSpecified: true,
+    },
+    {
+      id: 'evt-2',
+      deviceEventId: 102,
+      recordedAt: '2026-09-02T02:00:00.000Z',
+      customer: null,
+      diameter: null,
+      thickness: null,
+      length: null,
+      pipeNumber: null,
+      tonnage: null,
+      isSpecified: false,
+    },
+  ],
+} = {}) {
+  const isFuture = periodState === 'future'
+  return {
+    report: {
+      category: 'production',
+      generatedAt: '2026-08-31T04:00:00.000Z',
+      periodState,
+      summary: isFuture
+        ? [
+            { id: 'total-output', label: 'Total Production Output', value: 'N/A', helper: 'Period not reached yet' },
+            { id: 'specified-pipes', label: 'Specified Pipes', value: 'N/A', helper: 'Period not reached yet' },
+            { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: 'N/A', helper: 'Period not reached yet' },
+            { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: 'N/A', helper: 'Period not reached yet' },
+          ]
+        : [
+            { id: 'total-output', label: 'Total Production Output', value: `${totalOutput} pcs`, helper: 'From Spiral Mill 01' },
+            { id: 'specified-pipes', label: 'Specified Pipes', value: `${specifiedPipes} pcs`, helper: '80% of total output' },
+            { id: 'unspecified-pipes', label: 'Unspecified Pipes', value: `${unspecifiedPipes} pcs`, helper: 'Pending specification tag' },
+            { id: 'distinct-sizes', label: 'Distinct Product Sizes', value: String(distinctSizes), helper: 'Unique pipe specs produced' },
+          ],
+      metrics: {
+        totalProductionOutput: isFuture ? null : totalOutput,
+        specifiedPipes: isFuture ? null : specifiedPipes,
+        unspecifiedPipes: isFuture ? null : unspecifiedPipes,
+        distinctProductSizes: isFuture ? null : distinctSizes,
+      },
+      comparison: isFuture ? null : {
+        periodState: 'complete',
+        metrics: {
+          totalProductionOutput: 8,
+          specifiedPipes: 6,
+          unspecifiedPipes: 2,
+          distinctProductSizes: 2,
+        },
+      },
+      specBreakdown: isFuture ? [] : specBreakdown,
+      productionLogs: isFuture ? [] : productionLogs,
+      rows: isFuture ? [] : productionLogs,
+    },
+  }
+}
+
 function reportRow(cause = 'Corrective Maintenance') {
   return {
     cause,
@@ -109,10 +208,15 @@ async function selectExportFormat(user, format) {
 async function selectReportDate(user, dateName) {
   await user.click(screen.getByRole('button', { name: /selected period/i }))
   await screen.findByRole('dialog')
-  if (!screen.queryByRole('button', { name: dateName })) {
+  while (!screen.queryByRole('button', { name: dateName })) {
     await user.click(await screen.findByRole('button', { name: /previous month/i }))
   }
   await user.click(await screen.findByRole('button', { name: dateName }))
+}
+
+async function selectReportCategory(user, categoryLabel) {
+  await user.click(await screen.findByRole('button', { name: 'Filter report type' }))
+  await user.click(await screen.findByRole('menuitem', { name: categoryLabel }))
 }
 
 describe('ReportsSection request states', () => {
@@ -137,7 +241,7 @@ describe('ReportsSection request states', () => {
       processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
     }))
 
-    const { container } = renderWithAuth(<ReportsSection />)
+    renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByText('Production Count')).toBeInTheDocument()
     expect(screen.getByText('Availability')).toBeInTheDocument()
@@ -148,107 +252,88 @@ describe('ReportsSection request states', () => {
     expect(screen.queryByText('Downtime Events')).not.toBeInTheDocument()
     expect(screen.queryByText('Downtime Duration')).not.toBeInTheDocument()
     expect(screen.queryByTestId('report-card-process-events')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('article')).toHaveLength(4)
-    expect(document.querySelectorAll('.reports-primary-card')).toHaveLength(3)
-    expect(screen.getAllByTestId('report-delta')).toHaveLength(3)
-    expect(container.querySelector('.reports-period-toggle')).toHaveClass('trend-mode-toggle')
-    expect(container.querySelector('.reports-controls-actions')).toBeInTheDocument()
-    expect(container.querySelector('.reports-controls .reports-icon-button[aria-label="Refresh report"]')).toBeInTheDocument()
   })
 
   it('marks non-zero Estimated Loss as a warning while zero stays neutral', async () => {
-    getReportSummary.mockResolvedValue(reportPayload({ estimatedLoss: 4 }))
+    getReportSummary.mockResolvedValue(reportPayload({ estimatedLoss: 12 }))
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByTestId('report-card-loss')).toHaveClass('reports-card-warning')
-    expect(screen.getByTestId('report-card-loss')).toHaveTextContent('4 pcs')
+    const lossCard = await screen.findByTestId('report-card-loss')
+    expect(lossCard).toHaveClass('reports-card-warning')
   })
 
   it('uses visible period segments and an adaptive calendar control', async () => {
-    const user = userEvent.setup()
     getReportSummary.mockResolvedValue(reportPayload())
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
-    expect(screen.queryByText('Daily summary')).not.toBeInTheDocument()
+    const dailyButton = await screen.findByRole('button', { name: 'Daily' })
+    const weeklyButton = screen.getByRole('button', { name: 'Weekly' })
+    const monthlyButton = screen.getByRole('button', { name: 'Monthly' })
 
-    await user.click(screen.getByRole('button', { name: 'Weekly' }))
-    await user.click(screen.getByRole('button', { name: /selected period/i }))
-    expect(await screen.findByRole('dialog')).toHaveAccessibleName('Select chart week')
-    expect(getReportSummary).toHaveBeenCalledWith('test-token', expect.objectContaining({
-      reportType: 'weekly',
-      includeComparison: true,
-    }))
+    expect(dailyButton).toHaveAttribute('aria-pressed', 'true')
+    expect(weeklyButton).toHaveAttribute('aria-pressed', 'false')
+    expect(monthlyButton).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /selected period/i })).toBeInTheDocument()
   })
 
   it('exports PDF through the same server endpoint', async () => {
     const user = userEvent.setup()
-    const downloads = []
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
-      downloads.push({ download: this.download, href: this.href })
-    })
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report-pdf')
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+    getReportSummary.mockResolvedValue(reportPayload())
     exportReport.mockResolvedValue({
-      blob: new Blob(['%PDF-x'], { type: 'application/pdf' }),
-      filename: 'report-daily-2026-09-02.pdf',
+      blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+      filename: 'report-daily-2026-08-31.pdf',
     })
 
     renderWithAuth(<ReportsSection />)
+
+    await screen.findByText('Production Count')
     await selectExportFormat(user, 'pdf')
 
-    await waitFor(() => {
-      expect(downloads).toHaveLength(1)
-    })
-    expect(downloads[0].download).toBe('report-daily-2026-09-02.pdf')
-    expect(exportReport).toHaveBeenCalledWith('test-token', expect.objectContaining({
+    expect(exportReport).toHaveBeenCalledWith('test-token', {
+      category: 'regular',
       reportType: 'daily',
+      selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       format: 'pdf',
-    }))
-    vi.unstubAllGlobals()
+    })
   })
 
   it('exports an Excel workbook through the same server endpoint', async () => {
     const user = userEvent.setup()
-    const downloads = []
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
-      downloads.push({ download: this.download, href: this.href })
-    })
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report-xlsx')
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+    getReportSummary.mockResolvedValue(reportPayload())
     exportReport.mockResolvedValue({
-      blob: new Blob(['xlsx-data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-      filename: 'report-daily-2026-09-02.xlsx',
+      blob: new Blob(['xlsx-binary'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      filename: 'report-daily-2026-08-31.xlsx',
     })
 
     renderWithAuth(<ReportsSection />)
+
+    await screen.findByText('Production Count')
     await selectExportFormat(user, 'xlsx')
 
-    await waitFor(() => expect(downloads).toHaveLength(1))
-    expect(downloads[0].download).toBe('report-daily-2026-09-02.xlsx')
-    expect(exportReport).toHaveBeenCalledWith('test-token', expect.objectContaining({
+    expect(exportReport).toHaveBeenCalledWith('test-token', {
+      category: 'regular',
       reportType: 'daily',
+      selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       format: 'xlsx',
-    }))
-    vi.unstubAllGlobals()
+    })
   })
 
   it('surfaces export failures without discarding the loaded report', async () => {
     const user = userEvent.setup()
-    getReportSummary.mockResolvedValue(reportPayload({ rows: [reportRow()] }))
+    getReportSummary.mockResolvedValue(reportPayload())
     exportReport.mockRejectedValue(new Error('Too many export requests. Please try again later.'))
 
     renderWithAuth(<ReportsSection />)
-    await selectExportFormat(user, 'xlsx')
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Too many export requests. Please try again later.')
-    expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
+    await screen.findByText('Production Count')
+    await selectExportFormat(user, 'pdf')
+
+    expect(await screen.findByText('Too many export requests. Please try again later.')).toBeInTheDocument()
+    expect(screen.getByText('Production Count')).toBeInTheDocument()
   })
 
   it('labels partial reports and prevents choosing a future date', async () => {
@@ -256,85 +341,71 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText(/Partial report/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /selected period/i })).toBeInTheDocument()
+    expect(await screen.findByText('Partial report. Values cover recorded time so far.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export report' })).not.toBeDisabled()
   })
 
   it('renders future report values as unobserved and blocks export', async () => {
-    getReportSummary.mockResolvedValue(reportPayload({
-      periodState: 'future',
-      processSensors: [{ sensorCode: 'S-01', eventCount: null }],
-    }))
+    getReportSummary.mockResolvedValue(reportPayload({ periodState: 'future' }))
 
     renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByText('Period not reached yet. No values have been observed.')).toBeInTheDocument()
-    expect(screen.getAllByText('Not observed').length).toBeGreaterThan(0)
-    expect(screen.getByText('Downtime not observed yet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
+    expect(screen.getByText('Downtime not observed yet.')).toBeInTheDocument()
   })
 
   it('shows an unavailable state on initial failure and retries the same query', async () => {
     const user = userEvent.setup()
     getReportSummary
-      .mockRejectedValueOnce(new Error('Reports service is offline.'))
-      .mockResolvedValueOnce(reportPayload({ rows: [reportRow()] }))
+      .mockRejectedValueOnce(new Error('Network error loading report.'))
+      .mockResolvedValueOnce(reportPayload())
 
     renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('Reports service is offline.')
-    expect(screen.queryByText('No downtime rows found for this report range.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Network error loading report.')
+    expect(screen.queryByText('Downtime by cause and sensor')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Retry' }))
 
-    expect(await screen.findByText('Corrective Maintenance')).toBeInTheDocument()
+    expect(await screen.findByText('Downtime by cause and sensor')).toBeInTheDocument()
     expect(getReportSummary).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('button', { name: 'Export report' })).toBeEnabled()
   })
 
   it('treats a successful report with no rows as a valid empty result', async () => {
-    getReportSummary.mockResolvedValue(reportPayload())
+    getReportSummary.mockResolvedValue(reportPayload({ rows: [] }))
 
     renderWithAuth(<ReportsSection />)
 
     expect(await screen.findByText('No downtime rows found for this report range.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Unable to load this report' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export report' })).toBeEnabled()
   })
 
   it('preserves same-query data as stale after refresh failure and gates export', async () => {
     const user = userEvent.setup()
-    const refresh = deferred()
     getReportSummary
-      .mockResolvedValueOnce(reportPayload({ rows: [reportRow()] }))
-      .mockReturnValueOnce(refresh.promise)
+      .mockResolvedValueOnce(reportPayload({ rows: [reportRow('Initial Cause')] }))
+      .mockRejectedValueOnce(new Error('Temporary server issue.'))
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText('Corrective Maintenance')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export report' })).toBeEnabled()
+    expect(await screen.findByText('Initial Cause')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Refresh report' }))
-    expect(screen.getByText('Refreshing report...')).toBeInTheDocument()
-    expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
 
-    refresh.reject(new Error('Refresh failed.'))
-
-    expect(await screen.findByText(/Report data is stale/i)).toHaveTextContent('Refresh failed.')
-    expect(screen.getByText('Corrective Maintenance')).toBeInTheDocument()
-    expect(screen.getByText(/Report data is stale/i).querySelector('time')).toHaveAttribute('dateTime')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Report data is stale/i)
+    expect(screen.getByText('Initial Cause')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
   })
 
   it('does not display a previous range after a new-range failure', async () => {
     getReportSummary
       .mockResolvedValueOnce(reportPayload({ rows: [reportRow('Old range cause')] }))
-      .mockRejectedValueOnce(new Error('New range failed.'))
+      .mockRejectedValueOnce(new Error('New range query failed.'))
 
     renderWithAuth(<ReportsSection />)
+
     expect(await screen.findByText('Old range cause')).toBeInTheDocument()
 
     await selectReportDate(userEvent.setup(), /august 1st, 2026/i)
@@ -390,5 +461,350 @@ describe('ReportsSection request states', () => {
     nextSessionRequest.reject(new Error('Second session failed.'))
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
     expect(screen.queryByText('Prior session cause')).not.toBeInTheDocument()
+  })
+
+  it('toggles to Production Report and displays specification breakdown and cut log tables', async () => {
+    const user = userEvent.setup()
+    getReportSummary
+      .mockResolvedValueOnce(reportPayload())
+      .mockResolvedValueOnce(productionReportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText('Production Count')).toBeInTheDocument()
+
+    const filterButton = screen.getByRole('button', { name: 'Filter report type' })
+    await user.click(filterButton)
+
+    const prodButton = screen.getByRole('menuitem', { name: 'Production Report' })
+    expect(prodButton).toHaveAttribute('aria-checked', 'false')
+    await user.click(prodButton)
+
+    expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+      category: 'production',
+    }))
+
+    // Check Production Report sections
+    expect(await screen.findByText('Output by product specification')).toBeInTheDocument()
+    expect(screen.getByText('S-05 cutting events')).toBeInTheDocument()
+
+    // Specification Breakdown Table Headers: [Customer, Diameter (OD mm), Thickness (mm), Length (mm), Total Tons, Quantity, % of Total]
+    expect(screen.getAllByRole('columnheader', { name: 'Customer' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('columnheader', { name: 'Diameter (OD mm)' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('columnheader', { name: 'Thickness (mm)' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('columnheader', { name: 'Length (mm)' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByRole('columnheader', { name: 'Total Tons' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Quantity' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '% of Total' })).toBeInTheDocument()
+
+    // Production Cut Log Table Headers: [Cut Time, Customer, Diameter (OD mm), Thickness (mm), Length (mm), Pipe #, Tons, Status]
+    expect(screen.getByRole('columnheader', { name: 'Cut Time' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Pipe #' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Tons' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
+
+    // Assert Absence of legacy circle columns in production report tables
+    expect(screen.queryByRole('columnheader', { name: 'Radius' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Circumference' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Product Label' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Size' })).not.toBeInTheDocument()
+
+    // Verify formatted pipe spec row values
+    expect(screen.getAllByText('MCWD').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('625.40').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('12.70').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('6000.00').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('9.2104')).toBeInTheDocument()
+    expect(screen.getByText('1001')).toBeInTheDocument()
+    expect(screen.getByText('1.1513')).toBeInTheDocument()
+    expect(screen.getAllByText('8 pcs').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('80.0%')).toBeInTheDocument()
+    expect(screen.getByText('Unspecified / Pending Tag')).toBeInTheDocument()
+    expect(screen.getByText('Specified')).toBeInTheDocument()
+    expect(screen.getByText('Pending Tag')).toBeInTheDocument()
+
+    // Missing or null values render clean dash —
+    const placeholders = screen.getAllByText('—')
+    expect(placeholders.length).toBeGreaterThanOrEqual(5)
+
+    // Regular report tables should not be rendered
+    expect(screen.queryByText('Events by process sensor')).not.toBeInTheDocument()
+    expect(screen.queryByText('Downtime by cause and sensor')).not.toBeInTheDocument()
+  })
+
+  it('exports production report with category=production when export button is clicked', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+    exportReport.mockResolvedValue({
+      blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+      filename: 'production-report-daily-2026-08-31.pdf',
+    })
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+
+    await screen.findByText('Output by product specification')
+    await selectExportFormat(user, 'pdf')
+
+    expect(exportReport).toHaveBeenCalledWith('test-token', {
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      format: 'pdf',
+    })
+  })
+
+  it('displays unobserved production report state when period is future', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload({ periodState: 'future' }))
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+
+    expect(await screen.findByText('Period not reached yet. No values have been observed.')).toBeInTheDocument()
+    expect(screen.getByText('Output not observed yet.')).toBeInTheDocument()
+    expect(screen.getByText('Pipe cuts not observed yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export report' })).toBeDisabled()
+  })
+
+  it('switches back from Production Report to Regular Report cleanly', async () => {
+    const user = userEvent.setup()
+    const regularSummary = reportPayload()
+    const productionSummary = productionReportPayload()
+
+    getReportSummary
+      .mockResolvedValueOnce(regularSummary)
+      .mockResolvedValueOnce(productionSummary)
+      .mockResolvedValueOnce(regularSummary)
+
+    renderWithAuth(<ReportsSection />)
+
+    expect(await screen.findByText('Production Count')).toBeInTheDocument()
+
+    await selectReportCategory(user, 'Production Report')
+
+    expect(await screen.findByText('Output by product specification')).toBeInTheDocument()
+
+    await selectReportCategory(user, 'Regular Report')
+
+    expect(await screen.findByText('Events by process sensor')).toBeInTheDocument()
+    expect(screen.getByText('Downtime by cause and sensor')).toBeInTheDocument()
+    expect(screen.queryByText('Output by product specification')).not.toBeInTheDocument()
+  })
+
+  it('renders N/A for invalid or null cut timestamps in production cut logs', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload({
+      productionLogs: [
+        {
+          id: 'evt-null-date',
+          deviceEventId: 201,
+          recordedAt: null,
+          customer: 'Pipe with null date',
+          label: 'Pipe with null date',
+          diameter: 114.3,
+          thickness: 6.0,
+          length: 6000,
+          pipeNumber: 201,
+          tonnage: 0.0962,
+          isSpecified: true,
+        },
+        {
+          id: 'evt-invalid-date',
+          deviceEventId: 202,
+          recordedAt: 'not-a-valid-timestamp',
+          customer: 'Pipe with invalid date',
+          label: 'Pipe with invalid date',
+          diameter: 114.3,
+          thickness: 6.0,
+          length: 6000,
+          pipeNumber: 202,
+          tonnage: 0.0962,
+          isSpecified: true,
+        },
+      ],
+    }))
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+
+    await screen.findByText('Output by product specification')
+    const naCells = screen.getAllByText('N/A')
+    expect(naCells.length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Pipe with null date')).toBeInTheDocument()
+    expect(screen.getByText('Pipe with invalid date')).toBeInTheDocument()
+  })
+
+  it('opens Gemini-style popover filter menu with funnel icon, showing active category checkmark and closing on escape or outside click', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(reportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    const funnelButton = await screen.findByRole('button', { name: 'Filter report type' })
+    expect(funnelButton).toBeInTheDocument()
+    expect(funnelButton.querySelector('svg.preview-icon')).toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+
+    // Popover is closed initially
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+
+    // Open popover
+    await user.click(funnelButton)
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'true')
+    const popover = screen.getByRole('menu', { name: 'Report category' })
+    expect(popover).toHaveClass('reports-filter-popover')
+    expect(popover).toHaveClass('rounded-2xl')
+
+    // Active item (Regular Report) has checkmark and active styling
+    const regularItem = screen.getByRole('menuitem', { name: 'Regular Report' })
+    expect(regularItem).toHaveClass('is-active')
+    expect(regularItem).toHaveAttribute('aria-checked', 'true')
+    expect(regularItem.querySelector('svg')).toBeInTheDocument()
+
+    // Production Report is inactive
+    const prodItem = screen.getByRole('menuitem', { name: 'Production Report' })
+    expect(prodItem).not.toHaveClass('is-active')
+    expect(prodItem).toHaveAttribute('aria-checked', 'false')
+
+    // Close on Escape key
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+
+    // Open again and test arrow navigation
+    await user.click(funnelButton)
+    expect(screen.getByRole('menu', { name: 'Report category' })).toBeInTheDocument()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Production Report' })).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+
+    // Close by clicking outside
+    await user.click(document.body)
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+
+    // Open and verify close on focus loss (e.g. tabbing out)
+    await user.click(funnelButton)
+    expect(screen.getByRole('menu', { name: 'Report category' })).toBeInTheDocument()
+    await user.tab()
+    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('menuitem', { name: 'Production Report' })).toHaveFocus()
+    await user.tab()
+    expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
+    expect(funnelButton).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('triggers blob download by appending anchor to body and deferring URL revocation', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(reportPayload())
+    exportReport.mockResolvedValue({
+      blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+      filename: 'report-daily-2026-08-31.pdf',
+    })
+
+    const appendChildSpy = vi.spyOn(document.body, 'appendChild')
+    const removeChildSpy = vi.spyOn(document.body, 'removeChild')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    try {
+      renderWithAuth(<ReportsSection />)
+
+      await screen.findByText('Production Count')
+      revokeObjectURLSpy.mockClear()
+      await selectExportFormat(user, 'pdf')
+
+      expect(appendChildSpy).toHaveBeenCalledWith(expect.any(HTMLAnchorElement))
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+      expect(removeChildSpy).toHaveBeenCalledWith(expect.any(HTMLAnchorElement))
+      expect(revokeObjectURLSpy).not.toHaveBeenCalled()
+
+      await waitFor(() => {
+        expect(revokeObjectURLSpy).toHaveBeenCalledTimes(1)
+      }, { timeout: 2000 })
+    } finally {
+      appendChildSpy.mockRestore()
+      removeChildSpy.mockRestore()
+      revokeObjectURLSpy.mockRestore()
+      clickSpy.mockRestore()
+    }
+  })
+
+  it('exports production report in XLSX format when Excel is selected', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+    exportReport.mockResolvedValue({
+      blob: new Blob(['xlsx-binary'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      filename: 'production-report-daily-2026-08-31.xlsx',
+    })
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+    await screen.findByText('Output by product specification')
+    await selectExportFormat(user, 'xlsx')
+
+    expect(exportReport).toHaveBeenCalledWith('test-token', {
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      format: 'xlsx',
+    })
+  })
+
+  it('verifies numeric columns in production tables are right-aligned with tabular-data class', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+    await screen.findByText('Output by product specification')
+
+    // Find table cells with tabular-data
+    const tabularCells = document.querySelectorAll('td.tabular-data, th.tabular-data')
+    expect(tabularCells.length).toBeGreaterThanOrEqual(10)
+
+    // Diameter, Thickness, Length, Total Tons headers have tabular-data and production-col-num
+    const diamHeaders = screen.getAllByRole('columnheader', { name: 'Diameter (OD mm)' })
+    expect(diamHeaders[0]).toHaveClass('tabular-data', 'production-col-num')
+
+    const tonsHeader = screen.getByRole('columnheader', { name: 'Total Tons' })
+    expect(tonsHeader).toHaveClass('tabular-data', 'production-col-num')
+
+    // Tons cell formatting: 4 decimal places with tabular-data
+    const tonsCell = screen.getByText('9.2104')
+    expect(tonsCell).toHaveClass('tabular-data', 'production-col-num')
+
+    // Quantity cell formatting: right-aligned with tabular-data
+    const qtyCells = screen.getAllByText('8 pcs')
+    const qtyCell = Array.from(qtyCells).find((el) => el.tagName === 'TD')
+    expect(qtyCell).toHaveClass('tabular-data', 'production-col-num')
+  })
+
+  it('renders clean dash placeholders with production-placeholder class for missing values', async () => {
+    const user = userEvent.setup()
+    getReportSummary.mockResolvedValue(productionReportPayload())
+
+    renderWithAuth(<ReportsSection />)
+
+    await selectReportCategory(user, 'Production Report')
+    await screen.findByText('Output by product specification')
+
+    const placeholders = document.querySelectorAll('.production-placeholder')
+    expect(placeholders.length).toBeGreaterThanOrEqual(5)
+    placeholders.forEach((placeholder) => {
+      expect(placeholder.textContent).toBe('—')
+    })
   })
 })

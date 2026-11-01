@@ -25,6 +25,13 @@ export const navItems = [
     subtitle: 'Review stoppages, causes, and intervention history.',
   },
   {
+    label: 'Production Logs',
+    to: '/dashboard/production',
+    icon: 'notebook-dot',
+    group: 'monitor',
+    roles: ['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor'],
+  },
+  {
     label: 'Analytics',
     to: '/dashboard/analytics',
     icon: 'chart-no-axes-combined',
@@ -93,6 +100,9 @@ export const dashboardPageMeta = {
   '/dashboard/downtime': {
     title: 'Downtime Records',
     subtitle: 'Stoppage review and cause assignment.',
+  },
+  '/dashboard/production': {
+    title: 'Production Logs',
   },
   '/dashboard/reports': {
     title: 'Reports',

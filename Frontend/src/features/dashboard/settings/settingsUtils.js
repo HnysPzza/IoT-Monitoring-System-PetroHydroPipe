@@ -13,9 +13,24 @@ function toMinutes(value) {
   return (hours * 60) + minutes
 }
 
+export function getMinuteBounds(secondBounds) {
+  return {
+    minimumWhenEnabled: Math.max(1, Math.ceil((secondBounds?.minimumWhenEnabled || 60) / 60)),
+    maximum: Math.max(1, Math.floor((secondBounds?.maximum || 60) / 60)),
+  }
+}
+
+function formatMinuteRange(bounds) {
+  return bounds.minimumWhenEnabled === bounds.maximum
+    ? `${bounds.minimumWhenEnabled} minute${bounds.minimumWhenEnabled === 1 ? '' : 's'}`
+    : `${bounds.minimumWhenEnabled}-${bounds.maximum} minutes`
+}
+
 export function validateOperationalSettings(settings, constraints) {
   const errors = {}
   const thresholds = settings?.sensorThresholds || {}
+  const triggerMinutes = getMinuteBounds(constraints.triggerSeconds)
+  const recoveryMinutes = getMinuteBounds(constraints.recoverySeconds)
 
   for (const sensorCode of constraints.sensorCodes) {
     const threshold = thresholds[sensorCode]
@@ -29,15 +44,17 @@ export function validateOperationalSettings(settings, constraints) {
     }
     if (!threshold.absenceDetectionEnabled) continue
     if (!Number.isInteger(threshold.triggerSeconds)
-      || threshold.triggerSeconds < constraints.triggerSeconds.minimumWhenEnabled
-      || threshold.triggerSeconds > constraints.triggerSeconds.maximum) {
-      errors[sensorCode] = `Trigger must be ${constraints.triggerSeconds.minimumWhenEnabled}-${constraints.triggerSeconds.maximum} seconds.`
+      || threshold.triggerSeconds % 60 !== 0
+      || threshold.triggerSeconds < triggerMinutes.minimumWhenEnabled * 60
+      || threshold.triggerSeconds > triggerMinutes.maximum * 60) {
+      errors[sensorCode] = `Trigger must be ${formatMinuteRange(triggerMinutes)}.`
       continue
     }
     if (!Number.isInteger(threshold.recoverySeconds)
-      || threshold.recoverySeconds < constraints.recoverySeconds.minimumWhenEnabled
-      || threshold.recoverySeconds > constraints.recoverySeconds.maximum) {
-      errors[sensorCode] = `Recovery must be ${constraints.recoverySeconds.minimumWhenEnabled}-${constraints.recoverySeconds.maximum} seconds.`
+      || threshold.recoverySeconds % 60 !== 0
+      || threshold.recoverySeconds < recoveryMinutes.minimumWhenEnabled * 60
+      || threshold.recoverySeconds > recoveryMinutes.maximum * 60) {
+      errors[sensorCode] = `Recovery must be ${formatMinuteRange(recoveryMinutes)}.`
     }
   }
 

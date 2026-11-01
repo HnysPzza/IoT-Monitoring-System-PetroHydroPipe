@@ -17,8 +17,15 @@ function getSensorPurpose(sensorCode, fallback = 'Monitoring point for Spiral Mi
   return getSensorIdentity(sensorCode)?.purpose || fallback
 }
 
+const PROCESS_SENSOR_CODES = Object.freeze(
+  registry.sensors
+    .map((sensor) => sensor.code)
+    .filter((code) => code !== OUTPUT_SENSOR_CODE && code !== 'S-03'),
+)
+
 module.exports = {
   OUTPUT_SENSOR_CODE,
+  PROCESS_SENSOR_CODES,
   getSensorIdentity,
   getSensorLabel,
   getSensorPurpose,

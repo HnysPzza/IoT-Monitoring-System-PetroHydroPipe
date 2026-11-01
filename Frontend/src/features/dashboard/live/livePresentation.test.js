@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { presentLiveSensor } from './livePresentation.js'
+import { getProcessIdleBanner, getProcessSensorFaultBanner, presentLiveSensor } from './livePresentation.js'
 
 function sensor(overrides = {}) {
   return {
@@ -41,5 +41,64 @@ describe('live sensor presentation', () => {
   it('labels disabled and stale monitoring without inventing downtime', () => {
     expect(presentLiveSensor(sensor(), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled' })
     expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: null, detectionState: null } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring data unavailable' })
+  })
+
+  it('builds a material changeover banner when S-01, S-02, or S-04 is idle and no sensor is faulted', () => {
+    const idleS01 = sensor({ sensorCode: 'S-01', status: 'Idle' })
+    const runningS03 = sensor({ sensorCode: 'S-03', status: 'Running' })
+
+    expect(getProcessIdleBanner([idleS01, runningS03], 'enforce')).toEqual({
+      sensors: [{ sensorCode: 'S-01', label: 'Raw Material & Coil Joint' }],
+      primary: { sensorCode: 'S-01', label: 'Raw Material & Coil Joint' },
+      extraCount: 0,
+      message: 'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+    })
+  })
+
+  it('summarizes multiple idle process sensors and keeps the idle banner separate from faults on other sensors', () => {
+    const idleS01 = sensor({ sensorCode: 'S-01', status: 'Idle' })
+    const graceS04 = sensor({
+      sensorCode: 'S-04',
+      status: 'Running',
+      monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'grace' },
+    })
+    const banner = getProcessIdleBanner([idleS01, graceS04], 'enforce')
+    expect(banner).toMatchObject({
+      extraCount: 1,
+      message: 'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+    })
+
+    const faultS02 = sensor({ sensorCode: 'S-02', status: 'Fault' })
+    expect(getProcessIdleBanner([idleS01, faultS02], 'enforce')).toMatchObject({
+      extraCount: 0,
+      message: 'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+    })
+    expect(getProcessIdleBanner([faultS02], 'enforce')).toBeNull()
+  })
+
+  it('ignores S-03 and S-05 idle states for the process material changeover banner', () => {
+    const idleS03 = sensor({ sensorCode: 'S-03', status: 'Idle' })
+    const idleS05 = sensor({ sensorCode: 'S-05', status: 'Idle' })
+    expect(getProcessIdleBanner([idleS03, idleS05], 'enforce')).toBeNull()
+  })
+
+  it('builds a fallback fault/downtime banner when a sensor is in Fault or Downtime', () => {
+    const faultS01 = sensor({ sensorCode: 'S-01', status: 'Fault' })
+    expect(getProcessSensorFaultBanner([faultS01], 'enforce')).toEqual({
+      sensorCode: 'S-01',
+      label: 'Raw Material & Coil Joint',
+      extraCount: 0,
+      isDowntime: false,
+      message: 'S-01 Raw Material & Coil Joint process issue detected — trigger limit exceeded.',
+    })
+
+    const downtimeS03 = sensor({ sensorCode: 'S-03', status: 'Downtime' })
+    expect(getProcessSensorFaultBanner([faultS01, downtimeS03], 'enforce')).toEqual({
+      sensorCode: 'S-03',
+      label: 'Machine Main Sensor',
+      extraCount: 1,
+      isDowntime: true,
+      message: 'S-03 Machine Main Sensor downtime detected.',
+    })
   })
 })

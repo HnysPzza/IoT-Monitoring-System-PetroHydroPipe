@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "test": "node --test tests/*.test.js tests/contracts/*.test.js",
+    "test": "node --test \"tests/modules/**/*.test.js\" \"tests/migrations/*.test.js\" \"tests/system/*.test.js\" \"tests/contracts/*.test.js\"",
     "test:integration": "node --test tests/integration/*.test.js",
     "db:verify:downtime": "node scripts/verify-downtime-migration.js",
     "iot:keys": "node scripts/generate-device-keys.js",
@@ -18,7 +18,10 @@
     "iot:simulate:verify-direct-s03-lifecycle": "node scripts/simulate-sensor-events.js --verify-direct-s03-lifecycle",
     "iot:simulate:send-s05-pulse": "node scripts/simulate-sensor-events.js --send-s05-pulse",
     "iot:heartbeat:once": "node scripts/simulate-heartbeats.js --once",
-    "iot:heartbeat": "node scripts/simulate-heartbeats.js"
+    "iot:heartbeat": "node scripts/simulate-heartbeats.js",
+    "test:modules": "node --test \"tests/modules/**/*.test.js\"",
+    "test:migrations": "node --test \"tests/migrations/*.test.js\"",
+    "test:system": "node --test \"tests/system/*.test.js\""
   },
   "keywords": [],
   "author": "",

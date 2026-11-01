@@ -1,0 +1,280 @@
+const assert = require('node:assert/strict')
+const test = require('node:test')
+
+const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
+const LOSS_BASIS = {
+  source: 'configured-fallback',
+  ratePiecesPerMinute: 0.05,
+  windowStartAt: '2026-07-04T16:00:00.000Z',
+  windowEndAt: '2026-08-03T16:00:00.000Z',
+  qualifiedProductionDays: 0,
+  productiveMinutes: 0,
+  outputPieces: 0,
+}
+const settingsHistory = [{
+  machine_id: MACHINE_ID,
+  version: '1',
+  shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0 },
+  effective_from: null,
+  effective_to: null,
+}]
+
+function createDependencies({ eventRows = [], downtimeRows = [] } = {}) {
+  const aggregationCalls = []
+  return {
+    aggregationCalls,
+    dependencies: {
+      asOf: new Date('2026-08-03T12:00:00+08:00'),
+      getMachineAndSensors: async () => ({
+        id: MACHINE_ID,
+        name: 'Spiral Mill 01',
+        sensors: [
+          { sensor_code: 'S-01', label: 'Raw Material & Coil Joint' },
+          { sensor_code: 'S-02', label: 'Inside Filler Wire' },
+          { sensor_code: 'S-03', label: 'Machine Main Sensor' },
+          { sensor_code: 'S-04', label: 'Outside Filler Wire' },
+          { sensor_code: 'S-05', label: 'Production Output Cutting' },
+        ],
+      }),
+      getFirstRecordedAt: async () => new Date('2024-01-15T03:00:00.000Z'),
+      getOutputLossBasis: async () => LOSS_BASIS,
+      aggregateEvents: async (machineId, window, bucketSeconds) => {
+        aggregationCalls.push({ machineId, window, bucketSeconds })
+        return eventRows.filter((row) => {
+          const bucketTime = new Date(row.bucket_start).getTime()
+          return bucketTime >= window.start.getTime() && bucketTime < window.end.getTime()
+        })
+      },
+      getOverlappingDowntime: async () => downtimeRows,
+      getSettingsHistory: async () => settingsHistory,
+    },
+  }
+}
+
+test('Analytics compares a partial Manila range with the matching elapsed preceding range', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies, aggregationCalls } = createDependencies({
+    eventRows: [
+      { bucket_start: '2026-07-31T16:00:00.000Z', sensor_code: 'S-05', sensor_label: 'Production Output Cutting', event_count: 4 },
+      { bucket_start: '2026-07-31T16:00:00.000Z', sensor_code: 'S-01', sensor_label: 'Raw Material & Coil Joint', event_count: 3 },
+      { bucket_start: '2026-07-26T16:00:00.000Z', sensor_code: 'S-05', sensor_label: 'Production Output Cutting', event_count: 2 },
+    ],
+  })
+
+  const result = await getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-05' }, dependencies)
+
+  assert.equal(result.timeZone, 'Asia/Manila')
+  assert.equal(result.comparisonMode, 'immediately-preceding-matching-elapsed')
+  assert.equal(result.comparisonClipped, true)
+  assert.deepEqual(result.selected.range, {
+    requestedStartDate: '2026-08-01',
+    requestedEndDate: '2026-08-05',
+    observedStartAt: '2026-07-31T16:00:00.000Z',
+    observedEndAt: '2026-08-03T04:00:00.000Z',
+    periodState: 'partial',
+    daysInclusive: 5,
+    bucket: 'daily',
+  })
+  assert.equal(result.comparison.range.requestedStartDate, '2026-07-27')
+  assert.equal(result.comparison.range.requestedEndDate, '2026-07-31')
+  assert.equal(result.comparison.range.observedEndAt, '2026-07-29T04:00:00.000Z')
+  assert.equal(result.selected.summary.outputPieces, 4)
+  assert.equal(result.selected.summary.processEventCount, 3)
+  assert.equal(result.comparison.summary.outputPieces, 2)
+  assert.equal(result.selected.summary.availabilityPercent, 100)
+  assert.equal(result.selected.trends.at(-1).periodState, 'future')
+  assert.equal(result.selected.trends.at(-1).metrics.availabilityPercent, null)
+  assert.equal(Object.hasOwn(result.selected, 'downtimeSensors'), false)
+  assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 86400), true)
+  assert.equal(result.coverage.historicalHeartbeatAvailable, false)
+  assert.deepEqual(result.lossEstimateBasis, LOSS_BASIS)
+})
+
+test('Analytics preserves measured zero but returns null for a future-only selected range', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies()
+
+  const observed = await getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-01' }, dependencies)
+  assert.equal(observed.selected.summary.outputPieces, 0)
+  assert.equal(observed.selected.summary.processEventCount, 0)
+
+  const future = await getAnalytics({ startDate: '2026-08-10', endDate: '2026-08-10' }, dependencies)
+  assert.equal(future.selected.range.periodState, 'future')
+  assert.deepEqual(future.selected.summary, {
+    downtimeMinutes: null,
+    downtimeEventCount: null,
+    availabilityPercent: null,
+    outputPieces: null,
+    processEventCount: null,
+    estimatedLossPieces: null,
+  })
+  assert.equal(Object.hasOwn(future.selected, 'downtimeSensors'), false)
+  assert.equal(future.selected.trends.every((point) => point.periodState === 'future'), true)
+})
+
+test('Analytics unions concurrent downtime and keeps zero-eligible availability unobserved', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies({
+    downtimeRows: [
+      { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Flux Refill', sensors: { sensor_code: 'S-01' } },
+      { id: 'd2', started_at: '2026-08-03T00:30:00.000Z', ended_at: '2026-08-03T01:30:00.000Z', cause: 'Wire Refill', sensors: { sensor_code: 'S-02' } },
+    ],
+  })
+
+  const result = await getAnalytics({ startDate: '2026-08-02', endDate: '2026-08-03' }, dependencies)
+  assert.equal(result.selected.summary.downtimeMinutes, 90)
+  assert.equal(result.selected.summary.estimatedLossPieces, 4.5)
+  assert.equal(result.selected.trends[0].metrics.availabilityPercent, null)
+  assert.equal(result.selected.downtimeCauses.some((row) => row.cause === 'Concurrent causes'), true)
+})
+
+test('Analytics combines every downtime cause across sensors into ranked cause rows', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies({
+    downtimeRows: [
+      { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Corrective Maintenance', sensors: { sensor_code: 'S-01' } },
+      { id: 'd2', started_at: '2026-08-03T01:00:00.000Z', ended_at: '2026-08-03T02:00:00.000Z', cause: 'Misalignment', sensors: { sensor_code: 'S-01' } },
+      { id: 'd3', started_at: '2026-08-03T00:30:00.000Z', ended_at: '2026-08-03T01:30:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-02' } },
+      { id: 'd4', started_at: '2026-08-03T02:00:00.000Z', ended_at: '2026-08-03T02:30:00.000Z', cause: 'Manual Cutting', sensors: { sensor_code: 'S-05' } },
+    ],
+  })
+
+  const result = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, dependencies)
+
+  assert.deepEqual(new Set(result.selected.downtimeCauses.map((row) => row.cause)), new Set([
+    'Corrective Maintenance',
+    'Concurrent causes',
+    'Misalignment',
+    'Manual Cutting',
+  ]))
+})
+
+test('Analytics combines the same downtime cause across sensors into one cause row', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies({
+    downtimeRows: [
+      { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-01' } },
+      { id: 'd2', started_at: '2026-08-03T01:00:00.000Z', ended_at: '2026-08-03T02:00:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-02' } },
+    ],
+  })
+
+  const result = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, dependencies)
+
+  assert.deepEqual(result.selected.downtimeCauses, [
+    { cause: 'Consumable Shortage', eventCount: 2, durationMinutes: 120, estimatedLossPieces: 6 },
+  ])
+})
+
+test('Analytics excludes pending cause review until an admin assigns the operational cause', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const pendingRecord = {
+    id: 'pending',
+    started_at: '2026-08-03T00:00:00.000Z',
+    ended_at: '2026-08-03T01:00:00.000Z',
+    cause: 'Pending Cause Review',
+    sensors: { sensor_code: 'S-03' },
+  }
+  const reviewedRecord = {
+    id: 'reviewed',
+    started_at: '2026-08-03T01:00:00.000Z',
+    ended_at: '2026-08-03T02:00:00.000Z',
+    cause: 'Corrective Maintenance',
+    sensors: { sensor_code: 'S-01' },
+  }
+  const pendingDependencies = createDependencies({ downtimeRows: [pendingRecord, reviewedRecord] }).dependencies
+
+  const pendingResult = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, pendingDependencies)
+
+  assert.equal(pendingResult.selected.summary.downtimeMinutes, 120)
+  assert.deepEqual(pendingResult.selected.downtimeCauses.map((row) => row.cause), ['Corrective Maintenance'])
+  assert.deepEqual(pendingResult.selected.causeCoverage, {
+    reviewedDurationMinutes: 60,
+    pendingReviewDurationMinutes: 60,
+    pendingReviewEventCount: 1,
+    coveragePercent: 50,
+  })
+
+  const assignedDependencies = createDependencies({
+    downtimeRows: [{ ...pendingRecord, cause: 'Flux Refill' }, reviewedRecord],
+  }).dependencies
+  const assignedResult = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, assignedDependencies)
+
+  assert.deepEqual(new Set(assignedResult.selected.downtimeCauses.map((row) => row.cause)), new Set([
+    'Flux Refill',
+    'Corrective Maintenance',
+  ]))
+  assert.deepEqual(assignedResult.selected.causeCoverage, {
+    reviewedDurationMinutes: 120,
+    pendingReviewDurationMinutes: 0,
+    pendingReviewEventCount: 0,
+    coveragePercent: 100,
+  })
+})
+
+test('Analytics uses calendar-month buckets for ranges longer than 93 days', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies, aggregationCalls } = createDependencies()
+
+  const result = await getAnalytics({ startDate: '2026-01-15', endDate: '2026-05-15' }, dependencies)
+
+  assert.equal(result.selected.range.bucket, 'monthly')
+  assert.equal(result.selected.trends[0].startAt, '2026-01-14T16:00:00.000Z')
+  assert.equal(result.selected.trends[0].endAt, '2026-01-31T16:00:00.000Z')
+  assert.deepEqual(result.trendAlignment, {
+    mode: 'ordinal-calendar-segments',
+    selectedBucketCount: result.selected.trends.length,
+    comparisonBucketCount: result.comparison.trends.length,
+  })
+  assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
+})
+
+test('Analytics declares unequal calendar-month segment counts without dropping either period', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies()
+
+  const result = await getAnalytics({ startDate: '2025-01-02', endDate: '2025-04-05' }, dependencies)
+
+  assert.equal(result.selected.trends.length, 4)
+  assert.equal(result.comparison.trends.length, 5)
+  assert.deepEqual(result.trendAlignment, {
+    mode: 'ordinal-calendar-segments',
+    selectedBucketCount: 4,
+    comparisonBucketCount: 5,
+  })
+})
+
+test('Analytics all-time range starts on the first contributing record when on or after 2026-05-01 and clamps earlier records to 2026-05-01', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies, aggregationCalls } = createDependencies()
+
+  const clampedResult = await getAnalytics({ range: 'all' }, dependencies)
+
+  assert.equal(clampedResult.selectionMode, 'all')
+  assert.equal(clampedResult.comparisonMode, 'none')
+  assert.equal(clampedResult.comparison, null)
+  assert.equal(clampedResult.comparisonClipped, false)
+  assert.equal(clampedResult.trendAlignment.comparisonBucketCount, 0)
+  assert.equal(clampedResult.selected.range.requestedStartDate, '2026-05-01')
+  assert.equal(clampedResult.selected.range.requestedEndDate, '2026-08-03')
+  assert.equal(clampedResult.selected.range.daysInclusive, 95)
+  assert.equal(clampedResult.selected.range.bucket, 'monthly')
+  assert.equal(aggregationCalls.every((call) => call.bucketSeconds === 0), true)
+  assert.equal(aggregationCalls.length, 1)
+
+  const epochDependencies = {
+    ...dependencies,
+    getFirstRecordedAt: async () => new Date('1970-01-01T00:00:00.000Z'),
+  }
+  const epochResult = await getAnalytics({ range: 'all' }, epochDependencies)
+  assert.equal(epochResult.selected.range.requestedStartDate, '2026-05-01')
+  assert.equal(epochResult.selected.range.daysInclusive, 95)
+
+  const postMayDependencies = {
+    ...dependencies,
+    getFirstRecordedAt: async () => new Date('2026-06-15T01:00:00.000Z'),
+  }
+  const postMayResult = await getAnalytics({ range: 'all' }, postMayDependencies)
+  assert.equal(postMayResult.selected.range.requestedStartDate, '2026-06-15')
+  assert.equal(postMayResult.selected.range.requestedEndDate, '2026-08-03')
+  assert.equal(postMayResult.selected.range.daysInclusive, 50)
+})

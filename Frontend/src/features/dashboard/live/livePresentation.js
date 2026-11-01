@@ -1,3 +1,7 @@
+import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
+
+const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
+
 export function connectivityLabel(sensor) {
   if (!sensor.monitoring?.stateFresh) return 'Unavailable'
   if (sensor.monitoring.connectivityState === 'online') return 'Connected'
@@ -54,4 +58,61 @@ export function presentLiveSensor(sensor, mode) {
 
 export function presentLiveSensors(sensors, mode) {
   return sensors.map((sensor) => presentLiveSensor(sensor, mode))
+}
+
+export function getProcessSensorFaultBanner(sensors = [], mode = 'unknown') {
+  if (!Array.isArray(sensors) || sensors.length === 0) return null
+
+  const presented = sensors.map((sensor) => (
+    sensor.displayStatus ? sensor : presentLiveSensor(sensor, mode)
+  ))
+
+  const downtimeSensors = presented.filter((sensor) => (
+    sensor.displayStatus === 'Downtime' || sensor.status === 'Downtime'
+  ))
+  const faultSensors = presented.filter((sensor) => (
+    sensor.displayStatus === 'Fault' || sensor.status === 'Fault'
+  ))
+
+  const issueSensors = [...downtimeSensors, ...faultSensors]
+  if (issueSensors.length === 0) return null
+
+  const primary = issueSensors[0]
+  const label = getSensorLabel(primary.sensorCode, primary.label)
+  const isDowntime = primary.displayStatus === 'Downtime' || primary.status === 'Downtime'
+
+  return {
+    sensorCode: primary.sensorCode,
+    label,
+    extraCount: issueSensors.length - 1,
+    isDowntime,
+    message: isDowntime
+      ? `${primary.sensorCode} ${label} downtime detected.`
+      : `${primary.sensorCode} ${label} process issue detected — trigger limit exceeded.`,
+  }
+}
+
+export function getProcessIdleBanner(sensors = [], mode = 'unknown') {
+  if (!Array.isArray(sensors) || sensors.length === 0) return null
+
+  const presented = sensors.map((sensor) => (
+    sensor.displayStatus ? sensor : presentLiveSensor(sensor, mode)
+  ))
+
+  const idleSensors = presented
+    .filter((sensor) => PROCESS_SENSOR_CODES.has(sensor.sensorCode) && sensor.displayStatus === 'Idle')
+    .map((sensor) => ({
+      sensorCode: sensor.sensorCode,
+      label: getSensorLabel(sensor.sensorCode, sensor.label),
+    }))
+
+  if (idleSensors.length === 0) return null
+
+  const primary = idleSensors[0]
+  return {
+    sensors: idleSensors,
+    primary,
+    extraCount: idleSensors.length - 1,
+    message: `${primary.sensorCode} ${primary.label} is idle — within trigger limit for material changeover.`,
+  }
 }

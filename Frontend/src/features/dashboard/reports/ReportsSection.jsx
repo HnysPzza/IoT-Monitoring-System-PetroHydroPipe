@@ -1,19 +1,65 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
-import { exportReport, getReportSummary, reportTypes } from './reportsService.js'
-import { getReportCards } from './reportsPresentation.js'
+import { exportReport, getReportSummary, reportCategories, reportTypes } from './reportsService.js'
+import { formatDimension, formatPercentage, formatTonnage, getReportCards } from './reportsPresentation.js'
+import '../production/ProductionSection.css'
+
+function renderSpecCustomer(group) {
+  if (group?.customer && String(group.customer).trim() !== '') {
+    return group.customer
+  }
+  if (group?.isSpecified === false) {
+    return 'Unspecified / Pending Tag'
+  }
+  if (group?.label && String(group.label).trim() !== '') {
+    return group.label
+  }
+  return <span className="production-placeholder">—</span>
+}
+
+function renderCutLogCustomer(log) {
+  if (log?.customer && String(log.customer).trim() !== '') {
+    return log.customer
+  }
+  if (log?.label && String(log.label).trim() !== '') {
+    return log.label
+  }
+  return <span className="production-placeholder">—</span>
+}
+
+function renderDimension(val) {
+  const formatted = formatDimension(val)
+  return formatted !== null ? formatted : <span className="production-placeholder">—</span>
+}
+
+function renderTonnage(val) {
+  const formatted = formatTonnage(val)
+  return formatted !== null ? formatted : <span className="production-placeholder">—</span>
+}
+
+function renderPipeNumber(log) {
+  const num = log?.pipeNumber ?? log?.pipe_number
+  return num !== null && num !== undefined && num !== '' ? num : <span className="production-placeholder">—</span>
+}
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+  document.body.appendChild(link)
+  try {
+    link.click()
+  } finally {
+    document.body.removeChild(link)
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, 1000)
+  }
 }
 
 function getManilaDateInputValue() {
@@ -25,8 +71,8 @@ function getManilaDateInputValue() {
   }).format(new Date())
 }
 
-function getQueryKey(reportType, selectedDate) {
-  return `${reportType}:${selectedDate}`
+function getQueryKey(category, reportType, selectedDate) {
+  return `${category}:${reportType}:${selectedDate}`
 }
 
 function parseLocalDate(value) {
@@ -159,8 +205,134 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
   )
 }
 
+function ReportCategoryFilter({ category, onSelectCategory }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef(null)
+  const buttonRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setIsOpen(false)
+        buttonRef.current?.focus()
+        return
+      }
+
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const items = containerRef.current?.querySelectorAll('[role="menuitem"]')
+        if (!items || items.length === 0) return
+        const activeIdx = Array.from(items).indexOf(document.activeElement)
+        const nextIdx = event.key === 'ArrowDown'
+          ? (activeIdx + 1) % items.length
+          : (activeIdx - 1 + items.length) % items.length
+        items[nextIdx]?.focus()
+      }
+    }
+
+    function handlePointerDown(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+
+    function handleFocusOut(event) {
+      if (containerRef.current && !containerRef.current.contains(event.relatedTarget)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('focusout', handleFocusOut)
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [isOpen])
+
+  function handleSelect(categoryId) {
+    onSelectCategory(categoryId)
+    setIsOpen(false)
+    buttonRef.current?.focus()
+  }
+
+  const activeCategory = reportCategories.find((cat) => cat.id === category)
+
+  return (
+    <div className="reports-filter-container" ref={containerRef}>
+      <button
+        ref={buttonRef}
+        className={`reports-funnel-trigger ${isOpen ? 'is-active' : ''}`}
+        type="button"
+        aria-label="Filter report type"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls="reports-filter-menu"
+        title={`Filter report type (Current: ${activeCategory?.label || 'Regular Report'})`}
+        onClick={() => setIsOpen((prev) => !prev)}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="lucide lucide-funnel preview-icon"
+          aria-hidden="true"
+        >
+          <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />
+        </svg>
+      </button>
+
+      {isOpen ? (
+        <div
+          id="reports-filter-menu"
+          className="reports-filter-popover rounded-2xl p-2 min-w-[220px] shadow-lg"
+          role="menu"
+          aria-label="Report category"
+        >
+          <div className="reports-filter-popover-list" role="none">
+            {reportCategories.map((cat) => {
+              const isSelected = category === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${
+                    isSelected ? 'is-active' : ''
+                  }`}
+                  type="button"
+                  role="menuitem"
+                  aria-checked={isSelected}
+                  onClick={() => handleSelect(cat.id)}
+                >
+                  <span className="reports-filter-item-left">
+                    <span className="reports-filter-dot" aria-hidden="true" />
+                    <span className="reports-filter-item-label">{cat.label}</span>
+                  </span>
+                  {isSelected ? <Check size={16} className="reports-filter-check" aria-hidden="true" /> : null}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function ReportsSection() {
   const { token } = useAuth()
+  const [category, setCategory] = useState('regular')
   const [reportType, setReportType] = useState('daily')
   const [selectedDate, setSelectedDate] = useState(getManilaDateInputValue)
   const [report, setReport] = useState(null)
@@ -179,11 +351,12 @@ export default function ReportsSection() {
   const maxCalendarDate = parseLocalDate(currentDate)
   const calendarMode = getCalendarMode(reportType)
   const calendarRangeLabel = getCalendarRangeLabel(reportType, selectedCalendarDate)
-  const queryKey = getQueryKey(reportType, selectedDate)
+  const queryKey = getQueryKey(category, reportType, selectedDate)
   const requestKey = `${token || 'anonymous'}:${queryKey}`
   const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
   const isCurrentSuccess = loadState === 'success' && hasCurrentReport
   const reportCards = hasCurrentReport ? getReportCards(report) : []
+  const isProduction = category === 'production'
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1
@@ -195,7 +368,7 @@ export default function ReportsSection() {
       setErrorMessage('')
 
       try {
-        const payload = await getReportSummary(token, { reportType, selectedDate, includeComparison: true })
+        const payload = await getReportSummary(token, { category, reportType, selectedDate, includeComparison: true })
         if (isCancelled || requestId !== requestIdRef.current) return
 
         const nextReport = payload.report || { summary: [], rows: [] }
@@ -226,7 +399,7 @@ export default function ReportsSection() {
     return () => {
       isCancelled = true
     }
-  }, [queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
+  }, [category, queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
 
   function retryCurrentReport() {
     setRefreshRequest((current) => current + 1)
@@ -253,7 +426,7 @@ export default function ReportsSection() {
     setExportErrorMessage('')
 
     try {
-      const { blob, filename } = await exportReport(token, { reportType, selectedDate, format })
+      const { blob, filename } = await exportReport(token, { category, reportType, selectedDate, format })
       downloadBlob(blob, filename)
       setExportState('idle')
       setExportingFormat(null)
@@ -298,6 +471,7 @@ export default function ReportsSection() {
         </div>
 
         <div className="reports-controls">
+          <ReportCategoryFilter category={category} onSelectCategory={setCategory} />
           <fieldset className="reports-period-fieldset">
             <legend className="sr-only">Report period</legend>
             <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report period">
@@ -392,83 +566,217 @@ export default function ReportsSection() {
         </>
       ) : null}
 
-      {loadState !== 'error' ? (
-        <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
-          <div className="section-heading">
-            <div>
-              <p className="section-eyebrow">Process activity</p>
-              <h2 id="reports-process-title">Events by process sensor</h2>
-            </div>
-          </div>
+      {isProduction ? (
+        <>
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-specs-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Product distribution</p>
+                  <h2 id="reports-specs-title">Output by product specification</h2>
+                </div>
+              </div>
 
-          <div className="account-table-wrap">
-            <table className="account-table reports-table">
-              <thead>
-                <tr>
-                  <th scope="col">Sensor</th>
-                  <th scope="col">Recorded events</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
-                  <tr key={sensor.sensorCode}>
-                    <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
-                    <td data-label="Recorded events">{sensor.eventCount ?? 'Not observed'}</td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan="2">{hasCurrentReport && report.periodState === 'future' ? 'Process events not observed yet.' : hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-
-      {loadState !== 'error' ? (
-        <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
-          <div className="section-heading">
-            <div>
-              <p className="section-eyebrow">Grouped output</p>
-              <h2 id="reports-table-title">Downtime by cause and sensor</h2>
-            </div>
-          </div>
-
-          <div className="account-table-wrap">
-            <table className="account-table reports-table">
-              <thead>
-                <tr>
-                  <th scope="col">Cause</th>
-                  <th scope="col">Sensor</th>
-                  <th scope="col">Events</th>
-                  <th scope="col">Duration</th>
-                  <th scope="col">Estimated Loss</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadState === 'loading' && !hasCurrentReport ? (
-                  <tr>
-                    <td colSpan="5">Loading report rows...</td>
-                  </tr>
-                ) : hasCurrentReport && report.rows.length === 0 ? (
-                  <tr>
-                    <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
-                  </tr>
-                ) : hasCurrentReport ? (
-                  report.rows.map((row) => (
-                    <tr key={`${row.cause}-${row.sensor}`}>
-                      <td data-label="Cause">{row.cause}</td>
-                      <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
-                      <td data-label="Events">{row.events}</td>
-                      <td data-label="Duration">{row.durationMinutes} min</td>
-                      <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Customer</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Diameter (OD mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Thickness (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Length (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Total Tons</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Quantity</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>% of Total</th>
                     </tr>
-                  ))
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
+                  </thead>
+                  <tbody>
+                    {loadState === 'loading' && !hasCurrentReport ? (
+                      <tr><td colSpan="7">Loading specification breakdown...</td></tr>
+                    ) : hasCurrentReport && (!report.specBreakdown || report.specBreakdown.length === 0) ? (
+                      <tr><td colSpan="7">{report.periodState === 'future' ? 'Output not observed yet.' : 'No accepted pipe cutting events recorded for this period.'}</td></tr>
+                    ) : hasCurrentReport ? (
+                      report.specBreakdown.map((group, index) => (
+                        <tr key={group.customer || group.label || group.size || index}>
+                          <td data-label="Customer">{renderSpecCustomer(group)}</td>
+                          <td data-label="Diameter (OD mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(group.diameter)}
+                          </td>
+                          <td data-label="Thickness (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(group.thickness)}
+                          </td>
+                          <td data-label="Length (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(group.length)}
+                          </td>
+                          <td data-label="Total Tons" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderTonnage(group.totalTonnage ?? group.tonnage)}
+                          </td>
+                          <td data-label="Quantity" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {group.pipeCount !== null && group.pipeCount !== undefined
+                              ? `${group.pipeCount} pcs`
+                              : <span className="production-placeholder">—</span>}
+                          </td>
+                          <td data-label="% of Total" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {group.percentageOfTotal !== null && group.percentageOfTotal !== undefined
+                              ? formatPercentage(group.percentageOfTotal)
+                              : <span className="production-placeholder">—</span>}
+                          </td>
+                        </tr>
+                      ))
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-cuts-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Cut history</p>
+                  <h2 id="reports-cuts-title">S-05 cutting events</h2>
+                </div>
+              </div>
+
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Cut Time</th>
+                      <th scope="col">Customer</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Diameter (OD mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Thickness (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Length (mm)</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Pipe #</th>
+                      <th scope="col" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>Tons</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadState === 'loading' && !hasCurrentReport ? (
+                      <tr><td colSpan="8">Loading cutting events...</td></tr>
+                    ) : hasCurrentReport && (!report.productionLogs || report.productionLogs.length === 0) ? (
+                      <tr><td colSpan="8">{report.periodState === 'future' ? 'Pipe cuts not observed yet.' : 'No pipe cutting events registered for this period.'}</td></tr>
+                    ) : hasCurrentReport ? (
+                      report.productionLogs.map((log, index) => (
+                        <tr key={log.id || log.deviceEventId || log.sensorEventId || index}>
+                          <td data-label="Cut Time" className="production-col-timestamp tabular-data">
+                            {log.recordedAt && !Number.isNaN(new Date(log.recordedAt).getTime())
+                              ? formatSuccessfulUpdate(new Date(log.recordedAt))
+                              : 'N/A'}
+                          </td>
+                          <td data-label="Customer">{renderCutLogCustomer(log)}</td>
+                          <td data-label="Diameter (OD mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(log.diameter)}
+                          </td>
+                          <td data-label="Thickness (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(log.thickness)}
+                          </td>
+                          <td data-label="Length (mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderDimension(log.length)}
+                          </td>
+                          <td data-label="Pipe #" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderPipeNumber(log)}
+                          </td>
+                          <td data-label="Tons" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
+                            {renderTonnage(log.tonnage ?? log.singleTonnage)}
+                          </td>
+                          <td data-label="Status">
+                            <span className={`production-status-badge ${log.isSpecified ? 'green' : 'amber'}`}>
+                              {log.isSpecified ? 'Specified' : 'Pending Tag'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Process activity</p>
+                  <h2 id="reports-process-title">Events by process sensor</h2>
+                </div>
+              </div>
+
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Sensor</th>
+                      <th scope="col">Recorded events</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hasCurrentReport && report.processSensors?.length ? report.processSensors.map((sensor) => (
+                      <tr key={sensor.sensorCode}>
+                        <td data-label="Sensor">{formatSensorName(sensor.sensorCode)}</td>
+                        <td data-label="Recorded events">{sensor.eventCount ?? 'Not observed'}</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan="2">{hasCurrentReport && report.periodState === 'future' ? 'Process events not observed yet.' : hasCurrentReport ? 'No process events found for this report range.' : 'Loading process events...'}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {loadState !== 'error' ? (
+            <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
+              <div className="section-heading">
+                <div>
+                  <p className="section-eyebrow">Grouped output</p>
+                  <h2 id="reports-table-title">Downtime by cause and sensor</h2>
+                </div>
+              </div>
+
+              <div className="account-table-wrap">
+                <table className="account-table reports-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Cause</th>
+                      <th scope="col">Sensor</th>
+                      <th scope="col">Events</th>
+                      <th scope="col">Duration</th>
+                      <th scope="col">Estimated Loss</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadState === 'loading' && !hasCurrentReport ? (
+                      <tr>
+                        <td colSpan="5">Loading report rows...</td>
+                      </tr>
+                    ) : hasCurrentReport && report.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
+                      </tr>
+                    ) : hasCurrentReport ? (
+                      report.rows.map((row, index) => (
+                        <tr key={`${row.cause || ''}-${row.sensor || ''}-${row.id || index}`}>
+                          <td data-label="Cause">{row.cause}</td>
+                          <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
+                          <td data-label="Events">{row.events}</td>
+                          <td data-label="Duration">{row.durationMinutes} min</td>
+                          <td data-label="Estimated Loss">{row.estimatedLoss} pcs</td>
+                        </tr>
+                      ))
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }

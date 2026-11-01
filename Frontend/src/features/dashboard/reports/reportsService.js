@@ -1,6 +1,12 @@
 import { createApiError } from '../../../shared/errors/apiError.js'
 import { notifyUnauthorized } from '../../../shared/errors/unauthorizedSession.js'
 import { API_BASE_URL, apiRequest, DEFAULT_REQUEST_TIMEOUT_MS } from '../../../shared/services/apiClient.js'
+import { assertSessionCurrent, getSessionContext, refreshSessionOnce } from '../../../shared/services/sessionRefresh.js'
+
+export const reportCategories = [
+  { id: 'regular', label: 'Regular Report' },
+  { id: 'production', label: 'Production Report' },
+]
 
 export const reportTypes = [
   { id: 'daily', label: 'Daily' },
@@ -8,10 +14,11 @@ export const reportTypes = [
   { id: 'monthly', label: 'Monthly' },
 ]
 
-export function getReportSummary(token, { reportType, selectedDate, includeComparison = false }) {
+export function getReportSummary(token, { category = 'regular', reportType, selectedDate, includeComparison = false }) {
   const params = new URLSearchParams()
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
 
+  params.set('category', category)
   params.set('type', reportType)
   if (normalizedDate) params.set('date', normalizedDate)
   if (includeComparison) params.set('compare', 'true')
@@ -25,9 +32,16 @@ function getExportFilename(disposition, fallback) {
 }
 
 // Exports stream a file, not JSON, so this cannot reuse apiRequest's JSON parsing.
-export async function exportReport(token, { reportType, selectedDate, format }) {
+export async function exportReport(token, { category = 'regular', reportType, selectedDate, format }) {
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
   const path = '/api/reports/export'
+  const sessionContext = getSessionContext(token)
+  let activeToken = token
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+  const requestBody = JSON.stringify({ category, type: reportType, date: normalizedDate, format })
 
   const controller = new AbortController()
   const timeoutId = globalThis.setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS)
@@ -38,14 +52,29 @@ export async function exportReport(token, { reportType, selectedDate, format }) 
     try {
       response = await fetch(`${API_BASE_URL}${path}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ type: reportType, date: normalizedDate, format }),
+        credentials: 'include',
+        headers: requestHeaders,
+        body: requestBody,
         signal: controller.signal,
       })
+
+      if (response.status === 401) {
+        assertSessionCurrent(sessionContext)
+        const refreshedToken = await refreshSessionOnce(sessionContext, { signal: controller.signal })
+
+        if (refreshedToken && refreshedToken !== token) {
+          activeToken = refreshedToken
+          response = await fetch(`${API_BASE_URL}${path}`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { ...requestHeaders, Authorization: `Bearer ${refreshedToken}` },
+            body: requestBody,
+            signal: controller.signal,
+          })
+        }
+      }
     } catch (error) {
+      if (error?.code === 'SESSION_CHANGED') throw error
       if (error?.name === 'AbortError') {
         throw createApiError('The export request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
       }
@@ -66,14 +95,15 @@ export async function exportReport(token, { reportType, selectedDate, format }) 
         response.status,
         payload,
       )
-      notifyUnauthorized(error, { token, path })
+      notifyUnauthorized(error, { token: activeToken, path })
       throw error
     }
 
     const blob = await response.blob()
+    const prefix = category === 'production' ? 'production-report' : 'report'
     const filename = getExportFilename(
       response.headers.get('content-disposition'),
-      `report-${reportType}-${normalizedDate || 'undated'}.${format}`,
+      `${prefix}-${reportType}-${normalizedDate || 'undated'}.${format}`,
     )
 
     return { blob, filename }

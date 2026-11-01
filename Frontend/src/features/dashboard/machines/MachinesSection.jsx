@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useOutletContext } from 'react-router'
 import { AlertTriangle, Cpu, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
-import { getLiveFeed } from '../live/liveService.js'
 import { connectivityLabel } from '../live/livePresentation.js'
+import { useLiveFeedStream } from '../live/useLiveFeedStream.js'
 
 function EmptyMachinesState({ isRefreshing = false, onRefresh }) {
   return (
@@ -33,73 +33,22 @@ function formatSuccessfulUpdate(date) {
 
 export default function MachinesSection() {
   const { token } = useAuth()
-  const tokenKey = token || 'anonymous'
-  const [snapshot, setSnapshot] = useState(null)
-  const [snapshotTokenKey, setSnapshotTokenKey] = useState('')
-  const [requestState, setRequestState] = useState('loading')
-  const [error, setError] = useState('')
-  const [lastUpdated, setLastUpdated] = useState(null)
-  const [refresh, setRefresh] = useState(0)
-  const requestIdRef = useRef(0)
-  const snapshotRef = useRef(null)
+  const outlet = useOutletContext()
+  const fallbackStream = useLiveFeedStream(outlet?.liveFeed ? null : token)
+  const liveFeed = outlet?.liveFeed || fallbackStream
 
-  const currentSnapshot = snapshotTokenKey === tokenKey ? snapshot : null
-  const machine = currentSnapshot?.machine || null
-  const sensors = currentSnapshot?.sensors || []
-  const capturedAt = currentSnapshot?.capturedAt || null
+  const machine = liveFeed.machine
+  const sensors = liveFeed.sensors
+  const capturedAt = liveFeed.monitoring?.capturedAt || null
+  const requestState = liveFeed.state
+  const error = liveFeed.error
+  const lastUpdated = liveFeed.lastUpdated
+  const isRefreshing = liveFeed.isRefreshing
   const sensorCountLabel = `${sensors.length} sensor${sensors.length === 1 ? '' : 's'}`
-  const isRefreshing = requestState === 'loading' && Boolean(currentSnapshot)
-  const requestStateRef = useRef(requestState)
-  requestStateRef.current = requestState
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (requestStateRef.current !== 'loading') setRefresh((current) => current + 1)
-    }, 10000)
-    return () => window.clearInterval(timer)
-  }, [tokenKey])
+  const refreshSnapshot = () => liveFeed.reload()
 
-  useEffect(() => {
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    let isCancelled = false
-
-    setRequestState('loading')
-    setError('')
-
-    async function loadSnapshot() {
-      try {
-        const payload = await getLiveFeed(token)
-        if (isCancelled || requestId !== requestIdRef.current) return
-
-        const nextSnapshot = {
-          machine: payload.machine || null,
-          sensors: payload.sensors || [],
-          capturedAt: payload.monitoring?.capturedAt || null,
-        }
-        snapshotRef.current = { tokenKey, snapshot: nextSnapshot }
-        setSnapshot(nextSnapshot)
-        setSnapshotTokenKey(tokenKey)
-        setLastUpdated(new Date())
-        setRequestState(nextSnapshot.machine ? 'success' : 'empty')
-      } catch (requestError) {
-        if (isCancelled || requestId !== requestIdRef.current) return
-
-        setError(requestError.message || 'Unable to load live machine status.')
-        setRequestState(snapshotRef.current?.tokenKey === tokenKey ? 'stale' : 'error')
-      }
-    }
-
-    loadSnapshot()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [refresh, token, tokenKey])
-
-  const refreshSnapshot = () => setRefresh((current) => current + 1)
-
-  if (requestState === 'loading' && !currentSnapshot) {
+  if (requestState === 'loading' && !machine) {
     return (
       <div className="machines-layout">
         <section className="section-card" role="status" aria-live="polite">
@@ -111,7 +60,7 @@ export default function MachinesSection() {
     )
   }
 
-  if (requestState === 'error') {
+  if (requestState === 'error' && !machine) {
     return (
       <div className="machines-layout">
         <section className="section-card section-placeholder" aria-labelledby="machines-error-title">

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { exportReport, getReportSummary } from './reportsService.js'
+import { exportReport, getReportSummary, reportCategories } from './reportsService.js'
 import { setUnauthorizedHandler } from '../../../shared/errors/unauthorizedSession.js'
+import { setSessionRefresher } from '../../../shared/services/sessionRefresh.js'
 
 function exportResponse(body, {
   status = 200,
@@ -15,6 +16,15 @@ function exportResponse(body, {
     },
   })
 }
+
+describe('reportCategories', () => {
+  it('defines regular and production categories', () => {
+    expect(reportCategories).toEqual([
+      { id: 'regular', label: 'Regular Report' },
+      { id: 'production', label: 'Production Report' },
+    ])
+  })
+})
 
 describe('getReportSummary', () => {
   afterEach(() => {
@@ -35,7 +45,7 @@ describe('getReportSummary', () => {
 
     expect(result).toEqual(payload)
     const [url, options] = fetchMock.mock.calls[0]
-    expect(url).toContain('/api/reports/summary?type=daily&date=2026-09-01')
+    expect(url).toContain('/api/reports/summary?category=regular&type=daily&date=2026-09-01')
     expect(options.headers.Authorization).toBe('Bearer test-token')
   })
 
@@ -53,13 +63,31 @@ describe('getReportSummary', () => {
     })
 
     const [url] = fetchMock.mock.calls[0]
-    expect(url).toContain('/api/reports/summary?type=weekly&date=2026-09-07&compare=true')
+    expect(url).toContain('/api/reports/summary?category=regular&type=weekly&date=2026-09-07&compare=true')
+  })
+
+  it('passes category=production when requested', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ report: { category: 'production' } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getReportSummary('test-token', {
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: '2026-09-02',
+    })
+
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toContain('/api/reports/summary?category=production&type=daily&date=2026-09-02')
   })
 })
 
 describe('exportReport', () => {
   afterEach(() => {
     setUnauthorizedHandler(null, null)
+    setSessionRefresher(null)
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -78,11 +106,61 @@ describe('exportReport', () => {
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toContain('/api/reports/export')
     expect(options.method).toBe('POST')
+    expect(options.credentials).toBe('include')
     expect(options.headers.Authorization).toBe('Bearer test-token')
-    expect(JSON.parse(options.body)).toEqual({ type: 'daily', date: '2026-09-02', format: 'pdf' })
+    expect(JSON.parse(options.body)).toEqual({ category: 'regular', type: 'daily', date: '2026-09-02', format: 'pdf' })
 
     expect(result.filename).toBe('report-daily-2026-09-02.pdf')
     expect(result.blob).toBeInstanceOf(Blob)
+  })
+
+  it('refreshes session and retries export when first attempt returns 401', async () => {
+    setSessionRefresher(async () => 'refreshed-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(exportResponse('%PDF-refreshed'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await exportReport('initial-token', {
+      reportType: 'daily',
+      selectedDate: '2026-09-02',
+      format: 'pdf',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [, firstOptions] = fetchMock.mock.calls[0]
+    expect(firstOptions.headers.Authorization).toBe('Bearer initial-token')
+    expect(firstOptions.credentials).toBe('include')
+
+    const [, secondOptions] = fetchMock.mock.calls[1]
+    expect(secondOptions.headers.Authorization).toBe('Bearer refreshed-token')
+    expect(secondOptions.credentials).toBe('include')
+    expect(result.blob).toBeInstanceOf(Blob)
+  })
+
+  it('supports category: production in export payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(exportResponse('%PDF-x', {
+      filename: 'production-report-daily-2026-09-02.pdf',
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await exportReport('test-token', {
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: '2026-09-02',
+      format: 'pdf',
+    })
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      category: 'production',
+      type: 'daily',
+      date: '2026-09-02',
+      format: 'pdf',
+    })
+    expect(result.filename).toBe('production-report-daily-2026-09-02.pdf')
   })
 
   it('normalizes a month-only date before exporting', async () => {
@@ -96,6 +174,7 @@ describe('exportReport', () => {
     })
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      category: 'regular',
       type: 'monthly',
       date: '2026-09-01',
       format: 'pdf',
@@ -116,7 +195,7 @@ describe('exportReport', () => {
     })
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-      type: 'daily', date: '2026-09-02', format: 'xlsx',
+      category: 'regular', type: 'daily', date: '2026-09-02', format: 'xlsx',
     })
     expect(result.filename).toBe('report-daily-2026-09-02.xlsx')
     expect(result.blob).toBeInstanceOf(Blob)

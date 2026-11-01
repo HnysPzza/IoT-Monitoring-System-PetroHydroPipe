@@ -11,6 +11,7 @@ function rateLimitResponse(message) {
 }
 
 // Login is IP-based to slow down password guessing.
+// Add reverse proxy =1 and reverse proxy = false
 const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,

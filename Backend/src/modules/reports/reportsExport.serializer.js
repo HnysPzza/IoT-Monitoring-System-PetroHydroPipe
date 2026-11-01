@@ -4,12 +4,19 @@ const fs = require('fs')
 
 const NOT_AVAILABLE = 'Not available'
 
-const COMPANY_NAME = 'PETRO HYDRO PIPE CORP.'
-const COMPANY_SUBTITLE = 'Industrial Steel Pipe Manufacturing • IoT Machine Monitoring Division'
-const COMPANY_ADDRESS = 'Dunggoan, Danao City, Cebu, Philippines 6004'
-const MACHINE_LABEL = 'Spiral Mill 01 (M-01)'
+const COMPANY_NAME = 'Petro Hydro Pipes Corporation'
+const COMPANY_SUBTITLE = 'Spiral Welded Steel Pipe Manufacturer'
+const COMPANY_ADDRESS = 'Dunggoan, Danao City 6004 Cebu, Philippines'
+const COMPANY_PHONE = '(032)888-6519/+639687080116'
+const COMPANY_WEBSITE = 'http://petrohydropipes.com/ph'
+const SYSTEM_LABEL = 'Monitoring System'
 
-const LOGO_PATH = path.resolve(__dirname, '../../../../Frontend/public/assets/logo.png')
+const CANONICAL_BACKEND_LOGO = path.resolve(__dirname, '../../assets/logo.png')
+const MONOREPO_FRONTEND_FALLBACK = path.resolve(__dirname, '../../../../Frontend/public/assets/logo.png')
+
+const LOGO_PATH = process.env.REPORT_LOGO_PATH
+  ? path.resolve(process.env.REPORT_LOGO_PATH)
+  : (fs.existsSync(CANONICAL_BACKEND_LOGO) ? CANONICAL_BACKEND_LOGO : MONOREPO_FRONTEND_FALLBACK)
 
 const COLOR = {
   primary: '#0F172A',
@@ -29,6 +36,12 @@ const COLOR = {
 
 function pdfText(value) {
   return value === null || value === undefined || value === '' ? NOT_AVAILABLE : String(value)
+}
+
+function formatDimension(value) {
+  if (value === null || value === undefined || value === '') return NOT_AVAILABLE
+  const num = Number(value)
+  return Number.isFinite(num) ? num.toFixed(2) : NOT_AVAILABLE
 }
 
 function formatManilaDate(dateStr) {
@@ -54,38 +67,49 @@ function renderOfficialHeader(doc, report) {
   const left = doc.page.margins.left
   const top = doc.page.margins.top
   const printableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
-  const logoWidth = 44
-  const logoGap = 12
+  const logoWidth = 32
+  const logoHeight = 24
+  const logoGap = 10
   const textLeft = fs.existsSync(LOGO_PATH) ? left + logoWidth + logoGap : left
 
   if (fs.existsSync(LOGO_PATH)) {
     try {
-      doc.image(LOGO_PATH, left, top, { width: logoWidth, height: logoWidth })
+      doc.image(LOGO_PATH, left, top + 2, { fit: [logoWidth, logoHeight] })
     } catch {
       // Fallback cleanly if the image format fails to decode
     }
   }
 
   // Company Brand & Facility Info
-  doc.font('Helvetica-Bold').fontSize(13).fillColor(COLOR.primary)
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(COLOR.primary)
     .text(COMPANY_NAME, textLeft, top, { lineBreak: false })
   doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLOR.textMuted)
-    .text(COMPANY_SUBTITLE, textLeft, top + 16, { lineBreak: false })
-  doc.font('Helvetica').fontSize(7.2).fillColor(COLOR.textLight)
-    .text(`${COMPANY_ADDRESS}  •  Plant Line: ${MACHINE_LABEL}`, textLeft, top + 27, { lineBreak: false })
+    .text(COMPANY_SUBTITLE, textLeft, top + 13, { lineBreak: false })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(COMPANY_ADDRESS, textLeft, top + 23, { lineBreak: false })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(COMPANY_PHONE, textLeft, top + 32, { lineBreak: false })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.secondary)
+    .text(COMPANY_WEBSITE, textLeft, top + 41, { lineBreak: false })
 
   // Right-aligned Document Title & Metadata
-  const refCode = `PHP-RPT-${(report.reportType || 'DAILY').toUpperCase()}-${(report.selectedDate || '').replace(/[^a-zA-Z0-9]/g, '') || 'UNDATED'}`
-  const rightColX = left + printableWidth - 210
-  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLOR.secondary)
-    .text('OFFICIAL MONITORING REPORT', rightColX, top, { width: 210, align: 'right' })
-  doc.font('Helvetica').fontSize(7.2).fillColor(COLOR.textLight)
-    .text(`Doc Ref: ${refCode}`, rightColX, top + 14, { width: 210, align: 'right' })
-  doc.font('Helvetica').fontSize(7.2).fillColor(COLOR.textLight)
-    .text(`Generated: ${formatManilaDate(report.generatedAt)}`, rightColX, top + 25, { width: 210, align: 'right' })
+  const isProduction = report.category === 'production'
+  const prefix = isProduction ? 'PHP-PROD' : 'PHP-RPT'
+  const docTitle = isProduction ? 'OFFICIAL PRODUCTION OUTPUT REPORT' : 'OFFICIAL MONITORING REPORT'
+  const refCode = `${prefix}-${(report.reportType || 'DAILY').toUpperCase()}-${(report.selectedDate || '').replace(/[^a-zA-Z0-9]/g, '') || 'UNDATED'}`
+  const rightColX = left + printableWidth - 230
+
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(COLOR.secondary)
+    .text(docTitle, rightColX, top, { width: 230, align: 'right' })
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLOR.primary)
+    .text(SYSTEM_LABEL, rightColX, top + 13, { width: 230, align: 'right' })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(`Doc Ref: ${refCode}`, rightColX, top + 23, { width: 230, align: 'right' })
+  doc.font('Helvetica').fontSize(6.8).fillColor(COLOR.textLight)
+    .text(`Generated: ${formatManilaDate(report.generatedAt)}`, rightColX, top + 32, { width: 230, align: 'right' })
 
   // Top Rule Divider
-  const dividerY = top + 46
+  const dividerY = top + 52
   doc.moveTo(left, dividerY).lineTo(left + printableWidth, dividerY)
     .lineWidth(1.5).strokeColor(COLOR.secondary).stroke()
 
@@ -98,7 +122,6 @@ function renderMetadataCard(doc, report) {
   const printableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
   const cardHeight = 44
 
-  // Card Background
   doc.roundedRect(left, cardY, printableWidth, cardHeight, 4)
     .fillAndStroke(COLOR.cardBg, COLOR.border)
 
@@ -106,12 +129,19 @@ function renderMetadataCard(doc, report) {
   const paddingX = 8
   const paddingY = 8
 
-  const metaItems = [
-    { label: 'REPORT TYPE & DATE', val: `${(report.reportType || 'Daily').toUpperCase()} (${pdfText(report.selectedDate)})` },
-    { label: 'OBSERVATION STATUS', val: (report.periodState || 'complete').toUpperCase() },
-    { label: 'TARGET MACHINE', val: MACHINE_LABEL },
-    { label: 'LOSS ESTIMATE BASIS', val: `${Math.ceil((report.lossEstimateBasis?.ratePiecesPerMinute ?? 0.05) * 60)} pcs/hr (${report.lossEstimateBasis?.source || 'configured'})` },
-  ]
+  const metaItems = report.category === 'production'
+    ? [
+      { label: 'REPORT TYPE & DATE', val: `${(report.reportType || 'Daily').toUpperCase()} (${pdfText(report.selectedDate)})` },
+      { label: 'OBSERVATION STATUS', val: (report.periodState || 'complete').toUpperCase() },
+      { label: 'SYSTEM', val: SYSTEM_LABEL },
+      { label: 'CUTTING SENSOR', val: report.sensor?.label || 'S-05 Cutting Sensor' },
+    ]
+    : [
+      { label: 'REPORT TYPE & DATE', val: `${(report.reportType || 'Daily').toUpperCase()} (${pdfText(report.selectedDate)})` },
+      { label: 'OBSERVATION STATUS', val: (report.periodState || 'complete').toUpperCase() },
+      { label: 'SYSTEM', val: SYSTEM_LABEL },
+      { label: 'LOSS ESTIMATE BASIS', val: `${Math.ceil((report.lossEstimateBasis?.ratePiecesPerMinute ?? 0.05) * 60)} pcs/hr (${report.lossEstimateBasis?.source || 'configured'})` },
+    ]
 
   metaItems.forEach((item, index) => {
     const colX = left + (index * colWidth) + paddingX
@@ -174,7 +204,6 @@ function renderGenericTable(doc, { columns, rows, emptyNotice, onNewPage }) {
   }
 
   rows.forEach((row, rowIndex) => {
-    // 1. Calculate the maximum text height across all cells in this row
     let maxContentHeight = 0
     row.forEach((cellVal, colIndex) => {
       const col = columns[colIndex]
@@ -185,7 +214,6 @@ function renderGenericTable(doc, { columns, rows, emptyNotice, onNewPage }) {
 
     const rowHeight = Math.max(maxContentHeight + 8, 18)
 
-    // 2. Multi-page boundary check (Pagination)
     if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom - 40) {
       doc.addPage()
       doc.y = doc.page.margins.top + 8
@@ -194,12 +222,9 @@ function renderGenericTable(doc, { columns, rows, emptyNotice, onNewPage }) {
     }
 
     const rowY = doc.y
-
-    // 3. Row background shading
     const isEven = rowIndex % 2 === 1
     doc.rect(left, rowY, printableWidth, rowHeight).fill(isEven ? COLOR.rowEven : COLOR.rowOdd)
 
-    // 4. Cell text rendering
     let currentX = left
     row.forEach((cellVal, colIndex) => {
       const col = columns[colIndex]
@@ -215,7 +240,6 @@ function renderGenericTable(doc, { columns, rows, emptyNotice, onNewPage }) {
       currentX += col.width
     })
 
-    // 5. Row Bottom Border
     doc.moveTo(left, rowY + rowHeight).lineTo(left + printableWidth, rowY + rowHeight)
       .lineWidth(0.5).strokeColor(COLOR.borderLight).stroke()
 
@@ -257,6 +281,230 @@ function renderSignoffBlock(doc) {
   doc.y = signY + blockHeight
 }
 
+function renderProductionSections(doc, report, printableWidth) {
+  // 1. Production Output Summary Table
+  renderSectionHeader(doc, '1. Production Output Summary')
+
+  const summaryColumns = [
+    { label: 'Key Performance Metric', width: 180, bold: true },
+    { label: 'Recorded Value', width: 110, align: 'right', bold: true, color: COLOR.primary },
+    { label: 'Operational Reference', width: printableWidth - 290, color: COLOR.textMuted },
+  ]
+
+  const summaryRows = (report.summary || []).map((item) => [
+    item.label,
+    item.value,
+    item.helper,
+  ])
+
+  renderGenericTable(doc, {
+    columns: summaryColumns,
+    rows: summaryRows,
+    emptyNotice: 'No production metrics recorded for this period.',
+  })
+
+  // 2. Production Breakdown by Pipe Specification Table
+  if (doc.y > doc.page.height - doc.page.margins.bottom - 120) {
+    doc.addPage()
+  }
+
+  renderSectionHeader(doc, '2. Production Breakdown by Pipe Specification')
+
+  const specColumns = [
+    { label: 'Customer', width: 110, bold: true },
+    { label: 'Diameter (OD)', width: 70, align: 'right' },
+    { label: 'Thickness (mm)', width: 65, align: 'right' },
+    { label: 'Length (mm)', width: 65, align: 'right' },
+    { label: 'Quantity (pcs)', width: 65, align: 'right', bold: true, color: COLOR.secondary },
+    { label: 'Total Tons', width: 75, align: 'right', bold: true },
+    { label: '% of Total', width: 73.28, align: 'right' },
+  ]
+
+  const specBreakdown = Array.isArray(report.specBreakdown) ? report.specBreakdown : []
+  const specRows = specBreakdown.map((group) => {
+    const customerText = group.customer || (group.isSpecified === false ? 'Unspecified / Pending Tag' : (group.label || NOT_AVAILABLE))
+    const diameterText = formatDimension(group.diameter)
+    const thicknessText = formatDimension(group.thickness)
+    const lengthText = formatDimension(group.length)
+    const countText = `${group.pipeCount} pcs`
+    const tonsText = group.totalTonnage != null && Number.isFinite(Number(group.totalTonnage))
+      ? Number(group.totalTonnage).toFixed(4)
+      : NOT_AVAILABLE
+    const pctText = group.percentageOfTotal != null && Number.isFinite(Number(group.percentageOfTotal))
+      ? `${Number(group.percentageOfTotal).toFixed(1)}%`
+      : '0.0%'
+
+    return [customerText, diameterText, thicknessText, lengthText, countText, tonsText, pctText]
+  })
+
+  if (specRows.length > 0) {
+    const totalTons = report.totalTonnage != null && Number.isFinite(Number(report.totalTonnage))
+      ? Number(report.totalTonnage).toFixed(4)
+      : '-'
+    specRows.push([
+      'TOTAL ACCEPTED OUTPUT',
+      '-',
+      '-',
+      '-',
+      `${report.totalProductionOutput ?? 0} pcs`,
+      totalTons,
+      '100.0%',
+    ])
+  }
+
+  renderGenericTable(doc, {
+    columns: specColumns,
+    rows: specRows,
+    emptyNotice: 'No accepted pipe cutting events recorded for this period.',
+    onNewPage: () => {
+      renderSectionHeader(doc, '2. Production Breakdown by Pipe Specification (Continued)')
+    },
+  })
+
+  // 3. Chronological Pipe Cut Log (S-05)
+  if (doc.y > doc.page.height - doc.page.margins.bottom - 120) {
+    doc.addPage()
+  }
+
+  renderSectionHeader(doc, '3. Chronological Pipe Cut Log (S-05)')
+
+  const logColumns = [
+    { label: 'Cut Timestamp (PST)', width: 110 },
+    { label: 'Customer', width: 95 },
+    { label: 'Diameter (OD)', width: 65, align: 'right' },
+    { label: 'Thickness', width: 60, align: 'right' },
+    { label: 'Length', width: 60, align: 'right' },
+    { label: 'Pipe #', width: 65, align: 'center' },
+    { label: 'Tons', width: 68.28, align: 'right' },
+  ]
+
+  const logs = Array.isArray(report.productionLogs) ? report.productionLogs : []
+  const logRows = logs.map((log) => {
+    const timestampText = formatManilaDate(log.recordedAt)
+    const customerText = log.customer || (log.isSpecified ? (log.label || NOT_AVAILABLE) : 'Pending Tag')
+    const diameterText = formatDimension(log.diameter)
+    const thicknessText = formatDimension(log.thickness)
+    const lengthText = formatDimension(log.length)
+    const pipeNumberVal = log.pipeNumber != null
+      ? log.pipeNumber
+      : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : null))
+    const pipeNumberText = pipeNumberVal != null
+      ? (typeof pipeNumberVal === 'number' ? `#${pipeNumberVal}` : String(pipeNumberVal))
+      : NOT_AVAILABLE
+    const tonsText = log.tonnage != null && Number.isFinite(Number(log.tonnage))
+      ? Number(log.tonnage).toFixed(4)
+      : NOT_AVAILABLE
+
+    return [timestampText, customerText, diameterText, thicknessText, lengthText, pipeNumberText, tonsText]
+  })
+
+  renderGenericTable(doc, {
+    columns: logColumns,
+    rows: logRows,
+    emptyNotice: 'No individual pipe cuts registered for this period.',
+    onNewPage: () => {
+      renderSectionHeader(doc, '3. Chronological Pipe Cut Log (Continued)')
+    },
+  })
+}
+
+function renderRegularSections(doc, report, printableWidth) {
+  // 1. Key Performance & Operational Summary Table
+  renderSectionHeader(doc, '1. Operational Performance & Loss Summary')
+
+  const summaryColumns = [
+    { label: 'Key Performance Metric', width: 180, bold: true },
+    { label: 'Recorded Value', width: 110, align: 'right', bold: true, color: COLOR.primary },
+    { label: 'Engineering Telemetry Reference', width: printableWidth - 290, color: COLOR.textMuted },
+  ]
+
+  const summaryRows = (report.summary || []).map((item) => [
+    item.label,
+    item.value,
+    item.helper,
+  ])
+
+  renderGenericTable(doc, {
+    columns: summaryColumns,
+    rows: summaryRows,
+    emptyNotice: 'No operational metrics calculated for this period.',
+  })
+
+  // 2. Process Sensor Telemetry (Station Pulses)
+  if (report.processSensors && report.processSensors.length > 0) {
+    if (doc.y > doc.page.height - doc.page.margins.bottom - 120) {
+      doc.addPage()
+    }
+
+    renderSectionHeader(doc, '2. Process Sensor Pulse Telemetry')
+
+    const sensorColumns = [
+      { label: 'Sensor Code', width: 80, bold: true, color: COLOR.secondary },
+      { label: 'Machine Station / Sensor Function', width: printableWidth - 200 },
+      { label: 'Recorded Events / Pulses', width: 120, align: 'right', bold: true },
+    ]
+
+    const sensorRows = report.processSensors.map((s) => [
+      s.sensorCode,
+      s.sensorLabel,
+      s.eventCount !== null && s.eventCount !== undefined ? `${s.eventCount} pulses` : NOT_AVAILABLE,
+    ])
+
+    renderGenericTable(doc, {
+      columns: sensorColumns,
+      rows: sensorRows,
+      emptyNotice: 'No process sensor pulse activity recorded.',
+    })
+  }
+
+  // 3. Downtime & Production Loss Attribution Breakdown Table
+  if (doc.y > doc.page.height - doc.page.margins.bottom - 120) {
+    doc.addPage()
+  }
+
+  renderSectionHeader(doc, '3. Downtime Incident & Production Loss Attribution')
+
+  const downtimeColumns = [
+    { label: 'Downtime Cause / Description', width: 170, bold: true },
+    { label: 'Attributed Sensor', width: 143.28 },
+    { label: 'Events', width: 50, align: 'right' },
+    { label: 'Duration (min)', width: 80, align: 'right' },
+    { label: 'Est. Loss (pcs)', width: 80, align: 'right', bold: true, color: COLOR.secondary },
+  ]
+
+  const downtimeRows = (report.rows || []).map((row) => [
+    row.cause,
+    row.sensor,
+    row.events,
+    row.durationMinutes,
+    row.estimatedLoss,
+  ])
+
+  if (downtimeRows.length > 0) {
+    const totalEvents = report.rows.reduce((sum, r) => sum + (Number(r.events) || 0), 0)
+    const totalDuration = report.rows.reduce((sum, r) => sum + (Number(r.durationMinutes) || 0), 0)
+    const totalLoss = report.rows.reduce((sum, r) => sum + (Number(r.estimatedLoss) || 0), 0).toFixed(1)
+
+    downtimeRows.push([
+      'TOTAL ATTRIBUTED DOWNTIME',
+      'All Operational Stations',
+      totalEvents,
+      `${totalDuration} min`,
+      `${totalLoss} pcs`,
+    ])
+  }
+
+  renderGenericTable(doc, {
+    columns: downtimeColumns,
+    rows: downtimeRows,
+    emptyNotice: 'No machine downtime incidents recorded for this period.',
+    onNewPage: () => {
+      renderSectionHeader(doc, '3. Downtime Incident & Production Loss Attribution (Continued)')
+    },
+  })
+}
+
+// ponytail: synchronous in-memory buffer ceiling: 10k events upgrade: stream via PassThrough to response
 function toPdf(report) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -276,106 +524,22 @@ function toPdf(report) {
     renderOfficialHeader(doc, report)
     renderMetadataCard(doc, report)
 
-    // 2. Section 1: Key Performance & Operational Summary Table
-    renderSectionHeader(doc, '1. Operational Performance & Loss Summary')
-
-    const summaryColumns = [
-      { label: 'Key Performance Metric', width: 180, bold: true },
-      { label: 'Recorded Value', width: 110, align: 'right', bold: true, color: COLOR.primary },
-      { label: 'Engineering Telemetry Reference', width: printableWidth - 290, color: COLOR.textMuted },
-    ]
-
-    const summaryRows = (report.summary || []).map((item) => [
-      item.label,
-      item.value,
-      item.helper,
-    ])
-
-    renderGenericTable(doc, {
-      columns: summaryColumns,
-      rows: summaryRows,
-      emptyNotice: 'No operational metrics calculated for this period.',
-    })
-
-    // 3. Section 2: Process Sensor Telemetry (Station Pulses)
-    if (report.processSensors && report.processSensors.length > 0) {
-      if (doc.y > doc.page.height - doc.page.margins.bottom - 120) {
-        doc.addPage()
-      }
-
-      renderSectionHeader(doc, '2. Process Sensor Pulse Telemetry')
-
-      const sensorColumns = [
-        { label: 'Sensor Code', width: 80, bold: true, color: COLOR.secondary },
-        { label: 'Machine Station / Sensor Function', width: printableWidth - 200 },
-        { label: 'Recorded Events / Pulses', width: 120, align: 'right', bold: true },
-      ]
-
-      const sensorRows = report.processSensors.map((s) => [
-        s.sensorCode,
-        s.sensorLabel,
-        s.eventCount !== null && s.eventCount !== undefined ? `${s.eventCount} pulses` : NOT_AVAILABLE,
-      ])
-
-      renderGenericTable(doc, {
-        columns: sensorColumns,
-        rows: sensorRows,
-        emptyNotice: 'No process sensor pulse activity recorded.',
-      })
+    // 2. Report Sections (Production vs Regular)
+    if (report.category === 'production') {
+      renderProductionSections(doc, report, printableWidth)
+    } else {
+      renderRegularSections(doc, report, printableWidth)
     }
 
-    // 4. Section 3: Downtime & Production Loss Attribution Breakdown Table
-    if (doc.y > doc.page.height - doc.page.margins.bottom - 120) {
-      doc.addPage()
-    }
-
-    renderSectionHeader(doc, '3. Downtime Incident & Production Loss Attribution')
-
-    const downtimeColumns = [
-      { label: 'Downtime Cause / Description', width: 170, bold: true },
-      { label: 'Attributed Sensor', width: 143.28 },
-      { label: 'Events', width: 50, align: 'right' },
-      { label: 'Duration (min)', width: 80, align: 'right' },
-      { label: 'Est. Loss (pcs)', width: 80, align: 'right', bold: true, color: COLOR.secondary },
-    ]
-
-    const downtimeRows = (report.rows || []).map((row) => [
-      row.cause,
-      row.sensor,
-      row.events,
-      row.durationMinutes,
-      row.estimatedLoss,
-    ])
-
-    // If rows exist, compute and append summary totals
-    if (downtimeRows.length > 0) {
-      const totalEvents = report.rows.reduce((sum, r) => sum + (Number(r.events) || 0), 0)
-      const totalDuration = report.rows.reduce((sum, r) => sum + (Number(r.durationMinutes) || 0), 0)
-      const totalLoss = report.rows.reduce((sum, r) => sum + (Number(r.estimatedLoss) || 0), 0).toFixed(1)
-
-      downtimeRows.push([
-        'TOTAL ATTRIBUTED DOWNTIME',
-        'All Operational Stations',
-        totalEvents,
-        `${totalDuration} min`,
-        `${totalLoss} pcs`,
-      ])
-    }
-
-    renderGenericTable(doc, {
-      columns: downtimeColumns,
-      rows: downtimeRows,
-      emptyNotice: 'No machine downtime incidents recorded for this period.',
-      onNewPage: () => {
-        renderSectionHeader(doc, '3. Downtime Incident & Production Loss Attribution (Continued)')
-      },
-    })
-
-    // 5. Official Certification / Signoff
+    // 3. Official Certification / Signoff
     renderSignoffBlock(doc)
 
-    // 6. Running Page Headers (Page 2+) and Footers (All Pages)
+    // 4. Running Page Headers and Footers
     const range = doc.bufferedPageRange()
+    const reportTitle = report.category === 'production'
+      ? 'Official Production Output Report'
+      : 'Official Monitoring Report'
+
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i)
 
@@ -387,7 +551,7 @@ function toPdf(report) {
       // Header on continuation pages (Page 2 and beyond)
       if (i > range.start) {
         doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLOR.textLight)
-          .text(`${COMPANY_NAME} • Official Monitoring Report (${pdfText(report.selectedDate)})`, doc.page.margins.left, 20, {
+          .text(`${COMPANY_NAME} • ${reportTitle} (${pdfText(report.selectedDate)})`, doc.page.margins.left, 20, {
             width: printableWidth,
             align: 'left',
             lineBreak: false,
@@ -422,8 +586,10 @@ function toPdf(report) {
   })
 }
 
-function buildExportFilename({ reportType, selectedDate, format }) {
-  return `report-${reportType}-${selectedDate || 'undated'}.${format}`
+function buildExportFilename({ category = 'regular', reportType, selectedDate, format }) {
+  const prefix = category === 'production' ? 'production-report' : 'report'
+  const raw = `${prefix}-${reportType}-${selectedDate || 'undated'}.${format}`
+  return raw.replace(/[^a-zA-Z0-9._-]/g, '')
 }
 
 function contentTypeFor(format) {

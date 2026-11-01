@@ -14,6 +14,14 @@ vi.mock('../alerts/alertsService.js', () => ({
   subscribeToAlerts: vi.fn(),
 }))
 
+vi.mock('../live/liveService.js', () => ({
+  getLiveFeed: vi.fn().mockResolvedValue({
+    monitoring: { mode: 'observe', capturedAt: '2026-10-31T00:00:00.000Z' },
+    machine: { id: 'm-1', machineCode: 'M-01', name: 'Spiral Mill 01', status: 'Running' },
+    sensors: [],
+  }),
+}))
+
 function activeAlert() {
   return {
     id: 'alert-1',
@@ -150,12 +158,14 @@ describe('AdminDashboard alerts', () => {
     const reportsIcon = screen.getByRole('link', { name: 'Reports' }).querySelector('svg')
     const analyticsIcon = screen.getByRole('link', { name: 'Analytics' }).querySelector('svg')
     const auditLogIcon = screen.getByRole('link', { name: 'Audit Log' }).querySelector('svg')
+    const productionLogsIcon = screen.getByRole('link', { name: 'Production Logs' }).querySelector('svg')
 
     expect(liveFeedIcon).toHaveClass('lucide-rss')
     expect(reportsIcon).toHaveClass('lucide-chart-column')
     expect(analyticsIcon).toHaveClass('lucide-chart-no-axes-combined')
     expect(auditLogIcon).toHaveClass('lucide-logs')
     expect(auditLogIcon).toHaveAttribute('stroke-width', '2.25')
+    expect(productionLogsIcon).toHaveClass('lucide-notebook-dot')
   })
 
   it('keeps the sidebar scrollbar visible while navigation is being scrolled', () => {
@@ -427,7 +437,7 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByText('S-04 Outside Filler Wire has no pulse.')).toBeInTheDocument()
 
     act(() => streamHandlers.onRecovery())
-    expect(screen.getByRole('status')).toHaveTextContent('Live')
+    expect(screen.getByRole('status')).toHaveTextContent(/live/i)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(20000)
     })
@@ -1164,5 +1174,35 @@ describe('AdminDashboard alerts', () => {
     expect(screen.queryByRole('heading', { level: 1, name: 'Settings' })).not.toBeInTheDocument()
     expect(getAlerts).not.toHaveBeenCalled()
     expect(subscribeToAlerts).not.toHaveBeenCalled()
+  })
+
+  it('delivers sensor.status events to liveFeed and provides liveFeed via outlet context', async () => {
+    vi.useFakeTimers()
+    let streamHandlers = {}
+    subscribeToAlerts.mockImplementation((token, handlers) => {
+      Object.assign(streamHandlers, handlers)
+      return vi.fn()
+    })
+    getAlerts.mockResolvedValueOnce(alertSnapshot([]))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(typeof streamHandlers.onEvent).toBe('function')
+
+    const incomingLive = {
+      machine: { machineCode: 'M-01', status: 'Downtime' },
+      sensors: [{ sensorCode: 'S-01', status: 'Downtime' }],
+      monitoring: { mode: 'enforce', capturedAt: '2026-10-31T15:00:00.000Z' },
+    }
+
+    act(() => {
+      streamHandlers.onEvent({
+        type: 'sensor.status',
+        payload: { live: incomingLive },
+      })
+    })
   })
 })

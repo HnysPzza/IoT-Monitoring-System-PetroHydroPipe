@@ -4,7 +4,7 @@ import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
-import { cloneSettings, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
+import { cloneSettings, getMinuteBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 
 function getBreakDurationLabel(start, end) {
@@ -27,6 +27,18 @@ function toDraft(settings) {
 
 function numericValue(value) {
   return value === '' ? null : Number(value)
+}
+
+function secondsToMinutesValue(seconds, enabled = true) {
+  if (seconds === null || seconds === undefined) return ''
+  if (!enabled && seconds % 60 !== 0) return Math.max(1, Math.round(seconds / 60))
+  return Number((seconds / 60).toFixed(4))
+}
+
+function minutesInputToSeconds(value) {
+  if (value === '') return null
+  const minutes = Number(value)
+  return Number.isNaN(minutes) ? null : Number((minutes * 60).toFixed(4))
 }
 
 export default function SettingsSection() {
@@ -90,6 +102,12 @@ export default function SettingsSection() {
   const errors = useMemo(() => (
     draft && constraints ? validateOperationalSettings(draft, constraints) : {}
   ), [draft, constraints])
+  const triggerMinutes = useMemo(() => (
+    constraints ? getMinuteBounds(constraints.triggerSeconds) : null
+  ), [constraints])
+  const recoveryMinutes = useMemo(() => (
+    constraints ? getMinuteBounds(constraints.recoverySeconds) : null
+  ), [constraints])
   const editingBlocked = watchdogMode === 'enforce' || watchdogMode === 'unknown' || conflict
   const canSave = isDirty && !editingBlocked && !isSaving && Object.keys(errors).length === 0
 
@@ -130,7 +148,16 @@ export default function SettingsSection() {
 
   function toggleThreshold(sensorCode, enabled) {
     const current = draft.sensorThresholds[sensorCode]
-    if (enabled && current.triggerSeconds === null) {
+    const validTrigger = Number.isInteger(current.triggerSeconds)
+      && current.triggerSeconds % 60 === 0
+      && current.triggerSeconds >= triggerMinutes.minimumWhenEnabled * 60
+      && current.triggerSeconds <= triggerMinutes.maximum * 60
+    const validRecovery = Number.isInteger(current.recoverySeconds)
+      && current.recoverySeconds % 60 === 0
+      && current.recoverySeconds >= recoveryMinutes.minimumWhenEnabled * 60
+      && current.recoverySeconds <= recoveryMinutes.maximum * 60
+
+    if (enabled && (!validTrigger || !validRecovery)) {
       setDraft((value) => ({
         ...value,
         sensorThresholds: {
@@ -138,8 +165,8 @@ export default function SettingsSection() {
           [sensorCode]: {
             ...value.sensorThresholds[sensorCode],
             absenceDetectionEnabled: true,
-            triggerSeconds: constraints.triggerSeconds.minimumWhenEnabled,
-            recoverySeconds: constraints.recoverySeconds.minimumWhenEnabled,
+            triggerSeconds: validTrigger ? current.triggerSeconds : triggerMinutes.minimumWhenEnabled * 60,
+            recoverySeconds: validRecovery ? current.recoverySeconds : recoveryMinutes.minimumWhenEnabled * 60,
           },
         },
       }))
@@ -265,7 +292,7 @@ export default function SettingsSection() {
                                 <input
                                   type="number"
                                   className="sr-only"
-                                  aria-label={`${sensorCode} trigger seconds`}
+                                  aria-label={`${sensorCode} trigger minutes`}
                                   disabled
                                   value=""
                                   readOnly
@@ -273,7 +300,7 @@ export default function SettingsSection() {
                                 <input
                                   type="number"
                                   className="sr-only"
-                                  aria-label={`${sensorCode} recovery seconds`}
+                                  aria-label={`${sensorCode} recovery minutes`}
                                   disabled
                                   value=""
                                   readOnly
@@ -308,32 +335,34 @@ export default function SettingsSection() {
                           <td className="col-trigger">
                             <div className="settings-input-group">
                               <input
-                                aria-label={`${sensorCode} trigger seconds`}
+                                aria-label={`${sensorCode} trigger minutes`}
                                 type="number"
                                 className="settings-num-input"
-                                min={constraints.triggerSeconds.minimumWhenEnabled}
-                                max={constraints.triggerSeconds.maximum}
+                                min={triggerMinutes.minimumWhenEnabled}
+                                max={triggerMinutes.maximum}
+                                step={1}
                                 disabled={editingBlocked || !threshold.absenceDetectionEnabled}
-                                value={threshold.triggerSeconds ?? ''}
-                                onChange={(event) => updateThreshold(sensorCode, 'triggerSeconds', numericValue(event.target.value))}
+                                value={secondsToMinutesValue(threshold.triggerSeconds, threshold.absenceDetectionEnabled)}
+                                onChange={(event) => updateThreshold(sensorCode, 'triggerSeconds', minutesInputToSeconds(event.target.value))}
                               />
-                              <span className="input-group-unit" aria-hidden="true">s</span>
+                              <span className="input-group-unit" aria-hidden="true">min</span>
                             </div>
                             {hasError ? <p className="field-error">{errors[sensorCode]}</p> : null}
                           </td>
                           <td className="col-recovery">
                             <div className="settings-input-group">
                               <input
-                                aria-label={`${sensorCode} recovery seconds`}
+                                aria-label={`${sensorCode} recovery minutes`}
                                 type="number"
                                 className="settings-num-input"
-                                min={constraints.recoverySeconds.minimumWhenEnabled}
-                                max={constraints.recoverySeconds.maximum}
+                                min={recoveryMinutes.minimumWhenEnabled}
+                                max={recoveryMinutes.maximum}
+                                step={1}
                                 disabled={editingBlocked || !threshold.absenceDetectionEnabled}
-                                value={threshold.recoverySeconds ?? ''}
-                                onChange={(event) => updateThreshold(sensorCode, 'recoverySeconds', numericValue(event.target.value))}
+                                value={secondsToMinutesValue(threshold.recoverySeconds, threshold.absenceDetectionEnabled)}
+                                onChange={(event) => updateThreshold(sensorCode, 'recoverySeconds', minutesInputToSeconds(event.target.value))}
                               />
-                              <span className="input-group-unit" aria-hidden="true">s</span>
+                              <span className="input-group-unit" aria-hidden="true">min</span>
                             </div>
                           </td>
                           <td className="col-status">
@@ -359,7 +388,7 @@ export default function SettingsSection() {
               <div className="settings-bounds-footer">
                 <Info size={14} aria-hidden="true" className="bounds-icon" />
                 <span>
-                  Minimums: {constraints.triggerSeconds.minimumWhenEnabled}s trigger, {constraints.recoverySeconds.minimumWhenEnabled}s recovery. Maximum allowable trigger limit is {constraints.triggerSeconds.maximum}s.
+                  Minimums: {triggerMinutes.minimumWhenEnabled} min trigger, {recoveryMinutes.minimumWhenEnabled} min recovery. Maximum allowable trigger limit is {triggerMinutes.maximum} min ({recoveryMinutes.maximum} min max recovery).
                 </span>
               </div>
             </div>
