@@ -469,6 +469,47 @@ button:disabled {
 
 .input-shell.has-error {
   border-color: var(--c-danger);
+  background: var(--notice-error-bg);
+}
+
+.input-shell.has-error:focus-within {
+  border-color: var(--c-danger);
+  background: var(--notice-error-bg);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.input-shell.has-error > svg {
+  color: var(--c-danger);
+}
+
+@keyframes subtle-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+.shake,
+.input-shell.shake {
+  animation: subtle-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shake,
+  .input-shell.shake {
+    animation: none;
+  }
 }
 
 .input-shell input {

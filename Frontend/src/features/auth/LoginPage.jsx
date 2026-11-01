@@ -17,6 +17,11 @@ const initialValues = {
   password: '',
 }
 
+function isWrongPasswordError(message) {
+  if (!message) return false
+  return /password|invalid|credential|incorrect|wrong|unauthorized/i.test(message)
+}
+
 function validate(values) {
   const nextErrors = {}
 
@@ -42,7 +47,9 @@ export default function LoginPage() {
   const [serverError, setServerError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [submitState, setSubmitState] = useState('idle')
+  const [shake, setShake] = useState(false)
   const usernameRef = useRef(null)
+  const passwordRef = useRef(null)
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -61,25 +68,13 @@ export default function LoginPage() {
     }
   }, [intendedRoute, isAuthenticated, navigate])
 
-  useEffect(() => {
-    if (!serverError) {
-      return undefined
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setServerError('')
-    }, 1500)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [serverError])
 
   function updateField(event) {
     const { name, value } = event.target
     const nextValues = { ...values, [name]: value }
     setValues(nextValues)
     setServerError('')
+    setShake(false)
 
     if (touched[name]) {
       setErrors(validate(nextValues))
@@ -100,12 +95,17 @@ export default function LoginPage() {
     event.preventDefault()
     setTouched({ username: true, password: true })
     setServerError('')
+    setShake(false)
     setSuccessMessage('')
 
     const nextErrors = validate(values)
     setErrors(nextErrors)
 
     if (Object.keys(nextErrors).length > 0) {
+      if (nextErrors.password) {
+        setShake(true)
+        passwordRef.current?.focus()
+      }
       return
     }
 
@@ -123,12 +123,20 @@ export default function LoginPage() {
       }, 450)
     } catch (error) {
       setSubmitState('idle')
-      setServerError(error.message || 'Unable to sign in. Please try again.')
+      const message = error.message || 'Unable to sign in. Please try again.'
+      setServerError(message)
+      if (isWrongPasswordError(message)) {
+        setShake(true)
+        passwordRef.current?.focus()
+      }
     }
   }
 
   const usernameError = touched.username ? errors.username : ''
+  const isWrongPassword = isWrongPasswordError(serverError)
   const passwordError = touched.password ? errors.password : ''
+  const passwordHasError = Boolean(passwordError || isWrongPassword)
+  const passwordErrorMessage = passwordError || (isWrongPassword ? serverError : '')
 
   return (
     <main className="login-page">
@@ -170,7 +178,7 @@ export default function LoginPage() {
             <p>Authorized personnel only. All sessions are logged and audited.</p>
           </div>
 
-          {serverError ? (
+          {!isWrongPassword && serverError ? (
             <div className="notice notice-error" role="alert">
               <span>{serverError}</span>
             </div>
@@ -209,9 +217,13 @@ export default function LoginPage() {
 
           <div className="field">
             <label htmlFor="password">Password</label>
-            <div className={`input-shell ${passwordError ? 'has-error' : ''}`}>
+            <div
+              className={`input-shell ${passwordHasError ? 'has-error' : ''} ${shake ? 'shake' : ''}`}
+              onAnimationEnd={() => setShake(false)}
+            >
               <Lock size={18} aria-hidden="true" />
               <input
+                ref={passwordRef}
                 id="password"
                 name="password"
                 type={showPassword ? 'text' : 'password'}
@@ -225,8 +237,8 @@ export default function LoginPage() {
                 onKeyUp={handlePasswordKey}
                 onKeyDown={handlePasswordKey}
                 autoComplete="current-password"
-                aria-invalid={Boolean(passwordError)}
-                aria-describedby={`${passwordError ? 'password-error ' : ''}${capsLockOn ? 'caps-lock-warning' : ''}`.trim() || undefined}
+                aria-invalid={Boolean(passwordHasError)}
+                aria-describedby={`${passwordHasError ? 'password-error ' : ''}${capsLockOn ? 'caps-lock-warning' : ''}`.trim() || undefined}
               />
               <button
                 className="icon-button"
@@ -237,9 +249,9 @@ export default function LoginPage() {
                 {showPassword ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
               </button>
             </div>
-            {passwordError ? (
+            {passwordHasError ? (
               <p className="field-error" id="password-error" role="alert">
-                {passwordError}
+                {passwordErrorMessage}
               </p>
             ) : null}
             {capsLockOn ? (
