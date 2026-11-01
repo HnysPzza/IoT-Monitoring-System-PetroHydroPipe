@@ -800,8 +800,8 @@ describe('ProductionSection component', () => {
   })
 
   describe('role-based authorization', () => {
-    const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
-    const readOnlyRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+    const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control']
+    const readOnlyRoles = ['Engineering Supervisor', 'Operator']
 
     allowedRoles.forEach((role) => {
       it(`renders edit controls and Action column for authorized role: ${role}`, async () => {

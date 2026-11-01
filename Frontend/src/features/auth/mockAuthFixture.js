@@ -17,11 +17,11 @@ const MOCK_USERS = {
       role: 'Operation Manager',
     },
   },
-  asstmanager: {
-    token: 'mock-assistant-operations-manager-token',
+  qualitycontrol: {
+    token: 'mock-quality-control-token',
     user: {
-      name: 'Leah Dizon',
-      role: 'Asst. Operation Manager',
+      name: 'QC Inspector',
+      role: 'Quality Control',
     },
   },
   engsupervisor: {

@@ -24,9 +24,18 @@ describe('Analytics route and navigation access', () => {
     expect(analyticsItem?.roles).toEqual([
       'Admin',
       'Operation Manager',
-      'Asst. Operation Manager',
       'Engineering Supervisor',
     ])
+  })
+
+  it('blocks Quality Control role from the direct Analytics route', async () => {
+    renderWithAuth(<App />, {
+      route: '/dashboard/analytics',
+      authValue: { user: { id: 'qc-1', role: 'Quality Control' } },
+    })
+
+    expect(await screen.findByRole('heading', { name: 'You don’t have access' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Analytics route content' })).not.toBeInTheDocument()
   })
 
   it('allows an approved role to open the direct Analytics route', async () => {

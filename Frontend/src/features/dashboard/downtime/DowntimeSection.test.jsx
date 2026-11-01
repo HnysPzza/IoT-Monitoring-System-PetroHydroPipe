@@ -153,7 +153,7 @@ describe('DowntimeSection', () => {
     expect(within(causeSelect).queryByRole('option', { name: 'Flux Refill' })).not.toBeInTheDocument()
   })
 
-  it('renders downtime records read-only for assistant operation managers', async () => {
+  it('renders downtime records read-only for quality control inspectors', async () => {
     const user = userEvent.setup()
     getDowntimeRecords.mockResolvedValue({
       records: [downtimeRecord()],
@@ -164,9 +164,9 @@ describe('DowntimeSection', () => {
       authValue: {
         user: {
           id: 'user-2',
-          name: 'Assistant Manager',
-          username: 'assistant',
-          role: 'Asst. Operation Manager',
+          name: 'QC Inspector',
+          username: 'qcinspector',
+          role: 'Quality Control',
         },
       },
     })

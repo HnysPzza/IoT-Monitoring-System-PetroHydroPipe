@@ -53,7 +53,7 @@ Petro Hydro Pipe Corp. currently tracks machine downtime, process events, and pr
 |---|---|---|
 | Managing Director (`Admin`) | Full system config, user management, sensor/threshold config, analytics, and reports | One protected highest-authority account; `Admin` is the internal role key (UC001, UC005, UC006) |
 | Operation Manager | Real-time monitoring, downtime response | |
-| Assistant Operation Manager | Same as above, supports Operation Manager | |
+| Quality Control | Monitors production logs and overview, manages pipe specifications and quality measurements, generates production reports | |
 | Engineering Supervisor | Downtime records, maintenance-pattern analytics | Key stakeholder for corrective maintenance program |
 | Production Supervisor | Real-time floor visibility, downtime cause categorization | Key stakeholder for daily operations |
 

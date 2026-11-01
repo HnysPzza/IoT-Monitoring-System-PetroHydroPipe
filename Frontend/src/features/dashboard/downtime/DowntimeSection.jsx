@@ -33,7 +33,7 @@ function formatLossBasis(basis) {
     : basis.source === 'trailing-30-days'
       ? 'Last 30 completed days'
       : 'Configured fallback'
-  return `${Math.ceil(basis.ratePiecesPerMinute * 60)} pcs/hr`
+  return `${label}: ${Math.ceil(basis.ratePiecesPerMinute * 60)} pcs/hr`
 }
 
 function getSensorName(record) {

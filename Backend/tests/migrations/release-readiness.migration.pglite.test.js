@@ -4,7 +4,7 @@ const path = require('node:path')
 const test = require('node:test')
 
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 50
+const releaseSchemaVersion = 52
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -28,14 +28,32 @@ async function database(t, migrationEnd = releaseSchemaVersion) {
   return db
 }
 
-test('full migration chain reports release readiness version 50 and five roles', async (t) => {
+test('full migration chain reports release readiness version 52 and five roles', async (t) => {
   const db = await database(t)
 
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
   assert.deepEqual(
     (await db.query('select name from roles order by name')).rows.map(({ name }) => name),
-    ['Admin', 'Asst. Operation Manager', 'Engineering Supervisor', 'Operation Manager', 'Production Supervisor'],
+    ['Admin', 'Engineering Supervisor', 'Operation Manager', 'Production Supervisor', 'Quality Control'],
   )
+})
+
+test('role rename migration 052 transitions Asst. Operation Manager accounts to Quality Control', async (t) => {
+  const db = await database(t, 51)
+  await db.query("update roles set name = 'Asst. Operation Manager' where name = 'Quality Control'")
+  const assistantUser = await db.query(`insert into users(name, username, password_hash, role_id)
+    select 'Test Assistant', 'test-assistant', 'hash', id from roles where name = 'Asst. Operation Manager'
+    returning id`)
+
+  const migration = fs.readFileSync(path.join(databaseRoot, 'migrations', '052_replace_assistant_with_quality_control.sql'), 'utf8')
+  await db.exec(migration)
+
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 52)
+  const updatedUserRole = await db.query(
+    'select r.name from users u join roles r on r.id = u.role_id where u.id = $1',
+    [assistantUser.rows[0].id],
+  )
+  assert.equal(updatedUserRole.rows[0].name, 'Quality Control')
 })
 
 test('password reset migration remains repeatable before role consolidation', async (t) => {

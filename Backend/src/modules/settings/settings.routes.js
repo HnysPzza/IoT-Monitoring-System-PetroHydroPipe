@@ -10,7 +10,7 @@ const router = express.Router({ mergeParams: true })
 const dashboardRoles = [
   'Admin',
   'Operation Manager',
-  'Asst. Operation Manager',
+  'Quality Control',
   'Engineering Supervisor',
   'Production Supervisor',
 ]

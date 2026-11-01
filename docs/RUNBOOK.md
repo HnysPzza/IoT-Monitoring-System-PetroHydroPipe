@@ -1,4 +1,4 @@
-﻿# Runbook
+# Runbook
 
 Use this file for common development tasks.
 
@@ -128,7 +128,7 @@ select public.get_backend_readiness();
 select name from public.roles order by name;
 ```
 
-Expected readiness is `46`, with `Admin`, `Operation Manager`, `Asst. Operation Manager`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
+Expected readiness is `52`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
 
 ### Health and readiness (historical migration 024 checks)
 

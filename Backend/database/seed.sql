@@ -5,7 +5,7 @@ insert into roles (name, description)
 values
   ('Admin', 'Full system access and user management.'),
   ('Operation Manager', 'Production and downtime monitoring access.'),
-  ('Asst. Operation Manager', 'Assistant production monitoring access.'),
+  ('Quality Control', 'Quality control and production monitoring access.'),
   ('Engineering Supervisor', 'Machine and sensor monitoring access.'),
   ('Production Supervisor', 'Production floor monitoring access.')
 on conflict (name) do update

@@ -169,7 +169,7 @@ test('GET /api/production allows all 5 view roles and denies unauthorized roles'
   const authorizedRoles = [
     'Admin',
     'Operation Manager',
-    'Asst. Operation Manager',
+    'Quality Control',
     'Engineering Supervisor',
     'Production Supervisor',
   ]
@@ -547,8 +547,8 @@ test('PATCH /api/production/:eventId enforces role matrix (Admin, Operation Mana
     'src/modules/production/production.repository.js': createMockRepository(),
   })
 
-  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
-  const forbiddenRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control']
+  const forbiddenRoles = ['Engineering Supervisor', 'Operator']
 
   await withTestServer(app, async (baseUrl) => {
     for (const role of allowedRoles) {
@@ -578,8 +578,8 @@ test('PATCH /api/production/batch enforces role matrix', async () => {
     'src/modules/production/production.repository.js': createMockRepository(),
   })
 
-  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
-  const forbiddenRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control']
+  const forbiddenRoles = ['Engineering Supervisor', 'Operator']
 
   await withTestServer(app, async (baseUrl) => {
     for (const role of allowedRoles) {

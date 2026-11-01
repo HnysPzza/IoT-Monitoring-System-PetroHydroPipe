@@ -106,7 +106,7 @@ export function hasInformation(record) {
   return false
 }
 
-const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor'])
+const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control'])
 
 const CUT_STATUS_OPTIONS = [
   { value: 'accepted', label: 'Accepted' },

@@ -14,7 +14,7 @@ test('Supabase schema and seed data are readable', { skip: shouldRunIntegration 
   assert.ifError(rolesError)
   assert.deepEqual(
     roles.map((role) => role.name).sort(),
-    ['Admin', 'Asst. Operation Manager', 'Engineering Supervisor', 'Operation Manager', 'Production Supervisor'].sort(),
+    ['Admin', 'Engineering Supervisor', 'Operation Manager', 'Production Supervisor', 'Quality Control'].sort(),
   )
 
   const { data: machines, error: machinesError } = await supabase

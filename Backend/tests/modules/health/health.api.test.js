@@ -21,7 +21,7 @@ function withEnvironment(overrides, action) {
     })
 }
 
-function startReadinessServer({ status = 200, body = '51', delayMs = 0 } = {}) {
+function startReadinessServer({ status = 200, body = '52', delayMs = 0 } = {}) {
   let observeCancellation
   const cancellation = new Promise((resolve) => { observeCancellation = resolve })
   const server = http.createServer((request, response) => {
@@ -87,6 +87,7 @@ test('readiness returns 200 only for the expected database schema', async () => 
 
 test('readiness fails closed without leaking upstream or schema details', async () => {
   const cases = [
+    { status: 200, body: '51' },
     { status: 200, body: '49' },
     { status: 200, body: '44' },
     { status: 200, body: '35' },

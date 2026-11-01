@@ -530,7 +530,7 @@ test('machine settings GET supports all dashboard roles and validates machine id
     const roles = [
       'Admin',
       'Operation Manager',
-      'Asst. Operation Manager',
+      'Quality Control',
       'Engineering Supervisor',
       'Production Supervisor',
     ]
@@ -703,7 +703,7 @@ test('live monitoring API is role-protected, non-cacheable, and rejects route ta
     for (const role of [
       'Admin',
       'Operation Manager',
-      'Asst. Operation Manager',
+      'Quality Control',
       'Engineering Supervisor',
       'Production Supervisor',
     ]) {
@@ -899,12 +899,12 @@ test('downtime routes list records and reject manual status changes', async () =
     })
     assert.equal(reopen.response.status, 400)
 
-    const assistantEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+    const qualityControlEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',
-      headers: authHeader('Asst. Operation Manager'),
+      headers: authHeader('Quality Control'),
       body: { notes: 'Unauthorized edit' },
     })
-    assert.equal(assistantEdit.response.status, 403)
+    assert.equal(qualityControlEdit.response.status, 403)
 
     const retiredRoleEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',

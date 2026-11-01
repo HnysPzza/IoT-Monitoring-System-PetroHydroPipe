@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test')
 const roles = [
   { id: 'admin', name: 'Admin' },
   { id: 'operations', name: 'Operation Manager' },
-  { id: 'assistant', name: 'Asst. Operation Manager' },
+  { id: 'quality_control', name: 'Quality Control' },
   { id: 'engineering', name: 'Engineering Supervisor' },
   { id: 'production', name: 'Production Supervisor' },
 ]
