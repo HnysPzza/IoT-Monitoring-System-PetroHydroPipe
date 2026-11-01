@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
 const LOSS_BASIS = {
   source: 'configured-fallback',
@@ -829,7 +829,7 @@ test('comparison period query optimizes payload with metricsOnly', async () => {
 })
 
 test('sensorIdentity derives PROCESS_SENSOR_CODES excluding S-03 and S-05', () => {
-  const { PROCESS_SENSOR_CODES, OUTPUT_SENSOR_CODE } = require('../src/shared/sensorIdentity')
+  const { PROCESS_SENSOR_CODES, OUTPUT_SENSOR_CODE } = require('../../../src/shared/sensorIdentity')
   assert.deepEqual(PROCESS_SENSOR_CODES, ['S-01', 'S-02', 'S-04'])
   assert.equal(OUTPUT_SENSOR_CODE, 'S-05')
   assert.ok(!PROCESS_SENSOR_CODES.includes('S-03'))
@@ -837,7 +837,7 @@ test('sensorIdentity derives PROCESS_SENSOR_CODES excluding S-03 and S-05', () =
 })
 
 test('findAcceptedCuttingEvents throws REPORT_PRODUCTION_EVENT_LIMIT_EXCEEDED when exceeding MAX_PAGES', async () => {
-  const reportsRepo = require('../src/modules/reports/reports.repository')
+  const reportsRepo = require('../../../src/modules/reports/reports.repository')
   const fakeClient = {
     from() {
       return {

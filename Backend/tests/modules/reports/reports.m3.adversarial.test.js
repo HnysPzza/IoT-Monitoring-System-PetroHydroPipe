@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
 const SENSOR_ID = '22222222-2222-4222-8222-222222222222'
 

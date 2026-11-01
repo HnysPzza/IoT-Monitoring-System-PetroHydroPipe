@@ -1,13 +1,13 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const ExcelJS = require('exceljs')
-const { toXlsx } = require('../src/modules/reports/reportsXlsx.serializer')
+const { toXlsx } = require('../../../src/modules/reports/reportsXlsx.serializer')
 
 const {
   buildExportFilename,
   contentTypeFor,
   toPdf,
-} = require('../src/modules/reports/reportsExport.serializer')
+} = require('../../../src/modules/reports/reportsExport.serializer')
 
 function createReport(overrides = {}) {
   return {
