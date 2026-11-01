@@ -239,4 +239,66 @@ describe('AuditSection', () => {
     await user.click(clearButton)
     expect(screen.queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument()
   })
+
+  it('supports weekly audit log filtering via the calendar popover and queries with week date range', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+    await screen.findByText('No audit records match the selected filters.')
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+
+    const weekButtons = await screen.findAllByRole('button', { name: /select week/i })
+    expect(weekButtons.length).toBeGreaterThan(0)
+
+    // Select the first enabled week button
+    const enabledWeek = weekButtons.find((btn) => !btn.disabled)
+    await user.click(enabledWeek)
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenCalledWith(
+        'test-token',
+        expect.objectContaining({
+          dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+    })
+  })
+
+  it('supports monthly audit log filtering via the calendar popover and queries with month date range', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+    await screen.findByText('No audit records match the selected filters.')
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: 'Monthly' }))
+
+    // Click Previous Year to guarantee enabled month buttons
+    await user.click(screen.getByRole('button', { name: /previous year/i }))
+    const enabledMonth = (await screen.findAllByRole('button', { name: /[A-Z][a-z]{2} \d{4}/ })).find((btn) => !btn.disabled)
+    await user.click(enabledMonth)
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenCalledWith(
+        'test-token',
+        expect.objectContaining({
+          dateFrom: expect.stringMatching(/^\d{4}-\d{2}-01$/),
+          dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+    })
+  })
 })

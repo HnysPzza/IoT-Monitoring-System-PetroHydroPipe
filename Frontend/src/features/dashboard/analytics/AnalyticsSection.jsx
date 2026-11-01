@@ -11,12 +11,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/compone
 
 const AUTO_REFRESH_MS = 60 * 1000
 
-const rangePresets = [
-  { id: 'week', label: 'Weekly' },
-  { id: 'month', label: 'Monthly' },
-  { id: 'all', label: 'All time' },
-]
-
 function getRangeValidation(options) {
   try {
     return { range: resolveAnalyticsRange(options), errorMessage: '' }
@@ -32,8 +26,8 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const { token } = useAuth()
   const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
   const [period, setPeriod] = useState('week')
-  const [pickerPeriod, setPickerPeriod] = useState('week')
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
+  const [customRange, setCustomRange] = useState(null)
   const [trendMetric, setTrendMetric] = useState('downtime')
   const [isCaveatOpen, setIsCaveatOpen] = useState(false)
   const [snapshot, setSnapshot] = useState(null)
@@ -43,11 +37,22 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const requestControllerRef = useRef(null)
   const successfulSnapshotRef = useRef(null)
 
-  const requestOptions = useMemo(() => (
-    period === 'all'
-      ? { period }
-      : { period: period === 'month' ? 'this-month' : 'this-week', referenceDate: selectedDate }
-  ), [period, selectedDate])
+  const requestOptions = useMemo(() => {
+    if (period === 'all') {
+      return { period: 'all' }
+    }
+    if (period === 'month') {
+      return { period: 'this-month', referenceDate: selectedDate }
+    }
+    if (period === 'custom') {
+      return {
+        period: 'custom',
+        startDate: customRange?.startDate || selectedDate,
+        endDate: customRange?.endDate || selectedDate,
+      }
+    }
+    return { period: 'this-week', referenceDate: selectedDate }
+  }, [customRange, period, selectedDate])
   const { range, errorMessage: rangeErrorMessage } = useMemo(
     () => getRangeValidation(requestOptions),
     [requestOptions],
@@ -133,10 +138,14 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
   const isShowingPreviousRange = Boolean(snapshot && successfulSnapshotRef.current?.requestKey !== requestKey)
 
-  const handlePickerDateChange = useCallback((nextDate) => {
-    setSelectedDate(nextDate)
-    setPeriod(pickerPeriod)
-  }, [pickerPeriod])
+  const handleRangeChange = useCallback(({ period: nextPeriod, startDate: nextStartDate, endDate: nextEndDate }) => {
+    setPeriod(nextPeriod)
+    if (nextPeriod === 'custom') {
+      setCustomRange({ startDate: nextStartDate, endDate: nextEndDate })
+    } else if (nextPeriod === 'week' || nextPeriod === 'month') {
+      setSelectedDate(nextStartDate)
+    }
+  }, [])
 
   return (
     <div className="reports-layout analytics-layout">
@@ -163,37 +172,13 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </div>
 
           <div className="analytics-header-controls">
-            <fieldset className="analytics-range-fieldset">
-              <legend className="sr-only">Date range</legend>
-              <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
-                {rangePresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    className={`trend-mode-button ${period === preset.id ? 'is-selected' : ''}`}
-                    type="button"
-                    aria-pressed={period === preset.id}
-                    onClick={() => {
-                      if (preset.id !== 'all') {
-                        setPickerPeriod(preset.id)
-                        setSelectedDate(currentManilaDate)
-                      }
-                      setPeriod(preset.id)
-                    }}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            {period !== 'all' ? (
-              <AnalyticsDateRangePicker
-                period={pickerPeriod}
-                selectedDate={selectedDate}
-                maxDate={currentManilaDate}
-                onChange={handlePickerDateChange}
-                isActive
-              />
-            ) : null}
+            <AnalyticsDateRangePicker
+              period={period}
+              startDate={range?.startDate}
+              endDate={range?.endDate}
+              maxDate={currentManilaDate}
+              onChange={handleRangeChange}
+            />
             <button
               className="btn analytics-refresh-button"
               type="button"

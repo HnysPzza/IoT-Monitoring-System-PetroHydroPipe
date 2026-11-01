@@ -307,9 +307,8 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
               return (
                 <button
                   key={cat.id}
-                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${
-                    isSelected ? 'is-active' : ''
-                  }`}
+                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${isSelected ? 'is-active' : ''
+                    }`}
                   type="button"
                   role="menuitem"
                   aria-checked={isSelected}
@@ -494,6 +493,10 @@ export default function ReportsSection() {
             maxDate={maxCalendarDate}
             rangeLabel={calendarRangeLabel}
             onDateChange={handleCalendarDateChange}
+            onModeChange={(nextMode) => {
+              const nextType = nextMode === 'week' ? 'weekly' : nextMode === 'month' ? 'monthly' : 'daily'
+              handleReportTypeChange(nextType)
+            }}
           />
           <div className="reports-controls-actions">
             <button

@@ -616,6 +616,7 @@ export default function DashboardSection() {
                   maxDate={today}
                   rangeLabel={trendRangeLabel}
                   onDateChange={setTrendAnchorDate}
+                  onModeChange={setTrendMode}
                 />
               </div>
             )}

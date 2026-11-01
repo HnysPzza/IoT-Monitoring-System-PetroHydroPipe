@@ -44,6 +44,8 @@ export default function AuditSection() {
   const [actionFilter, setActionFilter] = useState('All')
   const [entityFilter, setEntityFilter] = useState('All')
   const [dateFilter, setDateFilter] = useState('')
+  const [dateRange, setDateRange] = useState({ dateFrom: '', dateTo: '' })
+  const [auditMode, setAuditMode] = useState('day')
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState({
     page: 1,
@@ -73,6 +75,8 @@ export default function AuditSection() {
         action: actionFilter,
         entityType: entityFilter,
         date: dateFilter,
+        dateFrom: dateRange.dateFrom || (dateFilter ? dateFilter : undefined),
+        dateTo: dateRange.dateTo || (dateFilter ? dateFilter : undefined),
         page,
         limit: AUDIT_PAGE_SIZE,
       })
@@ -100,7 +104,7 @@ export default function AuditSection() {
 
   useEffect(() => {
     loadAuditLogs()
-  }, [token, actionFilter, entityFilter, dateFilter, page])
+  }, [token, actionFilter, entityFilter, dateFilter, dateRange.dateFrom, dateRange.dateTo, page])
 
   function updateActionFilter(value) {
     setActionFilter(value)
@@ -112,8 +116,41 @@ export default function AuditSection() {
     setPage(1)
   }
 
+  function handleAuditDateChange(date) {
+    if (!date) {
+      setDateFilter('')
+      setDateRange({ dateFrom: '', dateTo: '' })
+      setPage(1)
+      return
+    }
+
+    if (auditMode === 'month') {
+      const start = new Date(date.getFullYear(), date.getMonth(), 1)
+      const end = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+      const startStr = formatAuditDateInput(start)
+      const endStr = formatAuditDateInput(end)
+      setDateFilter(startStr)
+      setDateRange({ dateFrom: startStr, dateTo: endStr })
+    } else if (auditMode === 'week') {
+      const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+      monday.setDate(monday.getDate() - (monday.getDay() || 7) + 1)
+      const sunday = new Date(monday)
+      sunday.setDate(monday.getDate() + 6)
+      const startStr = formatAuditDateInput(monday)
+      const endStr = formatAuditDateInput(sunday)
+      setDateFilter(startStr)
+      setDateRange({ dateFrom: startStr, dateTo: endStr })
+    } else {
+      const dateStr = formatAuditDateInput(date)
+      setDateFilter(dateStr)
+      setDateRange({ dateFrom: dateStr, dateTo: dateStr })
+    }
+    setPage(1)
+  }
+
   function updateDateFilter(value) {
     setDateFilter(value)
+    setDateRange({ dateFrom: value, dateTo: value })
     setPage(1)
   }
 
@@ -128,6 +165,21 @@ export default function AuditSection() {
 
   const selectedAuditDate = parseAuditDate(dateFilter)
   const maxAuditDate = parseAuditDate(getManilaDateInputValue())
+
+  let auditRangeLabel = ''
+  if (dateFilter) {
+    if (auditMode === 'month') {
+      const d = parseAuditDate(dateRange.dateFrom || dateFilter)
+      auditRangeLabel = d ? d.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }) : dateFilter
+    } else if (auditMode === 'week') {
+      const start = parseAuditDate(dateRange.dateFrom)
+      const end = parseAuditDate(dateRange.dateTo)
+      auditRangeLabel = (start && end) ? `${formatAuditDateLabel(start)} - ${formatAuditDateLabel(end)}` : dateFilter
+    } else {
+      const d = parseAuditDate(dateFilter)
+      auditRangeLabel = d ? formatAuditDateLabel(d) : dateFilter
+    }
+  }
 
   return (
     <div className="audit-layout">
@@ -178,12 +230,13 @@ export default function AuditSection() {
           <div className="filter-field audit-date-field">
             <span>Date</span>
             <TrendCalendarControl
-              mode="day"
+              mode={auditMode}
               accessibleLabel="Select audit date"
               selectedDate={selectedAuditDate}
               maxDate={maxAuditDate}
-              rangeLabel={selectedAuditDate ? formatAuditDateLabel(selectedAuditDate) : ''}
-              onDateChange={(date) => updateDateFilter(formatAuditDateInput(date))}
+              rangeLabel={auditRangeLabel}
+              onDateChange={handleAuditDateChange}
+              onModeChange={setAuditMode}
             />
           </div>
           <div className="audit-controls-actions">

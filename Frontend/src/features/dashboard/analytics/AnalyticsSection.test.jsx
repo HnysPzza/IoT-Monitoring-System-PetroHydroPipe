@@ -18,15 +18,16 @@ function createDeferred() {
 }
 
 describe('AnalyticsSection recorded-data states', () => {
-  it('renders compact header controls with Weekly, Monthly, and icon-only Refresh', async () => {
+  it('renders compact header controls with single date trigger and icon-only Refresh', async () => {
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     const { container } = renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
 
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
     expect(container.querySelector('.analytics-header-row')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Select Analytics week' })).toHaveAttribute('aria-haspopup', 'dialog')
-    expect(screen.getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'false')
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(trigger).toHaveTextContent('WEEKLY')
+    expect(screen.queryByRole('group', { name: 'Analytics date range' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh data' })).toHaveTextContent('')
     expect(screen.getByRole('button', { name: 'Analytics data coverage information' })).toBeInTheDocument()
   })
@@ -60,7 +61,7 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.queryByText('Recorded system data')).not.toBeInTheDocument()
     expect(screen.queryByText(/Historical sensor heartbeat coverage is not stored/i)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Analytics data coverage information' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
+    expect(screen.getByRole('dialog', { name: 'Analytics data coverage information' })).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
     expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
     expect(loadAnalytics).toHaveBeenCalledWith(
       'test-token',
@@ -122,32 +123,35 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('keeps the header compact with All time and the weekly calendar', async () => {
+  it('keeps the header compact with date trigger and refresh button', async () => {
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     const { container } = renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'All time' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select Analytics date range' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Analytics date range' })).not.toBeInTheDocument()
     expect(container.querySelector('.analytics-bucket-summary')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh data' })).toBeInTheDocument()
   })
 
-  it('loads all recorded history when All time is selected', async () => {
+  it('loads all recorded history when All time is selected from popover', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
     await user.click(screen.getByRole('button', { name: 'All time' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
       'test-token',
       { period: 'all' },
       { signal: expect.any(AbortSignal) },
     ))
-    expect(screen.getByRole('button', { name: 'All time' })).toHaveAttribute('aria-pressed', 'true')
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    expect(trigger).toHaveTextContent('ALL TIME')
+    expect(trigger).toHaveTextContent('All Time')
   })
 
   it('hides KPI comparison only for All time', async () => {
@@ -167,7 +171,10 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(await screen.findByRole('heading', { name: 'Downtime trend' })).toBeInTheDocument()
     expect(container.querySelectorAll('.analytics-kpi-delta')).toHaveLength(5)
 
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
     await user.click(screen.getByRole('button', { name: 'All time' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
       'test-token',
       { period: 'all' },
@@ -177,32 +184,33 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.queryByText(/No prior period/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/compared with the prior period/i)).not.toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     await waitFor(() => expect(container.querySelectorAll('.analytics-kpi-delta')).toHaveLength(5))
-    await user.click(screen.getByRole('button', { name: 'Monthly' }))
-    await waitFor(() => expect(container.querySelectorAll('.analytics-kpi-delta')).toHaveLength(5))
-  })
 
-  it('hides the date picker for All time and restores it for a selected period', async () => {
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
+    await user.click(screen.getByRole('button', { name: 'Monthly' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(container.querySelectorAll('.analytics-kpi-delta')).toHaveLength(5))
+  }, 15000)
+
+  it('keeps the date picker trigger visible for All time', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
     await user.click(screen.getByRole('button', { name: 'All time' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
       'test-token',
       { period: 'all' },
       { signal: expect.any(AbortSignal) },
     ))
-    expect(screen.queryByRole('button', { name: 'Select Analytics week' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Select Analytics month' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Monthly' }))
-    expect(screen.getByRole('button', { name: 'Select Analytics month' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Weekly' }))
-    expect(screen.getByRole('button', { name: 'Select Analytics week' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select Analytics date range' })).toBeInTheDocument()
   })
 
   it('keeps the Analytics layout visible while Monthly and All time load', async () => {
@@ -216,14 +224,20 @@ describe('AnalyticsSection recorded-data states', () => {
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Downtime trend' })).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('heading', { name: 'Downtime trend' })).toBeInTheDocument()
     expect(screen.getByText('Loading selected period; previous results remain visible.')).toBeInTheDocument()
     await act(async () => monthlyRequest.resolve(analyticsTestFixture))
     await waitFor(() => expect(screen.queryByText('Loading selected period; previous results remain visible.')).not.toBeInTheDocument())
 
+    await user.click(screen.getByRole('button', { name: 'Select Analytics date range' }))
     await user.click(screen.getByRole('button', { name: 'All time' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     await waitFor(() => expect(loadAnalytics).toHaveBeenCalledTimes(3))
     expect(screen.getByRole('heading', { name: 'Downtime trend' })).toBeInTheDocument()
     expect(screen.getByText('Loading selected period; previous results remain visible.')).toBeInTheDocument()
@@ -244,16 +258,17 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.getByText(/Availability - daily buckets/i)).toBeInTheDocument()
   })
 
-  it('opens the weekly picker from the header', async () => {
+  it('opens the integrated popover from the header trigger', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Select Analytics week' }))
-    expect(screen.getByRole('dialog', { name: 'Select Analytics week' })).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Select Analytics week' })).toHaveClass('analytics-date-range-popover')
-    expect(screen.getByRole('button', { name: 'Select Analytics week' })).toHaveAttribute('aria-expanded', 'true')
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    await user.click(trigger)
+    expect(screen.getByRole('dialog', { name: 'Select Analytics date range' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Select Analytics date range' })).toHaveClass('analytics-date-range-popover')
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(loadAnalytics).toHaveBeenCalledTimes(1)
   })
 })
@@ -264,70 +279,80 @@ describe('Analytics weekly and monthly selection', () => {
   beforeEach(() => vi.setSystemTime(new Date('2026-10-22T04:00:00.000Z')))
   afterEach(() => vi.setSystemTime(originalTime))
 
-  it('selects only whole Monday-to-Sunday weeks and keeps Weekly active', async () => {
+  it('selects only whole Monday-to-Sunday weeks in Weekly mode', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Select Analytics week' }))
-    expect(screen.getByRole('dialog', { name: 'Select Analytics week' })).toBeInTheDocument()
-    expect(screen.queryByRole('grid')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Select week Oct 12, 2026 - Oct 18, 2026' }))
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    await user.click(trigger)
+    expect(screen.getByRole('dialog', { name: 'Select Analytics date range' })).toBeInTheDocument()
+
+    // Click Wednesday Oct 14 in the calendar
+    await user.click(screen.getByRole('button', { name: 'Select date Oct 14, 2026' }))
+    expect(screen.getByText(/Oct 12 \u2013 Oct 18, 2026 \u00b7 1 week/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
       'test-token',
       { period: 'this-week', referenceDate: '2026-10-12' },
       { signal: expect.any(AbortSignal) },
     ))
-    const weekPicker = screen.getByRole('button', { name: 'Select Analytics week' })
-    expect(weekPicker).toHaveTextContent(/Oct 12\s*–\s*18, 2026/)
-    expect(screen.getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('button', { name: /october 14th, 2026/i })).not.toBeInTheDocument()
-
-    await user.click(weekPicker)
-    await user.click(screen.getByRole('button', { name: 'Select week Sep 28, 2026 - Oct 4, 2026' }))
-    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
-      'test-token',
-      { period: 'this-week', referenceDate: '2026-09-28' },
-      { signal: expect.any(AbortSignal) },
-    ))
-    expect(weekPicker).toHaveTextContent(/Sep 28\s*–\s*Oct 4, 2026/)
+    expect(trigger).toHaveTextContent('WEEKLY')
+    expect(trigger).toHaveTextContent(/Oct 12 \u2013 Oct 18, 2026/)
   })
 
-  it('selects a whole calendar month with no day choices and keeps Monthly active', async () => {
+  it('selects a whole calendar month and keeps Monthly active', async () => {
     const user = userEvent.setup()
     const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    await user.click(trigger)
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
-    await user.click(screen.getByRole('button', { name: 'Select Analytics month' }))
-    expect(screen.getByRole('dialog', { name: 'Select Analytics month' })).toBeInTheDocument()
-    expect(screen.queryByRole('grid')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /october 14th, 2026/i })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Sep 2026' }))
+
+    // Active month is October 2026. Navigate to September 2026 with <
+    await user.click(screen.getByRole('button', { name: 'Previous month' }))
+    expect(screen.getByText('September 2026')).toBeInTheDocument()
+    expect(screen.getByText(/Sep 1 \u2013 Sep 30, 2026 \u00b7 1 month/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
       'test-token',
       { period: 'this-month', referenceDate: '2026-09-01' },
       { signal: expect.any(AbortSignal) },
     ))
-    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true')
+    expect(trigger).toHaveTextContent('MONTHLY')
+    expect(trigger).toHaveTextContent('September 2026')
   })
 
-  it('resets the displayed selection to the current week when switching from Monthly', async () => {
+  it('selects multi-week span in Custom Range mode', async () => {
     const user = userEvent.setup()
-    renderWithAuth(<AnalyticsSection loadAnalytics={vi.fn().mockResolvedValue(analyticsTestFixture)} />)
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Monthly' }))
-    await user.click(screen.getByRole('button', { name: 'Select Analytics month' }))
-    await user.click(screen.getByRole('button', { name: 'Sep 2026' }))
-    await user.click(screen.getByRole('button', { name: 'Weekly' }))
-    await user.click(screen.getByRole('button', { name: 'Select Analytics week' }))
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Custom Range' }))
 
-    expect(screen.getByRole('button', { name: 'Select week Oct 19, 2026 - Oct 25, 2026' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
-  })
+    // Click start: Oct 5, 2026; click end: Oct 25, 2026
+    await user.click(screen.getByRole('button', { name: 'Select date Oct 5, 2026' }))
+    await user.click(screen.getByRole('button', { name: 'Select date Oct 25, 2026' }))
+    expect(screen.getByText(/Oct 5 \u2013 Oct 25, 2026 \u00b7 3 weeks/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
+      'test-token',
+      { period: 'custom', startDate: '2026-10-05', endDate: '2026-10-25' },
+      { signal: expect.any(AbortSignal) },
+    ))
+    expect(trigger).toHaveTextContent('CUSTOM RANGE')
+    expect(trigger).toHaveTextContent('Oct 5 \u2013 Oct 25, 2026')
+  }, 15000)
 })
