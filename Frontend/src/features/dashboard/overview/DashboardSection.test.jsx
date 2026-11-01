@@ -308,6 +308,7 @@ describe('DashboardSection', () => {
     expect(screen.getByText('+2 pcs')).toBeInTheDocument()
     expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /last hour/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(screen.getByRole('button', { name: /weekly/i }))
@@ -335,8 +336,8 @@ describe('DashboardSection', () => {
       renderWithAuth(<DashboardSection />)
       expect(await screen.findByText('Production Output')).toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: 'Weekly' }))
       await user.click(screen.getByRole('button', { name: /selected period/i }))
+      await user.click(screen.getByRole('button', { name: 'Weekly' }))
       await user.click(await screen.findByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i }))
 
       await waitFor(() => {
@@ -346,8 +347,8 @@ describe('DashboardSection', () => {
         )
       })
 
-      await user.click(screen.getByRole('button', { name: 'Monthly' }))
       await user.click(screen.getByRole('button', { name: /selected period/i }))
+      await user.click(screen.getByRole('button', { name: 'Monthly' }))
       await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
 
       await waitFor(() => {
@@ -568,6 +569,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Old daily point/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
     expect(screen.queryByText(/Old daily point/)).not.toBeInTheDocument()
 
@@ -591,6 +593,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Cached daily point/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
     expect(await screen.findByText('Weekly range failed.')).toBeInTheDocument()
 

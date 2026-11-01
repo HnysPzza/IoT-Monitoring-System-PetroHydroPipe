@@ -13,7 +13,6 @@ import DowntimeTrendChart, {
   startOfDay,
   toDateInputValue,
   toMonthInputValue,
-  trendModes,
 } from './DowntimeTrendChart.jsx'
 import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
@@ -168,6 +167,8 @@ export default function DashboardSection() {
   const hasCurrentOverview = overviewRequestKey === overviewKey && Boolean(overviewData)
   const hasCurrentLive = liveRequestKey === liveKey
   const hasCurrentDowntimeChart = downtimeChartRequestKey === downtimeChartKey
+  const isCurrentTokenChart = downtimeChartRequestKey.startsWith(`${token || 'anonymous'}:`)
+  const hasLoadedInitialChart = Boolean(downtimeChartRequestKey && isCurrentTokenChart)
   const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
   const trustedOverviewAlerts = alertContext?.unresolvedAlerts ?? alertContext?.activeAlerts ?? []
   const overviewAlerts = orderOverviewAlerts(alertContext?.hasTrustedAlertList
@@ -581,35 +582,18 @@ export default function DashboardSection() {
           <div className="section-heading">
             <div>
               <p className="section-eyebrow">Downtime chart</p>
-              {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+              {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
                 <SkeletonBlock className="skeleton-heading" />
               ) : (
                 <h2>Downtime by Period</h2>
               )}
             </div>
-            {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+            {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
               <div className="trend-controls-skeleton" aria-hidden="true">
-                <SkeletonBlock className="skeleton-toggle" />
                 <SkeletonBlock className="skeleton-control" />
               </div>
             ) : (
               <div className="trend-controls" aria-label="Downtime chart controls">
-                <div className="trend-mode-toggle" role="group" aria-label="Chart range">
-                  {trendModes.map((mode) => (
-                    <button
-                      key={mode.id}
-                      className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
-                      type="button"
-                      aria-pressed={trendMode === mode.id}
-                      onClick={() => {
-                        setTrendMode(mode.id)
-                        setTrendAnchorDate(startOfDay(new Date()))
-                      }}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
                 <TrendCalendarControl
                   mode={trendMode}
                   selectedDate={trendAnchorDate}
