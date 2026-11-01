@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 
 function clearSourceCache() {
   Object.keys(require.cache).forEach((cacheKey) => {
@@ -31,7 +31,7 @@ async function captureStreamOptions() {
   mockModule('src/modules/alerts/alerts.service.js', {
     subscribeToAlertEvents: () => () => {},
   })
-  const controller = require('../src/modules/alerts/alerts.controller')
+  const controller = require('../../../src/modules/alerts/alerts.controller')
   await controller.streamAlerts({}, {})
   return options
 }
