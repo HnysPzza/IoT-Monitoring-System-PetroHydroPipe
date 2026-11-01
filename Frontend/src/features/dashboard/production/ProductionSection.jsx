@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
-import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
+import ProductionDateRangePicker from './ProductionDateRangePicker.jsx'
 import {
   batchUpdateProductionSpecs,
   getProductionLogs,
@@ -543,8 +543,31 @@ export default function ProductionSection({
     setError(null)
 
     try {
+      let queryDate = undefined
+      let queryDateFrom = undefined
+      let queryDateTo = undefined
+
+      const normFilter = typeof dateFilter === 'string'
+        ? (dateFilter ? { type: 'day', startDate: dateFilter, endDate: dateFilter } : { type: 'all' })
+        : dateFilter
+
+      if (normFilter && normFilter.type !== 'all' && (normFilter.startDate || normFilter.date)) {
+        if (normFilter.type === 'today' || normFilter.type === 'day') {
+          queryDate = normFilter.startDate || normFilter.date
+        } else if (normFilter.startDate && normFilter.endDate) {
+          if (normFilter.startDate === normFilter.endDate) {
+            queryDate = normFilter.startDate
+          } else {
+            queryDateFrom = normFilter.startDate
+            queryDateTo = normFilter.endDate
+          }
+        }
+      }
+
       const payload = await loadProduction(token, {
-        date: dateFilter || undefined,
+        date: queryDate,
+        dateFrom: queryDateFrom,
+        dateTo: queryDateTo,
         status: statusFilter,
         specStatus: specStatusFilter,
         search: debouncedSearch || undefined,
@@ -605,23 +628,10 @@ export default function ProductionSection({
     loadData()
   }, [loadData])
 
-  const handleDateChange = (e) => {
-    setDateFilter(e.target.value)
-    setPage(1)
-  }
-
-  const selectedProductionDate = parseProductionDate(dateFilter)
   const maxProductionDate = parseProductionDate(getManilaDateInputValue())
-  const dateRangeLabel = selectedProductionDate ? formatProductionDateLabel(selectedProductionDate) : 'All Dates'
 
-  const handleCalendarDateChange = (date) => {
-    if (!date) return
-    setDateFilter(formatProductionDateInput(date))
-    setPage(1)
-  }
-
-  const handleClearDateFilter = () => {
-    setDateFilter('')
+  const handleDateFilterChange = (filter) => {
+    setDateFilter(filter)
     setPage(1)
   }
 
@@ -957,30 +967,13 @@ export default function ProductionSection({
           ) : null}
         </div>
 
-        <div className="production-date-wrapper">
-          <TrendCalendarControl
-            mode="day"
-            accessibleLabel="Select production date"
-            triggerAriaLabel="Filter by date"
-            triggerLabel="DATE"
-            selectedDate={selectedProductionDate}
-            maxDate={maxProductionDate}
-            rangeLabel={dateRangeLabel}
-            onDateChange={handleCalendarDateChange}
-            popoverClassName="production-calendar-popover"
-          />
-          {dateFilter ? (
-            <button
-              type="button"
-              className="production-square-btn production-date-clear-btn"
-              aria-label="Clear date filter"
-              title="Clear date filter"
-              onClick={handleClearDateFilter}
-            >
-              <X size={15} strokeWidth={1.75} aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
+        <ProductionDateRangePicker
+          value={dateFilter}
+          onChange={handleDateFilterChange}
+          maxDate={maxProductionDate}
+          accessibleLabel="Select production date"
+          triggerAriaLabel="Filter by date"
+        />
 
         <CustomDropdown
           id="production-status-filter"

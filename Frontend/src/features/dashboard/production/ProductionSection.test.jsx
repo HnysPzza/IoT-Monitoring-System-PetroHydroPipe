@@ -595,6 +595,9 @@ describe('ProductionSection component', () => {
     expect(activeDay).toBeDefined()
     await user.click(activeDay)
 
+    const applyBtn = within(calendarDialog).getByRole('button', { name: 'Apply' })
+    await user.click(applyBtn)
+
     await waitFor(() => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
         page: 1,
