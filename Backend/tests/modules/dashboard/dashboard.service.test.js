@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
-const { addBusinessDays, startOfBusinessDay } = require('../src/shared/businessTime')
+const { addBusinessDays, startOfBusinessDay } = require('../../../src/shared/businessTime')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
 const LOSS_BASIS = {
   source: 'configured-fallback',
@@ -116,7 +116,7 @@ async function getOverviewWithProductionEvents(events, queryLog = [], downtimeRo
     getSettingsHistory: async () => settingsHistory,
   })
 
-  return require('../src/modules/dashboard/dashboard.service').getOverview()
+  return require('../../../src/modules/dashboard/dashboard.service').getOverview()
 }
 
 test('overview availability uses only elapsed eligible time for current day', async (t) => {
@@ -165,7 +165,7 @@ test('dashboard downtime impact includes pre-window events and uses break-aware 
   mockModule('src/modules/settings/settingsHistory.repository.js', {
     getSettingsHistory: async () => settingsHistory,
   })
-  const dashboardService = require('../src/modules/dashboard/dashboard.service')
+  const dashboardService = require('../../../src/modules/dashboard/dashboard.service')
 
   const result = await dashboardService.getDowntimeImpact({ trendMode: 'today', date: '2026-08-09' })
   const sixToNineAm = result.points.find((point) => point.label === '6-9AM')
@@ -213,7 +213,7 @@ test('current-day downtime appears only in its interval and future periods remai
   mockModule('src/modules/settings/settingsHistory.repository.js', {
     getSettingsHistory: async () => settingsHistory,
   })
-  const dashboardService = require('../src/modules/dashboard/dashboard.service')
+  const dashboardService = require('../../../src/modules/dashboard/dashboard.service')
 
   const result = await dashboardService.getDowntimeImpact({ trendMode: 'today', date: '2026-08-25' })
 
@@ -248,7 +248,7 @@ test('weekly and monthly downtime keep fixed buckets while future periods remain
       effective_to: null,
     }],
   })
-  const dashboardService = require('../src/modules/dashboard/dashboard.service')
+  const dashboardService = require('../../../src/modules/dashboard/dashboard.service')
 
   const week = await dashboardService.getDowntimeImpact({ trendMode: 'week', date: '2026-08-10' })
   const month = await dashboardService.getDowntimeImpact({ trendMode: 'month', date: '2026-08-10' })
