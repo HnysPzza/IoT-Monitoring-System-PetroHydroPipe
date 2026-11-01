@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const authServicePath = path.join(backendRoot, 'src', 'modules', 'auth', 'auth.service.js')
 const databaseClientPath = path.join(backendRoot, 'src', 'database', 'client.js')
 
@@ -86,7 +86,7 @@ test('revoked session rejects an otherwise active account', async () => {
 })
 
 test('failed-login audit persistence errors are surfaced without leaking database details', async () => {
-  const auditPath = require.resolve('../src/modules/audit/audit.service')
+  const auditPath = require.resolve('../../../src/modules/audit/audit.service')
   delete require.cache[auditPath]
   delete require.cache[require.resolve(authServicePath)]
   require.cache[require.resolve(databaseClientPath)] = {

@@ -1,8 +1,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { createUserSchema, listUsersSchema } = require('../src/modules/users/users.model')
-const { setupPasswordSchema } = require('../src/modules/auth/auth.model')
-const { changePasswordSchema, loginSchema } = require('../src/modules/auth/auth.model')
+const { createUserSchema, listUsersSchema } = require('../../../src/modules/users/users.model')
+const { setupPasswordSchema } = require('../../../src/modules/auth/auth.model')
+const { changePasswordSchema, loginSchema } = require('../../../src/modules/auth/auth.model')
 
 test('new passwords require all four character categories without breaking legacy login', () => {
   for (const password of ['aaaaaaaaaaaa', '123456789012', 'ABCDEFGHIJ1!', 'abcdefghij1!', 'Abcdefghijk!', 'Abcdefghijk1', 'Abcdefghij1 ']) {

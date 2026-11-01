@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { loadAppWithMocks } = require('./helpers/appTestUtils')
+const { loadAppWithMocks } = require('../../helpers/appTestUtils')
 
 test('link validation checks persisted eligibility without writing or exposing account details', async () => {
   const token = 'b'.repeat(64)
@@ -9,11 +9,11 @@ test('link validation checks persisted eligibility without writing or exposing a
   let result = { data: active, error: null }
   const query = {
     select(fields) { assert.equal(fields, 'purpose, expires_at, used_at, users!inner(status, deleted_at, onboarding_state)'); return query },
-    eq(field, value) { assert.equal(field, 'token_hash'); assert.equal(value, require('../src/modules/auth/onboarding.service').hashToken(token)); return query },
+    eq(field, value) { assert.equal(field, 'token_hash'); assert.equal(value, require('../../../src/modules/auth/onboarding.service').hashToken(token)); return query },
     async maybeSingle() { return result },
   }
   loadAppWithMocks({ 'src/database/client.js': { getSupabaseClient: () => ({ from(table) { assert.equal(table, 'password_setup_tokens'); return query } }) } })
-  const service = require('../src/modules/auth/onboarding.service')
+  const service = require('../../../src/modules/auth/onboarding.service')
   assert.equal(typeof service.validateSetupToken, 'function')
   const valid = await service.validateSetupToken({ token })
   assert.deepEqual(Object.keys(valid), ['validForMs'])
@@ -35,11 +35,11 @@ test('password reset validation accepts only active Ready accounts and reset-pur
   let result = { data: active, error: null }
   const query = {
     select(fields) { assert.equal(fields, 'purpose, expires_at, used_at, users!inner(status, deleted_at, onboarding_state)'); return query },
-    eq(field, value) { assert.equal(field, 'token_hash'); assert.equal(value, require('../src/modules/auth/onboarding.service').hashToken(token)); return query },
+    eq(field, value) { assert.equal(field, 'token_hash'); assert.equal(value, require('../../../src/modules/auth/onboarding.service').hashToken(token)); return query },
     async maybeSingle() { return result },
   }
   loadAppWithMocks({ 'src/database/client.js': { getSupabaseClient: () => ({ from(table) { assert.equal(table, 'password_setup_tokens'); return query } }) } })
-  const service = require('../src/modules/auth/onboarding.service')
+  const service = require('../../../src/modules/auth/onboarding.service')
 
   const valid = await service.validatePasswordResetToken({ token })
   assert.ok(valid.validForMs > 0 && valid.validForMs <= 60000)
@@ -72,7 +72,7 @@ test('admin reset stores only a token hash and sends a dedicated reset link', as
     'src/database/client.js': { getSupabaseClient: () => ({ from: () => query, rpc: async (name, values) => { saved = { name, values }; return { data: null, error: null } } }) },
     'src/modules/email/email.service.js': { createEmailService: () => ({ sendTransactionalEmail: async (message) => { email = message } }) },
   })
-  const service = require('../src/modules/auth/onboarding.service')
+  const service = require('../../../src/modules/auth/onboarding.service')
   const result = await service.requestPasswordReset({ userId: 'target-user', actorUserId: 'admin-user' })
   const token = email.textContent.match(/reset-password#token=([0-9a-f]{64})/)[1]
 
@@ -94,7 +94,7 @@ test('Add user stores only a token hash and preserves the account when email fai
     'src/database/client.js': { getSupabaseClient: () => ({ rpc: async (name, values) => { saved = { name, values }; return { data: { id: 'new-user' }, error: null } } }) },
     'src/modules/email/email.service.js': { createEmailService: () => ({ sendTransactionalEmail: async (message) => { email = message; throw Object.assign(new Error('provider failure'), { code: 'EMAIL_DELIVERY_FAILED' }) } }) },
   })
-  const service = require('../src/modules/auth/onboarding.service')
+  const service = require('../../../src/modules/auth/onboarding.service')
   const result = await service.addUser({ actorUserId: 'admin', name: 'Operator', username: 'operator', email: 'operator@example.test', role: 'Production Supervisor' })
   assert.deepEqual(result, { user: { id: 'new-user' }, delivery: 'unconfirmed' })
   const token = email.textContent.match(/#token=([0-9a-f]{64})/)[1]

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { loadAppWithMocks, withTestServer } = require('./helpers/appTestUtils')
+const { loadAppWithMocks, withTestServer } = require('../../helpers/appTestUtils')
 
 test('parser errors return stable JSON without reflecting submitted credentials', async () => {
   await withTestServer(loadAppWithMocks(), async (baseUrl) => {

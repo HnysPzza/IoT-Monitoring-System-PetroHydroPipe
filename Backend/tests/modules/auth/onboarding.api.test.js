@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
-const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
+const { loadAppWithMocks, requestJson, withTestServer } = require('../../helpers/appTestUtils')
 
 test('public setup failures do not consume authenticated password-change allowance', async () => {
   const app = loadAppWithMocks({
@@ -168,7 +168,7 @@ test('temporary-password sessions can change password but cannot use business en
 
 
 test('accountWriteLimiter and onboarding limiters isolate client IPs behind a trusted proxy and return RATE_LIMITED JSON', async () => {
-  const rateLimiters = require('../src/middleware/rateLimiters')
+  const rateLimiters = require('../../../src/middleware/rateLimiters')
   assert.equal(typeof rateLimiters.setupLimiter, 'function')
   assert.equal(typeof rateLimiters.setupCheckLimiter, 'function')
   assert.equal(typeof rateLimiters.changeIngressLimiter, 'function')

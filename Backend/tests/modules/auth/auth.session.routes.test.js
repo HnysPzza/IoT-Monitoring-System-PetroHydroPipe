@@ -6,7 +6,7 @@ const {
   loadAppWithMocks,
   requestJson,
   withTestServer,
-} = require('./helpers/appTestUtils')
+} = require('../../helpers/appTestUtils')
 
 const REFRESH_COOKIE = 'ph_refresh'
 
