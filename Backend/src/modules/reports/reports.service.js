@@ -320,6 +320,26 @@ async function buildObservedProductionReport({
   let accumulatedTonnage = 0
   const productionLogs = []
 
+  const dailyPipeSequenceByEventId = new Map()
+  const eventsByDay = new Map()
+  for (const event of sortedEvents) {
+    const dayKey = formatBusinessDate(event.recorded_at)
+    if (!eventsByDay.has(dayKey)) {
+      eventsByDay.set(dayKey, [])
+    }
+    eventsByDay.get(dayKey).push(event)
+  }
+  for (const [, dayEvents] of eventsByDay.entries()) {
+    dayEvents.sort((a, b) => {
+      const timeDiff = new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+      if (timeDiff !== 0) return timeDiff
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+    dayEvents.forEach((event, idx) => {
+      dailyPipeSequenceByEventId.set(event.id, idx + 1)
+    })
+  }
+
   for (const event of sortedEvents) {
     const spec = event.spec
     const isSpecified = checkIsSpecified(spec)
@@ -328,9 +348,12 @@ async function buildObservedProductionReport({
     const diameter = parsePositiveDimension(spec?.diameter)
     const thickness = parsePositiveDimension(spec?.thickness)
     const length = parsePositiveDimension(spec?.length)
-    const pipeNumber = spec?.pipe_number != null
+    const rawPipeNumber = spec?.pipe_number != null
       ? Number(spec.pipe_number)
       : (spec?.pipeNumber != null ? Number(spec.pipeNumber) : null)
+    const pipeNumber = rawPipeNumber !== null
+      ? rawPipeNumber
+      : (dailyPipeSequenceByEventId.get(event.id) ?? null)
     const singleTonnage = calculatePipeTonnage(diameter, thickness, length)
 
     const label = spec?.label != null && String(spec.label).trim() !== '' ? String(spec.label).trim() : null

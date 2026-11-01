@@ -92,6 +92,20 @@ function calculatePipeTonnage(diameter, thickness, length) {
   return Math.round(totalWeightTons * 10000) / 10000
 }
 
+export function hasInformation(record) {
+  if (!record) return false
+  if (record.isSpecified) return true
+  if (record.customer && String(record.customer).trim() !== '') return true
+  if (record.diameter !== null && record.diameter !== undefined && record.diameter !== '' && !isNaN(Number(record.diameter))) return true
+  if (record.thickness !== null && record.thickness !== undefined && record.thickness !== '' && !isNaN(Number(record.thickness))) return true
+  if (record.length !== null && record.length !== undefined && record.length !== '' && !isNaN(Number(record.length))) return true
+  if (record.label && String(record.label).trim() !== '') return true
+  if (record.size && String(record.size).trim() !== '') return true
+  if (record.radius !== null && record.radius !== undefined && record.radius !== '' && !isNaN(Number(record.radius))) return true
+  if (record.circumference !== null && record.circumference !== undefined && record.circumference !== '' && !isNaN(Number(record.circumference))) return true
+  return false
+}
+
 const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor'])
 
 const CUT_STATUS_OPTIONS = [
@@ -296,24 +310,34 @@ export default function ProductionSection({
 
   const pageAcceptedRecords = records.filter((r) => r.outputAccepted)
   const pageAcceptedIds = pageAcceptedRecords.map((r) => r.id || r.sensorEventId)
-  const selectableCount = pageAcceptedIds.length
+  const pageUnfilledRecords = pageAcceptedRecords.filter((r) => !hasInformation(r))
+  const pageUnfilledIds = pageUnfilledRecords.map((r) => r.id || r.sensorEventId)
+
+  const batchTargetIds = pageUnfilledIds
+  const pageBatchTargetCount = batchTargetIds.length
+  const batchTargetSelectedCount = batchTargetIds.filter((id) => selectedIds.has(id)).length
   const pageSelectedCount = pageAcceptedIds.filter((id) => selectedIds.has(id)).length
-  const allPageSelected = selectableCount > 0 && pageSelectedCount === selectableCount
-  const somePageSelected = pageSelectedCount > 0 && pageSelectedCount < selectableCount
+
+  const allBatchTargetsSelected = pageBatchTargetCount > 0 && batchTargetSelectedCount === pageBatchTargetCount
+  const allPageAcceptedSelected = pageAcceptedIds.length > 0 && pageSelectedCount === pageAcceptedIds.length
+
+  const isHeaderChecked = allBatchTargetsSelected || allPageAcceptedSelected
+  const isHeaderIndeterminate = pageSelectedCount > 0 && !isHeaderChecked
+  const isHeaderDisabled = pageAcceptedIds.length === 0 || (pageBatchTargetCount === 0 && pageSelectedCount === 0)
 
   useEffect(() => {
     if (headerCheckboxRef.current) {
-      headerCheckboxRef.current.indeterminate = somePageSelected
+      headerCheckboxRef.current.indeterminate = isHeaderIndeterminate
     }
-  }, [somePageSelected])
+  }, [isHeaderIndeterminate])
 
   const handleSelectAllToggle = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      if (allPageSelected) {
+      if (isHeaderChecked) {
         pageAcceptedIds.forEach((id) => next.delete(id))
       } else {
-        pageAcceptedIds.forEach((id) => next.add(id))
+        batchTargetIds.forEach((id) => next.add(id))
       }
       return next
     })
@@ -1137,8 +1161,8 @@ export default function ProductionSection({
                       type="checkbox"
                       ref={headerCheckboxRef}
                       className="production-checkbox"
-                      checked={allPageSelected}
-                      disabled={selectableCount === 0}
+                      checked={isHeaderChecked}
+                      disabled={isHeaderDisabled}
                       onChange={handleSelectAllToggle}
                       aria-label="Select all cuts on this page"
                     />

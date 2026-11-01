@@ -10,7 +10,11 @@ import {
 } from './productionService.js'
 import { dashboardPageMeta, navItems } from '../../../shared/constants/dashboardMeta.js'
 import '../../../shared/components/ui/Calendar.jsx'
-import ProductionSection, { formatManilaDateTime, getManilaDateInputValue } from './ProductionSection.jsx'
+import ProductionSection, {
+  formatManilaDateTime,
+  getManilaDateInputValue,
+  hasInformation,
+} from './ProductionSection.jsx'
 
 vi.mock('../../../shared/services/apiClient.js', () => ({
   apiRequest: vi.fn(),
@@ -1148,11 +1152,11 @@ describe('ProductionSection component', () => {
       expect(row2Checkbox).not.toBeChecked()
       expect(screen.queryByText(/cuts selected/i)).not.toBeInTheDocument()
 
-      // Header select-all toggle
+      // Header select-all toggle excludes outputs with information already filled up
       await user.click(headerCheckbox)
-      expect(row1Checkbox).toBeChecked()
+      expect(row1Checkbox).not.toBeChecked()
       expect(row2Checkbox).toBeChecked()
-      expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
+      expect(screen.getByText('1 cut selected')).toBeInTheDocument()
 
       await user.click(headerCheckbox)
       expect(row1Checkbox).not.toBeChecked()
@@ -1174,9 +1178,11 @@ describe('ProductionSection component', () => {
 
       await screen.findByText('Maynilad Water')
 
-      // Select both cuts
-      const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
-      await user.click(headerCheckbox)
+      // Select both cuts explicitly by user choice
+      const row1Checkbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
+      const row2Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i)
+      await user.click(row1Checkbox)
+      await user.click(row2Checkbox)
 
       expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
 
@@ -1483,6 +1489,166 @@ describe('ProductionSection component', () => {
       const placeholder = timestampCell.querySelector('.production-placeholder')
       expect(placeholder).not.toBeNull()
       expect(placeholder).toHaveTextContent('—')
+    })
+  })
+
+  describe('Selective Batch Selection & hasInformation Contract', () => {
+    it('hasInformation accurately identifies filled specification information vs pure auto-assigned pipeNumber', () => {
+      // Null / empty cases
+      expect(hasInformation(null)).toBe(false)
+      expect(hasInformation(undefined)).toBe(false)
+      expect(hasInformation({})).toBe(false)
+
+      // Only auto-assigned pipeNumber present -> MUST return false so cut is selectable by header batch select-all
+      expect(hasInformation({ pipeNumber: 1 })).toBe(false)
+      expect(hasInformation({ pipeNumber: 42, outputAccepted: true })).toBe(false)
+
+      // Blank or whitespace-only customer
+      expect(hasInformation({ customer: '', pipeNumber: 1 })).toBe(false)
+      expect(hasInformation({ customer: '   ', pipeNumber: 1 })).toBe(false)
+
+      // When actual information is filled:
+      expect(hasInformation({ customer: 'Maynilad Water' })).toBe(true)
+      expect(hasInformation({ isSpecified: true })).toBe(true)
+      expect(hasInformation({ diameter: 625.4 })).toBe(true)
+      expect(hasInformation({ thickness: 12.7 })).toBe(true)
+      expect(hasInformation({ length: 6000 })).toBe(true)
+      expect(hasInformation({ label: 'Batch-101' })).toBe(true)
+      expect(hasInformation({ size: '12 inch' })).toBe(true)
+      expect(hasInformation({ radius: 312.7 })).toBe(true)
+      expect(hasInformation({ circumference: 1964.8 })).toBe(true)
+    })
+
+    it('header select-all excludes outputs with information already filled up unless explicitly clicked by user', async () => {
+      const user = userEvent.setup()
+      const selectivePayload = {
+        ...mockProductionPayload,
+        records: [
+          {
+            id: 'cut-filled-1',
+            sensorEventId: 'cut-filled-1',
+            outputAccepted: true,
+            status: 'accepted',
+            isSpecified: true,
+            customer: 'Acme Corporation',
+            diameter: 625.4,
+            thickness: 12.7,
+            length: 6000,
+            pipeNumber: 1,
+            tonnage: 1.1513,
+            recordedAt: '2026-10-30T06:30:00+08:00',
+          },
+          {
+            id: 'cut-unfilled-2',
+            sensorEventId: 'cut-unfilled-2',
+            outputAccepted: true,
+            status: 'accepted',
+            isSpecified: false,
+            customer: null,
+            diameter: null,
+            thickness: null,
+            length: null,
+            pipeNumber: 2,
+            tonnage: null,
+            recordedAt: '2026-10-30T07:00:00+08:00',
+          },
+          {
+            id: 'cut-unfilled-3',
+            sensorEventId: 'cut-unfilled-3',
+            outputAccepted: true,
+            status: 'accepted',
+            isSpecified: false,
+            customer: null,
+            diameter: null,
+            thickness: null,
+            length: null,
+            pipeNumber: 3,
+            tonnage: null,
+            recordedAt: '2026-10-30T07:30:00+08:00',
+          },
+        ],
+      }
+
+      const mockBatchUpdate = vi.fn().mockResolvedValue({ matchedCount: 2, updatedCount: 2 })
+
+      renderWithAuth(
+        <ProductionSection
+          loadProduction={vi.fn().mockResolvedValue(selectivePayload)}
+          batchUpdateProductionSpecs={mockBatchUpdate}
+        />,
+      )
+
+      await screen.findByText('Acme Corporation')
+
+      const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
+      const filledRowCheckbox = screen.getByLabelText(/select cut at 2026-10-30T06:30:00/i)
+      const unfilledRow2Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:00:00/i)
+      const unfilledRow3Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:30:00/i)
+
+      expect(headerCheckbox).not.toBeChecked()
+      expect(filledRowCheckbox).not.toBeChecked()
+      expect(unfilledRow2Checkbox).not.toBeChecked()
+      expect(unfilledRow3Checkbox).not.toBeChecked()
+
+      // Click Header Select-All: Should ONLY select cut 2 and cut 3, NOT cut 1 (Acme Corporation)
+      await user.click(headerCheckbox)
+
+      expect(filledRowCheckbox).not.toBeChecked()
+      expect(unfilledRow2Checkbox).toBeChecked()
+      expect(unfilledRow3Checkbox).toBeChecked()
+      expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
+
+      // The user CAN explicitly choose to include the filled record by clicking its row checkbox directly
+      await user.click(filledRowCheckbox)
+      expect(filledRowCheckbox).toBeChecked()
+      expect(unfilledRow2Checkbox).toBeChecked()
+      expect(unfilledRow3Checkbox).toBeChecked()
+      expect(screen.getByText('3 cuts selected')).toBeInTheDocument()
+
+      // User unchecks the filled record manually
+      await user.click(filledRowCheckbox)
+      expect(filledRowCheckbox).not.toBeChecked()
+      expect(screen.getByText('2 cuts selected')).toBeInTheDocument()
+
+      // Deselect all
+      await user.click(headerCheckbox)
+      expect(filledRowCheckbox).not.toBeChecked()
+      expect(unfilledRow2Checkbox).not.toBeChecked()
+      expect(unfilledRow3Checkbox).not.toBeChecked()
+      expect(screen.queryByText(/cuts selected/i)).not.toBeInTheDocument()
+    })
+
+    it('header checkbox is disabled when all cuts on the page already have information filled up', async () => {
+      const allFilledPayload = {
+        ...mockProductionPayload,
+        records: [
+          {
+            id: 'cut-filled-1',
+            sensorEventId: 'cut-filled-1',
+            outputAccepted: true,
+            status: 'accepted',
+            isSpecified: true,
+            customer: 'Acme Corporation',
+            diameter: 625.4,
+            thickness: 12.7,
+            length: 6000,
+            pipeNumber: 1,
+            tonnage: 1.1513,
+            recordedAt: '2026-10-30T06:30:00+08:00',
+          },
+        ],
+      }
+
+      renderWithAuth(
+        <ProductionSection
+          loadProduction={vi.fn().mockResolvedValue(allFilledPayload)}
+        />,
+      )
+
+      await screen.findByText('Acme Corporation')
+
+      const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
+      expect(headerCheckbox).toBeDisabled()
     })
   })
 })

@@ -161,12 +161,12 @@ describe('Challenger 2 Adversarial Stress Suite — Production Module M4', () =>
       // Verify pagination text handles 120 items
       expect(screen.getByText(/120 records/i)).toBeInTheDocument()
 
-      // Select all 100 accepted items
+      // Header select-all excludes 40 cuts that already have information, selecting only 60 unfilled cuts
       const user = userEvent.setup()
       const headerCheckbox = screen.getByLabelText('Select all cuts on this page')
       await user.click(headerCheckbox)
 
-      expect(await screen.findByText('100 cuts selected')).toBeInTheDocument()
+      expect(await screen.findByText('60 cuts selected')).toBeInTheDocument()
     })
 
     it('verifies CSS rules enforce font-variant-numeric: tabular-nums on all numeric data cells', () => {

@@ -85,14 +85,17 @@ function checkIsSpecified(spec) {
   )
 }
 
-function toProductionRecord(event, spec, machine, sensorLabel) {
+function toProductionRecord(event, spec, machine, sensorLabel, autoPipeNumber = null) {
   const isSpecified = Boolean(event.output_accepted && checkIsSpecified(spec))
   const diameter = spec?.diameter != null ? Number(spec.diameter) : null
   const thickness = spec?.thickness != null ? Number(spec.thickness) : null
   const length = spec?.length != null ? Number(spec.length) : null
-  const pipeNumber = spec?.pipe_number != null
+  const rawPipeNumber = spec?.pipe_number != null
     ? Number(spec.pipe_number)
     : (spec?.pipeNumber != null ? Number(spec.pipeNumber) : null)
+  const pipeNumber = rawPipeNumber !== null
+    ? rawPipeNumber
+    : (event.output_accepted ? autoPipeNumber : null)
   const tonnage = calculatePipeTonnage(diameter, thickness, length)
 
   return {
@@ -254,6 +257,28 @@ async function listProductionLogs(filters = {}, options = {}) {
     options.client,
   )
 
+  const acceptedByDay = new Map()
+  for (const event of windowEvents) {
+    if (event.output_accepted !== true) continue
+    const dayKey = formatBusinessDate(event.recorded_at)
+    if (!acceptedByDay.has(dayKey)) {
+      acceptedByDay.set(dayKey, [])
+    }
+    acceptedByDay.get(dayKey).push(event)
+  }
+
+  const dailyPipeSequenceByEventId = new Map()
+  for (const [, dayEvents] of acceptedByDay.entries()) {
+    dayEvents.sort((a, b) => {
+      const timeDiff = new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+      if (timeDiff !== 0) return timeDiff
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+    dayEvents.forEach((event, idx) => {
+      dailyPipeSequenceByEventId.set(event.id, idx + 1)
+    })
+  }
+
   let totalAccepted = 0
   let specifiedCount = 0
   let unspecifiedCount = 0
@@ -262,7 +287,8 @@ async function listProductionLogs(filters = {}, options = {}) {
 
   const allRecords = windowEvents.map((event) => {
     const spec = specsMap.get(event.id) || null
-    const record = toProductionRecord(event, spec, machine, sensorLabel)
+    const autoPipeNumber = dailyPipeSequenceByEventId.get(event.id) ?? null
+    const record = toProductionRecord(event, spec, machine, sensorLabel, autoPipeNumber)
 
     if (record.outputAccepted) {
       totalAccepted += 1
