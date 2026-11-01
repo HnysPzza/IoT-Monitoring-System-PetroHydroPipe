@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-const { createWatchdogMetrics } = require('../src/modules/watchdog/watchdog.metrics')
-const { createWatchdogRunner } = require('../src/modules/watchdog/watchdog.runner')
-const { createWatchdogService, validateCycleResult } = require('../src/modules/watchdog/watchdog.service')
+const { createWatchdogMetrics } = require('../../../src/modules/watchdog/watchdog.metrics')
+const { createWatchdogRunner } = require('../../../src/modules/watchdog/watchdog.runner')
+const { createWatchdogService, validateCycleResult } = require('../../../src/modules/watchdog/watchdog.service')
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
