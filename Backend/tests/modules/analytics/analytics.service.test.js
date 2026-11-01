@@ -52,7 +52,7 @@ function createDependencies({ eventRows = [], downtimeRows = [] } = {}) {
 }
 
 test('Analytics compares a partial Manila range with the matching elapsed preceding range', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies({
     eventRows: [
       { bucket_start: '2026-07-31T16:00:00.000Z', sensor_code: 'S-05', sensor_label: 'Production Output Cutting', event_count: 4 },
@@ -91,7 +91,7 @@ test('Analytics compares a partial Manila range with the matching elapsed preced
 })
 
 test('Analytics preserves measured zero but returns null for a future-only selected range', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies } = createDependencies()
 
   const observed = await getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-01' }, dependencies)
@@ -113,7 +113,7 @@ test('Analytics preserves measured zero but returns null for a future-only selec
 })
 
 test('Analytics unions concurrent downtime and keeps zero-eligible availability unobserved', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies } = createDependencies({
     downtimeRows: [
       { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Flux Refill', sensors: { sensor_code: 'S-01' } },
@@ -129,7 +129,7 @@ test('Analytics unions concurrent downtime and keeps zero-eligible availability 
 })
 
 test('Analytics combines every downtime cause across sensors into ranked cause rows', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies } = createDependencies({
     downtimeRows: [
       { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Corrective Maintenance', sensors: { sensor_code: 'S-01' } },
@@ -150,7 +150,7 @@ test('Analytics combines every downtime cause across sensors into ranked cause r
 })
 
 test('Analytics combines the same downtime cause across sensors into one cause row', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies } = createDependencies({
     downtimeRows: [
       { id: 'd1', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Consumable Shortage', sensors: { sensor_code: 'S-01' } },
@@ -166,7 +166,7 @@ test('Analytics combines the same downtime cause across sensors into one cause r
 })
 
 test('Analytics excludes pending cause review until an admin assigns the operational cause', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const pendingRecord = {
     id: 'pending',
     started_at: '2026-08-03T00:00:00.000Z',
@@ -212,7 +212,7 @@ test('Analytics excludes pending cause review until an admin assigns the operati
 })
 
 test('Analytics uses calendar-month buckets for ranges longer than 93 days', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies()
 
   const result = await getAnalytics({ startDate: '2026-01-15', endDate: '2026-05-15' }, dependencies)
@@ -229,7 +229,7 @@ test('Analytics uses calendar-month buckets for ranges longer than 93 days', asy
 })
 
 test('Analytics declares unequal calendar-month segment counts without dropping either period', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies } = createDependencies()
 
   const result = await getAnalytics({ startDate: '2025-01-02', endDate: '2025-04-05' }, dependencies)
@@ -244,7 +244,7 @@ test('Analytics declares unequal calendar-month segment counts without dropping 
 })
 
 test('Analytics all-time range starts on the first contributing record when on or after 2026-05-01 and clamps earlier records to 2026-05-01', async () => {
-  const { getAnalytics } = require('../src/modules/analytics/analytics.service')
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies()
 
   const clampedResult = await getAnalytics({ range: 'all' }, dependencies)
