@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
-const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
+const { loadAppWithMocks, requestJson, withTestServer } = require('../helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const userId = '11111111-1111-4111-8111-111111111111'
@@ -81,7 +81,7 @@ test('alerts and downtime streams close at the signed JWT expiry boundary', asyn
 
 test('alerts and downtime share the per-user stream cap and release slots on close', async () => {
   const app = loadAppWithMocks(createServiceMocks())
-  const { connectionRegistry } = require('../src/shared/sse/connectionRegistry')
+  const { connectionRegistry } = require('../../src/shared/sse/connectionRegistry')
   const token = createToken()
 
   await withTestServer(app, async (baseUrl) => {
@@ -129,7 +129,7 @@ test('alerts and downtime share the per-user stream cap and release slots on clo
 
 test('a rapid stream abort and reopen recovers from any temporary admission pressure', async () => {
   const app = loadAppWithMocks(createServiceMocks())
-  const { connectionRegistry } = require('../src/shared/sse/connectionRegistry')
+  const { connectionRegistry } = require('../../src/shared/sse/connectionRegistry')
   const token = createToken()
 
   await withTestServer(app, async (baseUrl) => {
@@ -260,7 +260,7 @@ test('an authorization revalidation failure releases its admission slot before r
     else process.env.SSE_MAX_CONNECTION_LIFETIME_MS = previous.lifetime
   }
 
-  const { connectionRegistry } = require('../src/shared/sse/connectionRegistry')
+  const { connectionRegistry } = require('../../src/shared/sse/connectionRegistry')
 
   await withTestServer(app, async (baseUrl) => {
     const response = await streamRequest(baseUrl, '/api/alerts/stream', createToken())

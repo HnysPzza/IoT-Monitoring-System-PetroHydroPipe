@@ -3,11 +3,11 @@ const test = require('node:test')
 const path = require('node:path')
 const ExcelJS = require('exceljs')
 
-const reportsRepository = require('../src/modules/reports/reports.repository')
-const { toXlsx } = require('../src/modules/reports/reportsXlsx.serializer')
-const { buildExportFilename, toPdf } = require('../src/modules/reports/reportsExport.serializer')
+const reportsRepository = require('../../src/modules/reports/reports.repository')
+const { toXlsx } = require('../../src/modules/reports/reportsXlsx.serializer')
+const { buildExportFilename, toPdf } = require('../../src/modules/reports/reportsExport.serializer')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
 
 function loadReportsService(mockSupabase) {
@@ -27,7 +27,7 @@ function loadReportsService(mockSupabase) {
     },
   }
 
-  return require('../src/modules/reports/reports.service')
+  return require('../../src/modules/reports/reports.service')
 }
 
 function createFakeSupabase({

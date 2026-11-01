@@ -12,20 +12,20 @@ const {
   requestJson,
   withTestServer,
   assertError,
-} = require('./helpers/appTestUtils')
+} = require('../helpers/appTestUtils')
 const {
   toXlsx,
-} = require('../src/modules/reports/reportsXlsx.serializer')
+} = require('../../src/modules/reports/reportsXlsx.serializer')
 const {
   toPdf,
-} = require('../src/modules/reports/reportsExport.serializer')
+} = require('../../src/modules/reports/reportsExport.serializer')
 const {
   OUTPUT_SENSOR_CODE,
   PROCESS_SENSOR_CODES,
   getSensorLabel,
-} = require('../src/shared/sensorIdentity')
+} = require('../../src/shared/sensorIdentity')
 
-const databaseRoot = path.resolve(__dirname, '../database')
+const databaseRoot = path.resolve(__dirname, '../../database')
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const userId = '22222222-2222-4222-8222-222222222222'
 

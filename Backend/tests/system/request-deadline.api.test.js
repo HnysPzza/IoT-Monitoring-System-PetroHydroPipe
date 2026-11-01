@@ -3,7 +3,7 @@ const express = require('express')
 const http = require('node:http')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
-const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
+const { loadAppWithMocks, requestJson, withTestServer } = require('../helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const USER_ID = '11111111-1111-4111-8111-111111111111'
@@ -53,12 +53,16 @@ async function withSlowSupabase(testFn) {
 
 test('ordinary API requests return a controlled 504 before the frontend timeout', async (t) => {
   const previousTimeout = process.env.API_REQUEST_TIMEOUT_MS
+  const previousHealthTimeout = process.env.HEALTH_READINESS_TIMEOUT_MS
   const previousSupabaseUrl = process.env.SUPABASE_URL
   const previousServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   process.env.API_REQUEST_TIMEOUT_MS = '500'
+  process.env.HEALTH_READINESS_TIMEOUT_MS = '250'
   t.after(() => {
     if (previousTimeout === undefined) delete process.env.API_REQUEST_TIMEOUT_MS
     else process.env.API_REQUEST_TIMEOUT_MS = previousTimeout
+    if (previousHealthTimeout === undefined) delete process.env.HEALTH_READINESS_TIMEOUT_MS
+    else process.env.HEALTH_READINESS_TIMEOUT_MS = previousHealthTimeout
     if (previousSupabaseUrl === undefined) delete process.env.SUPABASE_URL
     else process.env.SUPABASE_URL = previousSupabaseUrl
     if (previousServiceKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -88,7 +92,7 @@ test('ordinary API requests return a controlled 504 before the frontend timeout'
 })
 
 test('committed streaming responses are not aborted by the ordinary request deadline', async () => {
-  const requestDeadline = require('../src/middleware/requestDeadline')
+  const requestDeadline = require('../../src/middleware/requestDeadline')
   const app = express()
   app.use(requestDeadline)
   app.get('/stream', (request, response) => {
@@ -104,7 +108,7 @@ test('committed streaming responses are not aborted by the ordinary request dead
 })
 
 test('client disconnect aborts request work immediately', async () => {
-  const requestDeadline = require('../src/middleware/requestDeadline')
+  const requestDeadline = require('../../src/middleware/requestDeadline')
   const app = express()
   let observeAbort
   const aborted = new Promise((resolve) => {

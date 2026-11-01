@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const envModulePath = path.resolve(__dirname, '..', 'src', 'config', 'env.js')
+const envModulePath = path.resolve(__dirname, '..', '..', 'src', 'config', 'env.js')
 
 function withEnvironment(overrides, assertion) {
   const previous = Object.fromEntries(

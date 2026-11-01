@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
-const { loadAppWithMocks, requestJson, withTestServer } = require('./helpers/appTestUtils')
+const { loadAppWithMocks, requestJson, withTestServer } = require('../helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const machineId = '22222222-2222-4222-8222-222222222222'

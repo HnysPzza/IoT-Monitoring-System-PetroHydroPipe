@@ -1,9 +1,9 @@
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { calculatePipeTonnage } = require('../src/modules/production/production.service')
-const reportsService = require('../src/modules/reports/reports.service')
-const reportsExportSerializer = require('../src/modules/reports/reportsExport.serializer')
-const reportsXlsxSerializer = require('../src/modules/reports/reportsXlsx.serializer')
+const { calculatePipeTonnage } = require('../../src/modules/production/production.service')
+const reportsService = require('../../src/modules/reports/reports.service')
+const reportsExportSerializer = require('../../src/modules/reports/reportsExport.serializer')
+const reportsXlsxSerializer = require('../../src/modules/reports/reportsXlsx.serializer')
 const { PGlite } = require('@electric-sql/pglite')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -191,7 +191,7 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
     `)
 
     // Apply migration 051
-    const migrationPath = path.resolve(__dirname, '../database/migrations/051_align_production_specs_pipe_manufacturing.sql')
+    const migrationPath = path.resolve(__dirname, '../../database/migrations/051_align_production_specs_pipe_manufacturing.sql')
     const migrationSql = fs.readFileSync(migrationPath, 'utf8')
     await pglite.exec(migrationSql)
 

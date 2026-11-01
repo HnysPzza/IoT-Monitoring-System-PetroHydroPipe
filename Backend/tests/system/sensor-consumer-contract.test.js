@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
-const scenarios = require('./fixtures/sensor-consumer-scenarios.json')
-const registry = require('../src/shared/sensor-registry.json')
-const sourceRoot = path.resolve(__dirname, '../src')
+const scenarios = require('../fixtures/sensor-consumer-scenarios.json')
+const registry = require('../../src/shared/sensor-registry.json')
+const sourceRoot = path.resolve(__dirname, '../../src')
 const asOf = '2026-09-10T02:10:00.000Z'
 
 function mockModule(relativePath, exports) {
@@ -66,11 +66,11 @@ for (const scenario of scenarios) {
         new Date(row.started_at) < window.end && new Date(row.ended_at || asOf) > window.start),
     })
 
-    const live = await require('../src/modules/iot/iot.service').getLiveFeed()
-    const overview = await require('../src/modules/dashboard/dashboard.service').getOverview({ date: '2026-09-10' })
-    const downtime = await require('../src/modules/downtime/downtime.service').listDowntime({ date: '2026-09-10' })
-    const analytics = await require('../src/modules/analytics/analytics.service').getAnalytics({ startDate: '2026-09-10', endDate: '2026-09-10' })
-    const report = await require('../src/modules/reports/reports.service').getSummary({ type: 'daily', date: '2026-09-10' })
+    const live = await require('../../src/modules/iot/iot.service').getLiveFeed()
+    const overview = await require('../../src/modules/dashboard/dashboard.service').getOverview({ date: '2026-09-10' })
+    const downtime = await require('../../src/modules/downtime/downtime.service').listDowntime({ date: '2026-09-10' })
+    const analytics = await require('../../src/modules/analytics/analytics.service').getAnalytics({ startDate: '2026-09-10', endDate: '2026-09-10' })
+    const report = await require('../../src/modules/reports/reports.service').getSummary({ type: 'daily', date: '2026-09-10' })
     const count = scenario.downtime || scenario.recovered ? 1 : 0
     const minutes = scenario.recovered ? 5 : scenario.downtime ? 10 : 0
     assert.equal(live.machine.status, scenario.machineStatus)

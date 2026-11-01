@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 
-const lifecyclePath = path.resolve(__dirname, '..', 'src', 'serverLifecycle.js')
+const lifecyclePath = path.resolve(__dirname, '..', '..', 'src', 'serverLifecycle.js')
 
 function loadLifecycle() {
   assert.equal(fs.existsSync(lifecyclePath), true, 'server lifecycle module must exist')

@@ -8,7 +8,7 @@ const {
   getBusinessDayRange,
   startOfBusinessWeek,
   startOfBusinessMonth,
-} = require('../src/shared/businessTime')
+} = require('../../src/shared/businessTime')
 
 test('Manila business day is stable regardless of the server timezone', () => {
   const range = getBusinessDayRange('2026-07-13')

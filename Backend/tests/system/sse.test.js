@@ -12,11 +12,11 @@ process.env.SSE_MAX_CONNECTION_LIFETIME_MS = '3000'
 process.env.SSE_MAX_PENDING_EVENTS = '2'
 process.env.SSE_MAX_PENDING_BYTES = '1024'
 
-const { createConnectionRegistry } = require('../src/shared/sse/connectionRegistry')
-const admitSseConnection = require('../src/middleware/admitSseConnection')
-const { closeAllSseStreams, openSseStream, serializeEvent } = require('../src/shared/sse/openSseStream')
-const { getSseMetrics } = require('../src/shared/sse/metrics')
-const logger = require('../src/utils/logger')
+const { createConnectionRegistry } = require('../../src/shared/sse/connectionRegistry')
+const admitSseConnection = require('../../src/middleware/admitSseConnection')
+const { closeAllSseStreams, openSseStream, serializeEvent } = require('../../src/shared/sse/openSseStream')
+const { getSseMetrics } = require('../../src/shared/sse/metrics')
+const logger = require('../../src/utils/logger')
 
 class MockResponse extends EventEmitter {
   constructor(writeResults = []) {
@@ -131,7 +131,7 @@ test('connection registry enforces combined user, IP, and global caps with idemp
 })
 
 test('SSE admission releases a lease when the request aborts or response closes before stream setup', () => {
-  const { connectionRegistry } = require('../src/shared/sse/connectionRegistry')
+  const { connectionRegistry } = require('../../src/shared/sse/connectionRegistry')
   const req = createRequest()
   const res = new MockResponse()
   let nextCalls = 0
@@ -167,7 +167,7 @@ test('SSE admission releases a lease when the request aborts or response closes 
 })
 
 test('openSseStream claims an admitted lease and releases it once on normal close', () => {
-  const { connectionRegistry } = require('../src/shared/sse/connectionRegistry')
+  const { connectionRegistry } = require('../../src/shared/sse/connectionRegistry')
   const req = createRequest()
   const res = new MockResponse()
   admitSseConnection(req, res, () => {})
