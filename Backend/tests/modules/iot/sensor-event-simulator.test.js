@@ -4,7 +4,7 @@ const http = require('node:http')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 
 function cleanVerificationBaseline(overrides = {}) {
   const live = {

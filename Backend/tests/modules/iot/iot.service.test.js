@@ -3,7 +3,7 @@ const path = require('node:path')
 const test = require('node:test')
 const bcrypt = require('bcryptjs')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const EVENT_ID = '11111111-1111-4111-8111-111111111111'
 
 function clearSourceCache() {

@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-const { sensorEventSchema } = require('../src/modules/iot/iot.model')
-const { heartbeatSchema } = require('../src/modules/iot/heartbeat.model')
+const { sensorEventSchema } = require('../../../src/modules/iot/iot.model')
+const { heartbeatSchema } = require('../../../src/modules/iot/heartbeat.model')
 
 const headers = {
   'x-device-id': 'esp32-m01-s01',

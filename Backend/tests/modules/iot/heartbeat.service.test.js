@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const heartbeatId = '50000000-0000-4000-8000-000000000001'
 
 function clearSourceCache() {

@@ -6,7 +6,7 @@ const {
   loadAppWithMocks,
   requestJson,
   withTestServer,
-} = require('./helpers/appTestUtils')
+} = require('../../helpers/appTestUtils')
 
 const heartbeatBody = {
   heartbeatId: '50000000-0000-4000-8000-000000000001',

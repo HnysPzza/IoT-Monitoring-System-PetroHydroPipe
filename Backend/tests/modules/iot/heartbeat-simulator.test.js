@@ -3,7 +3,7 @@ const { spawnSync } = require('node:child_process')
 const path = require('node:path')
 const test = require('node:test')
 
-const simulatorPath = path.resolve(__dirname, '../scripts/simulate-heartbeats.js')
+const simulatorPath = path.resolve(__dirname, '../../../scripts/simulate-heartbeats.js')
 
 test('heartbeat simulator reports configuration failure without forcing unsafe process shutdown', () => {
   const env = { ...process.env }
