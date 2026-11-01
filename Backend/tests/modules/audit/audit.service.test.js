@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 
 function loadAuditService(calls, tableResponses = {}, logs = []) {
   const clientPath = path.join(backendRoot, 'src', 'database', 'client.js')
