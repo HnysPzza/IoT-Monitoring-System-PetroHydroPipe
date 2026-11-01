@@ -7,7 +7,7 @@ const {
   calculateMachineMetrics,
   calculateRecordMetrics,
   getRecordsSpan,
-} = require('../src/shared/operationalMetrics')
+} = require('../../../src/shared/operationalMetrics')
 
 const window = {
   start: new Date('2026-08-24T00:00:00.000Z'),

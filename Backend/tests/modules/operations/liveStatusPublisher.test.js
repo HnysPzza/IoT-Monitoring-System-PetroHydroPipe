@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-const { createLiveStatusPublisher } = require('../src/modules/iot/liveStatusPublisher')
+const { createLiveStatusPublisher } = require('../../../src/modules/iot/liveStatusPublisher')
 
 function buildLive({ machineStatus = 'Running', s01 = 'Running', s03 = 'Running', evaluatedAt = '2026-10-31T00:00:00.000Z' } = {}) {
   const sensor = (sensorCode, status) => ({

@@ -10,7 +10,7 @@ const {
   isEligibleAt,
   subtractIntervals,
   unionIntervals,
-} = require('../src/shared/operationalTime')
+} = require('../../../src/shared/operationalTime')
 
 const defaultSchedule = {
   workStart: '08:00',

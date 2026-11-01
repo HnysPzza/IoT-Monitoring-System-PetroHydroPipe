@@ -3,7 +3,7 @@ const test = require('node:test')
 
 function loadSelector() {
   try {
-    return require('../src/shared/outputLossBasis').selectOutputLossBasis
+    return require('../../../src/shared/outputLossBasis').selectOutputLossBasis
   } catch {
     return undefined
   }
@@ -11,7 +11,7 @@ function loadSelector() {
 
 function loadResolver() {
   try {
-    return require('../src/shared/outputLossBasis').getOutputLossBasis
+    return require('../../../src/shared/outputLossBasis').getOutputLossBasis
   } catch {
     return undefined
   }

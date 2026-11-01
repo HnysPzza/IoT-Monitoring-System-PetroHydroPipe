@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
 
 function clearSourceCache() {
@@ -54,7 +54,7 @@ test('downtime repository uses overlap semantics and deterministic pagination be
   }))
   const fakeSupabase = createPagedClient({ downtime_events: downtime })
   mockClient(fakeSupabase)
-  const { getOverlappingDowntime } = require('../src/modules/downtime/downtime.repository')
+  const { getOverlappingDowntime } = require('../../../src/modules/downtime/downtime.repository')
   const window = { start: new Date('2026-08-01T00:00:00Z'), end: new Date('2026-08-02T00:00:00Z') }
 
   const result = await getOverlappingDowntime(MACHINE_ID, window)
@@ -77,7 +77,7 @@ test('settings history repository pages, validates, and queries both overlap bou
   }]
   const fakeSupabase = createPagedClient({ machine_operational_settings_history: history })
   mockClient(fakeSupabase)
-  const { getSettingsHistory } = require('../src/modules/settings/settingsHistory.repository')
+  const { getSettingsHistory } = require('../../../src/modules/settings/settingsHistory.repository')
   const window = { start: new Date('2026-08-01T00:00:00Z'), end: new Date('2026-08-02T00:00:00Z') }
 
   const result = await getSettingsHistory(MACHINE_ID, window)
@@ -99,7 +99,7 @@ test('settings history repository fails closed on malformed stored schedules', a
     }],
   })
   mockClient(fakeSupabase)
-  const { getSettingsHistory } = require('../src/modules/settings/settingsHistory.repository')
+  const { getSettingsHistory } = require('../../../src/modules/settings/settingsHistory.repository')
   const window = { start: new Date('2026-08-01T00:00:00Z'), end: new Date('2026-08-02T00:00:00Z') }
 
   await assert.rejects(
