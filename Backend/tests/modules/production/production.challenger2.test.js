@@ -8,18 +8,18 @@ const {
   updateProductionSpecBodySchema,
   batchUpdateBodySchema,
   listProductionLogsSchema,
-} = require('../src/modules/production/production.model')
+} = require('../../../src/modules/production/production.model')
 const {
   calculatePipeTonnage,
   toProductionRecord,
   toSpecPayload,
-} = require('../src/modules/production/production.service')
+} = require('../../../src/modules/production/production.service')
 const {
   assertError,
   loadAppWithMocks,
   requestJson,
   withTestServer,
-} = require('./helpers/appTestUtils')
+} = require('../../helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const userId = '11111111-1111-4111-8111-111111111111'

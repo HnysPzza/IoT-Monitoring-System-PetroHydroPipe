@@ -6,7 +6,7 @@ const {
   loadAppWithMocks,
   requestJson,
   withTestServer,
-} = require('./helpers/appTestUtils')
+} = require('../../helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const userId = '11111111-1111-4111-8111-111111111111'
@@ -245,12 +245,16 @@ test('GET /api/production default query returns accepted S-05 records only, merg
     assert.equal(unspecifiedRecord.diameter, null)
     assert.equal(unspecifiedRecord.thickness, null)
     assert.equal(unspecifiedRecord.length, null)
-    assert.equal(unspecifiedRecord.pipeNumber, null)
+    assert.equal(unspecifiedRecord.pipeNumber, 2)
     assert.equal(unspecifiedRecord.tonnage, null)
     assert.equal(unspecifiedRecord.label, null)
     assert.equal(unspecifiedRecord.isSpecified, false)
     assert.equal(unspecifiedRecord.specStatus, 'unspecified')
     assert.equal(unspecifiedRecord.isEditable, true)
+
+    const thirdAcceptedRecord = body.records.find((r) => r.id === 'e0000000-0000-4000-8000-000000000004')
+    assert.ok(thirdAcceptedRecord)
+    assert.equal(thirdAcceptedRecord.pipeNumber, 3)
   })
 })
 
@@ -1152,8 +1156,8 @@ test('Validation rejects invalid payloads on PATCH /api/production/:eventId and 
 })
 
 test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs RPC invocation and error mapping', async () => {
-  delete require.cache[require.resolve('../src/modules/production/production.repository')]
-  const productionRepository = require('../src/modules/production/production.repository')
+  delete require.cache[require.resolve('../../../src/modules/production/production.repository')]
+  const productionRepository = require('../../../src/modules/production/production.repository')
 
   let calledRpc = null
   let calledParams = null
@@ -1296,7 +1300,7 @@ test('productionRepository: updateProductionSpec and batchUpdateProductionSpecs 
 })
 
 test('calculatePipeTonnage pure helper computes metric tonnage correctly and handles boundary invariants', () => {
-  const { calculatePipeTonnage } = require('../src/modules/production/production.service')
+  const { calculatePipeTonnage } = require('../../../src/modules/production/production.service')
 
   // Reference MCWD case: OD 625.4, Thickness 12.7, Length 6000 -> 1.1513 tons
   const mcwdTons = calculatePipeTonnage(625.4, 12.7, 6000)
@@ -1339,3 +1343,97 @@ test('calculatePipeTonnage pure helper computes metric tonnage correctly and han
   assert.equal(calculatePipeTonnage([625.4], 12.7, 6000), null)
   assert.equal(calculatePipeTonnage({ od: 625.4 }, 12.7, 6000), null)
 })
+
+test('GET /api/production auto-numbers pipes sequentially per day and resets on next day', async () => {
+  const multiDayEvents = [
+    // Day 1: 2026-03-15
+    {
+      id: 'day1-evt-01',
+      sensor_id: mockOutputSensor.id,
+      machine_id: mockOutputSensor.machine_id,
+      device_event_id: 'd1-01',
+      event_type: 'pulse',
+      recorded_at: '2026-03-15T00:30:00.000Z', // 08:30 Manila
+      output_accepted: true,
+      output_rejection_reason: null,
+    },
+    {
+      id: 'day1-evt-02',
+      sensor_id: mockOutputSensor.id,
+      machine_id: mockOutputSensor.machine_id,
+      device_event_id: 'd1-02',
+      event_type: 'pulse',
+      recorded_at: '2026-03-15T01:00:00.000Z', // 09:00 Manila (rejected)
+      output_accepted: false,
+      output_rejection_reason: 'Debounce window violated.',
+    },
+    {
+      id: 'day1-evt-03',
+      sensor_id: mockOutputSensor.id,
+      machine_id: mockOutputSensor.machine_id,
+      device_event_id: 'd1-03',
+      event_type: 'pulse',
+      recorded_at: '2026-03-15T02:00:00.000Z', // 10:00 Manila
+      output_accepted: true,
+      output_rejection_reason: null,
+    },
+    // Day 2: 2026-03-16
+    {
+      id: 'day2-evt-01',
+      sensor_id: mockOutputSensor.id,
+      machine_id: mockOutputSensor.machine_id,
+      device_event_id: 'd2-01',
+      event_type: 'pulse',
+      recorded_at: '2026-03-16T00:15:00.000Z', // 08:15 Manila
+      output_accepted: true,
+      output_rejection_reason: null,
+    },
+    {
+      id: 'day2-evt-02',
+      sensor_id: mockOutputSensor.id,
+      machine_id: mockOutputSensor.machine_id,
+      device_event_id: 'd2-02',
+      event_type: 'pulse',
+      recorded_at: '2026-03-16T01:15:00.000Z', // 09:15 Manila
+      output_accepted: true,
+      output_rejection_reason: null,
+    },
+  ]
+
+  const customRepo = createMockRepository({
+    findProductionEvents: async () => multiDayEvents,
+    findProductionSpecsByEventIds: async () => new Map(),
+  })
+
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': customRepo,
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const res = await requestJson(baseUrl, '/api/production?dateFrom=2026-03-15&dateTo=2026-03-16&status=all', {
+      headers: authHeader('Admin'),
+    })
+
+    assert.equal(res.response.status, 200)
+    const { records } = res.body
+
+    const d1_01 = records.find((r) => r.id === 'day1-evt-01')
+    const d1_02 = records.find((r) => r.id === 'day1-evt-02')
+    const d1_03 = records.find((r) => r.id === 'day1-evt-03')
+    const d2_01 = records.find((r) => r.id === 'day2-evt-01')
+    const d2_02 = records.find((r) => r.id === 'day2-evt-02')
+
+    // Day 1 first accepted cut -> pipe #1
+    assert.equal(d1_01.pipeNumber, 1)
+    // Day 1 rejected cut -> no pipe number
+    assert.equal(d1_02.pipeNumber, null)
+    // Day 1 second accepted cut -> pipe #2
+    assert.equal(d1_03.pipeNumber, 2)
+
+    // Day 2 first accepted cut resets to pipe #1
+    assert.equal(d2_01.pipeNumber, 1)
+    // Day 2 second accepted cut -> pipe #2
+    assert.equal(d2_02.pipeNumber, 2)
+  })
+})
+
