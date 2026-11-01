@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const test = require('node:test')
 
-const backendRoot = path.resolve(__dirname, '..')
+const backendRoot = path.resolve(__dirname, '../../..')
 const MACHINE_ID = '11111111-1111-4111-8111-111111111111'
 const LOSS_BASIS = {
   source: 'configured-fallback',
@@ -156,7 +156,7 @@ function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = 
     info: () => {},
     warn: () => {},
   })
-  const metrics = require('../src/shared/operationalMetrics')
+  const metrics = require('../../../src/shared/operationalMetrics')
   mockModule('src/shared/operationalMetrics.js', {
     ...metrics,
     calculateRecordMetrics(values) {

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-const { updateDowntimeSchema } = require('../src/modules/downtime/downtime.model')
+const { updateDowntimeSchema } = require('../../../src/modules/downtime/downtime.model')
 
 const downtimeId = '55555555-5555-4555-8555-555555555555'
 const approvedCauses = [
