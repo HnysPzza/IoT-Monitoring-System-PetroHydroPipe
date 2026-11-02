@@ -1,0 +1,46 @@
+.overview-layout { gap: 14px; font-variant-numeric: tabular-nums; }
+#overview-header-controls, .overview-controls-card, .overview-meta-strip { display: flex; align-items: center; }
+.overview-controls-card { gap: 10px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.overview-meta-strip { gap: 12px; font-size: 12px; }
+.overview-meta-item { gap: 5px; }
+.overview-meta-item svg { display: none; }
+.overview-refresh-button { min-height: 30px; padding: 4px 10px; width: auto; font-size: 12px; }
+#overview-header-controls { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--card-border); }
+.overview-layout .alerts-stack { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 10px; }
+.overview-layout .dashboard-alert { margin: 0; }
+.overview-layout .kpi-grid { gap: 0; overflow: hidden; border: 1px solid var(--card-border); border-radius: 12px; background: var(--card-bg); }
+.overview-layout .stat-card { min-height: 0; padding: 12px 16px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.overview-layout .stat-card + .stat-card { border-left: 1px solid var(--card-border); }
+.overview-layout .stat-card-heading { flex-direction: row-reverse; justify-content: space-between; }
+.overview-layout .stat-card-icon { width: auto; height: auto; color: var(--c-text-2); background: none; }
+.overview-layout .stat-value { margin: 8px 0 0; font-size: 24px; }
+.overview-layout .stat-card-warning:last-child .stat-value { color: var(--status-downtime-text); }
+.overview-charts-grid { gap: 14px; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+.overview-charts-grid .section-card { padding: 14px; gap: 10px; }
+.overview-charts-grid .section-heading { margin: 0; align-items: center; flex-direction: row; }
+.overview-charts-grid h2, .machine-health-card h2 { font-size: 13px; }
+.overview-charts-grid .trend-controls { width: auto; }
+.overview-layout .industrial-chart-card::before { display: none; }
+.overview-layout .industrial-recharts-panel { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.overview-layout .chart-legend { position: static; justify-content: flex-end; flex-wrap: wrap; margin: 0 0 4px; }
+.overview-layout .trend-chart-panel { display: block; min-height: 0; }
+.overview-layout .machine-health-card { overflow: visible; }
+.overview-layout .machine-health-card .section-heading { margin-bottom: 10px; }
+.overview-layout .overview-sensor-grid { gap: 10px; }
+.overview-layout .overview-sensor-card { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px; border: 1px solid var(--card-border); background: var(--card-bg); box-shadow: 0 1px 2px rgba(15,23,42,.03); }
+.overview-layout .overview-sensor-card.status-fault { --sensor-accent: var(--c-danger); }
+.overview-layout .overview-sensor-heading { display: flex; justify-content: space-between; align-items: center; color: var(--c-text-2); font-size: 11px; font-weight: 600; }
+.overview-layout .overview-sensor-card h3 { overflow: hidden; margin: 0; color: var(--c-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.overview-layout .overview-sensor-footer { color: var(--c-text-2); }
+@media (max-width: 1200px) { #overview-header-controls { margin-left: 8px; padding-left: 8px; } .overview-meta-item:nth-child(3) { display: none; } }
+@media (max-width: 900px) { .overview-charts-grid { grid-template-columns: 1fr; } .overview-layout .overview-sensor-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } #overview-header-controls .overview-meta-strip { display: none; } }
+@media (max-width: 680px) { .overview-layout .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .overview-layout .stat-card:nth-child(3) { border-left: 0; } .overview-layout .stat-card:nth-child(n+3) { border-top: 1px solid var(--card-border); } .overview-layout .overview-sensor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.overview-layout .industrial-recharts-panel { min-height: 0; }
+.overview-idle-details { font-size: 12px; }
+.overview-idle-details summary { cursor: pointer; font-weight: 600; }
+
+@media (min-width: 901px) {
+  .overview-topbar { min-height: 56px; padding-block: 8px; }
+  .overview-content { padding-block: 16px; }
+}

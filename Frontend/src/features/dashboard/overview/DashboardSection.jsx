@@ -1,4 +1,6 @@
+import './overview.css'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useOutletContext } from 'react-router'
 import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -10,13 +12,14 @@ import { getLiveFeed } from '../live/liveService.js'
 import { connectivityLabel, getProcessIdleBanner, getProcessSensorFaultBanner } from '../live/livePresentation.js'
 import DowntimeTrendChart, {
   getTrendRangeLabel,
-  startOfDay,
+  fromDateInputValue,
   toDateInputValue,
   toMonthInputValue,
 } from './DowntimeTrendChart.jsx'
 import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
+import { getManilaDateInputValue } from '../analytics/analyticsService.js'
 
 const AUTO_REFRESH_MS = 60 * 1000
 
@@ -90,22 +93,6 @@ function getRequestDisplayState({ state, hasCurrentData, errorKey, currentKey })
   return hasCurrentData ? state : 'loading'
 }
 
-function SensorStatusIcon({ status }) {
-  if (status === 'Downtime') {
-    return <AlertTriangle size={16} aria-hidden="true" />
-  }
-
-  if (status === 'Fault') {
-    return <Wrench size={16} aria-hidden="true" />
-  }
-
-  if (status === 'Idle' || status === 'Unavailable') {
-    return <PauseCircle size={16} aria-hidden="true" />
-  }
-
-  return <CircleCheck size={16} aria-hidden="true" />
-}
-
 function isRecoveryPendingAlert(alert) {
   return alert?.status === 'Active' && alert.metadata?.recoveryPending === true
 }
@@ -157,8 +144,8 @@ export default function DashboardSection() {
   const downtimeChartRequestIdRef = useRef(0)
   const successfulDowntimeChartRef = useRef(null)
   const [trendMode, setTrendMode] = useState('today')
-  const [trendAnchorDate, setTrendAnchorDate] = useState(() => startOfDay(new Date()))
-  const today = startOfDay(new Date())
+  const [trendAnchorDate, setTrendAnchorDate] = useState(() => fromDateInputValue(getManilaDateInputValue()))
+  const today = fromDateInputValue(getManilaDateInputValue())
   const trendRangeLabel = getTrendRangeLabel(trendMode, trendAnchorDate)
   const calendarValue = trendMode === 'month' ? toMonthInputValue(trendAnchorDate) : toDateInputValue(trendAnchorDate)
   const overviewKey = `${token || 'anonymous'}:overview`
@@ -422,28 +409,27 @@ export default function DashboardSection() {
     setDowntimeChartRefresh((current) => current + 1)
   }
 
-  return (
-    <div className="overview-layout">
+  const controls = (
       <div className="overview-controls-card">
         <div className="overview-meta-strip">
           <span className="overview-meta-item">
             <Factory size={16} aria-hidden="true" />
-            <span>Machine:</span>
+
             <strong>{hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'}</strong>
           </span>
           <span className="overview-meta-item">
             <CircleCheck size={16} aria-hidden="true" />
-            <span>Sensors:</span>
-            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : '5 / 5 reporting'}</strong>
+
+            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : 'Reporting unavailable'}</strong>
           </span>
           <span className="overview-meta-item">
             <Clock3 size={16} aria-hidden="true" />
-            <span>Last sync:</span>
-            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Active session'}</strong>
+
+            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Not synced'}</strong>
           </span>
         </div>
         <button
-          className="btn btn-success overview-refresh-button"
+          className="btn btn-secondary overview-refresh-button"
           type="button"
           aria-label="Refresh overview data"
           disabled={isUnifiedRefreshing}
@@ -453,6 +439,12 @@ export default function DashboardSection() {
           Refresh
         </button>
       </div>
+  )
+  const headerSlot = document.getElementById('overview-header-controls')
+
+  return (
+    <div className="overview-layout">
+      {headerSlot ? createPortal(controls, headerSlot) : controls}
 
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
@@ -536,9 +528,12 @@ export default function DashboardSection() {
                 <span className="overview-alert-message">{processIdleBanner.message}</span>
               </div>
               {processIdleBanner.extraCount > 0 ? (
-                <span className="overview-alert-count">
-                  +{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}
-                </span>
+                <details className="overview-idle-details">
+                  <summary>+{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}</summary>
+                  {processIdleBanner.sensors.slice(1).map((sensor) => (
+                    <div key={sensor.sensorCode}>{sensor.sensorCode} {sensor.label}</div>
+                  ))}
+                </details>
               ) : null}
               <Link
                 to="/dashboard/live"
@@ -560,12 +555,11 @@ export default function DashboardSection() {
             <article key={item.id} className={`section-card stat-card stat-card-${item.tone}`}>
               <div className="stat-card-heading">
                 <span className="stat-card-icon" aria-hidden="true">
-                  <Icon size={22} />
+                  <Icon size={15} />
                 </span>
                 <p className="stat-label">{item.label}</p>
               </div>
               <p className="stat-value">{item.value}</p>
-              <p className="stat-helper">{item.helper}</p>
             </article>
           )
         })}
@@ -581,7 +575,6 @@ export default function DashboardSection() {
         <section className="section-card downtime-chart-card">
           <div className="section-heading">
             <div>
-              <p className="section-eyebrow">Downtime chart</p>
               {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
                 <SkeletonBlock className="skeleton-heading" />
               ) : (
@@ -601,6 +594,8 @@ export default function DashboardSection() {
                   rangeLabel={trendRangeLabel}
                   onDateChange={setTrendAnchorDate}
                   onModeChange={setTrendMode}
+                  triggerAriaLabel={`Selected period ${trendRangeLabel}`}
+                  triggerLabel=""
                 />
               </div>
             )}
@@ -690,11 +685,10 @@ export default function DashboardSection() {
           </div>
         </section>
       ) : hasCurrentLive ? (
-        <section className="section-card machine-health-card" aria-labelledby="machine-health-title">
+        <section className="machine-health-card" aria-labelledby="machine-health-title">
           <div className="section-heading">
             <div>
-              <p className="section-eyebrow">Machine health</p>
-              <h2 id="machine-health-title">{liveData.machine?.name || 'Spiral Mill 01'}</h2>
+              <h2 id="machine-health-title">Machine Health · {liveData.machine?.name || 'Spiral Mill 01'}</h2>
             </div>
             <div className="live-refresh">
               <span className="section-chip">
@@ -728,17 +722,12 @@ export default function DashboardSection() {
             {sensorHealth.map((sensor) => (
               <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
                 <div className="overview-sensor-heading">
-                  <span className="sensor-state-icon" aria-hidden="true">
-                    <SensorStatusIcon status={sensor.status} />
-                  </span>
-                  <div>
-                    <p>{sensor.code}</p>
-                    <h3>{sensor.label}</h3>
-                  </div>
+                  <span>{sensor.code}</span>
+                  <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status === 'Fault' ? <Wrench size={12} aria-hidden="true" /> : null}{sensor.status}</span>
                 </div>
+                <h3 title={sensor.label}>{sensor.label}</h3>
                 <div className="overview-sensor-footer">
-                  <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status}</span>
-                  <span>{sensor.lastEventAt ? `Last event ${formatLiveDateTime(sensor.lastEventAt)}` : 'No recent event'}</span>
+                  <span>{sensor.lastEventAt ? formatLiveDateTime(sensor.lastEventAt) : 'No recent event'}</span>
                   <span>Connection: {connectivityLabel(sensor)}</span>
                 </div>
               </article>

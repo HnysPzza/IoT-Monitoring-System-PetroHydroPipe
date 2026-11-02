@@ -536,7 +536,7 @@ describe('DashboardSection', () => {
     }
 
     const view = render(renderTree('first-token'))
-    expect(await screen.findByRole('heading', { name: 'Prior token machine' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Machine Health · Prior token machine' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
     expect(await screen.findByText(/Live machine status is stale/i)).toHaveTextContent('Prior token refresh failed.')
 
@@ -552,7 +552,7 @@ describe('DashboardSection', () => {
       expect(screen.getByText('Machine Online')).toBeInTheDocument()
     })
     const loadingMachineKpi = screen.getByText('Machine Online').closest('article')
-    expect(loadingMachineKpi).toHaveTextContent('Refreshing live status')
+    expect(loadingMachineKpi).toHaveTextContent('—')
     expect(loadingMachineKpi).not.toHaveTextContent('1 / 1')
   })
 
@@ -655,6 +655,23 @@ describe('DashboardSection', () => {
     expect(
       screen.getByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
     ).toBeInTheDocument()
+  })
+
+  it('expands the additional idle sensors', async () => {
+    const user = userEvent.setup()
+    const live = livePayload()
+    live.sensors[0].status = 'Idle'
+    live.sensors[1].status = 'Idle'
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(live)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(<DashboardSection />)
+    const trigger = await screen.findByText('+1 more idle sensor')
+    expect(trigger.closest('details')).not.toHaveAttribute('open')
+    await user.click(trigger)
+    expect(trigger.closest('details')).toHaveAttribute('open')
+    expect(screen.getByText('S-02 Inside Filler Wire')).toBeVisible()
   })
 
   it('replaces the idle banner on overview when that idle sensor transitions to Fault', async () => {
