@@ -19,7 +19,7 @@ function createFuzzApp(calls) {
   return loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
       getSettingsConstraints: () => ({ sensorCodes: [], outputSensorCode: 'S-05' }),
-      getMachineSettings: async () => ({ machineId, version: '1' }),
+      getMachineSettingsForRead: async () => ({ machineId, version: '1' }),
       updateMachineSettings: async (values) => {
         calls.settingsUpdates.push(values)
         return { machineId, version: '2' }

@@ -1,7 +1,7 @@
 const settingsService = require('./settings.service')
 
 async function getMachineSettings(req, res) {
-  const settings = await settingsService.getMachineSettings(req.validated.params.machineId)
+  const settings = await settingsService.getMachineSettingsForRead(req.validated.params.machineId)
   res.set('Cache-Control', 'no-store')
   res.json({ settings, constraints: settingsService.getSettingsConstraints() })
 }

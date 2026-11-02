@@ -162,6 +162,37 @@ function loadReportsService(fakeSupabase) {
   return require(path.join(backendRoot, 'src', 'modules', 'reports', 'reports.service.js'))
 }
 
+test('starts comparison reads while the selected report is pending', async () => {
+  const fake = createFakeSupabase()
+  const originalRpc = fake.rpc
+  let release
+  let calls = 0
+  fake.rpc = (...args) => {
+    calls += 1
+    return calls === 1 ? new Promise((resolve) => { release = () => resolve({ data: [], error: null }) }) : originalRpc(...args)
+  }
+  const service = loadReportsService(fake)
+  const request = service.getSummary({ type: 'daily', date: '2026-08-09', compare: true }, { asOf: new Date('2026-08-10T00:00:00Z') })
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.equal(calls, 2) } finally { release(); await request }
+})
+
+test('starts production comparison reads while selected production is pending', async () => {
+  const fake = createFakeSupabase()
+  const service = loadReportsService(fake)
+  const repository = require('../../../src/modules/reports/reports.repository')
+  const original = repository.findAcceptedCuttingEventsWithSpecs
+  let release
+  let calls = 0
+  repository.findAcceptedCuttingEventsWithSpecs = () => {
+    calls += 1
+    return calls === 1 ? new Promise((resolve) => { release = resolve }) : Promise.resolve([])
+  }
+  const request = service.getSummary({ category: 'production', type: 'daily', date: '2026-08-09', compare: true }, { asOf: new Date('2026-08-10T00:00:00Z') })
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.equal(calls, 2) } finally { release([]); await request; repository.findAcceptedCuttingEventsWithSpecs = original }
+})
+
 function getProductionSummary(report) {
   return report.summary.find((item) => item.id === 'production')
 }

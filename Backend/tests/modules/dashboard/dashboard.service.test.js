@@ -57,6 +57,50 @@ function createMachineClient() {
   }
 }
 
+test('downtime impact does not query unrelated sensor metadata', async () => {
+  clearSourceCache()
+  const client = createMachineClient()
+  const from = client.from
+  client.from = (table) => {
+    assert.notEqual(table, 'sensors')
+    return from(table)
+  }
+  mockModule('src/database/client.js', { getSupabaseClient: () => client })
+  mockModule('src/modules/downtime/downtime.repository.js', { getOverlappingDowntime: async () => [] })
+  mockModule('src/modules/settings/settingsHistory.repository.js', { getSettingsHistory: async () => [{
+    machine_id: MACHINE_ID, version: '1',
+    shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0 },
+    effective_from: null, effective_to: null,
+  }] })
+  const service = require('../../../src/modules/dashboard/dashboard.service')
+  const result = await service.getDowntimeImpact({ trendMode: 'today', date: '2026-08-09' })
+  assert.ok(Array.isArray(result.points))
+})
+
+test('overview starts metric reads while sensor metadata is pending', async () => {
+  clearSourceCache()
+  const client = createProductionClient([], [])
+  const from = client.from
+  let releaseSensors
+  let downtimeCalls = 0
+  client.from = (table) => {
+    const query = from(table)
+    if (table === 'sensors') query.order = () => new Promise((resolve) => { releaseSensors = resolve })
+    return query
+  }
+  mockModule('src/database/client.js', { getSupabaseClient: () => client })
+  mockModule('src/modules/downtime/downtime.repository.js', { getOverlappingDowntime: async () => { downtimeCalls += 1; return [] } })
+  mockModule('src/modules/settings/settingsHistory.repository.js', { getSettingsHistory: async () => [{
+    machine_id: MACHINE_ID, version: '1',
+    shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0 },
+    effective_from: null, effective_to: null,
+  }] })
+  const service = require('../../../src/modules/dashboard/dashboard.service')
+  const request = service.getOverview()
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.equal(downtimeCalls, 2) } finally { releaseSensors({ data: [], error: null }); await request }
+})
+
 function createProductionClient(events, queryLog) {
   return {
     rpc(functionName, args) {

@@ -208,7 +208,7 @@ function buildMetrics(
   }
 }
 
-async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, lossRatePiecesPerMinute }) {
+async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, lossBasisPromise }) {
   if (range.api.periodState === 'future') {
     return {
       range: range.api,
@@ -228,11 +228,13 @@ async function buildPeriod({ machine, range, bucketConfig, asOf, dependencies, l
   }
 
   const observedWindow = { start: range.start, end: range.observedEnd }
-  const [eventRows, downtimeRows, settingsHistory] = await Promise.all([
+  const [eventRows, downtimeRows, settingsHistory, lossBasis] = await Promise.all([
     dependencies.aggregateEvents(machine.id, observedWindow, bucketConfig.seconds),
     dependencies.getOverlappingDowntime(machine.id, observedWindow),
     dependencies.getSettingsHistory(machine.id, observedWindow),
+    lossBasisPromise,
   ])
+  const lossRatePiecesPerMinute = lossBasis.ratePiecesPerMinute
   const totalMetrics = calculateMachineMetrics({
     records: downtimeRows,
     window: observedWindow,
@@ -383,11 +385,12 @@ async function getAnalytics(query, suppliedDependencies = {}) {
     ...suppliedDependencies,
   }
   const machine = await dependencies.getMachineAndSensors()
-  const lossEstimateBasis = await dependencies.getOutputLossBasis({
+  const lossBasisPromise = dependencies.getOutputLossBasis({
     machineId: machine.id,
     asOf,
     fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
   })
+  lossBasisPromise.catch(() => {})
   const selectionMode = query.range === 'all' ? 'all' : 'dates'
   const today = formatBusinessDate(asOf)
   const firstRecordedAt = selectionMode === 'all'
@@ -433,7 +436,7 @@ async function getAnalytics(query, suppliedDependencies = {}) {
     bucketConfig,
     asOf,
     dependencies,
-    lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+    lossBasisPromise,
   })
   const [selected, comparison] = selectionMode === 'all'
     ? [await selectedPromise, null]
@@ -445,10 +448,11 @@ async function getAnalytics(query, suppliedDependencies = {}) {
         bucketConfig,
         asOf: comparisonAsOf,
         dependencies,
-        lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+        lossBasisPromise,
       }),
     ])
 
+  const lossEstimateBasis = await lossBasisPromise
   return {
     generatedAt: asOf.toISOString(),
     timeZone: BUSINESS_TIME_ZONE,

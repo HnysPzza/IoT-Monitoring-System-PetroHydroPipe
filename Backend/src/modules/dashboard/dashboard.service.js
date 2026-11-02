@@ -61,7 +61,7 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString('en-PH')
 }
 
-async function getMachineAndSensors() {
+async function getMachine() {
   const supabase = getSupabaseClient()
   const { data: machine, error: machineError } = await supabase
     .from('machines')
@@ -77,6 +77,12 @@ async function getMachineAndSensors() {
     throw createDashboardError(404, 'MACHINE_NOT_FOUND', 'Spiral Mill 01 was not found.')
   }
 
+  return machine
+}
+
+async function getSensors(machine) {
+  const supabase = getSupabaseClient()
+
   const { data: sensors, error: sensorsError } = await supabase
     .from('sensors')
     .select('id, sensor_code, status, label, updated_at')
@@ -87,7 +93,7 @@ async function getMachineAndSensors() {
     throw createDashboardError(500, 'OVERVIEW_SENSORS_QUERY_FAILED', 'Unable to load overview sensors.')
   }
 
-  return { machine, sensors: sensors || [] }
+  return sensors || []
 }
 
 async function getProductionEvents(machineId, range) {
@@ -331,10 +337,11 @@ async function getOverview(filters = {}) {
   const asOf = new Date()
   const mode = filters.trendMode || 'week'
   const anchorDate = parseAnchorDate(filters.date)
-  const { machine, sensors } = await getMachineAndSensors()
+  const machine = await getMachine()
   const todayWindow = getWindowForMode('today', startOfBusinessDay())
   const trendWindow = getWindowForMode(mode, anchorDate)
   const [
+    sensors,
     todayDowntimeRows,
     trendDowntimeRows,
     todaySettingsHistory,
@@ -342,6 +349,7 @@ async function getOverview(filters = {}) {
     productionAnalytics,
     lossEstimateBasis,
   ] = await Promise.all([
+    getSensors(machine),
     getOverlappingDowntime(machine.id, todayWindow),
     getOverlappingDowntime(machine.id, trendWindow),
     getSettingsHistory(machine.id, todayWindow),
@@ -396,7 +404,7 @@ async function getDowntimeImpact(filters = {}) {
   const asOf = new Date()
   const mode = filters.trendMode || 'week'
   const anchorDate = parseAnchorDate(filters.date)
-  const { machine } = await getMachineAndSensors()
+  const machine = await getMachine()
   const trendWindow = getWindowForMode(mode, anchorDate)
   const [trendDowntimeRows, settingsHistory, lossEstimateBasis] = await Promise.all([
     getOverlappingDowntime(machine.id, trendWindow),

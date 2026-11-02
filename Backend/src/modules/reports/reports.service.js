@@ -608,7 +608,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     label: sensorLabel,
   }
 
-  const report = await buildObservedProductionReport({
+  const reportPromise = buildObservedProductionReport({
     type,
     selectedDate,
     machine,
@@ -621,10 +621,10 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     maxLogs: options.maxLogs !== undefined ? options.maxLogs : 200,
   })
 
-  if (!compare) return report
+  if (!compare) return reportPromise
 
   const comparisonWindow = getComparisonWindow(type, requestedWindow, observed.periodState, asOf)
-  const previousReport = await buildObservedProductionReport({
+  const [report, previousReport] = await Promise.all([reportPromise, buildObservedProductionReport({
     type,
     selectedDate: formatBusinessDate(comparisonWindow.start),
     machine,
@@ -635,7 +635,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     asOf,
     suppliedClient: options.client,
     metricsOnly: true,
-  })
+  })])
 
   return {
     ...report,
@@ -675,7 +675,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     asOf,
     fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
   })
-  const report = await buildObservedReport({
+  const reportPromise = buildObservedReport({
     type,
     selectedDate,
     machine,
@@ -685,10 +685,10 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     lossEstimateBasis,
   })
 
-  if (!compare) return report
+  if (!compare) return reportPromise
 
   const comparisonWindow = getComparisonWindow(type, requestedWindow, observed.periodState, asOf)
-  const previousReport = await buildObservedReport({
+  const [report, previousReport] = await Promise.all([reportPromise, buildObservedReport({
     type,
     selectedDate: formatBusinessDate(comparisonWindow.start),
     machine,
@@ -696,7 +696,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     periodState: observed.periodState,
     asOf,
     lossEstimateBasis,
-  })
+  })])
 
   return {
     ...report,

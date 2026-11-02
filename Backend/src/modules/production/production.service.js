@@ -218,33 +218,31 @@ async function listProductionLogs(filters = {}, options = {}) {
   const todayRange = getBusinessDayRange(formatBusinessDate(asOf))
   const queryEndIso = periodState === 'partial' ? asOf.toISOString() : window.end.toISOString()
 
-  const rawWindowEvents = await productionRepository.findProductionEvents(
-    {
+  const isWindowCoveringToday = window.start <= todayRange.start && window.end >= todayRange.end
+  const [rawWindowEvents, rawTodayEvents] = await Promise.all([
+    productionRepository.findProductionEvents({
       sensorId: sensor.id,
       startIso: window.start.toISOString(),
       endIso: queryEndIso,
-    },
-    options.client,
-  )
+    }, options.client),
+    !isWindowCoveringToday && asOf > todayRange.start
+      ? productionRepository.findProductionEvents({
+        sensorId: sensor.id,
+        startIso: todayRange.start.toISOString(),
+        endIso: todayRange.end.toISOString(),
+      }, options.client)
+      : Promise.resolve([]),
+  ])
 
   const windowEvents = rawWindowEvents.filter(
     (event) => event.output_accepted === true || event.output_accepted === false,
   )
 
   let totalAcceptedToday = 0
-  const isWindowCoveringToday = window.start <= todayRange.start && window.end >= todayRange.end
 
   if (isWindowCoveringToday) {
     totalAcceptedToday = countAcceptedInRange(windowEvents, todayRange)
   } else if (asOf > todayRange.start) {
-    const rawTodayEvents = await productionRepository.findProductionEvents(
-      {
-        sensorId: sensor.id,
-        startIso: todayRange.start.toISOString(),
-        endIso: todayRange.end.toISOString(),
-      },
-      options.client,
-    )
     const todayEvents = rawTodayEvents.filter(
       (event) => event.output_accepted === true || event.output_accepted === false,
     )

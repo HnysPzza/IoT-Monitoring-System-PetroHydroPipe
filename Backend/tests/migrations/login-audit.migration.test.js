@@ -7,7 +7,7 @@ const { createAuthSessionDatabase } = require('../helpers/authSessionDatabase')
 test('login session, timestamp, and audit succeed or roll back together', async (context) => {
   const { db, userId } = await createAuthSessionDatabase(context)
   for (const name of ['029_account_onboarding.sql', '030_verify_login_credentials.sql', '031_atomic_login_audit.sql']) {
-    const migration = path.resolve(__dirname, '../database/migrations', name)
+    const migration = path.resolve(__dirname, '../../database/migrations', name)
     await db.exec(fs.readFileSync(migration, 'utf8'))
   }
   await db.exec("create function reject_login_audit() returns trigger language plpgsql as $$ begin if new.action='LOGIN_SUCCESS' then raise exception 'audit unavailable'; end if; return new; end $$; create trigger reject_login_audit before insert on audit_logs for each row execute function reject_login_audit()")

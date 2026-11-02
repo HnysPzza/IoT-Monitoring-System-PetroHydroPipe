@@ -168,8 +168,15 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (typeof tokenPayload.sid !== 'string' || !/^[0-9a-f-]{36}$/i.test(tokenPayload.sid)) {
     throw createAuthError(401, 'UNAUTHENTICATED', 'Sign in again to start a verified session.')
   }
-  // /me refreshes the safe user shape from the database using the JWT subject.
-  const userRecord = await findUserById(tokenPayload.sub, options)
+  const userPromise = findUserById(tokenPayload.sub, options)
+  let query = getSupabaseClient().from('auth_sessions').select('id').eq('id', tokenPayload.sid)
+    .eq('user_id', tokenPayload.sub).is('revoked_at', null).gt('expires_at', new Date().toISOString())
+  if (options.signal) query = query.abortSignal(options.signal)
+  const sessionPromise = Promise.resolve(query.maybeSingle()).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  )
+  const userRecord = await userPromise
 
   if (!userRecord) {
     throw createAuthError(401, 'UNAUTHENTICATED', 'Authenticated user no longer exists.')
@@ -186,10 +193,9 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (userRecord.onboarding_state === 'Invited') {
     throw createAuthError(403, 'ACCOUNT_SETUP_REQUIRED', 'Finish account setup before signing in.')
   }
-  let query = getSupabaseClient().from('auth_sessions').select('id').eq('id', tokenPayload.sid)
-    .eq('user_id', userRecord.id).is('revoked_at', null).gt('expires_at', new Date().toISOString())
-  if (options.signal) query = query.abortSignal(options.signal)
-  const { data, error } = await query.maybeSingle()
+  const sessionResult = await sessionPromise
+  if ('error' in sessionResult) throw sessionResult.error
+  const { data, error } = sessionResult.value
   if (error) throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to verify session.')
   if (!data) throw createAuthError(401, 'UNAUTHENTICATED', 'Session has ended. Sign in again.')
 

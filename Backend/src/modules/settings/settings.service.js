@@ -133,6 +133,24 @@ async function getMachineSettings(machineId, suppliedClient) {
   return parseSettingsDocument(data, 'SETTINGS_QUERY_FAILED', machineId)
 }
 
+async function getMachineSettingsForRead(machineId) {
+  const supabase = getSupabaseClient()
+  const machinePromise = loadMachine(supabase, machineId)
+  const settingsPromise = Promise.resolve(supabase
+    .from('machine_operational_settings')
+    .select('machine_id, sensor_thresholds, shift_schedule, version, updated_at, updated_by')
+    .eq('machine_id', machineId)
+    .maybeSingle()).then((value) => ({ value }), (error) => ({ error }))
+
+  await machinePromise
+  const result = await settingsPromise
+  if ('error' in result) throw result.error
+  const { data, error } = result.value
+  if (error) throw createSettingsError(500, 'SETTINGS_QUERY_FAILED', 'Unable to load machine settings.')
+  if (!data) throw createSettingsError(500, 'SETTINGS_NOT_CONFIGURED', 'Machine settings are not configured.')
+  return parseSettingsDocument(data, 'SETTINGS_QUERY_FAILED', machineId)
+}
+
 function mapUpdateError(error) {
   if (error?.code === '40001') {
     return createSettingsError(
@@ -211,5 +229,6 @@ async function updateMachineSettings({
 module.exports = {
   getSettingsConstraints,
   getMachineSettings,
+  getMachineSettingsForRead,
   updateMachineSettings,
 }
