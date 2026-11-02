@@ -14,7 +14,7 @@ export const reportTypes = [
   { id: 'monthly', label: 'Monthly' },
 ]
 
-export function getReportSummary(token, { category = 'regular', reportType, selectedDate, includeComparison = false }) {
+export function getReportSummary(token, { category = 'regular', reportType, selectedDate, includeComparison = false }, { signal } = {}) {
   const params = new URLSearchParams()
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
 
@@ -23,7 +23,7 @@ export function getReportSummary(token, { category = 'regular', reportType, sele
   if (normalizedDate) params.set('date', normalizedDate)
   if (includeComparison) params.set('compare', 'true')
 
-  return apiRequest(`/api/reports/summary?${params.toString()}`, { token })
+  return apiRequest(`/api/reports/summary?${params.toString()}`, { token, signal })
 }
 
 function getExportFilename(disposition, fallback) {

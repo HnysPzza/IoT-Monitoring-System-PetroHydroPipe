@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -78,6 +78,18 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByLabelText('S-05 trigger minutes')).toBeDisabled()
   })
 
+  it('keeps an unsaved draft when the window loses and regains focus', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    fireEvent.blur(window)
+    fireEvent.focus(window)
+    expect(trigger).toHaveValue(5)
+    expect(getOperationalSettings).toHaveBeenCalledTimes(1)
+  })
+
   it('saves edits from the header controls', async () => {
     const user = userEvent.setup()
     const header = document.createElement('div')
@@ -130,6 +142,21 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
+  it('keeps editing blocked after the server reports enforcement, even if the draft is discarded', async () => {
+    const user = userEvent.setup()
+    const error = Object.assign(new Error('Enforcement active'), { code: 'SETTINGS_ENFORCEMENT_ACTIVE' })
+    updateOperationalSettings.mockRejectedValue(error)
+    renderWithAuth(<SettingsSection />)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('read-only')
+    expect(trigger).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(trigger).toBeDisabled()
+  })
+
   it('keeps the draft and requires reload after a version conflict', async () => {
     const user = userEvent.setup()
     const conflict = new Error('Conflict')
@@ -145,6 +172,22 @@ describe('SettingsSection operational settings', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/draft was kept/i)
     expect(trigger).toHaveValue(5)
     expect(screen.getByRole('button', { name: 'Reload latest' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('keeps the conflict and draft when reloading machines fails', async () => {
+    const user = userEvent.setup()
+    updateOperationalSettings.mockRejectedValue(Object.assign(new Error('Conflict'), { code: 'SETTINGS_VERSION_CONFLICT' }))
+    renderWithAuth(<SettingsSection />)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByRole('button', { name: 'Reload latest' })
+    getMachines.mockRejectedValueOnce(new Error('Machine reload failed'))
+    await user.click(screen.getByRole('button', { name: 'Reload latest' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Machine reload failed')
+    expect(trigger).toHaveValue(5)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 

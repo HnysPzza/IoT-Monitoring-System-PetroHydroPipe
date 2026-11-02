@@ -35,6 +35,6 @@ function buildAuditQuery(filters) {
   return queryString ? `?${queryString}` : ''
 }
 
-export function getAuditLogs(token, filters) {
-  return apiRequest(`/api/audit${buildAuditQuery(filters)}`, { token })
+export function getAuditLogs(token, filters, { signal } = {}) {
+  return apiRequest(`/api/audit${buildAuditQuery(filters)}`, { token, signal })
 }

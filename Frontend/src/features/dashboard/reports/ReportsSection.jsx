@@ -2,6 +2,10 @@ import './reports-compact.css'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useQueryClient } from '@tanstack/react-query'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
@@ -72,9 +76,7 @@ function getManilaDateInputValue() {
   }).format(new Date())
 }
 
-function getQueryKey(category, reportType, selectedDate) {
-  return `${category}:${reportType}:${selectedDate}`
-}
+
 
 function parseLocalDate(value) {
   const [year, month, day] = String(value).split('-').map(Number)
@@ -332,77 +334,40 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
 
 export default function ReportsSection() {
   const { token } = useAuth()
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
   const [category, setCategory] = useState('regular')
   const [reportType, setReportType] = useState('daily')
   const [selectedDate, setSelectedDate] = useState(getManilaDateInputValue)
-  const [report, setReport] = useState(null)
-  const [loadedRequestKey, setLoadedRequestKey] = useState('')
-  const [loadState, setLoadState] = useState('loading')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState(null)
-  const [refreshRequest, setRefreshRequest] = useState(0)
   const [exportState, setExportState] = useState('idle')
   const [exportingFormat, setExportingFormat] = useState(null)
   const [exportErrorMessage, setExportErrorMessage] = useState('')
-  const requestIdRef = useRef(0)
-  const successfulReportRef = useRef(null)
   const currentDate = getManilaDateInputValue()
   const selectedCalendarDate = parseLocalDate(selectedDate)
   const maxCalendarDate = parseLocalDate(currentDate)
   const calendarMode = getCalendarMode(reportType)
   const calendarRangeLabel = getCalendarRangeLabel(reportType, selectedCalendarDate)
-  const queryKey = getQueryKey(category, reportType, selectedDate)
-  const requestKey = `${token || 'anonymous'}:${queryKey}`
-  const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
+  const params = { category, reportType, selectedDate, includeComparison: true }
+  const query = useAuthenticatedQuery({
+    queryKey: queryKeys.reports.summary(params),
+    queryFn: async ({ token: currentToken, signal }) => {
+      const payload = await getReportSummary(currentToken, params, { signal })
+      return payload.report || { summary: [], rows: [] }
+    },
+    staleTime: 60000,
+    refetchOnWindowFocus: true,
+  })
+  const report = query.data
+  const hasCurrentReport = Boolean(report)
+  const loadState = query.isError || !online ? (report ? 'stale' : 'error') : query.isFetching ? 'loading' : 'success'
+  const errorMessage = query.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load report summary.')
+  const lastSuccessfulUpdate = query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : null
   const isCurrentSuccess = loadState === 'success' && hasCurrentReport
   const reportCards = hasCurrentReport ? getReportCards(report) : []
   const isProduction = category === 'production'
 
-  useEffect(() => {
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    let isCancelled = false
-
-    async function loadReport() {
-      setLoadState('loading')
-      setErrorMessage('')
-
-      try {
-        const payload = await getReportSummary(token, { category, reportType, selectedDate, includeComparison: true })
-        if (isCancelled || requestId !== requestIdRef.current) return
-
-        const nextReport = payload.report || { summary: [], rows: [] }
-        const updatedAt = new Date()
-        successfulReportRef.current = { requestKey, report: nextReport, updatedAt }
-        setReport(nextReport)
-        setLoadedRequestKey(requestKey)
-        setLastSuccessfulUpdate(updatedAt)
-        setLoadState('success')
-      } catch (error) {
-        if (isCancelled || requestId !== requestIdRef.current) return
-
-        setErrorMessage(error.message || 'Unable to load report summary.')
-
-        if (successfulReportRef.current?.requestKey === requestKey) {
-          setReport(successfulReportRef.current.report)
-          setLoadedRequestKey(requestKey)
-          setLastSuccessfulUpdate(successfulReportRef.current.updatedAt)
-          setLoadState('stale')
-        } else {
-          setLoadState('error')
-        }
-      }
-    }
-
-    loadReport()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [category, queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
-
   function retryCurrentReport() {
-    setRefreshRequest((current) => current + 1)
+    void query.refetch()
   }
 
   function handleReportTypeChange(nextReportType) {
@@ -427,6 +392,7 @@ export default function ReportsSection() {
 
     try {
       const { blob, filename } = await exportReport(token, { category, reportType, selectedDate, format })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       downloadBlob(blob, filename)
       setExportState('idle')
       setExportingFormat(null)

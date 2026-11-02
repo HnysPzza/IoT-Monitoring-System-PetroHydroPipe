@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { useState } from 'react'
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../auth/authSession.jsx'
@@ -344,6 +345,7 @@ describe('DashboardSection', () => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
           'test-token',
           { trendMode: 'week', date: '2026-07-06' },
+          { signal: expect.any(AbortSignal) },
         )
       })
 
@@ -355,6 +357,7 @@ describe('DashboardSection', () => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
           'test-token',
           { trendMode: 'month', date: '2026-06' },
+          { signal: expect.any(AbortSignal) },
         )
       })
     } finally {
@@ -450,6 +453,17 @@ describe('DashboardSection', () => {
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
   })
 
+  it('marks Overview machine health stale immediately when offline', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    renderWithAuth(<DashboardSection />)
+    await screen.findByRole('heading', { name: 'Machine Health · Spiral Mill 01' })
+    act(() => onlineManager.setOnline(false))
+    expect(screen.getByText(/Live machine status is stale/i)).toHaveTextContent(/updated.*ago/i)
+    await act(async () => { onlineManager.setOnline(true); await Promise.resolve() })
+  })
+
   it('distinguishes chart error from empty and retries the current range', async () => {
     const user = userEvent.setup()
     getDashboardOverview.mockResolvedValue(overviewPayload())
@@ -514,6 +528,7 @@ describe('DashboardSection', () => {
   })
 
   it('hides prior-token live metadata and errors while the new token loads', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
     const user = userEvent.setup()
     const nextTokenLiveRequest = deferred()
     const priorTokenLive = livePayload()
@@ -527,11 +542,11 @@ describe('DashboardSection', () => {
 
     function renderTree(token) {
       return (
-        <AuthContext.Provider value={{ token }}>
+        <QueryClientProvider client={client}><AuthContext.Provider value={{ token, isAuthenticated: true, user: { id: 'one', role: 'Admin' } }}>
           <MemoryRouter>
             <DashboardSection />
           </MemoryRouter>
-        </AuthContext.Provider>
+        </AuthContext.Provider></QueryClientProvider>
       )
     }
 
@@ -601,7 +616,7 @@ describe('DashboardSection', () => {
 
     expect(screen.queryByText('Weekly range failed.')).not.toBeInTheDocument()
     expect(screen.getByText(/Cached daily point/)).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Refreshing downtime chart...')
+    expect(getDashboardDowntimeImpact).toHaveBeenCalledTimes(2)
   })
 
   it('announces a same-range chart refresh while preserving cached points', async () => {

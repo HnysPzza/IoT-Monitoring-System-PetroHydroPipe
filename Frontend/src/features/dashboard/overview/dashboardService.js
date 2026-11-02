@@ -42,7 +42,7 @@ function isDashboardOverview(payload) {
   )
 }
 
-export async function getDashboardOverview(token, { trendMode, date } = {}) {
+export async function getDashboardOverview(token, { trendMode, date } = {}, { signal } = {}) {
   const params = new URLSearchParams()
   const normalizedDate = trendMode === 'month' && date?.length === 7 ? `${date}-01` : date
 
@@ -50,14 +50,14 @@ export async function getDashboardOverview(token, { trendMode, date } = {}) {
   if (normalizedDate) params.set('date', normalizedDate)
 
   const queryString = params.toString()
-  const payload = await apiRequest(`/api/dashboard/overview${queryString ? `?${queryString}` : ''}`, { token })
+  const payload = await apiRequest(`/api/dashboard/overview${queryString ? `?${queryString}` : ''}`, { token, signal })
   if (!isDashboardOverview(payload)) {
     throw new Error('The server returned an invalid dashboard overview response.')
   }
   return payload
 }
 
-export function getDashboardDowntimeImpact(token, { trendMode, date } = {}) {
+export function getDashboardDowntimeImpact(token, { trendMode, date } = {}, { signal } = {}) {
   const params = new URLSearchParams()
   const normalizedDate = trendMode === 'month' && date?.length === 7 ? `${date}-01` : date
 
@@ -65,5 +65,5 @@ export function getDashboardDowntimeImpact(token, { trendMode, date } = {}) {
   if (normalizedDate) params.set('date', normalizedDate)
 
   const queryString = params.toString()
-  return apiRequest(`/api/dashboard/downtime-impact${queryString ? `?${queryString}` : ''}`, { token })
+  return apiRequest(`/api/dashboard/downtime-impact${queryString ? `?${queryString}` : ''}`, { token, signal })
 }

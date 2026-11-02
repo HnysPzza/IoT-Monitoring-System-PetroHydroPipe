@@ -13,8 +13,8 @@ export function sendPasswordReset(token, userId) {
   return apiRequest(`/api/users/${userId}/password-reset`, { token, method: 'POST' })
 }
 
-export function getRoles(token) {
-  return apiRequest('/api/users/roles', { token })
+export function getRoles(token, signal) {
+  return apiRequest('/api/users/roles', { token, signal })
 }
 
 export function createUser(token, values) {

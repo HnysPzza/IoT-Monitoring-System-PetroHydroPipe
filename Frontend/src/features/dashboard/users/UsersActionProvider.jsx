@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, Undo2, X } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { archiveUser, updateUserStatus } from './usersService.js'
 import './users-action.css'
 
@@ -15,6 +17,7 @@ export function useUsersAction() {
 
 export default function UsersActionProvider({ children }) {
   const { token } = useAuth()
+  const queryClient = useQueryClient()
   const [pendingAction, setPendingAction] = useState(null)
   const [notice, setNotice] = useState(null)
   const [revision, setRevision] = useState(0)
@@ -65,6 +68,8 @@ export default function UsersActionProvider({ children }) {
       } catch (error) {
         nextNotice = { type: 'error', message: `${error.message} If the request timed out, check the directory before retrying.` }
       } finally {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
         if (pendingActionRef.current === committing) pendingActionRef.current = null
         setPendingAction(null)
         setRevision((current) => current + 1)

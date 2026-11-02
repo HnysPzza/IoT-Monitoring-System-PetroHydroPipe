@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../../features/auth/authSession.jsx'
@@ -274,7 +275,7 @@ describe('ReportsSection request states', () => {
     await user.click(await screen.findByRole('button', { name: /selected period/i }))
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
-    await waitFor(() => expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ reportType: 'monthly' })))
+    await waitFor(() => expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ reportType: 'monthly' }), { signal: expect.any(AbortSignal) }))
     expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true')
   })
 
@@ -436,6 +437,7 @@ describe('ReportsSection request states', () => {
   })
 
   it('does not reuse a prior token report after the active session changes', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const nextSessionRequest = deferred()
     getReportSummary
       .mockResolvedValueOnce(reportPayload({ rows: [reportRow('Prior session cause')] }))
@@ -443,17 +445,18 @@ describe('ReportsSection request states', () => {
 
     function renderTree(token) {
       return (
-        <AuthContext.Provider value={{ token }}>
+        <QueryClientProvider client={client}><AuthContext.Provider value={{ token, isAuthenticated: true, user: { id: token } }}>
           <MemoryRouter>
-            <ReportsSection />
+            <ReportsSection key={token} />
           </MemoryRouter>
-        </AuthContext.Provider>
+        </AuthContext.Provider></QueryClientProvider>
       )
     }
 
     const view = render(renderTree('first-token'))
     expect(await screen.findByText('Prior session cause')).toBeInTheDocument()
 
+    client.clear()
     view.rerender(renderTree('second-token'))
 
     expect(screen.queryByText('Prior session cause')).not.toBeInTheDocument()
@@ -483,7 +486,7 @@ describe('ReportsSection request states', () => {
 
     expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
       category: 'production',
-    }))
+    }), { signal: expect.any(AbortSignal) })
 
     // Check Production Report sections
     expect(await screen.findByText('Output by product specification')).toBeInTheDocument()

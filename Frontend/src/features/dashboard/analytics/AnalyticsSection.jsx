@@ -1,8 +1,11 @@
 import './analytics-compact.css'
 import { createPortal } from 'react-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { keepPreviousData } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AlertTriangle, Info, RotateCw } from 'lucide-react'
-import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getAnalyticsKpis } from './analyticsPresentation.js'
 import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
@@ -25,20 +28,13 @@ function getRangeValidation(options) {
 }
 
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
-  const { token } = useAuth()
+  const online = useNetworkOnline()
   const currentManilaDate = getManilaDateInputValue()
   const [period, setPeriod] = useState('week')
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
   const [customRange, setCustomRange] = useState(null)
   const [trendMetric, setTrendMetric] = useState('downtime')
   const [isCaveatOpen, setIsCaveatOpen] = useState(false)
-  const [snapshot, setSnapshot] = useState(null)
-  const [loadState, setLoadState] = useState('loading')
-  const [errorMessage, setErrorMessage] = useState('')
-  const requestIdRef = useRef(0)
-  const requestControllerRef = useRef(null)
-  const successfulSnapshotRef = useRef(null)
-
   const requestOptions = useMemo(() => {
     if (period === 'all') {
       return { period: 'all' }
@@ -59,84 +55,24 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     () => getRangeValidation(requestOptions),
     [requestOptions],
   )
-  const requestKey = range
-    ? `${token || 'anonymous'}:${range.period}:${range.range || range.startDate}:${range.endDate || ''}:${range.bucket}`
-    : ''
-
-  const loadSnapshot = useCallback(async () => {
-    if (!range) return
-
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    requestControllerRef.current?.abort()
-    const requestController = new AbortController()
-    requestControllerRef.current = requestController
-    const previousResult = successfulSnapshotRef.current
-    const hasPreviousSnapshot = Boolean(previousResult)
-    const hasMatchingSnapshot = previousResult?.requestKey === requestKey
-
-    if (!hasPreviousSnapshot) setSnapshot(null)
-    setLoadState(hasPreviousSnapshot ? 'refreshing' : 'loading')
-    setErrorMessage('')
-
-    try {
-      const nextSnapshot = await loadAnalytics(token, requestOptions, { signal: requestController.signal })
-      if (requestId !== requestIdRef.current) return
-
-      successfulSnapshotRef.current = { requestKey, snapshot: nextSnapshot }
-      setSnapshot(nextSnapshot)
-      setLoadState('success')
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return
-
-      const nextErrorMessage = error?.message || 'Unable to load Analytics.'
-      setErrorMessage(nextErrorMessage)
-
-      if (hasMatchingSnapshot) {
-        setSnapshot(previousResult.snapshot)
-        setLoadState('stale')
-      } else {
-        setSnapshot(null)
-        setLoadState('error')
-      }
-    } finally {
-      if (requestId === requestIdRef.current) requestControllerRef.current = null
-    }
-  }, [loadAnalytics, range, requestKey, requestOptions, token])
-
-  useEffect(() => {
-    if (!range) {
-      // A delayed API response must not overwrite validation after
-      // a user has made the custom range invalid.
-      requestIdRef.current += 1
-      requestControllerRef.current?.abort()
-      requestControllerRef.current = null
-      setSnapshot(null)
-      setErrorMessage('')
-      setLoadState('validation')
-      return
-    }
-
-    loadSnapshot()
-  }, [loadSnapshot, range])
-
-  useEffect(() => {
-    if (!range) return undefined
-
-    const intervalId = window.setInterval(loadSnapshot, AUTO_REFRESH_MS)
-    return () => window.clearInterval(intervalId)
-  }, [loadSnapshot, range])
-
-  useEffect(() => () => {
-    requestIdRef.current += 1
-    requestControllerRef.current?.abort()
-  }, [])
-
+  const query = useAuthenticatedQuery({
+    queryKey: queryKeys.analytics.snapshot(range),
+    queryFn: ({ token, signal }) => loadAnalytics(token, requestOptions, { signal }),
+    enabled: Boolean(range),
+    staleTime: 60000,
+    refetchInterval: AUTO_REFRESH_MS,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
+  })
+  const snapshot = range ? query.data : null
+  const loadState = !range ? 'validation' : query.isError || !online ? (snapshot ? 'stale' : 'error') : query.isFetching ? (snapshot ? 'refreshing' : 'loading') : 'success'
+  const errorMessage = query.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load Analytics.')
+  const loadSnapshot = () => query.refetch()
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
   const hasComparison = snapshot?.comparisonMode !== 'none'
   const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
-  const isShowingPreviousRange = Boolean(snapshot && successfulSnapshotRef.current?.requestKey !== requestKey)
+  const isShowingPreviousRange = query.isPlaceholderData
 
   const handleRangeChange = useCallback(({ period: nextPeriod, startDate: nextStartDate, endDate: nextEndDate }) => {
     setPeriod(nextPeriod)

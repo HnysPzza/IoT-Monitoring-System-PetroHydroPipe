@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, History, RotateCw, X } from 'lucide-react'
-import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useRef, useState } from 'react'
+import { AlertTriangle, History, RotateCw, X } from 'lucide-react'
+import { keepPreviousData } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import { getAuditLogs } from './auditService.js'
 import {
@@ -39,7 +42,7 @@ function getManilaDateInputValue() {
 }
 
 export default function AuditSection() {
-  const { token } = useAuth()
+  const online = useNetworkOnline()
   const detailsDialogRef = useRef(null)
   const [actionFilter, setActionFilter] = useState('All')
   const [entityFilter, setEntityFilter] = useState('All')
@@ -47,64 +50,26 @@ export default function AuditSection() {
   const [dateRange, setDateRange] = useState({ dateFrom: '', dateTo: '' })
   const [auditMode, setAuditMode] = useState('day')
   const [page, setPage] = useState(1)
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: AUDIT_PAGE_SIZE,
-    total: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPreviousPage: false,
-  })
-  const [logs, setLogs] = useState([])
-  const [notice, setNotice] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedLog, setSelectedLog] = useState(null)
-
-  async function loadAuditLogs({ silent = false } = {}) {
-    if (silent) {
-      setIsRefreshing(true)
-    } else {
-      setIsLoading(true)
-    }
-
-    setNotice(null)
-
-    try {
-      const payload = await getAuditLogs(token, {
-        action: actionFilter,
-        entityType: entityFilter,
-        date: dateFilter,
-        dateFrom: dateRange.dateFrom || (dateFilter ? dateFilter : undefined),
-        dateTo: dateRange.dateTo || (dateFilter ? dateFilter : undefined),
-        page,
-        limit: AUDIT_PAGE_SIZE,
-      })
-
-      setLogs(payload.logs || [])
-      setPagination(payload.pagination || {
-        page,
-        limit: AUDIT_PAGE_SIZE,
-        total: payload.logs?.length || 0,
-        totalPages: 1,
-        hasNextPage: false,
-        hasPreviousPage: page > 1,
-      })
-      if (detailsDialogRef.current?.open) {
-        detailsDialogRef.current.close()
-      }
-    } catch (error) {
-      setNotice({ type: 'error', message: error.message || 'Unable to load audit logs.' })
-      setLogs([])
-    } finally {
-      setIsLoading(false)
-      setIsRefreshing(false)
-    }
+  const filters = {
+    action: actionFilter, entityType: entityFilter, date: dateFilter,
+    dateFrom: dateRange.dateFrom || (dateFilter ? dateFilter : undefined),
+    dateTo: dateRange.dateTo || (dateFilter ? dateFilter : undefined),
+    page, limit: AUDIT_PAGE_SIZE,
   }
-
-  useEffect(() => {
-    loadAuditLogs()
-  }, [token, actionFilter, entityFilter, dateFilter, dateRange.dateFrom, dateRange.dateTo, page])
+  const query = useAuthenticatedQuery({
+    queryKey: queryKeys.audit.list(filters),
+    queryFn: ({ token, signal }) => getAuditLogs(token, filters, { signal }),
+    staleTime: 30000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
+  })
+  const logs = query.data?.logs || []
+  const pagination = query.data?.pagination || { page, limit: AUDIT_PAGE_SIZE, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: page > 1 }
+  const isLoading = online && query.isPending && !query.data
+  const isRefreshing = query.isFetching && Boolean(query.data)
+  const notice = query.isError || !online ? { type: 'error', message: `${query.data ? `Audit data is stale.${query.isPlaceholderData ? ' Showing previous filter results.' : ''}${query.dataUpdatedAt ? ` Last updated ${new Date(query.dataUpdatedAt).toLocaleString()}.` : ''} ` : ''}${query.error?.message || 'Unable to refresh while offline.'}` } : null
+  const loadAuditLogs = () => query.refetch()
 
   function updateActionFilter(value) {
     setActionFilter(value)
@@ -185,10 +150,12 @@ export default function AuditSection() {
     <div className="audit-layout">
       {notice ? (
         <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>
-          {notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
+          <AlertTriangle size={16} aria-hidden="true" />
           <span>{notice.message}</span>
+          <button type="button" onClick={() => query.refetch()}>Retry</button>
         </div>
       ) : null}
+      {isRefreshing ? <div role="status">{query.isPlaceholderData ? 'Loading selected filters; previous results remain visible.' : 'Refreshing audit log...'}</div> : null}
 
       <section className="section-card reports-controls-card audit-controls-card" aria-labelledby="audit-title">
         <div className="section-heading">

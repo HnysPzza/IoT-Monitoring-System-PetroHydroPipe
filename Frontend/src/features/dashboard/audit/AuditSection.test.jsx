@@ -79,7 +79,7 @@ describe('AuditSection', () => {
     await user.click(screen.getByRole('button', { name: /next/i }))
 
     await waitFor(() => {
-      expect(getAuditLogs).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }))
+      expect(getAuditLogs).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }), { signal: expect.any(AbortSignal) })
     })
     await waitFor(() => {
       expect(screen.getAllByText(/user account created/i).length).toBeGreaterThan(1)
@@ -270,6 +270,7 @@ describe('AuditSection', () => {
           dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
           dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
+        { signal: expect.any(AbortSignal) },
       )
     })
   })
@@ -300,6 +301,7 @@ describe('AuditSection', () => {
           dateFrom: expect.stringMatching(/^\d{4}-\d{2}-01$/),
           dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
+        { signal: expect.any(AbortSignal) },
       )
     })
   })

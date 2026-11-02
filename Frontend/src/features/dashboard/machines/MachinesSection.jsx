@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
@@ -107,7 +108,7 @@ export default function MachinesSection() {
             <time dateTime={lastUpdated?.toISOString()}>
               {lastUpdated ? formatSuccessfulUpdate(lastUpdated) : 'an earlier update'}
             </time>
-            . {error}
+            {' '}(updated <UpdatedAgo updatedAt={lastUpdated} />). {error}
           </span>
           <button className="btn btn-secondary table-action-button" type="button" onClick={refreshSnapshot}>Retry machines</button>
         </div>

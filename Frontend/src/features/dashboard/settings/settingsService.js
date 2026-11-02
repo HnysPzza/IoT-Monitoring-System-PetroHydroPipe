@@ -1,7 +1,7 @@
 import { apiRequest } from '../../../shared/services/apiClient.js'
 
-export function getOperationalSettings(token, machineId) {
-  return apiRequest(`/api/machines/${machineId}/settings`, { token })
+export function getOperationalSettings(token, machineId, signal) {
+  return apiRequest(`/api/machines/${machineId}/settings`, { token, signal })
 }
 
 export function updateOperationalSettings(token, machineId, settings) {
@@ -12,6 +12,6 @@ export function updateOperationalSettings(token, machineId, settings) {
   })
 }
 
-export function getWatchdogDiagnostics(token) {
-  return apiRequest('/api/operations/watchdog', { token })
+export function getWatchdogDiagnostics(token, signal) {
+  return apiRequest('/api/operations/watchdog', { token, signal })
 }

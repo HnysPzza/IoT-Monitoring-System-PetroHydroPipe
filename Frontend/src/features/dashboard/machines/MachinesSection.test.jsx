@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -216,6 +217,7 @@ describe('MachinesSection live snapshot', () => {
   })
 
   it('ignores a late snapshot from a prior token', async () => {
+    const client = new QueryClient()
     const firstTokenRequest = deferred()
     getLiveFeed
       .mockReturnValueOnce(firstTokenRequest.promise)
@@ -223,9 +225,11 @@ describe('MachinesSection live snapshot', () => {
 
     function renderTree(token) {
       return (
-        <AuthContext.Provider value={{ token }}>
-          <MemoryRouter><MachinesSection /></MemoryRouter>
-        </AuthContext.Provider>
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider value={{ token }}>
+            <MemoryRouter><MachinesSection /></MemoryRouter>
+          </AuthContext.Provider>
+        </QueryClientProvider>
       )
     }
 
