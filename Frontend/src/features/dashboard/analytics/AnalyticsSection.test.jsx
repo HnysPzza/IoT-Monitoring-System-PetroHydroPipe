@@ -314,9 +314,7 @@ describe('Analytics weekly and monthly selection', () => {
     await user.click(trigger)
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
 
-    // Active month is October 2026. Navigate to September 2026 with <
-    await user.click(screen.getByRole('button', { name: 'Previous month' }))
-    expect(screen.getByText('September 2026')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Sep 2026' }))
     expect(screen.getByText(/Sep 1 \u2013 Sep 30, 2026 \u00b7 1 month/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Apply' }))

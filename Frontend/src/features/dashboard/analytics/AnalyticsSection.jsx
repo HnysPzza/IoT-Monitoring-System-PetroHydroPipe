@@ -1,7 +1,9 @@
+import './analytics-compact.css'
+import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Info, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
-import { getAnalyticsKpis, secondaryAnalyticsKpiIds } from './analyticsPresentation.js'
+import { getAnalyticsKpis } from './analyticsPresentation.js'
 import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsDateRangePicker from './AnalyticsDateRangePicker.jsx'
@@ -24,7 +26,7 @@ function getRangeValidation(options) {
 
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
   const { token } = useAuth()
-  const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
+  const currentManilaDate = getManilaDateInputValue()
   const [period, setPeriod] = useState('week')
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
   const [customRange, setCustomRange] = useState(null)
@@ -133,8 +135,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
   const hasComparison = snapshot?.comparisonMode !== 'none'
-  const primaryKpis = kpis.filter((kpi) => kpi.isPrimary)
-  const secondaryKpis = kpis.filter((kpi) => secondaryAnalyticsKpiIds.includes(kpi.id))
   const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
   const isShowingPreviousRange = Boolean(snapshot && successfulSnapshotRef.current?.requestKey !== requestKey)
 
@@ -147,12 +147,11 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     }
   }, [])
 
-  return (
-    <div className="reports-layout analytics-layout">
-      <section className="section-card analytics-controls-card" aria-labelledby="analytics-controls-title">
+  const controls = (
+      <div className="analytics-controls-card">
         <div className="analytics-header-row">
           <div className="analytics-title-group">
-            <h2 id="analytics-controls-title">Analytics</h2>
+            <h2 className="sr-only">Analytics</h2>
             <Popover open={isCaveatOpen} onOpenChange={setIsCaveatOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -190,7 +189,13 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
             </button>
           </div>
         </div>
-      </section>
+      </div>
+  )
+  const headerSlot = document.getElementById('analytics-header-controls')
+
+  return (
+    <div className="reports-layout analytics-layout">
+      {headerSlot ? createPortal(controls, headerSlot) : controls}
 
       {loadState === 'refreshing' ? (
         <div className="notice dashboard-alert" role="status" aria-live="polite">
@@ -240,27 +245,9 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
       {snapshot && range && loadState !== 'error' && loadState !== 'validation' ? (
         <>
-          <section className="analytics-kpi-grid analytics-primary-kpi-grid" aria-label="Primary Analytics summary">
-            {primaryKpis.map((kpi) => (
-              <AnalyticsKpiCard
-                key={kpi.id}
-                kpi={kpi}
-                selectedMetric={trendMetric}
-                onSelect={setTrendMetric}
-                showComparison={hasComparison}
-              />
-            ))}
-          </section>
-
-          <section className="analytics-secondary-kpi-row" aria-label="Secondary Analytics summary">
-            {secondaryKpis.map((kpi) => (
-              <AnalyticsKpiCard
-                key={kpi.id}
-                kpi={kpi}
-                selectedMetric={trendMetric}
-                onSelect={setTrendMetric}
-                showComparison={hasComparison}
-              />
+          <section className="analytics-compact-kpis" aria-label="Analytics summary">
+            {kpis.map((kpi) => (
+              <AnalyticsKpiCard key={kpi.id} kpi={kpi} selectedMetric={trendMetric} onSelect={setTrendMetric} showComparison={hasComparison} />
             ))}
           </section>
 
