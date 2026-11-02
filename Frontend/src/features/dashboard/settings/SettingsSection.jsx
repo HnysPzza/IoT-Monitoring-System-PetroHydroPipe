@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Info, Lock, Plus, RotateCw, Save } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import './settings-compact.css'
+import { AlertTriangle, Lock, Plus, RotateCcw, RotateCw, Save } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
@@ -233,18 +235,31 @@ export default function SettingsSection() {
     return <section className="section-card settings-panel"><div className="skeleton skeleton-heading" /><div className="skeleton skeleton-panel" /></section>
   }
 
+  const headerControls = document.getElementById('settings-header-controls')
+  const headerVersion = document.getElementById('settings-header-version')
+  const version = draft && constraints ? <span className="settings-version">{isDirty ? 'Unsaved changes' : `Version ${settings.version}`}</span> : null
+  const actions = draft && constraints ? (
+    <div className="settings-header-actions">
+      {!headerVersion ? version : null}
+      <button className="btn btn-secondary" type="button" disabled={!isDirty || isSaving} onClick={() => { setDraft(toDraft(settings)); setConflict(false); setNotice(null) }}><RotateCcw size={14} aria-hidden="true" /> Discard</button>
+      {conflict ? <button className="btn btn-secondary" type="button" onClick={() => setReloadKey((value) => value + 1)}><RotateCw size={14} aria-hidden="true" /> Reload latest</button> : null}
+      <button className="btn btn-primary" type="submit" form="operational-settings-form" disabled={!canSave}><Save size={14} aria-hidden="true" /> {isSaving ? 'Saving…' : 'Save'}</button>
+    </div>
+  ) : null
+
   return (
     <div className="settings-layout">
+      {headerVersion ? createPortal(version, headerVersion) : null}
+      {headerControls ? createPortal(actions, headerControls) : actions}
       {notice ? <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : null}<span>{notice.message}</span></div> : null}
 
       {!draft || !constraints ? (
         <section className="section-card section-placeholder"><div className="section-copy"><p className="section-eyebrow">Configuration unavailable</p><h2>Unable to load operational settings</h2><p>No changes can be made until the current server configuration is loaded.</p><button className="btn btn-secondary" type="button" onClick={() => setReloadKey((value) => value + 1)}><RotateCw size={16} aria-hidden="true" /> Retry</button></div></section>
       ) : (
-        <form className="settings-form" onSubmit={saveSettings}>
+        <form id="operational-settings-form" className="settings-form" onSubmit={saveSettings}>
           <section className="section-card settings-panel" aria-labelledby="operational-settings-title">
             <div className="section-heading">
               <div className="section-copy">
-                <p className="section-eyebrow">Operational configuration</p>
                 <h2 id="operational-settings-title">{machine.name}</h2>
               </div>
               <span className={`status-badge ${watchdogMode === 'observe' ? 'status-idle' : watchdogMode === 'enforce' ? 'status-downtime' : 'status-inactive'}`}>
@@ -261,8 +276,8 @@ export default function SettingsSection() {
                     <tr>
                       <th scope="col" className="col-sensor">Sensor & Monitoring Point</th>
                       <th scope="col" className="col-detect">Absence Detection</th>
-                      <th scope="col" className="col-trigger">Trigger Limit</th>
-                      <th scope="col" className="col-recovery">Recovery Limit</th>
+                      <th scope="col" className="col-trigger">Trigger Limit ({triggerMinutes.minimumWhenEnabled}–{triggerMinutes.maximum}m)</th>
+                      <th scope="col" className="col-recovery">Recovery Limit ({recoveryMinutes.minimumWhenEnabled}–{recoveryMinutes.maximum}m)</th>
                       <th scope="col" className="col-status">Status</th>
                     </tr>
                   </thead>
@@ -385,31 +400,25 @@ export default function SettingsSection() {
                 </table>
               </div>
 
-              <div className="settings-bounds-footer">
-                <Info size={14} aria-hidden="true" className="bounds-icon" />
-                <span>
-                  Minimums: {triggerMinutes.minimumWhenEnabled} min trigger, {recoveryMinutes.minimumWhenEnabled} min recovery. Maximum allowable trigger limit is {triggerMinutes.maximum} min ({recoveryMinutes.maximum} min max recovery).
-                </span>
-              </div>
             </div>
           </section>
 
           <section className="section-card settings-panel" aria-labelledby="shift-settings-title">
             <div className="section-heading">
               <div className="section-copy">
-                <p className="section-eyebrow">Asia/Manila schedule</p>
-                <h2 id="shift-settings-title">Shift and planned breaks</h2>
+                <div className="settings-shift-title"><h2 id="shift-settings-title">Shift and planned breaks</h2><span className="settings-timezone">{constraints.timeZone}</span></div>
               </div>
-            </div>
-
-            <div className="settings-work-bar">
-              <div className="work-bar-header">
-                <strong>Operating hours</strong>
                 {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd) ? (
                   <span className="shift-duration-badge">
                     {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd)}
                   </span>
                 ) : null}
+            </div>
+
+            <div className="settings-work-bar">
+              <div className="work-bar-header">
+                <strong>Operating hours</strong>
+
               </div>
 
               <div className="settings-work-grid">
@@ -467,7 +476,14 @@ export default function SettingsSection() {
                     {draft.shiftSchedule.breaks.length} / {constraints.breaks.maximum}
                   </span>
                 </div>
-                <p className="break-matrix-hint">Rest periods deduct from unplanned downtime calculations.</p>
+              <button
+                className="btn btn-secondary settings-add-break"
+                type="button"
+                disabled={editingBlocked || draft.shiftSchedule.breaks.length >= constraints.breaks.maximum}
+                onClick={addBreak}
+              >
+                <Plus size={15} aria-hidden="true" /> Add break
+              </button>
               </div>
 
               <div className="settings-break-table-container">
@@ -548,35 +564,9 @@ export default function SettingsSection() {
 
               {errors.breaks ? <p className="field-error break-error-note">{errors.breaks}</p> : null}
 
-              <button
-                className="btn btn-secondary settings-add-break"
-                type="button"
-                disabled={editingBlocked || draft.shiftSchedule.breaks.length >= constraints.breaks.maximum}
-                onClick={addBreak}
-              >
-                <Plus size={15} aria-hidden="true" /> Add break
-              </button>
+
             </div>
 
-            <div className="settings-actions">
-              <span>{isDirty ? 'Unsaved changes' : `Version ${settings.version}`}</span>
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={!isDirty || isSaving}
-                onClick={() => { setDraft(toDraft(settings)); setConflict(false); setNotice(null) }}
-              >
-                Discard changes
-              </button>
-              {conflict ? (
-                <button className="btn btn-secondary" type="button" onClick={() => setReloadKey((value) => value + 1)}>
-                  <RotateCw size={16} aria-hidden="true" /> Reload latest
-                </button>
-              ) : null}
-              <button className="btn btn-primary" type="submit" disabled={!canSave}>
-                <Save size={16} aria-hidden="true" /> {isSaving ? 'Saving…' : 'Save settings'}
-              </button>
-            </div>
           </section>
         </form>
       )}
