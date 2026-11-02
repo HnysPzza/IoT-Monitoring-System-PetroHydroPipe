@@ -1764,3 +1764,14 @@ input[type="number"] {
   border-color: var(--prod-border-subtle);
   color: var(--prod-text-muted);
 }
+.production-workspace { margin-top: 0; padding: 16px; }
+.production-workspace .production-header-strip { gap: 12px; }
+.production-workspace .production-title { font-size: 15px; }
+
+.production-workspace .production-header-strip { justify-content: flex-start; }
+.production-workspace .production-filter-strip { margin-top: 14px; margin-bottom: 14px; }
+.production-workspace .production-kpi-pill { background: var(--prod-surface); border: 1px solid var(--prod-border); color: var(--prod-text-secondary); }
+.production-workspace .production-kpi-pill.production-kpi-active { border-color: var(--prod-accent); color: var(--prod-accent); }
+.production-calendar-day.is-future, .production-calendar-month-btn.is-future { color: var(--prod-text-muted); }
+.production-calendar-day:disabled, .production-calendar-month-btn:disabled { color: var(--prod-text-muted); opacity: 0.6; }
+.production-calendar-day:disabled, .production-calendar-month-btn:disabled { background: transparent; box-shadow: none; }

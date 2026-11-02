@@ -834,8 +834,6 @@ export default function ProductionSection({
     }
   }
 
-  const sensorLabel = getSensorLabel('S-05', 'Production Output Cutting')
-
   return (
     <div className="production-workspace">
       {/* Screen Reader Announcements */}
@@ -844,13 +842,7 @@ export default function ProductionSection({
       </div>
 
       {/* Header Strip with Eyebrow, Main Heading, and Clean Unified KPI Pills */}
-      <header className="production-header-strip">
-        <div className="production-title-group">
-          <p className="production-eyebrow">{`S-05 · ${sensorLabel.toUpperCase()} · SPIRAL MILL 01`}</p>
-          <h1 className="production-title">Production Logs</h1>
-        </div>
-
-        {/* Clean Unified KPI Pills on right */}
+      <header className="production-header-strip"><div className="production-title-group sr-only"><p className="production-eyebrow">{`S-05 · ${getSensorLabel('S-05', 'Production Output Cutting').toUpperCase()} · SPIRAL MILL 01`}</p><h1 className="production-title">Production Logs</h1></div>
         <div className="production-kpi-strip" role="region" aria-label="Production Summary Metrics">
           <button
             type="button"
