@@ -679,10 +679,10 @@ test('CHALLENGE 3: High-Volume (1,000 cuts) capping at 200 for /summary vs compl
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(exportXlsx)
   const cutLogsSheet = wb.getWorksheet('Production Cut Logs')
-  // Header is row 5, followed by 1,000 rows -> total 1005 rows
+  // Header is row 5, followed by 1,000 rows + 1 daily subtotal row -> total 1006 rows
   assert.strictEqual(
     cutLogsSheet.rowCount,
-    1005,
-    `XLSX cut logs sheet must have 1005 rows (5 header rows + 1000 data rows), got ${cutLogsSheet.rowCount}`,
+    1006,
+    `XLSX cut logs sheet must have 1006 rows (5 header rows + 1000 data rows + 1 daily subtotal row), got ${cutLogsSheet.rowCount}`,
   )
 })
