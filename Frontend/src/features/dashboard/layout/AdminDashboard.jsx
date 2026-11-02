@@ -18,6 +18,7 @@ import {
   UserRoundCheck,
   Users,
 } from 'lucide-react'
+import './sidebar-compact.css'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -567,6 +568,7 @@ export default function AdminDashboard() {
           <PanelToggle
             ref={desktopSidebarToggleRef}
             className="sidebar-toggle desktop-only"
+            size={16}
             isCollapsed={isDesktopSidebarCollapsed}
             ariaLabel={isDesktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsSidebarCollapsed((value) => !value)}
@@ -600,12 +602,13 @@ export default function AdminDashboard() {
                       to={item.to}
                       end={item.to === '/dashboard'}
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
+                      data-label={item.label}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
                       className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
                     >
                       <Icon
                         className="sidebar-link-icon"
-                        size={20}
+                        size={16}
                         strokeWidth={item.icon === 'logs' ? 2.25 : 1.75}
                         aria-hidden="true"
                       />
@@ -629,11 +632,10 @@ export default function AdminDashboard() {
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
               <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
             </div>
+            <button className="sidebar-logout" type="button" aria-label="Logout" title="Log out" onClick={handleLogout}>
+              <LogOut size={14} aria-hidden="true" />
+            </button>
           </div>
-          <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>
-            <LogOut size={18} aria-hidden="true" />
-            <span>Logout</span>
-          </button>
         </div>
       </aside>
 
@@ -650,7 +652,7 @@ export default function AdminDashboard() {
       ) : null}
 
       <div className="dashboard-main">
-        <header className="dashboard-topbar">
+        <header className={`dashboard-topbar ${['/dashboard', '/dashboard/analytics', '/dashboard/reports', '/dashboard/users', '/dashboard/machines', '/dashboard/settings'].includes(normalizedPathname) ? 'overview-topbar' : ''}`}>
           <div className="topbar-leading">
             <PanelToggle
               ref={mobileMenuButtonRef}
@@ -664,13 +666,20 @@ export default function AdminDashboard() {
             />
             <div>
               <h1 className="topbar-label">{pageMeta.title}</h1>
-              {pageMeta.subtitle ? (
+              {pageMeta.subtitle && !['/dashboard', '/dashboard/analytics', '/dashboard/reports', '/dashboard/users', '/dashboard/machines', '/dashboard/settings'].includes(normalizedPathname) ? (
                 <p className="topbar-subtitle">{pageMeta.subtitle}</p>
               ) : null}
             </div>
+            {normalizedPathname === '/dashboard' ? <div id="overview-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/analytics' ? <div id="analytics-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/reports' ? <div id="reports-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/users' ? <div id="users-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/machines' ? <div id="machines-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-version" /> : null}
           </div>
 
           <div className="topbar-trailing">
+            {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-controls" /> : null}
             <span className={`alert-connection-status is-${alertConnectionStatus}`} role="status">
               {alertConnectionStatus === 'live'
                 ? 'Alert stream live'
@@ -843,7 +852,7 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        <section className="dashboard-content">
+        <section className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
           {/* Nested /dashboard routes render here. */}
           <UsersActionProvider>
             <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
