@@ -162,7 +162,7 @@ test('Oracle Suite 1.1: calculatePipeTonnage matches ASME/API theoretical formul
 
   for (const { od, thk, len } of testMatrix) {
     const directResult = calculatePipeTonnage(od, thk, len)
-    const theoreticalWeightKgM = (od - thk) * thk * 0.02466
+    const theoreticalWeightKgM = Math.PI * (od - thk) * thk * (7850 / 1000000)
     const theoreticalTons = (theoreticalWeightKgM * len) / 1000000
     const theoreticalRounded = Math.round(theoreticalTons * 10000) / 10000
 
@@ -200,12 +200,12 @@ test('Oracle Suite 1.2: calculatePipeTonnage strictly guards all invalid, negati
   assert.equal(calculatePipeTonnage([], 10, 6000), null)
 
   // String numeric representation should coerce cleanly if valid
-  assert.equal(calculatePipeTonnage('625.4', '10.0', '6000'), 0.9105)
+  assert.equal(calculatePipeTonnage('625.4', '10.0', '6000'), 0.9106)
 })
 
 test('Oracle Suite 1.3: Accumulation rounding does not suffer floating point drift across 5,000 simulated cuts', () => {
   const single = calculatePipeTonnage(625.4, 10, 6000)
-  assert.equal(single, 0.9105)
+  assert.equal(single, 0.9106)
 
   let accumulated = 0
   const N = 5000
@@ -215,8 +215,8 @@ test('Oracle Suite 1.3: Accumulation rounding does not suffer floating point dri
   const actualRounded = Math.round(accumulated * 10000) / 10000
   const expectedRounded = Math.round(single * N * 10000) / 10000
 
-  assert.equal(actualRounded, 4552.5)
-  assert.equal(expectedRounded, 4552.5)
+  assert.equal(actualRounded, 4553)
+  assert.equal(expectedRounded, 4553)
   assert.equal(actualRounded, expectedRounded)
 
   // Multi-specification accumulation across 5,000 cuts
@@ -241,7 +241,7 @@ test('Oracle Suite 1.3: Accumulation rounding does not suffer floating point dri
   const actualMultiTotal = Math.round(multiAccum * 10000) / 10000
 
   assert.equal(actualMultiTotal, expectedMultiTotal)
-  assert.equal(actualMultiTotal, 13049.7)
+  assert.equal(actualMultiTotal, 13050.65)
 
 })
 
@@ -273,9 +273,9 @@ test('Collision Suite 2.1: Same dimensions with different customers remain stric
   assert.ok(reganGroup, 'Regan group must exist')
   assert.equal(mcwdGroup.pipeCount, 2)
   assert.equal(reganGroup.pipeCount, 1)
-  assert.equal(mcwdGroup.singleTonnage, 0.9105)
-  assert.equal(mcwdGroup.totalTonnage, 1.821)
-  assert.equal(reganGroup.totalTonnage, 0.9105)
+  assert.equal(mcwdGroup.singleTonnage, 0.9106)
+  assert.equal(mcwdGroup.totalTonnage, 1.8212)
+  assert.equal(reganGroup.totalTonnage, 0.9106)
 
   // Physical distinct product sizes: both orders use the same 625.4x10x6000 tooling!
   assert.equal(report.metrics.distinctProductSizes, 1, 'Distinct product sizes should be 1 since physical dimensions are identical')

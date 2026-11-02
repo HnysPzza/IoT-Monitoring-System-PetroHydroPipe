@@ -60,6 +60,28 @@ const dimension = z.preprocess(
     .optional(),
 )
 
+const tonnage = z.preprocess(
+  (val) => {
+    if (val === undefined) return undefined
+    if (val === null) return null
+    if (typeof val === 'string') {
+      return val.trim() === '' ? null : Number(val)
+    }
+    if (typeof val === 'number') {
+      return val
+    }
+    return NaN
+  },
+  z
+    .number()
+    .finite()
+    .gt(0, 'Tonnage must be greater than zero.')
+    .max(99999999.99, 'Tonnage cannot exceed 99999999.99.')
+    .refine((n) => Math.round(n * 10000) / 10000 > 0, 'Tonnage rounded to 4 decimal places must be greater than zero.')
+    .nullable()
+    .optional(),
+)
+
 const listProductionLogsSchema = z.object({
   query: z
     .object({
@@ -111,6 +133,7 @@ const updateProductionSpecBodySchema = z
     thickness: dimension,
     length: dimension,
     pipeNumber,
+    tonnage,
     expectedUpdatedAt: z
       .string()
       .datetime({ offset: true, message: 'Invalid expectedUpdatedAt timestamp.' })
@@ -130,6 +153,7 @@ const updateProductionSpecBodySchema = z
         data.thickness !== undefined ||
         data.length !== undefined ||
         data.pipeNumber !== undefined ||
+        data.tonnage !== undefined ||
         data.label !== undefined ||
         data.size !== undefined ||
         data.radius !== undefined ||
@@ -166,6 +190,7 @@ const batchUpdateBodySchema = z
     diameter: dimension,
     thickness: dimension,
     length: dimension,
+    tonnage,
     label,
     size,
     radius: dimension,
@@ -220,6 +245,7 @@ const batchUpdateBodySchema = z
       data.diameter != null ||
       data.thickness != null ||
       data.length != null ||
+      data.tonnage != null ||
       data.label != null ||
       data.size != null ||
       data.radius != null ||
@@ -237,6 +263,7 @@ module.exports = {
   customer,
   pipeNumber,
   dimension,
+  tonnage,
   listProductionLogsSchema,
   updateProductionSpecBodySchema,
   updateProductionSpecSchema,

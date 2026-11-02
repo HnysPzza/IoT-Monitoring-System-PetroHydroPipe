@@ -13,6 +13,7 @@ const {
 
 // ponytail: Default window is fixed to 30 days; upgrade to cursor pagination or date partitions when event volume exceeds 50k per month.
 const DEFAULT_LIST_WINDOW_DAYS = 30
+const STEEL_DENSITY_KG_PER_M3 = 7850
 
 function resolveDateWindow(filters, asOf) {
   if (filters.date) {
@@ -64,7 +65,7 @@ function calculatePipeTonnage(diameter, thickness, length) {
   if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
   if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
 
-  const weightKgPerMeter = (d - t) * t * 0.02466
+  const weightKgPerMeter = Math.PI * (d - t) * t * (STEEL_DENSITY_KG_PER_M3 / 1000000)
   const totalWeightTons = (weightKgPerMeter * l) / 1000000
   return Math.round(totalWeightTons * 10000) / 10000
 }
@@ -78,6 +79,7 @@ function checkIsSpecified(spec) {
     spec.length != null ||
     spec.pipe_number != null ||
     spec.pipeNumber != null ||
+    spec.tonnage != null ||
     (spec.label != null && String(spec.label).trim() !== '') ||
     (spec.size != null && String(spec.size).trim() !== '') ||
     spec.radius != null ||
@@ -96,7 +98,8 @@ function toProductionRecord(event, spec, machine, sensorLabel, autoPipeNumber = 
   const pipeNumber = rawPipeNumber !== null
     ? rawPipeNumber
     : (event.output_accepted ? autoPipeNumber : null)
-  const tonnage = calculatePipeTonnage(diameter, thickness, length)
+  const explicitTonnage = spec?.tonnage != null && Number(spec.tonnage) > 0 ? Number(spec.tonnage) : null
+  const tonnage = explicitTonnage ?? calculatePipeTonnage(diameter, thickness, length)
 
   return {
     id: event.id,
@@ -377,7 +380,8 @@ function toSpecPayload(specRow) {
   const pipeNumber = specRow.pipe_number != null
     ? Number(specRow.pipe_number)
     : (specRow.pipeNumber != null ? Number(specRow.pipeNumber) : null)
-  const tonnage = calculatePipeTonnage(diameter, thickness, length)
+  const explicitTonnage = specRow.tonnage != null && Number(specRow.tonnage) > 0 ? Number(specRow.tonnage) : null
+  const tonnage = explicitTonnage ?? calculatePipeTonnage(diameter, thickness, length)
 
   return {
     sensorEventId: specRow.sensor_event_id,
@@ -407,6 +411,7 @@ async function updateProductionLogSpec({ eventId, payload, actorUserId }, option
       thickness: payload.thickness ?? null,
       length: payload.length ?? null,
       pipeNumber: payload.pipeNumber ?? null,
+      tonnage: payload.tonnage ?? null,
       actorUserId,
       expectedUpdatedAt: payload.expectedUpdatedAt ?? null,
     },
@@ -438,6 +443,7 @@ async function batchUpdateProductionLogSpecs({ payload, actorUserId }, options =
       diameter: payload.diameter ?? null,
       thickness: payload.thickness ?? null,
       length: payload.length ?? null,
+      tonnage: payload.tonnage ?? null,
       actorUserId,
     },
     options.client,
