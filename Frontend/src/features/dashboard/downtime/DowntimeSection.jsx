@@ -1,3 +1,6 @@
+import './downtime.css'
+import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
+import { fromDateInputValue, toDateInputValue } from '../overview/DowntimeTrendChart.jsx'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -6,7 +9,6 @@ import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getDowntimeStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getDowntimeRecords, subscribeToDowntime, updateDowntimeRecord } from './downtimeService.js'
 
-const statusFilters = ['All', 'Open', 'Resolved']
 const editableDowntimeCauses = [
   'Corrective Maintenance',
   'Manual Cutting',
@@ -75,7 +77,6 @@ export default function DowntimeSection() {
   const [listRange, setListRange] = useState(null)
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('All')
   const [causeFilter, setCauseFilter] = useState('All')
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [notice, setNotice] = useState(null)
@@ -95,7 +96,6 @@ export default function DowntimeSection() {
 
     try {
       const payload = await getDowntimeRecords(token, {
-        status: statusFilter,
         cause: causeFilter,
         date: dateFilter,
         page,
@@ -126,7 +126,7 @@ export default function DowntimeSection() {
     } finally {
       if (requestId === requestIdRef.current) setIsLoading(false)
     }
-  }, [causeFilter, dateFilter, page, statusFilter, token])
+  }, [causeFilter, dateFilter, page, token])
   const loadDowntimeRecordsRef = useRef(loadDowntimeRecords)
   loadDowntimeRecordsRef.current = loadDowntimeRecords
 
@@ -259,24 +259,8 @@ export default function DowntimeSection() {
       </div>
 
       <section className="section-card downtime-controls-card" aria-label="Downtime filters">
-        <div className="trend-mode-toggle" role="group" aria-label="Filter downtime by status">
-          {statusFilters.map((status) => (
-            <button
-              key={status}
-              className={`trend-mode-button ${statusFilter === status ? 'is-selected' : ''}`}
-              type="button"
-              aria-pressed={statusFilter === status}
-              onClick={() => {
-                setStatusFilter(status)
-                setPage(1)
-              }}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
         <label className="filter-field" htmlFor="downtime-cause-filter">
-          <span>Cause</span>
+          <span className="sr-only">Cause</span>
           <select
             id="downtime-cause-filter"
             name="downtimeCause"
@@ -293,20 +277,19 @@ export default function DowntimeSection() {
             ))}
           </select>
         </label>
-        <label className="filter-field" htmlFor="downtime-date-filter">
-          <span>Date</span>
-          <input
-            id="downtime-date-filter"
-            name="downtimeDate"
-            type="date"
-            value={dateFilter}
-            onChange={(event) => {
-              setDateFilter(event.target.value)
-              setPage(1)
-            }}
-            autoComplete="off"
+        <div className="downtime-date-control">
+          <TrendCalendarControl
+            selectedDate={dateFilter ? fromDateInputValue(dateFilter) : new Date()}
+            rangeLabel={dateFilter ? fromDateInputValue(dateFilter).toLocaleDateString('en-PH', { month: 'short', day: '2-digit', year: 'numeric' }) : 'Last 30 days'}
+            maxDate={fromDateInputValue(getManilaDateInputValue())}
+            popoverClassName="downtime-calendar-popover"
+            triggerAriaLabel="Select downtime date"
+            triggerLabel=""
+            showPresets={false}
+            onDateChange={(date) => { setDateFilter(toDateInputValue(date)); setPage(1) }}
           />
-        </label>
+          {dateFilter ? <button className="btn btn-secondary" type="button" onClick={() => { setDateFilter(''); setPage(1) }}>Clear date</button> : null}
+        </div>
       </section>
 
       {listRange?.isDefault ? (
@@ -316,7 +299,6 @@ export default function DowntimeSection() {
       <section className="section-card downtime-table-card" aria-labelledby="downtime-records-title">
         <div className="section-heading">
           <div>
-            <p className="section-eyebrow">Event records</p>
             <h2 id="downtime-records-title">Downtime records</h2>
           </div>
           <span className="section-chip">

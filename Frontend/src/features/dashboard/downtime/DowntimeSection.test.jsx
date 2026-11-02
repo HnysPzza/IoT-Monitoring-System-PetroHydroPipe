@@ -55,7 +55,7 @@ describe('DowntimeSection', () => {
     getDowntimeRecords.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve }))
       .mockResolvedValue({ records: [downtimeRecord({ displayLabel: 'Resolved result', status: 'Resolved', isOpen: false })] })
     renderWithAuth(<DowntimeSection />)
-    await user.click(screen.getByRole('button', { name: 'Resolved', exact: true }))
+    await user.selectOptions(screen.getByLabelText('Cause'), 'Misalignment')
     await screen.findByText('Resolved result')
     await act(async () => { resolveOld({ records: [downtimeRecord({ displayLabel: 'Old open result' })] }) })
     expect(screen.queryByText('Old open result')).not.toBeInTheDocument()
@@ -320,10 +320,10 @@ describe('DowntimeSection', () => {
     renderWithAuth(<DowntimeSection />)
 
     await screen.findByText('S-03 08:42 AM')
-    await user.click(screen.getByRole('button', { name: 'Resolved' }))
+    await user.selectOptions(screen.getByLabelText('Cause'), 'Misalignment')
 
     await waitFor(() => {
-      expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ status: 'Resolved' }))
+      expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ cause: 'Misalignment' }))
     })
     expect(screen.queryByRole('button', { name: /^Resolve$/i })).not.toBeInTheDocument()
     expect(updateDowntimeRecord).not.toHaveBeenCalled()
@@ -365,7 +365,7 @@ describe('DowntimeSection', () => {
 
     await screen.findByText('S-03 08:42 AM')
     expect(screen.queryByText(/Showing the last 30 days/)).not.toBeInTheDocument()
-    await user.clear(screen.getByLabelText('Date'))
+    await user.click(screen.getByRole('button', { name: 'Clear date' }))
     expect(await screen.findByText(/Showing the last 30 days/)).toBeInTheDocument()
     expect(getDowntimeRecords).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ date: '' }))
   })
