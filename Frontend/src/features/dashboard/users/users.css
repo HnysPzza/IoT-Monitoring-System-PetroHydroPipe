@@ -725,3 +725,32 @@
     justify-content: center;
   }
 }
+#users-header-controls { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--card-border); }
+.users-header-controls { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+.users-count { padding: 4px 8px; border-radius: 999px; background: var(--panel-bg); color: var(--c-text-2); font-size: 11px; white-space: nowrap; }
+.users-refresh { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.users-directory { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
+.users-directory .users-directory-card { padding: 0; overflow: hidden; }
+.users-directory .users-filters-card { padding: 14px; border-bottom: 1px solid var(--card-border); }
+.users-directory .users-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.users-directory .users-search-field { flex: 1 1 220px; }
+.users-directory .users-filters .filter-field { width: auto; }
+.users-directory .users-filters input, .users-directory .users-filters select { min-height: 36px; font-size: 12px; }
+.users-directory .users-add-user, .users-directory .users-clear-filters { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+.users-directory .users-add-user { margin-left: auto; background: var(--c-text); border-color: var(--c-text); color: var(--c-surface); }
+.users-directory .user-avatar { width: 32px; height: 32px; background: var(--panel-bg); color: var(--c-text-2); border-color: var(--card-border); }
+.users-directory .account-table th, .users-directory .account-table td { padding: 12px 16px; }
+.users-directory .account-table th { font-size: 11px; }
+.users-directory .account-table td { font-size: 12px; }
+.users-directory .user-display-name { font-size: 12px; }
+.users-directory .user-handles { font-size: 11px; }
+.users-directory .users-pagination { margin: 0; padding: 12px 16px; }
+.users-dialog { width: min(448px, calc(100vw - 2rem)); padding: 20px; }
+.users-dialog .account-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.users-dialog .account-form > .account-field:nth-child(n+3), .users-dialog .account-form-footer { grid-column: 1 / -1; }
+.users-dialog .account-invite-banner { padding: 10px; margin-bottom: 14px; font-size: 12px; }
+.users-dialog .account-form-footer { margin-top: 4px; }
+@media (max-width: 680px) { #users-header-controls { margin-left: 6px; padding-left: 6px; } .users-directory .users-filters > * { grid-column: auto; } .users-directory .users-search-field { flex-basis: 100%; } .users-directory .users-add-user { margin-left: 0; } }
+@media (max-width: 420px) { .users-dialog .account-form { grid-template-columns: 1fr; } .users-dialog .account-form > .account-field { grid-column: 1; } }
+.users-dialog .account-submit { background: var(--c-text); border-color: var(--c-text); color: var(--c-surface); }
+@media (max-width: 680px) { .dashboard-topbar:has(#users-header-controls) { flex-wrap: wrap; } .dashboard-topbar:has(#users-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; } }

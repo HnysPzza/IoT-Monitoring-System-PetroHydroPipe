@@ -103,7 +103,7 @@ it('adds a user without credentials and reports unconfirmed email without losing
   await user.type(form.getByLabelText('Username'), 'operator')
   await user.type(form.getByLabelText('Email'), 'operator@example.test')
   await user.selectOptions(form.getByLabelText('Role'), 'Production Supervisor')
-  await user.click(form.getByRole('button', { name: 'Send invite' }))
+  await user.click(form.getByRole('button', { name: 'Add user' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(createUser).toHaveBeenCalledWith('test-token', { name: 'New Operator', username: 'operator', email: 'operator@example.test', role: 'Production Supervisor' })
   expect(screen.getByRole('alert')).toHaveTextContent(/Account saved, but email delivery is unconfirmed/)
@@ -135,7 +135,7 @@ it('sends a password reset link from the account actions and confirms provider a
 
 it('places Add user in the filter row and removes the advanced setup filter', async () => {
   renderUsers()
-  expect(await screen.findByRole('heading', { name: 'Staff accounts' })).toBeInTheDocument()
+  expect(await screen.findByRole('region', { name: 'Staff accounts' })).toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: 'User accounts' })).not.toBeInTheDocument()
   expect(screen.queryByText('Total Users:')).not.toBeInTheDocument()
   const addUserButton = screen.getByRole('button', { name: 'Add user' })

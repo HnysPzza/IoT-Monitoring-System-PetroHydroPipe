@@ -31,6 +31,7 @@ export default function UsersTable({
   onResetPassword,
   onStatusChange,
   page = 1,
+  pageSize = 10,
   sort = 'created',
   totalCount = 0,
   totalPages = 1,
@@ -92,7 +93,7 @@ export default function UsersTable({
                         {account.role === 'Admin' ? (
                           <span className="protected-badge" title="Protected Managing Director account">
                             <ShieldCheck size={12} aria-hidden="true" />
-                            <span>Protected Managing Director</span>
+                            <span>Protected</span>
                           </span>
                         ) : null}
                       </div>
@@ -238,7 +239,7 @@ export default function UsersTable({
         <nav className="users-pagination" aria-label="Account directory pages">
           <div className="users-pagination-info">
             <span aria-live="polite">
-              Page {page || 1} of {totalPages} · {totalCount} accounts
+              Showing {totalCount === 0 ? 0 : ((page || 1) - 1) * pageSize + 1}–{Math.min(((page || 1) - 1) * pageSize + accounts.length, totalCount)} of {totalCount} accounts
             </span>
           </div>
           <div className="users-pagination-actions">

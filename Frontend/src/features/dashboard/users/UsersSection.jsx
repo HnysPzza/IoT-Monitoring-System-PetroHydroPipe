@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   Search,
+  RotateCw,
   UserPlus,
   X,
 } from 'lucide-react'
@@ -183,15 +185,26 @@ export default function UsersSection() {
   )
 
   const pages = Math.max(1, Math.ceil(directory.total / query.limit))
+  const headerSlot = document.getElementById('users-header-controls')
+  const headerControls = (
+    <div className="users-header-controls">
+      {!isLoading && !loadError ? <span className="users-count">{directory.total} {hasActiveFilters ? 'matching' : 'staff'} accounts</span> : null}
+      <button className="btn btn-secondary users-refresh" type="button" aria-label="Refresh accounts" disabled={isLoading || busy} onClick={() => setRevision((current) => current + 1)}>
+        <RotateCw size={15} aria-hidden="true" /> Refresh
+      </button>
+    </div>
+  )
 
   return (
     <div className="users-directory">
       <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
+      {headerSlot ? createPortal(headerControls, headerSlot) : headerControls}
 
-      <section className="section-card users-filters-card" aria-label="User account filters">
+      <section className="section-card users-directory-card" aria-label="Staff accounts">
+        <div className="users-filters-card" aria-label="User account filters">
         <div className="users-filters">
           <label className="filter-field users-search-field" htmlFor="users-search-input">
-            <span>Search</span>
+            <span className="sr-only">Search</span>
             <div className="users-search-control">
               <Search size={16} className="users-search-icon" aria-hidden="true" />
               <input
@@ -207,7 +220,7 @@ export default function UsersSection() {
           </label>
 
           <label className="filter-field" htmlFor="users-filter-role">
-            <span>Role</span>
+            <span className="sr-only">Role</span>
             <select
               id="users-filter-role"
               value={query.role}
@@ -220,7 +233,7 @@ export default function UsersSection() {
           </label>
 
           <label className="filter-field" htmlFor="users-filter-status">
-            <span>Status</span>
+            <span className="sr-only">Status</span>
             <select
               id="users-filter-status"
               value={query.status}
@@ -230,6 +243,26 @@ export default function UsersSection() {
               <option value="">All statuses</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
+            </select>
+          </label>
+
+          <label className="filter-field users-sort-field" htmlFor="users-filter-sort">
+            <span className="sr-only">Sort</span>
+            <select
+              id="users-filter-sort"
+              value={`${query.sort}-${query.direction}`}
+              disabled={busy}
+              onChange={(event) => {
+                const [sort, direction] = event.target.value.split('-')
+                setQuery((current) => ({ ...current, sort, direction, page: 1 }))
+              }}
+            >
+              <option value="created-desc">Newest first</option>
+              <option value="created-asc">Oldest first</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="name-desc">Name (Z–A)</option>
+              <option value="role-asc">Role (A–Z)</option>
+              <option value="status-asc">Status</option>
             </select>
           </label>
 
@@ -258,33 +291,6 @@ export default function UsersSection() {
             </button>
           )}
         </div>
-      </section>
-
-      <section className="section-card users-directory-card" aria-labelledby="users-directory-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Directory</p>
-            <h2 id="users-directory-title">Staff accounts</h2>
-          </div>
-          <label className="filter-field users-sort-field" htmlFor="users-filter-sort">
-            <span>Sort</span>
-            <select
-              id="users-filter-sort"
-              value={`${query.sort}-${query.direction}`}
-              disabled={busy}
-              onChange={(event) => {
-                const [sort, direction] = event.target.value.split('-')
-                setQuery((current) => ({ ...current, sort, direction, page: 1 }))
-              }}
-            >
-              <option value="created-desc">Newest first</option>
-              <option value="created-asc">Oldest first</option>
-              <option value="name-asc">Name (A–Z)</option>
-              <option value="name-desc">Name (Z–A)</option>
-              <option value="role-asc">Role (A–Z)</option>
-              <option value="status-asc">Status</option>
-            </select>
-          </label>
         </div>
 
         {loadError ? (
@@ -303,6 +309,7 @@ export default function UsersSection() {
             page={query.page}
             totalPages={pages}
             totalCount={directory.total}
+            pageSize={query.limit}
             onPageChange={(page) => setQuery((current) => ({ ...current, page }))}
             onRequestDeactivate={(account) => {
               setConfirmAction({ type: 'deactivate', account })

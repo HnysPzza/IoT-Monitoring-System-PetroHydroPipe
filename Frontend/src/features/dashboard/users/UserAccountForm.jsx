@@ -1,7 +1,6 @@
 import {
   AtSign,
   Clock,
-  HelpCircle,
   LoaderCircle,
   Mail,
   Send,
@@ -117,10 +116,6 @@ export default function UserAccountForm({
         <div className="account-field">
           <div className="account-label-row">
             <label htmlFor="account-role">Role</label>
-            <span className="account-role-hint" title="Assign operational permissions for this user">
-              <HelpCircle size={13} aria-hidden="true" />
-              <span>Role permissions</span>
-            </span>
           </div>
           <div className="account-input-wrap">
             <Shield size={16} className="input-inset-icon" aria-hidden="true" />
@@ -162,7 +157,7 @@ export default function UserAccountForm({
             disabled={isLoading || isSubmitting}
           >
             {isSubmitting ? <LoaderCircle className="spin-icon" size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
-            <span>{isSubmitting ? 'Sending...' : 'Send invite'}</span>
+            <span>{isSubmitting ? 'Sending...' : 'Add user'}</span>
           </button>
         </div>
       </form>
