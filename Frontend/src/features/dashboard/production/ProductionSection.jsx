@@ -80,14 +80,19 @@ function formatTonnage(value) {
   return Number(value).toFixed(4)
 }
 
-function calculatePipeTonnage(diameter, thickness, length) {
+const STEEL_DENSITY_KG_PER_M3 = 7850
+
+export function calculatePipeTonnage(diameter, thickness, length) {
   if (diameter == null || thickness == null || length == null) return null
+  if (typeof diameter === 'string' && diameter.trim() === '') return null
+  if (typeof thickness === 'string' && thickness.trim() === '') return null
+  if (typeof length === 'string' && length.trim() === '') return null
   const d = Number(diameter)
   const t = Number(thickness)
   const l = Number(length)
   if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
   if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
-  const weightKgPerMeter = (d - t) * t * 0.02466
+  const weightKgPerMeter = Math.PI * (d - t) * t * (STEEL_DENSITY_KG_PER_M3 / 1000000)
   const totalWeightTons = (weightKgPerMeter * l) / 1000000
   return Math.round(totalWeightTons * 10000) / 10000
 }
@@ -99,6 +104,7 @@ export function hasInformation(record) {
   if (record.diameter !== null && record.diameter !== undefined && record.diameter !== '' && !isNaN(Number(record.diameter))) return true
   if (record.thickness !== null && record.thickness !== undefined && record.thickness !== '' && !isNaN(Number(record.thickness))) return true
   if (record.length !== null && record.length !== undefined && record.length !== '' && !isNaN(Number(record.length))) return true
+  if (record.tonnage !== null && record.tonnage !== undefined && record.tonnage !== '' && !isNaN(Number(record.tonnage))) return true
   if (record.label && String(record.label).trim() !== '') return true
   if (record.size && String(record.size).trim() !== '') return true
   if (record.radius !== null && record.radius !== undefined && record.radius !== '' && !isNaN(Number(record.radius))) return true
@@ -279,6 +285,7 @@ export default function ProductionSection({
     thickness: '',
     length: '',
     pipeNumber: '',
+    tonnage: '',
   })
   const [flashingRecordId, setFlashingRecordId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -287,6 +294,7 @@ export default function ProductionSection({
     diameter: '',
     thickness: '',
     length: '',
+    tonnage: '',
   })
   const [isConfirmingBulk, setIsConfirmingBulk] = useState(false)
   const [isApplyingBulk, setIsApplyingBulk] = useState(false)
@@ -389,6 +397,17 @@ export default function ProductionSection({
     setIsConfirmingBulk(false)
   }
 
+  const handleBulkDimensionChange = (field, value) => {
+    setBulkForm((prev) => {
+      const next = { ...prev, [field]: value }
+      const autoTons = calculatePipeTonnage(next.diameter, next.thickness, next.length)
+      if (autoTons !== null) {
+        next.tonnage = String(autoTons)
+      }
+      return next
+    })
+  }
+
   const handleRepeatLastSpec = () => {
     const lastSpec = records.find(
       (r) =>
@@ -397,15 +416,21 @@ export default function ProductionSection({
           (r.customer && String(r.customer).trim()) ||
           r.diameter != null ||
           r.thickness != null ||
-          r.length != null,
+          r.length != null ||
+          r.tonnage != null,
         ),
     )
     if (!lastSpec) return
+    const fallbackTonnage =
+      lastSpec.tonnage !== null && lastSpec.tonnage !== undefined
+        ? lastSpec.tonnage
+        : calculatePipeTonnage(lastSpec.diameter, lastSpec.thickness, lastSpec.length)
     setBulkForm({
       customer: lastSpec.customer || '',
       diameter: lastSpec.diameter !== null && lastSpec.diameter !== undefined ? String(lastSpec.diameter) : '',
       thickness: lastSpec.thickness !== null && lastSpec.thickness !== undefined ? String(lastSpec.thickness) : '',
       length: lastSpec.length !== null && lastSpec.length !== undefined ? String(lastSpec.length) : '',
+      tonnage: fallbackTonnage !== null && fallbackTonnage !== undefined ? String(fallbackTonnage) : '',
     })
   }
 
@@ -414,7 +439,8 @@ export default function ProductionSection({
       bulkForm.customer.trim() ||
         (bulkForm.diameter !== '' && !isNaN(Number(bulkForm.diameter))) ||
         (bulkForm.thickness !== '' && !isNaN(Number(bulkForm.thickness))) ||
-        (bulkForm.length !== '' && !isNaN(Number(bulkForm.length))),
+        (bulkForm.length !== '' && !isNaN(Number(bulkForm.length))) ||
+        (bulkForm.tonnage !== '' && !isNaN(Number(bulkForm.tonnage))),
     )
     if (!hasField) {
       setError('Provide at least one specification field to update.')
@@ -440,12 +466,15 @@ export default function ProductionSection({
       bulkForm.thickness !== '' && !isNaN(Number(bulkForm.thickness)) ? Number(bulkForm.thickness) : undefined
     const newLength =
       bulkForm.length !== '' && !isNaN(Number(bulkForm.length)) ? Number(bulkForm.length) : undefined
+    const newTonnage =
+      bulkForm.tonnage !== '' && !isNaN(Number(bulkForm.tonnage)) ? Number(bulkForm.tonnage) : undefined
 
     const appliedSpec = {}
     if (newCustomer !== undefined) appliedSpec.customer = newCustomer
     if (newDiameter !== undefined) appliedSpec.diameter = newDiameter
     if (newThickness !== undefined) appliedSpec.thickness = newThickness
     if (newLength !== undefined) appliedSpec.length = newLength
+    if (newTonnage !== undefined) appliedSpec.tonnage = newTonnage
 
     let newlySpecifiedCount = 0
     const targetSet = new Set(targetIds)
@@ -457,12 +486,18 @@ export default function ProductionSection({
         const effDiameter = newDiameter !== undefined ? newDiameter : r.diameter
         const effThickness = newThickness !== undefined ? newThickness : r.thickness
         const effLength = newLength !== undefined ? newLength : r.length
-        const effTonnage = calculatePipeTonnage(effDiameter, effThickness, effLength)
+        const effTonnage =
+          newTonnage !== undefined
+            ? newTonnage
+            : newDiameter !== undefined || newThickness !== undefined || newLength !== undefined
+              ? calculatePipeTonnage(effDiameter, effThickness, effLength)
+              : (r.tonnage ?? calculatePipeTonnage(effDiameter, effThickness, effLength))
         const isNowSpecified = Boolean(
           (effCustomer && effCustomer.trim() !== '') ||
           effDiameter != null ||
           effThickness != null ||
           effLength != null ||
+          effTonnage != null ||
           r.pipeNumber != null,
         )
         if (!r.isSpecified && isNowSpecified) {
@@ -507,6 +542,7 @@ export default function ProductionSection({
         diameter: '',
         thickness: '',
         length: '',
+        tonnage: '',
       })
       setAnnouncement(`Applied specifications to ${targetIds.length} cuts.`)
       loadData({ silent: true })
@@ -669,12 +705,17 @@ export default function ProductionSection({
     const rowId = record.id || record.sensorEventId
     setEditingRecordId(rowId)
     setConflictNotice(null)
+    const fallbackTonnage =
+      record.tonnage !== null && record.tonnage !== undefined
+        ? record.tonnage
+        : calculatePipeTonnage(record.diameter, record.thickness, record.length)
     setEditForm({
       customer: record.customer ?? '',
       diameter: record.diameter !== null && record.diameter !== undefined ? String(record.diameter) : '',
       thickness: record.thickness !== null && record.thickness !== undefined ? String(record.thickness) : '',
       length: record.length !== null && record.length !== undefined ? String(record.length) : '',
       pipeNumber: record.pipeNumber !== null && record.pipeNumber !== undefined ? String(record.pipeNumber) : '',
+      tonnage: fallbackTonnage !== null && fallbackTonnage !== undefined ? String(fallbackTonnage) : '',
     })
   }
 
@@ -686,15 +727,23 @@ export default function ProductionSection({
       thickness: '',
       length: '',
       pipeNumber: '',
+      tonnage: '',
     })
   }
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    setEditForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setEditForm((prev) => {
+      const next = {
+        ...prev,
+        [name]: value,
+      }
+      if (name === 'diameter' || name === 'thickness' || name === 'length') {
+        const autoTons = calculatePipeTonnage(next.diameter, next.thickness, next.length)
+        next.tonnage = autoTons !== null ? String(autoTons) : ''
+      }
+      return next
+    })
   }
 
   const handleInputKeyDown = (e, record) => {
@@ -720,14 +769,23 @@ export default function ProductionSection({
     const newLength = editForm.length === '' || editForm.length === null ? null : Number(editForm.length)
     const newPipeNumber =
       editForm.pipeNumber === '' || editForm.pipeNumber === null ? null : parseInt(editForm.pipeNumber, 10)
-    const newTonnage = calculatePipeTonnage(newDiameter, newThickness, newLength)
+    const rawManualTonnage =
+      editForm.tonnage === '' || editForm.tonnage === null || editForm.tonnage === undefined
+        ? null
+        : Number(editForm.tonnage)
+    const manualTonnage =
+      rawManualTonnage !== null && Number.isFinite(rawManualTonnage) && rawManualTonnage > 0
+        ? Math.round(rawManualTonnage * 10000) / 10000
+        : null
+    const newTonnage = manualTonnage ?? calculatePipeTonnage(newDiameter, newThickness, newLength)
 
     const isNowSpecified = Boolean(
       newCustomer ||
         newDiameter != null ||
         newThickness != null ||
         newLength != null ||
-        newPipeNumber != null,
+        newPipeNumber != null ||
+        newTonnage != null,
     )
     const wasSpecified = Boolean(record.isSpecified)
 
@@ -776,6 +834,7 @@ export default function ProductionSection({
       thickness: newThickness,
       length: newLength,
       pipeNumber: newPipeNumber,
+      tonnage: newTonnage,
     }
 
     try {
@@ -799,6 +858,10 @@ export default function ProductionSection({
                   : response.spec.pipeNumber != null
                     ? Number(response.spec.pipeNumber)
                     : newPipeNumber
+              const updatedTonnage =
+                response.spec.tonnage != null
+                  ? Number(response.spec.tonnage)
+                  : (newTonnage ?? calculatePipeTonnage(updatedDiameter, updatedThickness, updatedLength))
               return {
                 ...r,
                 customer: response.spec.customer ?? newCustomer,
@@ -806,7 +869,7 @@ export default function ProductionSection({
                 thickness: updatedThickness,
                 length: updatedLength,
                 pipeNumber: updatedPipeNumber,
-                tonnage: calculatePipeTonnage(updatedDiameter, updatedThickness, updatedLength),
+                tonnage: updatedTonnage,
                 updatedAt: response.spec.updatedAt || response.spec.updated_at || r.updatedAt,
               }
             }
@@ -1077,7 +1140,7 @@ export default function ProductionSection({
                   step="any"
                   min="0"
                   value={bulkForm.diameter}
-                  onChange={(e) => setBulkForm((prev) => ({ ...prev, diameter: e.target.value }))}
+                  onChange={(e) => handleBulkDimensionChange('diameter', e.target.value)}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1089,7 +1152,7 @@ export default function ProductionSection({
                   step="any"
                   min="0"
                   value={bulkForm.thickness}
-                  onChange={(e) => setBulkForm((prev) => ({ ...prev, thickness: e.target.value }))}
+                  onChange={(e) => handleBulkDimensionChange('thickness', e.target.value)}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1101,9 +1164,21 @@ export default function ProductionSection({
                   step="any"
                   min="0"
                   value={bulkForm.length}
-                  onChange={(e) => setBulkForm((prev) => ({ ...prev, length: e.target.value }))}
+                  onChange={(e) => handleBulkDimensionChange('length', e.target.value)}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
+              </div>
+              <div className="dimension-input-wrapper production-dimension-wrapper">
+                <input
+                  type="number"
+                  placeholder="Tons"
+                  aria-label="Bulk tonnage"
+                  step="0.0001"
+                  min="0"
+                  value={bulkForm.tonnage}
+                  onChange={(e) => setBulkForm((prev) => ({ ...prev, tonnage: e.target.value }))}
+                />
+                <span className="unit-suffix production-unit-badge" aria-hidden="true">t</span>
               </div>
 
               <div className="production-bulk-tools">
@@ -1315,18 +1390,17 @@ export default function ProductionSection({
                             />
                           </td>
                           <td className="production-col-num tabular-data">
-                            {(() => {
-                              const calculatedTonnage = calculatePipeTonnage(
-                                editForm.diameter,
-                                editForm.thickness,
-                                editForm.length,
-                              )
-                              return calculatedTonnage != null ? (
-                                formatTonnage(calculatedTonnage)
-                              ) : (
-                                <span className="production-placeholder">—</span>
-                              )
-                            })()}
+                            <input
+                              type="number"
+                              className="production-inline-input production-inline-num tabular-data"
+                              aria-label="Specification tonnage"
+                              name="tonnage"
+                              step="0.0001"
+                              min="0"
+                              value={editForm.tonnage}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
                           </td>
                         </>
                       ) : (

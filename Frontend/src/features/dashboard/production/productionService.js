@@ -131,6 +131,10 @@ export async function updateProductionLogSpec(token, eventId, spec = {}, expecte
     pipeNumber: sanitizeInteger(rawPipe),
   }
 
+  if (spec.tonnage !== undefined) {
+    body.tonnage = sanitizeNumber(spec.tonnage)
+  }
+
   if (concurrencyToken !== undefined) {
     body.expectedUpdatedAt = concurrencyToken
   }
@@ -179,6 +183,7 @@ export async function batchUpdateProductionSpecs(
   const rawDiameter = spec.diameter !== undefined ? spec.diameter : arguments[1]?.diameter
   const rawThickness = spec.thickness !== undefined ? spec.thickness : arguments[1]?.thickness
   const rawLength = spec.length !== undefined ? spec.length : arguments[1]?.length
+  const rawTonnage = spec.tonnage !== undefined ? spec.tonnage : arguments[1]?.tonnage
 
   const cleanCustomer = sanitizeText(rawCustomer)
   if (cleanCustomer !== undefined) body.customer = cleanCustomer
@@ -192,10 +197,12 @@ export async function batchUpdateProductionSpecs(
   const cleanLength = sanitizeNumber(rawLength)
   if (cleanLength !== undefined) body.length = cleanLength
 
+  const cleanTonnage = sanitizeNumber(rawTonnage)
+  if (cleanTonnage !== undefined) body.tonnage = cleanTonnage
+
   return apiRequest('/api/production/batch', {
     token,
     method: 'PATCH',
     body,
   })
 }
-

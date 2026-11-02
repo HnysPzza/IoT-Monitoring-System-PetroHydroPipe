@@ -878,7 +878,7 @@ describe('ProductionSection component', () => {
     const pipeNumberInput = screen.getByLabelText('Specification pipe number')
     expect(pipeNumberInput).toHaveValue(1001)
 
-    expect(screen.queryByLabelText('Specification tons')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Specification tonnage')).toHaveValue(1.1513)
     expect(screen.queryByLabelText('Specification radius')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Specification circumference')).not.toBeInTheDocument()
 
@@ -1656,3 +1656,94 @@ describe('ProductionSection component', () => {
   })
 })
 
+
+describe('Editable Tonnage & 7850 kg/m^3 Auto-Calculation', () => {
+  it('auto-calculates inline tonnage using 7850 kg/m^3 density when dimensions change and allows manual override', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+    const mockUpdate = vi.fn().mockResolvedValue({
+      spec: {
+        sensorEventId: 'e0000000-0000-4000-8000-000000000001',
+        customer: 'Maynilad Water',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 1001,
+        tonnage: 1.5,
+        isSpecified: true,
+        specStatus: 'specified',
+        updatedAt: '2026-10-30T09:00:00.000Z',
+      },
+    })
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />, {
+      authValue: { user: { role: 'Quality Control' } },
+    })
+
+    await screen.findByText('Maynilad Water')
+    await user.click(screen.getAllByRole('button', { name: /edit specification/i })[0])
+
+    const diameterInput = screen.getByLabelText('Specification diameter')
+    const tonnageInput = screen.getByLabelText('Specification tonnage')
+
+    // Re-entering diameter triggers auto-calculation with 7850 kg/m^3 density -> 1.1514 tons
+    await user.clear(diameterInput)
+    await user.type(diameterInput, '625.4')
+    expect(tonnageInput).toHaveValue(1.1514)
+
+    // Quality Control overrides tonnage manually
+    await user.clear(tonnageInput)
+    await user.type(tonnageInput, '1.5000')
+    expect(tonnageInput).toHaveValue(1.5)
+
+    await user.click(screen.getByRole('button', { name: 'Save specification' }))
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith(
+        'test-token',
+        'e0000000-0000-4000-8000-000000000001',
+        expect.objectContaining({
+          diameter: 625.4,
+          thickness: 12.7,
+          length: 6000,
+          tonnage: 1.5,
+        }),
+        '2026-10-30T06:30:00.000Z',
+      )
+    })
+
+    expect(await screen.findByText('1.5000')).toBeInTheDocument()
+  })
+
+  it('supports editing tonnage in bulk specification editor', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+    const mockBatchUpdate = vi.fn().mockResolvedValue({ matchedCount: 1, updatedCount: 1 })
+
+    renderWithAuth(
+      <ProductionSection loadProduction={mockLoad} batchUpdateProductionSpecs={mockBatchUpdate} />,
+      { authValue: { user: { role: 'Quality Control' } } },
+    )
+
+    await screen.findByText('Maynilad Water')
+
+    const row2Checkbox = screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i)
+    await user.click(row2Checkbox)
+
+    const bulkTonsInput = screen.getByLabelText('Bulk tonnage')
+    expect(bulkTonsInput).toHaveAttribute('placeholder', 'Tons')
+    await user.type(bulkTonsInput, '2.3456')
+
+    await user.click(screen.getByRole('button', { name: 'Apply to 1 cut' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(mockBatchUpdate).toHaveBeenCalledWith('test-token', {
+        sensorEventIds: ['e0000000-0000-4000-8000-000000000002'],
+        appliedSpec: {
+          tonnage: 2.3456,
+        },
+      })
+    })
+  })
+})
