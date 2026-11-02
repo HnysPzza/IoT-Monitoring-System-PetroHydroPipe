@@ -516,6 +516,7 @@ describe('ProductionSection component', () => {
 
     // KPI Metrics scoped to summary region
     const kpiRegion = screen.getByRole('region', { name: 'Production Summary Metrics' })
+    await within(kpiRegion).findByText('42')
     expect(within(kpiRegion).getByText('42')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('Accepted')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('30')).toBeInTheDocument()
@@ -922,7 +923,7 @@ describe('ProductionSection component', () => {
 
   it('saves inline edit on Enter key press', async () => {
     const user = userEvent.setup()
-    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+    const mockLoad = vi.fn().mockResolvedValueOnce(mockProductionPayload).mockResolvedValue({ ...mockProductionPayload, records: mockProductionPayload.records.map((record, index) => index === 0 ? { ...record, customer: 'Manila Water Corp' } : record) })
     const mockUpdate = vi.fn().mockResolvedValue({
       spec: {
         sensorEventId: 'e0000000-0000-4000-8000-000000000001',
@@ -1330,11 +1331,8 @@ describe('ProductionSection component', () => {
       const kpiBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
       await user.click(kpiBtn)
 
-      await waitFor(() => {
-        expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-          specStatus: 'all',
-        }))
-      })
+      expect(kpiBtn).toHaveAttribute('aria-pressed', 'false')
+      expect(mockLoad).toHaveBeenCalledTimes(2)
     })
 
     it('requires at least one field when clicking apply in bulk editor', async () => {
@@ -1660,7 +1658,7 @@ describe('ProductionSection component', () => {
 describe('Editable Tonnage & 7850 kg/m^3 Auto-Calculation', () => {
   it('auto-calculates inline tonnage using 7850 kg/m^3 density when dimensions change and allows manual override', async () => {
     const user = userEvent.setup()
-    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+    const mockLoad = vi.fn().mockResolvedValueOnce(mockProductionPayload).mockResolvedValue({ ...mockProductionPayload, records: mockProductionPayload.records.map((record, index) => index === 0 ? { ...record, tonnage: 1.5 } : record) })
     const mockUpdate = vi.fn().mockResolvedValue({
       spec: {
         sensorEventId: 'e0000000-0000-4000-8000-000000000001',

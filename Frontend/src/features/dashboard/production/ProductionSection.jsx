@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
+import { getSessionGeneration } from '../../../shared/services/sessionRefresh.js'
 import {
   AlertTriangle,
   Check,
@@ -246,7 +251,13 @@ export default function ProductionSection({
   const updateFn = updateProductionSpec || updateProduction
   const batchUpdateFn = batchUpdateProductionSpecsProp || batchUpdateProduction || batchUpdateProductionSpecs
   const { token, user } = useAuth()
-  const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role)
+  const identityRef = useRef(null)
+  identityRef.current = `${user?.id || ''}:${user?.role || ''}`
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [statusFilter, setStatusFilter] = useState('accepted')
@@ -256,24 +267,37 @@ export default function ProductionSection({
   const [page, setPage] = useState(1)
   const pageSize = 25
 
-  const [records, setRecords] = useState([])
-  const [summary, setSummary] = useState({
-    totalAccepted: 0,
-    specifiedCount: 0,
-    unspecifiedCount: 0,
-    rejectedCount: 0,
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
+  const normFilter = typeof dateFilter === 'string'
+    ? (dateFilter ? { type: 'day', startDate: dateFilter, endDate: dateFilter } : { type: 'all' })
+    : dateFilter
+  const start = normFilter?.startDate || normFilter?.date
+  const end = normFilter?.endDate
+  const oneDay = start && (normFilter?.type === 'today' || normFilter?.type === 'day' || start === end)
+  const filters = {
+    date: oneDay ? start : undefined,
+    dateFrom: !oneDay && normFilter?.type !== 'all' && start && end ? start : undefined,
+    dateTo: !oneDay && normFilter?.type !== 'all' && start && end ? end : undefined,
+    status: statusFilter, specStatus: specStatusFilter, search: debouncedSearch || undefined, page, pageSize,
+  }
+  const key = queryKeys.production.list(filters)
+  const query = useAuthenticatedQuery({
+    queryKey: key,
+    queryFn: ({ token: currentToken, signal }) => loadProduction(currentToken, { ...filters, signal }),
+    staleTime: 30000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
   })
-  const [pagination, setPagination] = useState({
-    page: 1,
-    pageSize: 25,
-    total: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPreviousPage: false,
-  })
-
-  const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role) && !query.isPlaceholderData
+  const records = query.data?.records || []
+  const summary = query.data?.summary || { totalAccepted: 0, specifiedCount: 0, unspecifiedCount: 0, rejectedCount: 0 }
+  const pagination = query.data?.pagination || { page: 1, pageSize: 25, total: 0, totalPages: 1 }
+  const setRecords = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, records: typeof update === 'function' ? update(current.records || []) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
+  const setSummary = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, summary: typeof update === 'function' ? update(current.summary || {}) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
+  const isLoading = query.isPending && !query.data
+  const isRefreshing = query.isFetching && Boolean(query.data)
+  const loadData = () => query.refetch()
   const [error, setError] = useState(null)
   const [conflictNotice, setConflictNotice] = useState(null)
   const [announcement, setAnnouncement] = useState('')
@@ -300,7 +324,6 @@ export default function ProductionSection({
   const [isApplyingBulk, setIsApplyingBulk] = useState(false)
   const [flashingRecordIds, setFlashingRecordIds] = useState(() => new Set())
 
-  const requestIdRef = useRef(0)
   const flashTimeoutRef = useRef(null)
   const lastClickedIndexRef = useRef(null)
   const headerCheckboxRef = useRef(null)
@@ -451,6 +474,9 @@ export default function ProductionSection({
   }
 
   const handleConfirmBulkApply = async () => {
+    const sessionGeneration = getSessionGeneration()
+    const identity = identityRef.current
+    const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
     setIsConfirmingBulk(false)
     setIsApplyingBulk(true)
     setError(null)
@@ -476,6 +502,7 @@ export default function ProductionSection({
     if (newLength !== undefined) appliedSpec.length = newLength
     if (newTonnage !== undefined) appliedSpec.tonnage = newTonnage
 
+    void queryClient.cancelQueries({ queryKey: key, exact: true })
     let newlySpecifiedCount = 0
     const targetSet = new Set(targetIds)
     setRecords((prev) =>
@@ -535,6 +562,14 @@ export default function ProductionSection({
         sensorEventIds: targetIds,
         appliedSpec,
       })
+      if (sessionGeneration === getSessionGeneration()) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+      }
+      if (!isCurrentSession()) return
 
       setSelectedIds(new Set())
       setBulkForm({
@@ -545,8 +580,11 @@ export default function ProductionSection({
         tonnage: '',
       })
       setAnnouncement(`Applied specifications to ${targetIds.length} cuts.`)
-      loadData({ silent: true })
     } catch (err) {
+      if (!isCurrentSession()) {
+        if (sessionGeneration === getSessionGeneration()) void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        return
+      }
       setRecords(prevRecords)
       setSummary(prevSummary)
       setError(err.message || 'Unable to update production specifications.')
@@ -568,101 +606,6 @@ export default function ProductionSection({
     }, 300)
     return () => clearTimeout(timer)
   }, [searchInput])
-
-  const loadData = useCallback(async ({ silent = false } = {}) => {
-    const requestId = ++requestIdRef.current
-    if (silent) {
-      setIsRefreshing(true)
-    } else {
-      setIsLoading(true)
-    }
-    setError(null)
-
-    try {
-      let queryDate = undefined
-      let queryDateFrom = undefined
-      let queryDateTo = undefined
-
-      const normFilter = typeof dateFilter === 'string'
-        ? (dateFilter ? { type: 'day', startDate: dateFilter, endDate: dateFilter } : { type: 'all' })
-        : dateFilter
-
-      if (normFilter && normFilter.type !== 'all' && (normFilter.startDate || normFilter.date)) {
-        if (normFilter.type === 'today' || normFilter.type === 'day') {
-          queryDate = normFilter.startDate || normFilter.date
-        } else if (normFilter.startDate && normFilter.endDate) {
-          if (normFilter.startDate === normFilter.endDate) {
-            queryDate = normFilter.startDate
-          } else {
-            queryDateFrom = normFilter.startDate
-            queryDateTo = normFilter.endDate
-          }
-        }
-      }
-
-      const payload = await loadProduction(token, {
-        date: queryDate,
-        dateFrom: queryDateFrom,
-        dateTo: queryDateTo,
-        status: statusFilter,
-        specStatus: specStatusFilter,
-        search: debouncedSearch || undefined,
-        page,
-        pageSize,
-      })
-
-      if (requestId !== requestIdRef.current) return
-
-      setRecords(payload?.records || [])
-      setSummary(
-        payload?.summary || {
-          totalAccepted: 0,
-          specifiedCount: 0,
-          unspecifiedCount: 0,
-          rejectedCount: 0,
-        },
-      )
-      setPagination(
-        payload?.pagination || {
-          page: 1,
-          pageSize: 25,
-          total: payload?.records?.length || 0,
-          totalPages: 1,
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-      )
-    } catch (err) {
-      if (requestId !== requestIdRef.current) return
-      setError(err.message || 'Unable to load production logs.')
-      if (!silent) {
-        setRecords([])
-        setSummary({
-          totalAccepted: 0,
-          specifiedCount: 0,
-          unspecifiedCount: 0,
-          rejectedCount: 0,
-        })
-        setPagination({
-          page: 1,
-          pageSize: 25,
-          total: 0,
-          totalPages: 1,
-          hasNextPage: false,
-          hasPreviousPage: false,
-        })
-      }
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setIsLoading(false)
-        setIsRefreshing(false)
-      }
-    }
-  }, [dateFilter, debouncedSearch, loadProduction, page, pageSize, specStatusFilter, statusFilter, token])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
 
   const maxProductionDate = parseProductionDate(getManilaDateInputValue())
 
@@ -757,6 +700,9 @@ export default function ProductionSection({
   }
 
   const handleSave = async (record) => {
+    const sessionGeneration = getSessionGeneration()
+    const identity = identityRef.current
+    const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
     const rowId = record.id || record.sensorEventId
     setEditingRecordId(null)
 
@@ -789,6 +735,7 @@ export default function ProductionSection({
     )
     const wasSpecified = Boolean(record.isSpecified)
 
+    void queryClient.cancelQueries({ queryKey: key, exact: true })
     setRecords((prev) =>
       prev.map((r) => {
         if ((r.id || r.sensorEventId) === rowId) {
@@ -844,6 +791,14 @@ export default function ProductionSection({
         payload,
         record.updatedAt,
       )
+      if (sessionGeneration === getSessionGeneration()) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+      }
+      if (!isCurrentSession()) return
 
       if (response?.spec) {
         setRecords((prev) =>
@@ -879,6 +834,10 @@ export default function ProductionSection({
       }
       setAnnouncement(`Specification updated for cut at ${record.recordedAt || record.timestamp}.`)
     } catch (err) {
+      if (!isCurrentSession()) {
+        if (sessionGeneration === getSessionGeneration()) void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        return
+      }
       const isConflict =
         err?.status === 409 ||
         err?.code === 'PRODUCTION_SPEC_CONFLICT' ||
@@ -974,6 +933,8 @@ export default function ProductionSection({
         </div>
       ) : null}
 
+      {isRefreshing ? <div role="status">{query.isPlaceholderData ? 'Refreshing production logs for the selected filters; previous results remain visible.' : 'Refreshing production logs...'}</div> : null}
+      {query.isError || (!online && query.data) ? <div className="notice notice-error" role="alert">{query.data ? `Production data is stale.${query.isPlaceholderData ? ' Showing previous filter results.' : ''}${query.dataUpdatedAt ? ` Last updated ${new Date(query.dataUpdatedAt).toLocaleString()}.` : ''} ` : ''}{query.error?.message || 'Unable to refresh while offline.'} <button type="button" onClick={() => query.refetch()}>Retry</button></div> : null}
       {/* Error Notice */}
       {error ? (
         <div className="notice notice-error dashboard-alert production-notice" role="alert">

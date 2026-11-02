@@ -1,7 +1,11 @@
 import './downtime.css'
 import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import { fromDateInputValue, toDateInputValue } from '../overview/DowntimeTrendChart.jsx'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
@@ -70,80 +74,51 @@ function getManilaDateInputValue() {
 
 export default function DowntimeSection() {
   const { token, user } = useAuth()
-  const canEditDowntime = downtimeEditRoles.has(user?.role)
-  const [records, setRecords] = useState([])
-  const [summary, setSummary] = useState({ open: 0, resolved: 0, minutes: 0, loss: 0 })
-  const [lossEstimateBasis, setLossEstimateBasis] = useState(null)
-  const [listRange, setListRange] = useState(null)
-  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
   const [page, setPage] = useState(1)
   const [causeFilter, setCauseFilter] = useState('All')
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [notice, setNotice] = useState(null)
-  const [refreshError, setRefreshError] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
   const [updatingRecordId, setUpdatingRecordId] = useState('')
   const [expandedRecordId, setExpandedRecordId] = useState('')
   const [draftNotes, setDraftNotes] = useState({})
-  const requestIdRef = useRef(0)
-
-  const loadDowntimeRecords = useCallback(async ({ silent = false } = {}) => {
-    const requestId = ++requestIdRef.current
-    if (!silent) {
-      setIsLoading(true)
-      setNotice(null)
-    }
-
-    try {
-      const payload = await getDowntimeRecords(token, {
-        cause: causeFilter,
-        date: dateFilter,
-        page,
-        limit: 25,
-      })
-      if (requestId !== requestIdRef.current) return
-      setRefreshError('')
-      setRecords(payload.records || [])
-      setSummary(payload.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 })
-      setLossEstimateBasis(payload.lossEstimateBasis || null)
-      setListRange(payload.range || null)
-      setPagination(payload.pagination || { page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
-      if (!silent) {
-        setExpandedRecordId('')
-        setDraftNotes({})
-      }
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return
-      if (silent) setRefreshError(error.message || 'Unable to refresh downtime records.')
-      if (!silent) {
-        setNotice({ type: 'error', message: error.message || 'Unable to load downtime records.' })
-        setRecords([])
-        setSummary({ open: 0, resolved: 0, minutes: 0, loss: 0 })
-        setLossEstimateBasis(null)
-        setListRange(null)
-        setPagination({ page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
-      }
-    } finally {
-      if (requestId === requestIdRef.current) setIsLoading(false)
-    }
-  }, [causeFilter, dateFilter, page, token])
-  const loadDowntimeRecordsRef = useRef(loadDowntimeRecords)
-  loadDowntimeRecordsRef.current = loadDowntimeRecords
-
-  useEffect(() => {
-    loadDowntimeRecords()
-    return () => { requestIdRef.current += 1 }
-  }, [loadDowntimeRecords])
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
+  const filters = { cause: causeFilter, date: dateFilter, page, limit: 25 }
+  const query = useAuthenticatedQuery({
+    queryKey: queryKeys.downtime.list(filters),
+    queryFn: ({ token: currentToken, signal }) => getDowntimeRecords(currentToken, { ...filters, signal }),
+    staleTime: 30000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
+  })
+  const canEditDowntime = downtimeEditRoles.has(user?.role) && !query.isPlaceholderData
+  const records = query.data?.records || []
+  const summary = query.data?.summary || { open: 0, resolved: 0, minutes: 0, loss: 0 }
+  const lossEstimateBasis = query.data?.lossEstimateBasis || null
+  const listRange = query.data?.range || null
+  const pagination = query.data?.pagination || { page: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false }
+  const isLoading = query.isPending && !query.data
+  const invalidate = async () => {
+    await queryClient.cancelQueries({ queryKey: queryKeys.downtime.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.downtime.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+  }
+  const invalidateRef = useRef(invalidate)
+  invalidateRef.current = invalidate
 
   useEffect(() => {
     if (!token) return undefined
 
     let pollingId = null
+    let openReconciled = false
 
     function startFallbackPolling() {
       if (pollingId !== null) return
       pollingId = window.setInterval(() => {
-        void loadDowntimeRecordsRef.current({ silent: true })
+        void invalidateRef.current()
       }, 10000)
     }
 
@@ -156,17 +131,21 @@ export default function DowntimeSection() {
     const unsubscribe = subscribeToDowntime(token, {
       onEvent: (event) => {
         if (!event?.payload?.downtime) return
-        void loadDowntimeRecordsRef.current({ silent: true })
+        void invalidateRef.current()
       },
       onFallback: startFallbackPolling,
-      onOpen: () => { void loadDowntimeRecordsRef.current({ silent: true }) },
+      onOpen: ({ isReconnect, isRetry } = {}) => {
+        openReconciled = isReconnect || isRetry
+        if (openReconciled) void invalidateRef.current()
+      },
       onRecovery: () => {
         stopFallbackPolling()
-        void loadDowntimeRecordsRef.current({ silent: true })
+        if (!openReconciled) void invalidateRef.current()
+        openReconciled = false
       },
     })
     const reconciliationId = window.setInterval(() => {
-      void loadDowntimeRecordsRef.current({ silent: true })
+      void invalidateRef.current()
     }, 60000)
 
     return () => {
@@ -182,7 +161,7 @@ export default function DowntimeSection() {
 
     try {
       const payload = await updateDowntimeRecord(token, recordId, { cause })
-      setRecords((current) => current.map((record) => (record.id === payload.record.id ? payload.record : record)))
+      void invalidate()
       setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} cause updated to ${payload.record.cause}.` })
     } catch (error) {
       setNotice({ type: 'error', message: error.message || 'Unable to update downtime cause.' })
@@ -197,7 +176,7 @@ export default function DowntimeSection() {
 
     try {
       const payload = await updateDowntimeRecord(token, recordId, { notes: draftNotes[recordId] || '' })
-      setRecords((current) => current.map((record) => (record.id === payload.record.id ? payload.record : record)))
+      void invalidate()
       setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} notes saved.` })
     } catch (error) {
       setNotice({ type: 'error', message: error.message || 'Unable to update downtime notes.' })
@@ -223,9 +202,10 @@ export default function DowntimeSection() {
 
   return (
     <div className="downtime-layout">
-      {refreshError ? (
+      {query.isFetching && query.data ? <div role="status">{query.isPlaceholderData ? 'Refreshing downtime records for the selected filters; previous results remain visible.' : 'Refreshing downtime records...'}</div> : null}
+      {(query.isError || (!online && query.data)) ? (
         <div className="notice notice-error dashboard-alert" role="alert">
-          Downtime data is stale. {refreshError} Retrying automatically.
+          {query.data ? `Downtime data is stale.${query.isPlaceholderData ? ' Showing previous filter results.' : ''}${query.dataUpdatedAt ? ` Last updated ${new Date(query.dataUpdatedAt).toLocaleString()}.` : ''} ` : ''}{query.error?.message || 'Unable to refresh while offline.'} <button type="button" onClick={() => query.refetch()}>Retry</button>
         </div>
       ) : null}
       {notice ? (
