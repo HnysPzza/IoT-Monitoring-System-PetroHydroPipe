@@ -5,7 +5,7 @@
 .settings-version, .settings-panel input, .shift-duration-badge, .break-count-pill, .break-duration-pill { font-variant-numeric: tabular-nums; }
 .settings-panel { gap: 12px; }
 .settings-panel .section-copy h2 { font-size: 13px; }
-.settings-shift-title { display: flex; align-items: center; gap: 8px; }
+.settings-shift-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .settings-matrix-table-wrap { border: 0; border-radius: 0; }
 .settings-matrix-table th, .settings-break-table th { font-size: 11px; }
 .settings-matrix-table td { padding-top: 8px; padding-bottom: 8px; }
@@ -13,7 +13,7 @@
 .settings-time-input, .settings-text-input, .settings-num-input { min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
 .work-bar-header strong, .break-matrix-title { font-size: 12px; }
 .settings-break-matrix-wrap { padding-top: 0; }
-.break-matrix-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.break-matrix-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .settings-form .settings-add-break { width: auto; }
 @media (max-width: 760px) {
   .settings-header-actions { flex-wrap: wrap; }
@@ -21,6 +21,11 @@
 }
 #settings-header-version:not(:empty) { border-left: 1px solid var(--c-border); padding-left: 12px; }
 @media (max-width: 1000px) {
-  .dashboard-topbar:has(#settings-header-controls) { flex-wrap: wrap; }
-  .dashboard-topbar:has(#settings-header-controls) .topbar-trailing { flex-wrap: wrap; justify-content: flex-start; }
+  .dashboard-topbar:has(#settings-header-controls) { flex-wrap: wrap; row-gap: 8px; }
+  .dashboard-topbar:has(#settings-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; }
+  .dashboard-topbar:has(#settings-header-controls) .topbar-trailing { flex-wrap: wrap; justify-content: flex-end; }
+}
+@media (max-width: 680px) {
+  #settings-header-controls { flex: 1 1 100%; width: 100%; order: 10; }
+  .settings-header-actions { width: 100%; justify-content: flex-end; }
 }

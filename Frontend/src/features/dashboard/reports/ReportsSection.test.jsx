@@ -341,7 +341,8 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText('Partial period')).toBeInTheDocument()
+    expect(await screen.findByText('Production Count')).toBeInTheDocument()
+    expect(screen.queryByText('Partial period')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export report' })).not.toBeDisabled()
   })
 
@@ -806,5 +807,25 @@ describe('ReportsSection request states', () => {
     placeholders.forEach((placeholder) => {
       expect(placeholder.textContent).toBe('—')
     })
+  })
+
+  it('renders filter, datepicker, refresh, and export controls directly inside reports-layout above reports-compact-summary', async () => {
+    getReportSummary.mockResolvedValue(reportPayload())
+
+    const headerSlot = document.createElement('div')
+    headerSlot.id = 'reports-header-controls'
+    document.body.appendChild(headerSlot)
+
+    try {
+      renderWithAuth(<ReportsSection />)
+      const summary = await screen.findByRole('region', { name: 'Report summary' })
+      const controls = document.querySelector('.reports-layout .reports-controls')
+
+      expect(controls).toBeInTheDocument()
+      expect(headerSlot).toBeEmptyDOMElement()
+      expect(controls.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    } finally {
+      headerSlot.remove()
+    }
   })
 })

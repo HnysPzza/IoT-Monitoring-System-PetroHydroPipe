@@ -89,8 +89,11 @@
   display: flex;
   flex-direction: column;
   width: 480px;
-  max-width: calc(100vw - 24px);
-  overflow: hidden;
+  max-width: min(calc(100vw - 24px), var(--radix-popover-content-available-width, calc(100vw - 24px)));
+  max-height: min(calc(100dvh - 24px), var(--radix-popover-content-available-height, calc(100dvh - 24px)));
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
   padding: 0;
 }
 
@@ -565,6 +568,7 @@
 
   .trend-popover-body {
     flex-direction: column;
+    min-height: 0;
   }
 
   .trend-popover-sidebar {
@@ -576,9 +580,30 @@
     padding: 8px;
   }
 
+  :root[data-theme='dark'] .trend-popover-sidebar {
+    border-bottom-color: #334155;
+  }
+
   .trend-preset-btn {
     white-space: nowrap;
     width: auto;
+    flex-shrink: 0;
+  }
+
+  .trend-popover-calendar {
+    padding: 12px;
+  }
+
+  .trend-popover-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .trend-popover-footer-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

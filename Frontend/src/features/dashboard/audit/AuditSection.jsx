@@ -268,63 +268,65 @@ export default function AuditSection() {
         {isLoading ? (
           <div className="skeleton skeleton-panel" />
         ) : (
-          <div className="account-table-wrap">
-            <table className="account-table audit-table">
-              <thead>
-                <tr>
-                  <th scope="col">Date/Time</th>
-                  <th scope="col">Action</th>
-                  <th scope="col">Affected item</th>
-                  <th scope="col">Summary</th>
-                  <th scope="col">Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.length === 0 ? (
+          <>
+            <div className="account-table-wrap">
+              <table className="account-table audit-table">
+                <thead>
                   <tr>
-                    <td colSpan="5">No audit records match the selected filters.</td>
+                    <th scope="col">Date/Time</th>
+                    <th scope="col">Action</th>
+                    <th scope="col">Affected item</th>
+                    <th scope="col">Summary</th>
+                    <th scope="col">Details</th>
                   </tr>
-                ) : (
-                  logs.map((log) => (
-                    <tr key={log.id}>
-                      <td>{formatDateTime(log.createdAt)}</td>
-                      <td><span className="audit-action-label">{getReadableAction(log)}</span></td>
-                      <td>{getReadableTarget(log)}</td>
-                      <td>{getReadableDetails(log)}</td>
-                      <td>
-                        <button
-                          className="btn btn-secondary table-action-button audit-details-button"
-                          type="button"
-                          onClick={() => openDetails(log)}
-                        >
-                          View details
-                        </button>
-                      </td>
+                </thead>
+                <tbody>
+                  {logs.length === 0 ? (
+                    <tr>
+                      <td colSpan="5">No audit records match the selected filters.</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          <div className="audit-pagination" aria-label="Audit pagination">
-            <button
-              className="btn btn-secondary table-action-button"
-              type="button"
-              disabled={isLoading || isRefreshing || !pagination.hasPreviousPage}
-              onClick={() => setPage((currentPage) => Math.max(currentPage - 1, 1))}
-            >
-              Previous
-            </button>
-            <span>Page {pagination.page} of {pagination.totalPages}</span>
-            <button
-              className="btn btn-secondary table-action-button"
-              type="button"
-              disabled={isLoading || isRefreshing || !pagination.hasNextPage}
-              onClick={() => setPage((currentPage) => currentPage + 1)}
-            >
-              Next
-            </button>
-          </div>
-          </div>
+                  ) : (
+                    logs.map((log) => (
+                      <tr key={log.id}>
+                        <td>{formatDateTime(log.createdAt)}</td>
+                        <td><span className="audit-action-label">{getReadableAction(log)}</span></td>
+                        <td>{getReadableTarget(log)}</td>
+                        <td>{getReadableDetails(log)}</td>
+                        <td>
+                          <button
+                            className="btn btn-secondary table-action-button audit-details-button"
+                            type="button"
+                            onClick={() => openDetails(log)}
+                          >
+                            View details
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="audit-pagination" aria-label="Audit pagination">
+              <button
+                className="btn btn-secondary table-action-button"
+                type="button"
+                disabled={isLoading || isRefreshing || !pagination.hasPreviousPage}
+                onClick={() => setPage((currentPage) => Math.max(currentPage - 1, 1))}
+              >
+                Previous
+              </button>
+              <span>Page {pagination.page} of {pagination.totalPages}</span>
+              <button
+                className="btn btn-secondary table-action-button"
+                type="button"
+                disabled={isLoading || isRefreshing || !pagination.hasNextPage}
+                onClick={() => setPage((currentPage) => currentPage + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </>
         )}
       </section>
 

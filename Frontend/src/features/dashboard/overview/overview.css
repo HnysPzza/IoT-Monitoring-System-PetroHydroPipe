@@ -33,8 +33,9 @@
 .overview-layout .overview-sensor-card h3 { overflow: hidden; margin: 0; color: var(--c-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .overview-layout .overview-sensor-footer { color: var(--c-text-2); }
 @media (max-width: 1200px) { #overview-header-controls { margin-left: 8px; padding-left: 8px; } .overview-meta-item:nth-child(3) { display: none; } }
-@media (max-width: 900px) { .overview-charts-grid { grid-template-columns: 1fr; } .overview-layout .overview-sensor-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } #overview-header-controls .overview-meta-strip { display: none; } }
-@media (max-width: 680px) { .overview-layout .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .overview-layout .stat-card:nth-child(3) { border-left: 0; } .overview-layout .stat-card:nth-child(n+3) { border-top: 1px solid var(--card-border); } .overview-layout .overview-sensor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .overview-charts-grid { grid-template-columns: 1fr; } .overview-layout .overview-sensor-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } #overview-header-controls .overview-meta-strip { display: none; } .dashboard-topbar:has(#overview-header-controls) { flex-wrap: wrap; row-gap: 8px; } .dashboard-topbar:has(#overview-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; } }
+@media (max-width: 680px) { .overview-layout .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .overview-layout .stat-card:nth-child(3) { border-left: 0; } .overview-layout .stat-card:nth-child(n+3) { border-top: 1px solid var(--card-border); } .overview-layout .overview-sensor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } #overview-header-controls { margin-left: 6px; padding-left: 6px; } .overview-charts-grid .section-heading { flex-wrap: wrap; align-items: flex-start; } .overview-charts-grid .trend-controls { width: 100%; justify-content: flex-start; } }
+@media (max-width: 480px) { .overview-layout .overview-sensor-grid { grid-template-columns: 1fr; } }
 
 .overview-layout .industrial-recharts-panel { min-height: 0; }
 .overview-idle-details { font-size: 12px; }

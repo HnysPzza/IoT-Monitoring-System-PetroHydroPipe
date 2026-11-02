@@ -750,7 +750,14 @@
 .users-dialog .account-form > .account-field:nth-child(n+3), .users-dialog .account-form-footer { grid-column: 1 / -1; }
 .users-dialog .account-invite-banner { padding: 10px; margin-bottom: 14px; font-size: 12px; }
 .users-dialog .account-form-footer { margin-top: 4px; }
-@media (max-width: 680px) { #users-header-controls { margin-left: 6px; padding-left: 6px; } .users-directory .users-filters > * { grid-column: auto; } .users-directory .users-search-field { flex-basis: 100%; } .users-directory .users-add-user { margin-left: 0; } }
+@media (max-width: 680px) {
+  #users-header-controls { margin-left: 6px; padding-left: 6px; }
+  .users-directory .users-filters > * { grid-column: auto; }
+  .users-directory .users-search-field { flex-basis: 100%; }
+  .users-directory .users-filters .filter-field { flex: 1 1 140px; }
+  .users-directory .users-add-user { margin-left: 0; width: 100%; }
+  .dashboard-topbar:has(#users-header-controls) { flex-wrap: wrap; row-gap: 8px; }
+  .dashboard-topbar:has(#users-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; }
+}
 @media (max-width: 420px) { .users-dialog .account-form { grid-template-columns: 1fr; } .users-dialog .account-form > .account-field { grid-column: 1; } }
 .users-dialog .account-submit { background: var(--c-text); border-color: var(--c-text); color: var(--c-surface); }
-@media (max-width: 680px) { .dashboard-topbar:has(#users-header-controls) { flex-wrap: wrap; } .dashboard-topbar:has(#users-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; } }

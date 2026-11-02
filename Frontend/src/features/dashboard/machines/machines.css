@@ -37,7 +37,9 @@
 .machines-view-toggle button[aria-pressed='true'] { background: var(--card-bg); color: var(--c-text); box-shadow: 0 1px 2px rgba(15,23,42,.12); }
 .machines-view-toggle button:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
 .machines-sensor-table { min-width: 680px; background: var(--card-bg); }
-@media (max-width: 680px) { .machines-telemetry-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .machines-telemetry-strip > div:nth-child(3) { border-left: 0; } .machines-telemetry-strip > div:nth-child(n+3) { border-top: 1px solid var(--card-border); } #machines-header-controls { margin-left: 6px; padding-left: 6px; } .dashboard-topbar:has(#machines-header-controls) { flex-wrap: wrap; } .dashboard-topbar:has(#machines-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; } }
+@media (max-width: 900px) { .dashboard-topbar:has(#machines-header-controls) { flex-wrap: wrap; row-gap: 8px; } .dashboard-topbar:has(#machines-header-controls) .topbar-leading { flex-wrap: wrap; flex: 1 1 auto; min-width: 0; } }
+@media (max-width: 680px) { .machines-telemetry-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .machines-telemetry-strip > div:nth-child(3) { border-left: 0; } .machines-telemetry-strip > div:nth-child(n+3) { border-top: 1px solid var(--card-border); } #machines-header-controls { flex: 1 1 100%; width: 100%; margin-left: 0; padding-left: 0; border-left: 0; } .machines-header-controls { width: 100%; justify-content: space-between; } }
+@media (max-width: 480px) { .machines-telemetry-strip { grid-template-columns: 1fr; } .machines-telemetry-strip > div + div { border-left: 0; border-top: 1px solid var(--card-border); } }
 
 .machines-header-code { color: var(--c-text-2); font-size: 12px; }
 

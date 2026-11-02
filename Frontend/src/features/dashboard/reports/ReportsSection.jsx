@@ -1,5 +1,4 @@
 import './reports-compact.css'
-import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -438,7 +437,6 @@ export default function ReportsSection() {
     }
   }
 
-  const headerSlot = document.getElementById('reports-header-controls')
   const controls = (
         <div className="reports-controls">
           <ReportCategoryFilter category={category} onSelectCategory={setCategory} />
@@ -498,9 +496,8 @@ export default function ReportsSection() {
         </div>
       ) : null}
 
-      {headerSlot ? createPortal(controls, headerSlot) : controls}
+      {controls}
       {exportErrorMessage ? <div className="notice notice-error dashboard-alert" role="alert"><AlertTriangle size={16} aria-hidden="true" /><span>{exportErrorMessage}</span></div> : null}
-      {hasCurrentReport && report.periodState === 'partial' ? <span className="reports-partial-status" role="status">Partial period</span> : null}
 
       {hasCurrentReport && report.periodState === 'future' ? (
         <div className="notice reports-period-banner dashboard-alert" role="status">

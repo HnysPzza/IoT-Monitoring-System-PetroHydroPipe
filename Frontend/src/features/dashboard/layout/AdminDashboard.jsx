@@ -672,7 +672,6 @@ export default function AdminDashboard() {
             </div>
             {normalizedPathname === '/dashboard' ? <div id="overview-header-controls" /> : null}
             {normalizedPathname === '/dashboard/analytics' ? <div id="analytics-header-controls" /> : null}
-            {normalizedPathname === '/dashboard/reports' ? <div id="reports-header-controls" /> : null}
             {normalizedPathname === '/dashboard/users' ? <div id="users-header-controls" /> : null}
             {normalizedPathname === '/dashboard/machines' ? <div id="machines-header-controls" /> : null}
             {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-version" /> : null}

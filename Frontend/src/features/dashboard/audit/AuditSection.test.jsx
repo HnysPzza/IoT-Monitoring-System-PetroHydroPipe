@@ -73,6 +73,8 @@ describe('AuditSection', () => {
     expect(document.querySelector('.audit-date-field .trend-calendar-trigger')).toBeInTheDocument()
     expect(document.querySelector('.audit-history-card .audit-total-chip')).toHaveTextContent('30 total')
     expect(document.querySelector('.audit-controls-actions .audit-total-chip')).not.toBeInTheDocument()
+    expect(document.querySelector('.account-table-wrap .audit-pagination')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Audit pagination')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /next/i }))
 
