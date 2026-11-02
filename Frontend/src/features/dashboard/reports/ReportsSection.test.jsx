@@ -234,6 +234,7 @@ describe('ReportsSection request states', () => {
 
     expect(await screen.findByText('S-01 - Raw Material & Coil Joint')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
+    expect(screen.getByText('7 events')).toBeInTheDocument()
   })
 
   it('renders three primary cards and one merged Downtime card', async () => {
@@ -247,8 +248,9 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('Availability')).toBeInTheDocument()
     expect(screen.getByTestId('report-card-loss')).toHaveTextContent('Estimated Loss')
     expect(screen.getByTestId('report-card-downtime')).toHaveClass('reports-downtime-card')
-    expect(screen.getByText('6 events · 38 min')).toBeInTheDocument()
-    expect(screen.getByText('Open and resolved, unplanned')).toBeInTheDocument()
+    expect(screen.getByTestId('report-card-downtime')).toHaveTextContent('6 events')
+    expect(screen.getByTestId('report-card-downtime')).toHaveTextContent('38 min')
+    expect(screen.queryByText('Open and resolved, unplanned')).not.toBeInTheDocument()
     expect(screen.queryByText('Downtime Events')).not.toBeInTheDocument()
     expect(screen.queryByText('Downtime Duration')).not.toBeInTheDocument()
     expect(screen.queryByTestId('report-card-process-events')).not.toBeInTheDocument()
@@ -263,19 +265,17 @@ describe('ReportsSection request states', () => {
     expect(lossCard).toHaveClass('reports-card-warning')
   })
 
-  it('uses visible period segments and an adaptive calendar control', async () => {
+  it('selects report periods inside the calendar', async () => {
+    const user = userEvent.setup()
     getReportSummary.mockResolvedValue(reportPayload())
-
     renderWithAuth(<ReportsSection />)
 
-    const dailyButton = await screen.findByRole('button', { name: 'Daily' })
-    const weeklyButton = screen.getByRole('button', { name: 'Weekly' })
-    const monthlyButton = screen.getByRole('button', { name: 'Monthly' })
-
-    expect(dailyButton).toHaveAttribute('aria-pressed', 'true')
-    expect(weeklyButton).toHaveAttribute('aria-pressed', 'false')
-    expect(monthlyButton).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: /selected period/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Daily' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /selected period/i }))
+    expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Monthly' }))
+    await waitFor(() => expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ reportType: 'monthly' })))
+    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('exports PDF through the same server endpoint', async () => {
@@ -341,7 +341,7 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText('Partial report. Values cover recorded time so far.')).toBeInTheDocument()
+    expect(await screen.findByText('Partial period')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export report' })).not.toBeDisabled()
   })
 
@@ -378,7 +378,7 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText('No downtime rows found for this report range.')).toBeInTheDocument()
+    expect(await screen.findByText('No downtime events')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Unable to load this report' })).not.toBeInTheDocument()
   })
 
@@ -411,7 +411,7 @@ describe('ReportsSection request states', () => {
     await selectReportDate(userEvent.setup(), /august 1st, 2026/i)
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
     expect(screen.queryByText('Old range cause')).not.toBeInTheDocument()
-    expect(screen.queryByText('No downtime rows found for this report range.')).not.toBeInTheDocument()
+    expect(screen.queryByText('No downtime events')).not.toBeInTheDocument()
   })
 
   it('ignores a late response from a superseded range', async () => {

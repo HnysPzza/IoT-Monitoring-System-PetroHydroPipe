@@ -1,0 +1,27 @@
+.reports-layout { gap: 14px; font-variant-numeric: tabular-nums; }
+#reports-header-controls { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--card-border); min-width: 0; }
+#reports-header-controls .reports-controls { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: 8px; }
+#reports-header-controls .reports-controls-actions { display: flex; gap: 6px; }
+#reports-header-controls .reports-icon-button { min-height: 32px; width: auto; padding: 4px 9px; gap: 5px; border: 1px solid var(--card-border); border-radius: 6px; background: var(--card-bg); font-size: 12px; }
+.reports-compact-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); overflow: hidden; border: 1px solid var(--card-border); border-radius: 12px; background: var(--card-bg); }
+.reports-compact-summary .reports-stat-card { min-height: 0; padding: 12px 16px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.reports-compact-summary .reports-stat-card + .reports-stat-card { border-left: 1px solid var(--card-border); }
+.reports-compact-summary .reports-stat-value { margin: 8px 0 0; font-size: 24px; }
+.reports-detail-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px; }
+.reports-detail-grid > * { min-width: 0; }
+.reports-layout .reports-table-card { padding: 16px; }
+.reports-layout .reports-table-card h2 { font-size: 13px; }
+.reports-partial-status { justify-self: start; color: var(--c-text-2); font-size: 12px; }
+@media (max-width: 900px) { .reports-detail-grid { grid-template-columns: 1fr; } #reports-header-controls { margin-left: 6px; padding-left: 6px; } }
+@media (max-width: 680px) { .reports-compact-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .reports-compact-summary .reports-stat-card:nth-child(odd) { border-left: 0; } .reports-compact-summary .reports-stat-card:nth-child(n+3) { border-top: 1px solid var(--card-border); } }
+.reports-compact-summary .reports-downtime-card { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 10px; }
+.reports-compact-summary .reports-secondary-card.reports-downtime-card .reports-stat-value { font-size: 24px; }
+.reports-detail-grid .reports-table { min-width: 0; table-layout: auto; }
+.reports-detail-grid .reports-table th, .reports-detail-grid .reports-table td { white-space: normal; overflow-wrap: anywhere; }
+#reports-header-controls .reports-icon-button { display: inline-flex; flex-direction: row; align-items: center; }
+
+.reports-detail-grid .reports-table th:last-child, .reports-detail-grid .reports-table td:last-child { text-align: right; }
+.reports-detail-grid .reports-table td[colspan] { text-align: center; }
+.reports-empty-state { display: inline-flex; align-items: center; gap: 8px; padding: 14px; color: var(--c-text-2); }
+.reports-empty-state svg { color: var(--c-success); }
+@media (max-width: 900px) { .dashboard-topbar:has(#reports-header-controls) { flex-wrap: wrap; } .dashboard-topbar:has(#reports-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; } #reports-header-controls .reports-controls { flex-wrap: wrap; } }

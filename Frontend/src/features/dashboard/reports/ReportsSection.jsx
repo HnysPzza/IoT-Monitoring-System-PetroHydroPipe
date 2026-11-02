@@ -1,10 +1,12 @@
+import './reports-compact.css'
+import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
-import { exportReport, getReportSummary, reportCategories, reportTypes } from './reportsService.js'
+import { exportReport, getReportSummary, reportCategories } from './reportsService.js'
 import { formatDimension, formatPercentage, formatTonnage, getReportCards } from './reportsPresentation.js'
 import '../production/ProductionSection.css'
 
@@ -148,10 +150,9 @@ function ReportSummaryCard({ card }) {
     >
       <div className="reports-stat-heading">
         <p className="stat-label">{card.label}</p>
-        {card.isPrimary ? <ReportDeltaBadge delta={card.delta} /> : null}
+        {card.isPrimary ? <ReportDeltaBadge delta={card.delta} /> : card.id === 'downtime' && card.value.includes(' · ') ? <span className="reports-delta-badge">{card.value.split(' · ')[0]}</span> : null}
       </div>
-      <p className="reports-stat-value">{card.value}</p>
-      <p className="stat-helper">{card.helper}</p>
+      <p className="reports-stat-value">{card.id === 'downtime' && card.value.includes(' · ') ? card.value.split(' · ')[1] : card.value}</p>
     </article>
   )
 }
@@ -176,7 +177,8 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
           aria-expanded={isOpen}
           disabled={isBlocked}
         >
-          {isExporting ? <RotateCw className="spin-icon" size={18} aria-hidden="true" /> : <Download size={18} aria-hidden="true" />}
+          {isExporting ? <RotateCw className="spin-icon" size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}
+          <span>Export</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="reports-export-menu" aria-label="Export report format">
@@ -436,57 +438,10 @@ export default function ReportsSection() {
     }
   }
 
-  return (
-    <div className="reports-layout">
-      {loadState === 'loading' ? (
-        <div className="notice dashboard-alert" role="status" aria-live="polite">
-          <RotateCw className="spin-icon" size={16} aria-hidden="true" />
-          <span>{hasCurrentReport ? 'Refreshing report...' : 'Loading report...'}</span>
-        </div>
-      ) : null}
-
-      {loadState === 'stale' ? (
-        <div className="notice notice-error dashboard-alert" role="alert">
-          <AlertTriangle size={16} aria-hidden="true" />
-          <span>
-            Report data is stale. Showing the last successful result from{' '}
-            <time dateTime={lastSuccessfulUpdate?.toISOString()}>
-              {lastSuccessfulUpdate ? formatSuccessfulUpdate(lastSuccessfulUpdate) : 'an earlier update'}
-            </time>
-            . {errorMessage}
-          </span>
-          <button className="btn btn-secondary table-action-button" type="button" onClick={retryCurrentReport}>
-            Retry
-          </button>
-        </div>
-      ) : null}
-
-      <section className="section-card reports-controls-card" aria-labelledby="reports-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Management report</p>
-            <h2 id="reports-title">Generate summary</h2>
-          </div>
-        </div>
-
+  const headerSlot = document.getElementById('reports-header-controls')
+  const controls = (
         <div className="reports-controls">
           <ReportCategoryFilter category={category} onSelectCategory={setCategory} />
-          <fieldset className="reports-period-fieldset">
-            <legend className="sr-only">Report period</legend>
-            <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report period">
-              {reportTypes.map((type) => (
-                <button
-                  key={type.id}
-                  className={`trend-mode-button reports-period-button ${reportType === type.id ? 'is-selected' : ''}`}
-                  type="button"
-                  aria-pressed={reportType === type.id}
-                  onClick={() => handleReportTypeChange(type.id)}
-                >
-                  {type.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
           <TrendCalendarControl
             mode={calendarMode}
             selectedDate={selectedCalendarDate}
@@ -516,21 +471,36 @@ export default function ReportsSection() {
             />
           </div>
         </div>
+  )
 
-        {exportErrorMessage ? (
-          <div className="notice notice-error dashboard-alert" role="alert">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>{exportErrorMessage}</span>
-          </div>
-        ) : null}
-      </section>
-
-      {hasCurrentReport && report.periodState === 'partial' ? (
-        <div className="notice reports-period-banner dashboard-alert" role="status">
-          <Info size={16} aria-hidden="true" />
-          <span>Partial report. Values cover recorded time so far.</span>
+  return (
+    <div className="reports-layout">
+      {loadState === 'loading' ? (
+        <div className="notice dashboard-alert" role="status" aria-live="polite">
+          <RotateCw className="spin-icon" size={16} aria-hidden="true" />
+          <span>{hasCurrentReport ? 'Refreshing report...' : 'Loading report...'}</span>
         </div>
       ) : null}
+
+      {loadState === 'stale' ? (
+        <div className="notice notice-error dashboard-alert" role="alert">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            Report data is stale. Showing the last successful result from{' '}
+            <time dateTime={lastSuccessfulUpdate?.toISOString()}>
+              {lastSuccessfulUpdate ? formatSuccessfulUpdate(lastSuccessfulUpdate) : 'an earlier update'}
+            </time>
+            . {errorMessage}
+          </span>
+          <button className="btn btn-secondary table-action-button" type="button" onClick={retryCurrentReport}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {headerSlot ? createPortal(controls, headerSlot) : controls}
+      {exportErrorMessage ? <div className="notice notice-error dashboard-alert" role="alert"><AlertTriangle size={16} aria-hidden="true" /><span>{exportErrorMessage}</span></div> : null}
+      {hasCurrentReport && report.periodState === 'partial' ? <span className="reports-partial-status" role="status">Partial period</span> : null}
 
       {hasCurrentReport && report.periodState === 'future' ? (
         <div className="notice reports-period-banner dashboard-alert" role="status">
@@ -556,15 +526,8 @@ export default function ReportsSection() {
         </section>
       ) : hasCurrentReport ? (
         <>
-          <section className="reports-summary-primary-grid" aria-label="Primary report summary">
-            {reportCards.filter((card) => card.isPrimary).map((card) => (
-              <ReportSummaryCard key={card.id} card={card} />
-            ))}
-          </section>
-          <section className="reports-summary-secondary-grid" aria-label="Secondary report summary">
-            {reportCards.filter((card) => !card.isPrimary).map((card) => (
-              <ReportSummaryCard key={card.id} card={card} />
-            ))}
+          <section className="reports-compact-summary" aria-label="Report summary">
+            {reportCards.map((card) => <ReportSummaryCard key={card.id} card={card} />)}
           </section>
         </>
       ) : null}
@@ -575,7 +538,6 @@ export default function ReportsSection() {
             <section className="section-card reports-table-card" aria-labelledby="reports-specs-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Product distribution</p>
                   <h2 id="reports-specs-title">Output by product specification</h2>
                 </div>
               </div>
@@ -637,7 +599,6 @@ export default function ReportsSection() {
             <section className="section-card reports-table-card" aria-labelledby="reports-cuts-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Cut history</p>
                   <h2 id="reports-cuts-title">S-05 cutting events</h2>
                 </div>
               </div>
@@ -700,14 +661,16 @@ export default function ReportsSection() {
           ) : null}
         </>
       ) : (
-        <>
+        <div className="reports-detail-grid">
           {loadState !== 'error' ? (
             <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Process activity</p>
                   <h2 id="reports-process-title">Events by process sensor</h2>
                 </div>
+                {hasCurrentReport && report.processSensors?.length > 0 && report.processSensors.every((sensor) => Number.isFinite(sensor.eventCount)) ? (
+                  <span className="section-chip">{report.processSensors.reduce((total, sensor) => total + sensor.eventCount, 0)} events</span>
+                ) : null}
               </div>
 
               <div className="account-table-wrap">
@@ -737,7 +700,6 @@ export default function ReportsSection() {
             <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Grouped output</p>
                   <h2 id="reports-table-title">Downtime by cause and sensor</h2>
                 </div>
               </div>
@@ -760,7 +722,7 @@ export default function ReportsSection() {
                       </tr>
                     ) : hasCurrentReport && report.rows.length === 0 ? (
                       <tr>
-                        <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
+                        <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : <span className="reports-empty-state"><Check size={16} aria-hidden="true" /><span>No downtime events</span></span>}</td>
                       </tr>
                     ) : hasCurrentReport ? (
                       report.rows.map((row, index) => (
@@ -778,7 +740,7 @@ export default function ReportsSection() {
               </div>
             </section>
           ) : null}
-        </>
+        </div>
       )}
     </div>
   )
