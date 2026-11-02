@@ -1,3 +1,4 @@
+import './live.css'
 import { useMemo } from 'react'
 import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff, Wrench } from 'lucide-react'
@@ -181,8 +182,8 @@ export default function LiveSection() {
       {presentedSensors.length > 0 ? (
         <section className="section-card live-activity-card" aria-labelledby="live-activity-title">
           <div className="live-activity-heading">
-            <div><p className="section-eyebrow">Recent activity</p><h2 id="live-activity-title">Latest event by sensor</h2></div>
-            <p className="live-activity-caption">Columns match the sensor cards above</p>
+            <div><h2 id="live-activity-title">Latest event by sensor</h2></div>
+
           </div>
           <ol className="live-activity-grid" aria-label="Latest event reported by each sensor">
             {presentedSensors.map((sensor) => (
