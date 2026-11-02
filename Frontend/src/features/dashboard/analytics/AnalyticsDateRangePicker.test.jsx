@@ -54,6 +54,16 @@ describe('AnalyticsDateRangePicker helpers', () => {
 })
 
 describe('AnalyticsDateRangePicker component', () => {
+  it('marks future dates while allowing selection', async () => {
+    const user = userEvent.setup()
+    render(<AnalyticsDateRangePicker period="week" startDate="2026-11-02" endDate="2026-11-08" maxDate="2026-11-02" onChange={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: /Select Analytics date range/i }))
+    expect(screen.getByRole('button', { name: 'Select date Nov 2, 2026' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Select date Nov 3, 2026' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Select date Nov 3, 2026' })).toHaveClass('is-future')
+    expect(screen.getByRole('button', { name: 'Next month' })).toBeDisabled()
+  })
+
   it('renders trigger with dynamic eyebrow and formatted value', () => {
     render(
       <AnalyticsDateRangePicker
@@ -191,7 +201,7 @@ describe('AnalyticsDateRangePicker component', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('in Monthly mode, highlights 1st through last day as solid continuous block', async () => {
+  it('in Monthly mode, selects a month and disables future months', async () => {
     const user = userEvent.setup()
     const handleChange = vi.fn()
     render(
@@ -199,18 +209,18 @@ describe('AnalyticsDateRangePicker component', () => {
         period="week"
         startDate="2026-10-26"
         endDate="2026-11-01"
+        maxDate="2026-11-02"
         onChange={handleChange}
       />,
     )
 
     await user.click(screen.getByRole('button', { name: /Select Analytics date range/i }))
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
+    expect(screen.getByRole('button', { name: 'Nov 2026' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Dec 2026' })).toBeDisabled()
 
-    // Day 1 (Oct 1) is start, Day 31 (Oct 31) is end
-    const day1Btn = screen.getByRole('button', { name: 'Select date Oct 1, 2026' })
-    const day31Btn = screen.getByRole('button', { name: 'Select date Oct 31, 2026' })
-    expect(day1Btn).toHaveClass('is-start')
-    expect(day31Btn).toHaveClass('is-end')
+    expect(screen.getByRole('button', { name: 'Oct 2026' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: 'Select date Oct 1, 2026' })).not.toBeInTheDocument()
 
     expect(screen.getByText(/Oct 1 \u2013 Oct 31, 2026 \u00b7 1 month/)).toBeInTheDocument()
 

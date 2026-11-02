@@ -319,6 +319,7 @@ export default function ProductionDateRangePicker({
 
   const handleMonthSelect = (mIdx) => {
     const start = new Date(viewYear, mIdx, 1)
+    if (maxDateObj && start > maxDateObj) return
     const end = new Date(viewYear, mIdx + 1, 0)
     setDraftStartDate(start)
     setDraftEndDate(end)
@@ -335,6 +336,7 @@ export default function ProductionDateRangePicker({
   }
 
   const handleApply = () => {
+    if (maxDateObj && draftPreset !== 'all' && (draftStartDate > maxDateObj || (draftPreset === 'custom' && draftEndDate > maxDateObj))) return
     if (draftPreset === 'all' || !draftStartDate) {
       onChange?.({
         type: 'all',
@@ -377,9 +379,6 @@ export default function ProductionDateRangePicker({
   const totalDays = new Date(year, month + 1, 0).getDate()
   const monthTitle = viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
-  const isNextDisabled = maxDateObj
-    ? new Date(year, month + 1, 1) > maxDateObj
-    : false
 
   // Determine active draft footer label
   let footerSelectionLabel = 'All Dates'
@@ -474,7 +473,6 @@ export default function ProductionDateRangePicker({
                       type="button"
                       className="production-calendar-nav-btn"
                       aria-label="Next year"
-                      disabled={Boolean(maxDateObj && viewYear >= maxDateObj.getFullYear())}
                       onClick={() => setViewYear((y) => y + 1)}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -498,7 +496,7 @@ export default function ProductionDateRangePicker({
                           key={mName}
                           type="button"
                           disabled={isMonthDisabled}
-                          className={`production-calendar-month-btn ${isMonthSelected ? 'is-selected' : ''}`}
+                          className={`production-calendar-month-btn ${isMonthSelected ? 'is-selected' : ''} ${isMonthDisabled && !isMonthSelected ? 'is-future' : ''}`}
                           onClick={() => handleMonthSelect(mIdx)}
                         >
                           {mName}
@@ -523,7 +521,7 @@ export default function ProductionDateRangePicker({
                       type="button"
                       className="production-calendar-nav-btn"
                       aria-label="Next month"
-                      disabled={isNextDisabled}
+
                       onClick={() => setViewMonth(new Date(year, month + 1, 1))}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -593,7 +591,7 @@ export default function ProductionDateRangePicker({
                         (isWeekSelected && isEnd) ? 'is-week-end' : '',
                         isInRange ? 'is-in-range' : '',
                         isHoverRange ? 'is-hover-range' : '',
-                        isDisabled ? 'is-disabled' : '',
+                        isDisabled && !isStart && !isEnd ? 'is-future' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')
@@ -607,11 +605,9 @@ export default function ProductionDateRangePicker({
                           onClick={() => handleDayClick(cellDate)}
                           onMouseEnter={() => {
                             if (draftPreset === 'week') {
-                              if (!isDisabled) {
-                                const { startDate, endDate } = getThisWeekRange(cellDate)
-                                setHoverWeek({ startDate, endDate })
-                              }
-                            } else if (isSelectingRange && !isDisabled) {
+                              const { startDate, endDate } = getThisWeekRange(cellDate)
+                              setHoverWeek({ startDate, endDate })
+                            } else if (isSelectingRange) {
                               setHoverDate(cellDate)
                             }
                           }}

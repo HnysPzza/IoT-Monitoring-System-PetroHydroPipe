@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
+import '../../../shared/components/ui/calendar.css'
 import './analytics-date-range-picker.css'
 
 export function getMondayToSundaySpan(selectedDate) {
@@ -152,8 +153,10 @@ export default function AnalyticsDateRangePicker({
   period = 'week',
   startDate,
   endDate,
+  maxDate,
   onChange,
 }) {
+  const maxDateValue = parseDateInput(maxDate)
   const [isOpen, setIsOpen] = useState(false)
   const [pendingPreset, setPendingPreset] = useState(period || 'week')
   const [pendingRange, setPendingRange] = useState(() => {
@@ -217,7 +220,7 @@ export default function AnalyticsDateRangePicker({
   }
 
   function handleDayClick(day) {
-    if (pendingPreset === 'all') return
+    if (pendingPreset === 'all' || (maxDateValue && !isCustomSelecting && day > maxDateValue)) return
 
     if (pendingPreset === 'week') {
       const span = getMondayToSundaySpan(day)
@@ -259,6 +262,10 @@ export default function AnalyticsDateRangePicker({
     setHoveredDay(null)
   }
 
+  function handleYearChange(amount) {
+    setViewDate((prev) => new Date(prev.getFullYear() + amount, prev.getMonth(), 1, 12))
+  }
+
   function handlePrevMonth() {
     setViewDate((prev) => {
       const next = new Date(prev.getFullYear(), prev.getMonth() - 1, 1, 12)
@@ -284,6 +291,7 @@ export default function AnalyticsDateRangePicker({
   }
 
   function handleApply() {
+    if (maxDateValue && pendingPreset !== 'all' && pendingRange.start > maxDateValue) return
     setIsOpen(false)
     if (pendingPreset === 'all') {
       onChange?.({ period: 'all' })
@@ -384,26 +392,42 @@ export default function AnalyticsDateRangePicker({
                 <button
                   type="button"
                   className="analytics-calendar-nav-btn"
-                  aria-label="Previous month"
+                  aria-label={pendingPreset === 'month' ? 'Previous year' : 'Previous month'}
                   disabled={pendingPreset === 'all'}
-                  onClick={handlePrevMonth}
+                  onClick={pendingPreset === 'month' ? () => handleYearChange(-1) : handlePrevMonth}
                 >
                   <ChevronLeft size={16} aria-hidden="true" />
                 </button>
                 <span className="analytics-calendar-month-title">
-                  {viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  {pendingPreset === 'month' ? viewDate.getFullYear() : viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                 </span>
                 <button
                   type="button"
                   className="analytics-calendar-nav-btn"
-                  aria-label="Next month"
-                  disabled={pendingPreset === 'all'}
-                  onClick={handleNextMonth}
+                  aria-label={pendingPreset === 'month' ? 'Next year' : 'Next month'}
+                  disabled={pendingPreset === 'all' || Boolean(maxDateValue && (pendingPreset === 'month' ? viewDate.getFullYear() >= maxDateValue.getFullYear() : new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1, 12) > maxDateValue))}
+                  onClick={pendingPreset === 'month' ? () => handleYearChange(1) : handleNextMonth}
                 >
                   <ChevronRight size={16} aria-hidden="true" />
                 </button>
               </div>
 
+              {pendingPreset === 'month' ? (
+                <div className="trend-calendar-months-grid">
+                  {Array.from({ length: 12 }, (_, month) => {
+                    const date = new Date(viewDate.getFullYear(), month, 1, 12)
+                    const selected = pendingRange.start && date.getFullYear() === pendingRange.start.getFullYear() && month === pendingRange.start.getMonth()
+                    const future = Boolean(maxDateValue && date > maxDateValue)
+                    return (
+                      <button key={month} type="button" className={`trend-calendar-month-btn ${selected ? 'is-selected' : ''} ${future ? 'is-future' : ''}`}
+                        aria-label={date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} aria-pressed={Boolean(selected)} disabled={future}
+                        onClick={() => { setViewDate(date); setPendingRange(getMonthSpan(date)) }}>
+                        {date.toLocaleDateString('en-US', { month: 'short' })}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (<>
               <div className="analytics-calendar-weekdays" aria-hidden="true">
                 {WEEKDAYS.map((wd) => (
                   <span key={wd} className="analytics-calendar-weekday">{wd}</span>
@@ -442,8 +466,8 @@ export default function AnalyticsDateRangePicker({
                         <button
                           key={day.toISOString()}
                           type="button"
-                          className={`analytics-calendar-day-btn ${cellClass}`.trim()}
-                          disabled={pendingPreset === 'all'}
+                          className={`analytics-calendar-day-btn ${cellClass} ${maxDateValue && day > maxDateValue ? 'is-future' : ''}`.trim()}
+                          disabled={pendingPreset === 'all' || Boolean(maxDateValue && !isCustomSelecting && day > maxDateValue)}
                           aria-label={`Select date ${dayLabel}`}
                           onClick={() => handleDayClick(day)}
                           onMouseEnter={() => handleDayHover(day)}
@@ -455,6 +479,7 @@ export default function AnalyticsDateRangePicker({
                   </div>
                 ))}
               </div>
+              </>)}
             </div>
           </div>
 

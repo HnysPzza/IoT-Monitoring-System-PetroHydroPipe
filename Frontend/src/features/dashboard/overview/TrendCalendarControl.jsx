@@ -205,7 +205,6 @@ export default function TrendCalendarControl({
   }
 
   // Month navigation calculation
-  const nextMonthStart = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)
   const monthHeading = viewDate.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
   const monthsOfYear = Array.from({ length: 12 }, (_, m) => new Date(viewDate.getFullYear(), m, 1))
   const monthWeeks = getMonthWeeks(viewDate)
@@ -289,7 +288,6 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next year"
-                      disabled={Boolean(maxDate && viewDate.getFullYear() >= maxDate.getFullYear())}
                       onClick={handleNextYear}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -306,12 +304,13 @@ export default function TrendCalendarControl({
                         <button
                           key={m.getMonth()}
                           type="button"
-                          className={`trend-calendar-month-btn ${isSelected ? 'is-selected' : ''}`}
+                          className={`trend-calendar-month-btn ${isSelected ? 'is-selected' : ''} ${isMonthDisabled && !isSelected ? 'is-future' : ''}`}
+                          aria-label={monthLabel}
                           aria-pressed={isSelected}
                           disabled={isMonthDisabled}
                           onClick={() => handleSelect(m, 'month')}
                         >
-                          {monthLabel}
+                          {m.toLocaleDateString('en-PH', { month: 'short' })}
                         </button>
                       )
                     })}
@@ -333,7 +332,6 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next month"
-                      disabled={Boolean(maxDate && nextMonthStart > maxDate)}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -354,7 +352,7 @@ export default function TrendCalendarControl({
                         <button
                           key={weekStart.toISOString()}
                           type="button"
-                          className={`trend-calendar-week-row ${isSelected ? 'is-selected' : ''}`}
+                          className={`trend-calendar-week-row ${isSelected ? 'is-selected' : ''} ${isWeekDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={`Select week ${weekLabel}`}
                           aria-pressed={isSelected}
                           disabled={isWeekDisabled}
@@ -364,7 +362,7 @@ export default function TrendCalendarControl({
                             {daysInWeek.map((day) => (
                               <span
                                 key={day.toISOString()}
-                                className={`trend-calendar-week-day-cell ${day.getMonth() !== viewDate.getMonth() ? 'is-outside' : ''}`}
+                                className={`trend-calendar-week-day-cell ${day.getMonth() !== viewDate.getMonth() ? 'is-outside' : ''} ${maxDate && day > maxDate ? 'is-future' : ''}`}
                               >
                                 {day.getDate()}
                               </span>
@@ -391,7 +389,6 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next month"
-                      disabled={Boolean(maxDate && nextMonthStart > maxDate)}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -411,7 +408,7 @@ export default function TrendCalendarControl({
                         <button
                           key={day.toISOString()}
                           type="button"
-                          className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isOutside ? 'is-outside' : ''}`}
+                          className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={getDayAriaLabel(day)}
                           aria-pressed={isSelected}
                           disabled={isDisabled}

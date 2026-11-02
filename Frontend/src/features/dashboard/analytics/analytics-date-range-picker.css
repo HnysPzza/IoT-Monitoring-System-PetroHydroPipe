@@ -387,4 +387,5 @@
   .analytics-popover-apply-btn {
     transition: none;
   }
-}
+}.analytics-calendar-day-btn.is-future:not(.is-start):not(.is-end) { color: var(--c-text-3); }
+.analytics-calendar-day-btn.is-future:disabled { color: var(--c-text-3); background: transparent; opacity: 0.6; }

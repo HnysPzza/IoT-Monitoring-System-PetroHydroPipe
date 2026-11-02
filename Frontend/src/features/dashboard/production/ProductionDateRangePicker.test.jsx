@@ -439,7 +439,7 @@ describe('ProductionDateRangePicker Unit & Integration Suite', () => {
       )
     })
 
-    it('disables days after maxDate', async () => {
+    it('marks days after maxDate without disabling them', async () => {
       const user = userEvent.setup()
       render(
         <ProductionDateRangePicker
@@ -458,7 +458,7 @@ describe('ProductionDateRangePicker Unit & Integration Suite', () => {
 
       expect(day5).not.toBeDisabled()
       expect(day15).toBeDisabled()
-      expect(day15).toHaveClass('is-disabled')
+      expect(day15).toHaveClass('is-future')
     })
   })
 

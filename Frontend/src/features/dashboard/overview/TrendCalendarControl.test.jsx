@@ -78,7 +78,7 @@ describe('TrendCalendarControl', () => {
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 6))
   })
 
-  it('disables future dates and returns focus on Escape', async () => {
+  it('marks future weeks and returns focus on Escape', async () => {
     const user = userEvent.setup()
     renderCalendar({
       mode: 'week',
@@ -222,6 +222,8 @@ describe('TrendCalendarControl', () => {
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
     const julMonth = await screen.findByRole('button', { name: 'Jul 2026' })
     expect(julMonth).toHaveClass('is-selected')
+    expect(julMonth).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Aug 2026' })).toBeDisabled()
   })
 })
 

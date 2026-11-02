@@ -594,3 +594,7 @@
     transition: none;
   }
 }
+.trend-calendar-day-btn.is-future, .trend-calendar-month-btn.is-future, .trend-calendar-week-row.is-future { color: var(--c-text-3); }
+.trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-future { color: var(--c-text-3); }
+.trend-calendar-day-btn:disabled, .trend-calendar-month-btn:disabled, .trend-calendar-week-row:disabled { color: var(--c-text-3); opacity: 0.6; }
+.trend-calendar-day-btn:disabled, .trend-calendar-month-btn:disabled, .trend-calendar-week-row:disabled { background: transparent; box-shadow: none; }
