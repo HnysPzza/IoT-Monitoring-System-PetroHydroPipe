@@ -1,4 +1,6 @@
 import { act, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { onlineManager } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -50,6 +52,45 @@ describe('LiveSection polling', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('labels a cached snapshot stale until a new live fetch confirms it', async () => {
+    const user = userEvent.setup()
+    const pending = deferred()
+    getLiveFeed.mockResolvedValueOnce(payload()).mockReturnValueOnce(pending.promise)
+    function ToggleLive() {
+      const [show, setShow] = useState(true)
+      return <><button onClick={() => setShow((value) => !value)}>Toggle view</button>{show ? <LiveSection /> : null}</>
+    }
+    renderWithAuth(<ToggleLive />)
+    await screen.findByRole('heading', { name: 'Spiral Mill 01' })
+    await user.click(screen.getByRole('button', { name: 'Toggle view' }))
+    await user.click(screen.getByRole('button', { name: 'Toggle view' }))
+    expect(screen.getByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/stale.*updated/i)
+    await act(async () => { pending.resolve(payload()); await pending.promise })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('marks the visible snapshot stale as soon as the browser goes offline', async () => {
+    renderWithAuth(<LiveSection />)
+    await screen.findByRole('heading', { name: 'Spiral Mill 01' })
+    act(() => onlineManager.setOnline(false))
+    expect(screen.getByRole('alert')).toHaveTextContent(/live data is stale.*offline/i)
+    await act(async () => { onlineManager.setOnline(true); await Promise.resolve() })
+  })
+
+  it('keeps a late response stale after the browser goes offline', async () => {
+    const user = userEvent.setup()
+    const pending = deferred()
+    getLiveFeed.mockResolvedValueOnce(payload()).mockReturnValueOnce(pending.promise)
+    renderWithAuth(<LiveSection />)
+    await screen.findByRole('heading', { name: 'Spiral Mill 01' })
+    await user.click(screen.getByRole('button', { name: 'Refresh live feed' }))
+    act(() => onlineManager.setOnline(false))
+    await act(async () => { pending.resolve(payload()); await pending.promise })
+    expect(screen.getByRole('alert')).toHaveTextContent(/live data is stale.*offline/i)
+    await act(async () => { onlineManager.setOnline(true); await Promise.resolve() })
   })
 
   it('shows watchdog meaning and retains last-good data after a refresh failure', async () => {

@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
@@ -49,10 +50,10 @@ export default function LiveSection() {
   const monitoring = liveFeed.monitoring
   const isLoading = liveFeed.isLoading
   const isRefreshing = liveFeed.isRefreshing
-  const notice = liveFeed.error ? {
+  const notice = liveFeed.state === 'stale' || liveFeed.error ? {
     type: 'error',
     message: Boolean(liveFeed.machine)
-      ? `Live data is stale. ${liveFeed.error}`
+      ? <>Live data is stale. Updated <UpdatedAgo updatedAt={liveFeed.lastUpdated} />. {liveFeed.error || 'Waiting for a fresh update.'}</>
       : liveFeed.error,
   } : null
 

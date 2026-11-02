@@ -1,11 +1,18 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook as renderHookWithProvider } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLiveFeedStream } from './useLiveFeedStream.js'
 import { getLiveFeed } from './liveService.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 
 vi.mock('./liveService.js', () => ({
   getLiveFeed: vi.fn(),
 }))
+
+function renderHook(callback) {
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } })
+  return renderHookWithProvider(callback, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
 
 function mockLivePayload({ machineStatus = 'Running', capturedAt = '2026-10-31T12:00:00.000Z' } = {}) {
   return {
@@ -81,6 +88,21 @@ describe('useLiveFeedStream', () => {
     expect(result.current.machine?.status).toBe('Downtime')
     expect(result.current.state).toBe('success')
     expect(getLiveFeed).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps cached data stale for an older event and confirms it with a newer event', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } })
+    client.setQueryData(queryKeys.live.snapshot, { data: mockLivePayload({ capturedAt: '2026-10-31T12:00:10.000Z' }), updatedAt: Date.now() })
+    getLiveFeed.mockReturnValue(new Promise(() => {}))
+    const { result } = renderHookWithProvider(() => useLiveFeedStream('test-token'), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    })
+    expect(result.current.state).toBe('stale')
+    act(() => { result.current.applyEvent(mockLivePayload({ capturedAt: '2026-10-31T12:00:05.000Z' })) })
+    expect(result.current.state).toBe('stale')
+    act(() => { result.current.applyEvent(mockLivePayload({ machineStatus: 'Downtime', capturedAt: '2026-10-31T12:00:15.000Z' })) })
+    expect(result.current.state).toBe('success')
+    expect(result.current.machine.status).toBe('Downtime')
   })
 
   it('drops older SSE events', async () => {
