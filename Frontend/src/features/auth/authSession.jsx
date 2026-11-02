@@ -1,10 +1,11 @@
-import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
 import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher, withSessionLock } from '../../shared/services/sessionRefresh.js'
 import { createApiError, isTransientApiError } from '../../shared/errors/apiError.js'
 import { syncRoleHint } from './authNavigation.js'
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
+import { queryClient } from '../../shared/services/queryClient.js'
 
 const LEGACY_STORAGE_KEY = 'iot_monitoring_auth'
 
@@ -16,11 +17,17 @@ export function AuthProvider({ children }) {
   const [isRestoring, setIsRestoring] = useState(true)
   const removeUnauthorizedHandlerRef = useRef(() => {})
   const explicitlyLoggedOutRef = useRef(false)
+  const identityRef = useRef(null)
 
   function applySession(payload) {
+    const identity = `${payload?.user?.id || ''}:${payload?.user?.role || ''}`
+    if (identityRef.current !== identity) queryClient.clear()
+    identityRef.current = identity
     removeUnauthorizedHandlerRef.current()
     removeUnauthorizedHandlerRef.current = setUnauthorizedHandler(payload.token, () => {
       removeUnauthorizedHandlerRef.current()
+      queryClient.clear()
+      identityRef.current = null
       syncRoleHint(null)
       setAuth(null)
     })
@@ -30,6 +37,8 @@ export function AuthProvider({ children }) {
   }
 
   function clearSession() {
+    queryClient.clear()
+    identityRef.current = null
     removeUnauthorizedHandlerRef.current()
     syncRoleHint(null)
     setSessionError(null)
@@ -108,6 +117,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function login(credentials) {
+    clearSession()
     const generation = beginSessionChange()
     const nextAuth = await withSessionLock(() => loginRequest(credentials))
     if (generation !== getSessionGeneration()) throw createApiError('Sign-in was cancelled.', 0, null, 'SESSION_CHANGED')
@@ -143,5 +153,6 @@ export function AuthProvider({ children }) {
     [auth, isRestoring, sessionError],
   )
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  const identityKey = auth?.user?.id ? `${auth.user.id}:${auth.user.role || ''}` : 'signed-out'
+  return <AuthContext.Provider value={value}><Fragment key={identityKey}>{children}</Fragment></AuthContext.Provider>
 }
