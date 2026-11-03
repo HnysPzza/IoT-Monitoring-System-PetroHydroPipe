@@ -171,6 +171,8 @@ export default function UsersSection() {
     </div>
   )
 
+  if (!online && !usersQuery.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => usersQuery.refetch()}>Retry</button></div>
+
   return (
     <div className="users-directory">
       <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />

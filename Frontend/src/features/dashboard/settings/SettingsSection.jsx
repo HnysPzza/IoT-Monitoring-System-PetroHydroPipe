@@ -5,6 +5,7 @@ import { AlertTriangle, Lock, Plus, RotateCcw, RotateCw, Save } from 'lucide-rea
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
@@ -48,6 +49,7 @@ function minutesInputToSeconds(value) {
 
 export default function SettingsSection() {
   const { token } = useAuth()
+  const online = useNetworkOnline()
   const [settings, setSettings] = useState(null)
   const [constraints, setConstraints] = useState(null)
   const [draft, setDraft] = useState(null)
@@ -77,8 +79,8 @@ export default function SettingsSection() {
     staleTime: 0,
     refetchOnWindowFocus: false,
   })
-  const watchdogMode = diagnosticsQuery.isError || diagnosticsQuery.isFetching ? 'unknown' : diagnosticsQuery.data?.watchdog?.mode || 'unknown'
-  const isLoading = machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending
+  const watchdogMode = !online || diagnosticsQuery.isError || diagnosticsQuery.isFetching ? 'unknown' : diagnosticsQuery.data?.watchdog?.mode || 'unknown'
+  const isLoading = online && (machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending)
 
   useEffect(() => {
     if (settingsQuery.data?.settings && (!draft || (settings && settingsAreEqual(draft, toDraft(settings)) && !isSaving))) {
@@ -260,6 +262,10 @@ export default function SettingsSection() {
     }
   }
 
+  if (!online && (!draft || !constraints)) {
+    return <div role="alert">Unable to refresh while offline. <button type="button" onClick={reloadSettings}>Retry</button></div>
+  }
+
   if (isLoading) {
     return <section className="section-card settings-panel"><div className="skeleton skeleton-heading" /><div className="skeleton skeleton-panel" /></section>
   }
@@ -280,6 +286,7 @@ export default function SettingsSection() {
     <div className="settings-layout">
       {headerVersion ? createPortal(version, headerVersion) : null}
       {headerControls ? createPortal(actions, headerControls) : actions}
+      {!online ? <div className="notice notice-error" role="alert">Settings may be stale. Unable to refresh while offline.</div> : null}
       {notice ? <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : null}<span>{notice.message}</span></div> : null}
 
       {!draft || !constraints ? (

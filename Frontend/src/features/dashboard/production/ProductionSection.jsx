@@ -856,6 +856,8 @@ export default function ProductionSection({
     }
   }
 
+  if (!online && !query.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => query.refetch()}>Retry</button></div>
+
   return (
     <div className="production-workspace">
       {/* Screen Reader Announcements */}

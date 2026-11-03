@@ -164,7 +164,7 @@ export default function DashboardSection() {
   const overviewData = overviewQuery.data
   const hasCurrentOverview = Boolean(overviewData)
   const overviewError = overviewQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load dashboard overview.')
-  const overviewState = overviewQuery.isError || (!online && overviewData) ? (overviewData ? 'stale' : 'error') : overviewQuery.isFetching || !overviewData ? 'loading' : overviewData.summary?.length ? 'success' : 'empty'
+  const overviewState = overviewQuery.isError || !online ? (overviewData ? 'stale' : 'error') : overviewQuery.isFetching || !overviewData ? 'loading' : overviewData.summary?.length ? 'success' : 'empty'
   const overviewDisplayState = overviewState
   const downtimeImpact = chartQuery.data
   const hasCurrentDowntimeChart = chartQuery.data !== undefined
@@ -173,7 +173,7 @@ export default function DashboardSection() {
   const hasLoadedInitialChart = hasLoadedChartRef.current
   const downtimeChartLastUpdated = chartQuery.dataUpdatedAt ? new Date(chartQuery.dataUpdatedAt) : null
   const downtimeChartError = chartQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load downtime chart.')
-  const downtimeChartState = chartQuery.isError || (!online && hasCurrentDowntimeChart) ? (hasCurrentDowntimeChart ? 'stale' : 'error') : chartQuery.isFetching || !hasCurrentDowntimeChart ? 'loading' : downtimeImpact?.points?.length ? 'success' : 'empty'
+  const downtimeChartState = chartQuery.isError || !online ? (hasCurrentDowntimeChart ? 'stale' : 'error') : chartQuery.isFetching || !hasCurrentDowntimeChart ? 'loading' : downtimeImpact?.points?.length ? 'success' : 'empty'
   const chartDisplayState = downtimeChartState
   const liveKey = `${token || 'anonymous'}:live`
   const hasCurrentLive = liveRequestKey === liveKey

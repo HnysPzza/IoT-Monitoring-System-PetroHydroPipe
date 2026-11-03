@@ -200,6 +200,8 @@ export default function DowntimeSection() {
     })
   }
 
+  if (!online && !query.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => query.refetch()}>Retry</button></div>
+
   return (
     <div className="downtime-layout">
       {query.isFetching && query.data ? <div role="status">{query.isPlaceholderData ? 'Refreshing downtime records for the selected filters; previous results remain visible.' : 'Refreshing downtime records...'}</div> : null}
