@@ -119,6 +119,12 @@ describe('SettingsSection operational settings', () => {
     await act(async () => resolveSettings({ settings: settingsFixture({ version: '2' }), constraints }))
     expect(trigger).toHaveValue(7)
     expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your draft was kept')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reload latest' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(trigger).toHaveValue(2)
+    expect(screen.getByText('Version 2')).toBeInTheDocument()
   })
 
   it('saves edits from the header controls', async () => {

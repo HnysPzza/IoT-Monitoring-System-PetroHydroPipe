@@ -83,10 +83,15 @@ export default function SettingsSection() {
   const isLoading = online && (machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending)
 
   useEffect(() => {
-    if (settingsQuery.data?.settings && (!draft || (settings && settingsAreEqual(draft, toDraft(settings)) && !isSaving))) {
-      setSettings(settingsQuery.data.settings)
+    const latest = settingsQuery.data?.settings
+    if (!latest || isSaving) return
+    if (!draft || (settings && settingsAreEqual(draft, toDraft(settings)))) {
+      setSettings(latest)
       setConstraints(settingsQuery.data.constraints)
-      setDraft(toDraft(settingsQuery.data.settings))
+      setDraft(toDraft(latest))
+    } else if (settings && latest.version !== settings.version) {
+      setConflict(true)
+      setNotice({ type: 'error', message: 'Another Admin changed these settings. Your draft was kept; reload the latest version before saving.' })
     }
   }, [settingsQuery.data])
 
@@ -273,10 +278,19 @@ export default function SettingsSection() {
   const headerControls = document.getElementById('settings-header-controls')
   const headerVersion = document.getElementById('settings-header-version')
   const version = draft && constraints ? <span className="settings-version">{isDirty ? 'Unsaved changes' : `Version ${settings.version}`}</span> : null
+  function discardSettings() {
+    const latest = conflict && settingsQuery.data?.settings?.version !== settings.version ? settingsQuery.data : null
+    const nextSettings = latest?.settings || settings
+    setSettings(nextSettings)
+    if (latest) setConstraints(latest.constraints)
+    setDraft(toDraft(nextSettings))
+    setConflict(false)
+    setNotice(null)
+  }
   const actions = draft && constraints ? (
     <div className="settings-header-actions">
       {!headerVersion ? version : null}
-      <button className="btn btn-secondary" type="button" disabled={!isDirty || isSaving} onClick={() => { setDraft(toDraft(settings)); setConflict(false); setNotice(null) }}><RotateCcw size={14} aria-hidden="true" /> Discard</button>
+      <button className="btn btn-secondary" type="button" disabled={!isDirty || isSaving} onClick={discardSettings}><RotateCcw size={14} aria-hidden="true" /> Discard</button>
       {conflict || enforcementBlocked ? <button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /> Reload latest</button> : null}
       <button className="btn btn-primary" type="submit" form="operational-settings-form" disabled={!canSave}><Save size={14} aria-hidden="true" /> {isSaving ? 'Saving…' : 'Save'}</button>
     </div>
