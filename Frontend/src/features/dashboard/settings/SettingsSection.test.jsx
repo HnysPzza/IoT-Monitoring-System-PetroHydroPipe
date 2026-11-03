@@ -105,6 +105,22 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByText('Version 2')).toBeInTheDocument()
   })
 
+  it('keeps unsaved edits when a newer cached settings request completes', async () => {
+    const user = userEvent.setup()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['machines', 'list'], { machines: [machine] })
+    client.setQueryData(['settings', 'machine', machine.id], { settings: settingsFixture(), constraints }, { updatedAt: Date.now() - 120000 })
+    let resolveSettings
+    getOperationalSettings.mockReturnValue(new Promise((resolve) => { resolveSettings = resolve }))
+    renderWithAuth(<QueryClientProvider client={client}><SettingsSection /></QueryClientProvider>)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '7')
+    await act(async () => resolveSettings({ settings: settingsFixture({ version: '2' }), constraints }))
+    expect(trigger).toHaveValue(7)
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+  })
+
   it('saves edits from the header controls', async () => {
     const user = userEvent.setup()
     const header = document.createElement('div')
