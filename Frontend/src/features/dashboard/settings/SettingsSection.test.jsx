@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -90,6 +91,20 @@ describe('SettingsSection operational settings', () => {
     expect(getOperationalSettings).toHaveBeenCalledTimes(1)
   })
 
+  it('updates a clean cached draft when newer settings arrive', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['machines', 'list'], { machines: [machine] })
+    client.setQueryData(['settings', 'machine', machine.id], { settings: settingsFixture(), constraints }, { updatedAt: Date.now() - 120000 })
+    let resolveSettings
+    getOperationalSettings.mockReturnValue(new Promise((resolve) => { resolveSettings = resolve }))
+    renderWithAuth(<QueryClientProvider client={client}><SettingsSection /></QueryClientProvider>)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    expect(trigger).toHaveValue(2)
+    await act(async () => resolveSettings({ settings: settingsFixture({ version: '2', sensorThresholds: { ...settingsFixture().sensorThresholds, 'S-01': { ...settingsFixture().sensorThresholds['S-01'], triggerSeconds: 300 } } }), constraints }))
+    await waitFor(() => expect(trigger).toHaveValue(5))
+    expect(screen.getByText('Version 2')).toBeInTheDocument()
+  })
+
   it('saves edits from the header controls', async () => {
     const user = userEvent.setup()
     const header = document.createElement('div')
@@ -155,6 +170,8 @@ describe('SettingsSection operational settings', () => {
     expect(trigger).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Discard' }))
     expect(trigger).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(trigger).toBeEnabled())
   })
 
   it('keeps the draft and requires reload after a version conflict', async () => {

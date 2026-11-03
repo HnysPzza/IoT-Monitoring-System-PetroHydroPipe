@@ -81,12 +81,12 @@ export default function SettingsSection() {
   const isLoading = machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending
 
   useEffect(() => {
-    if (!draft && settingsQuery.data?.settings) {
+    if (settingsQuery.data?.settings && (!draft || (settings && settingsAreEqual(draft, toDraft(settings)) && !isSaving))) {
       setSettings(settingsQuery.data.settings)
       setConstraints(settingsQuery.data.constraints)
       setDraft(toDraft(settingsQuery.data.settings))
     }
-  }, [draft, settingsQuery.data])
+  }, [settingsQuery.data])
 
   useEffect(() => {
     if (diagnosticsQuery.isError) setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
@@ -271,7 +271,7 @@ export default function SettingsSection() {
     <div className="settings-header-actions">
       {!headerVersion ? version : null}
       <button className="btn btn-secondary" type="button" disabled={!isDirty || isSaving} onClick={() => { setDraft(toDraft(settings)); setConflict(false); setNotice(null) }}><RotateCcw size={14} aria-hidden="true" /> Discard</button>
-      {conflict ? <button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /> Reload latest</button> : null}
+      {conflict || enforcementBlocked ? <button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /> Reload latest</button> : null}
       <button className="btn btn-primary" type="submit" form="operational-settings-form" disabled={!canSave}><Save size={14} aria-hidden="true" /> {isSaving ? 'Saving…' : 'Save'}</button>
     </div>
   ) : null
