@@ -404,7 +404,7 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
     assert.ok(xlsxBuffer.length > 1000)
 
     // Inspect XLSX workbook structure using ExcelJS
-    const ExcelJS = require('exceljs')
+    const ExcelJS = require('@excel.js/exceljs').default
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(xlsxBuffer)
 

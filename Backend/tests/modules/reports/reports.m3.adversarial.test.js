@@ -609,7 +609,7 @@ test('Security Suite 6.1: Serializers escape potential formula injection charact
   const xlsxBuffer = await toXlsx(maliciousReport)
   assert.ok(Buffer.isBuffer(xlsxBuffer))
 
-  const ExcelJS = require('exceljs')
+  const ExcelJS = require('@excel.js/exceljs').default
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(xlsxBuffer)
 

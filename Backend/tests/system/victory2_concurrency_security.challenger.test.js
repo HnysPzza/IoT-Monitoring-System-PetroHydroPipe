@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
-const ExcelJS = require('exceljs')
+const ExcelJS = require('@excel.js/exceljs').default
 const PDFDocument = require('pdfkit')
 const jwt = require('jsonwebtoken')
 

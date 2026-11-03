@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const path = require('node:path')
-const ExcelJS = require('exceljs')
+const ExcelJS = require('@excel.js/exceljs').default
 
 const reportsRepository = require('../../src/modules/reports/reports.repository')
 const { toXlsx } = require('../../src/modules/reports/reportsXlsx.serializer')

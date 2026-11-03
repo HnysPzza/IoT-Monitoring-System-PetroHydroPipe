@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const jwt = require('jsonwebtoken')
-const ExcelJS = require('exceljs')
+const ExcelJS = require('@excel.js/exceljs').default
 const { assertError, loadAppWithMocks, requestJson, withTestServer } = require('../../helpers/appTestUtils')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'

@@ -17,7 +17,7 @@ This guide sets up a local copy of the app connected to **your own Supabase proj
 
 The source code, SQL files, package manifests, and lockfiles come with `git clone`. `node_modules`, `.env` files, Supabase credentials, database tables, and database data do not. `npm ci` downloads and installs the locked packages on the new computer.
 
-The project packages include React `^19.2.7`, Vite `^8.0.16`, Express `^5.2.1`, and Supabase JS `^2.107.0`. They are installed by `npm ci`; do not install them globally. This repo does not pin a Node.js version in `engines`, `.nvmrc`, or `.node-version`, so Node 24 LTS is the recommended runtime.
+The project packages include React `^19.2.7`, Vite `^8.3.5`, Express `^5.2.1`, and Supabase JS `^2.107.0`. They are installed by `npm ci`; do not install them globally. The backend requires Node 20.19 or later in the Node 20 line, or Node 22.12 and later. Node 24 LTS is recommended.
 
 ## 1. Install Git and Node.js
 

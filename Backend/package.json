@@ -2,6 +2,9 @@
   "name": "iot-monitoring-backend",
   "version": "1.0.0",
   "description": "Express API for the PetroHydroPipe IoT monitoring system.",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
@@ -28,12 +31,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@excel.js/exceljs": "0.15.0",
     "@getbrevo/brevo": "^6.0.3",
     "@supabase/supabase-js": "^2.107.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
@@ -47,10 +50,6 @@
     "nodemon": "^3.1.14"
   },
   "overrides": {
-    "exceljs": {
-      "uuid": "^11.1.1",
-      "unzipper": "^0.12.3"
-    },
     "nodemon": {
       "minimatch": "^11.0.4"
     }

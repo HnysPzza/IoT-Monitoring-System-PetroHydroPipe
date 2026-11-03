@@ -1,4 +1,4 @@
-const ExcelJS = require('exceljs')
+const ExcelJS = require('@excel.js/exceljs').default
 
 const COLOR = {
   ink: 'FF1F3A5F',
