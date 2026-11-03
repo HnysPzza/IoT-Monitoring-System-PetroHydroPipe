@@ -28,7 +28,7 @@ function loadAuthServiceWithQuery(result, sessionResult = { data: { id: 'session
   const supabase = {
     from(table) {
       assert.ok(['users', 'auth_sessions'].includes(table))
-      return table === 'users' ? query : { ...query, maybeSingle: async () => sessionResult }
+      return table === 'users' ? query : { ...query, maybeSingle: async () => typeof sessionResult === 'function' ? sessionResult() : sessionResult }
     },
   }
 
@@ -102,6 +102,17 @@ test('checks the session after the user lookup completes', async () => {
   resolveUser({ data: activeUser, error: null })
   await request
   assert.equal(calls.select.length, 2)
+})
+
+test('rejects a session revoked while the user lookup is pending', async () => {
+  let resolveUser
+  let revoked = false
+  const pendingUser = new Promise((resolve) => { resolveUser = resolve })
+  const { authService } = loadAuthServiceWithQuery(pendingUser, () => ({ data: revoked ? null : { id: 'session' }, error: null }))
+  const request = authService.getAuthenticatedUser({ sub: activeUser.id, sid: '11111111-1111-4111-8111-111111111111' })
+  revoked = true
+  resolveUser({ data: activeUser, error: null })
+  await assert.rejects(request, (error) => error.status === 401 && error.code === 'UNAUTHENTICATED')
 })
 
 for (const [description, user, session, expected] of [
