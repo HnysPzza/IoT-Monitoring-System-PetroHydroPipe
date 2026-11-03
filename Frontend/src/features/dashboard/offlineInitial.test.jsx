@@ -1,6 +1,6 @@
-import { act, cleanup, screen } from '@testing-library/react'
+import { act, cleanup, screen, waitFor } from '@testing-library/react'
 import { onlineManager } from '@tanstack/react-query'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../test/renderWithAuth.jsx'
 import AnalyticsSection from './analytics/AnalyticsSection.jsx'
 import AuditSection from './audit/AuditSection.jsx'
@@ -35,5 +35,14 @@ describe('first visit without a connection', () => {
     expect(screen.getAllByText(/unable to refresh while offline/i).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: /retry overview/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry chart/i })).toBeInTheDocument()
+  })
+
+  it('loads production data automatically after reconnecting', async () => {
+    const loadProduction = vi.fn().mockResolvedValue({ records: [], summary: {}, pagination: {} })
+    renderWithAuth(<ProductionSection loadProduction={loadProduction} />)
+    expect(loadProduction).not.toHaveBeenCalled()
+    act(() => onlineManager.setOnline(true))
+    await waitFor(() => expect(loadProduction).toHaveBeenCalled())
+    expect(screen.queryByText(/unable to refresh while offline/i)).not.toBeInTheDocument()
   })
 })
