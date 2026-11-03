@@ -92,15 +92,16 @@ test('revoked session rejects an otherwise active account', async () => {
   await assert.rejects(authService.getAuthenticatedUser({ sub: activeUser.id, sid: '11111111-1111-4111-8111-111111111111' }), (error) => error.status === 401)
 })
 
-test('starts user and session checks independently', async () => {
+test('checks the session after the user lookup completes', async () => {
   let resolveUser
   const pendingUser = new Promise((resolve) => { resolveUser = resolve })
   const { authService, calls } = loadAuthServiceWithQuery(pendingUser)
   const request = authService.getAuthenticatedUser({ sub: activeUser.id, sid: '11111111-1111-4111-8111-111111111111' })
   await Promise.resolve()
-  assert.equal(calls.select.length, 2)
+  assert.equal(calls.select.length, 1)
   resolveUser({ data: activeUser, error: null })
   await request
+  assert.equal(calls.select.length, 2)
 })
 
 for (const [description, user, session, expected] of [
@@ -128,7 +129,7 @@ test('denies a failed user lookup even when the session lookup succeeds', async 
   })
 })
 
-test('preserves inactive-account denial when the parallel session lookup throws', async () => {
+test('preserves inactive-account denial without depending on session lookup', async () => {
   const sessionFailure = Promise.reject(new Error('Session unavailable'))
   sessionFailure.catch(() => {})
   const { authService } = loadAuthServiceWithQuery({ data: { ...activeUser, status: 'Inactive' }, error: null }, sessionFailure)
