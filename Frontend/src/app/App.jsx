@@ -40,6 +40,7 @@ export function ProtectedRoute({ children }) {
   }
 
   if (user?.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
+  if (!user?.mustChangePassword && location.pathname === '/change-password') return <Navigate to="/dashboard" replace />
   return children
 }
 

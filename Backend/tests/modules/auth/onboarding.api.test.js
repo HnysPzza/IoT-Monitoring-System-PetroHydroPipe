@@ -5,6 +5,13 @@ const { loadAppWithMocks, requestJson, withTestServer } = require('../../helpers
 
 test('public setup failures do not consume authenticated password-change allowance', async () => {
   const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': {
+      getAuthenticatedUser: async (payload = {}) => ({
+        id: payload.sub || '11111111-1111-4111-8111-111111111111',
+        role: payload.role || 'Admin',
+        mustChangePassword: true,
+      }),
+    },
     'src/modules/auth/onboarding.service.js': { changePassword: async () => {} },
   })
   const headers = { Authorization: `Bearer ${jwt.sign({ role: 'Admin' }, process.env.JWT_SECRET, { subject: '11111111-1111-4111-8111-111111111111' })}` }
@@ -166,6 +173,25 @@ test('temporary-password sessions can change password but cannot use business en
   })
 })
 
+test('normal authenticated sessions without mustChangePassword cannot access /api/auth/change-password', async () => {
+  let changeCalled = false
+  const userId = '11111111-1111-4111-8111-111111111111'
+  const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': { getAuthenticatedUser: async () => ({ id: userId, role: 'Admin', mustChangePassword: false }) },
+    'src/modules/auth/onboarding.service.js': { changePassword: async () => { changeCalled = true } },
+  })
+  const headers = { Authorization: `Bearer ${jwt.sign({}, process.env.JWT_SECRET, { subject: userId })}` }
+  await withTestServer(app, async (baseUrl) => {
+    const denied = await requestJson(baseUrl, '/api/auth/change-password', {
+      method: 'POST',
+      headers,
+      body: { currentPassword: 'Old-password1!', password: 'My-new-long-password1!' },
+    })
+    assert.equal(denied.response.status, 403)
+    assert.equal(denied.body.error.code, 'ACCOUNT_OPERATION_INVALID')
+    assert.equal(changeCalled, false)
+  })
+})
 
 test('accountWriteLimiter and onboarding limiters isolate client IPs behind a trusted proxy and return RATE_LIMITED JSON', async () => {
   const rateLimiters = require('../../../src/middleware/rateLimiters')

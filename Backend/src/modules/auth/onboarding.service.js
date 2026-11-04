@@ -151,8 +151,9 @@ async function validatePasswordResetToken({ token }) {
 }
 
 async function changePassword(userId, { currentPassword, password }) {
-  const { data, error } = await getSupabaseClient().from('users').select('password_hash').eq('id', userId).maybeSingle()
+  const { data, error } = await getSupabaseClient().from('users').select('password_hash, must_change_password').eq('id', userId).maybeSingle()
   if (error) throw fail(500, 'USER_QUERY_FAILED', 'Unable to load account.')
+  if (!data?.must_change_password) throw fail(403, 'ACCOUNT_OPERATION_INVALID', 'Password change is only permitted when required by your account.')
   if (!data?.password_hash || !await bcrypt.compare(currentPassword, data.password_hash)) throw fail(400, 'PASSWORD_INCORRECT', 'Current password is incorrect.')
   if (await bcrypt.compare(password, data.password_hash)) throw fail(400, 'PASSWORD_UNCHANGED', 'Choose a different password.')
   await callOnboarding('change_account_password', { p_user_id: userId, p_old_hash: data.password_hash, p_new_hash: await bcrypt.hash(password, 10) })

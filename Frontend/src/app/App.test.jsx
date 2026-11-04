@@ -140,6 +140,20 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('redirects authenticated users away from /change-password to /dashboard when mustChangePassword is false', async () => {
+    renderWithAuth(<App />, {
+      authValue: {
+        isAuthenticated: true,
+        isRestoring: false,
+        token: 'tok',
+        user: { id: 'u1', role: 'Admin', mustChangePassword: false },
+      },
+      route: '/change-password',
+    })
+
+    expect(screen.queryByRole('heading', { name: 'Change password' })).not.toBeInTheDocument()
+  })
+
   it('renders the full-page 404 NotFoundPage for unknown top-level and nested dashboard routes', async () => {
     renderWithAuth(<App />, {
       authValue: { isAuthenticated: true, isRestoring: false, token: 'tok', user: { id: 'u1', role: 'Admin' } },
