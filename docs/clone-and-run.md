@@ -7,7 +7,7 @@ This guide sets up a local copy of the app connected to **your own Supabase proj
 | Tool | Version or setup | Required? |
 |---|---|---|
 | Git | Current version | Yes, to clone the repository |
-| Node.js | **Node 24 LTS recommended.** Vite 8 requires Node 20.19+ or 22.12+; use a supported LTS release. | Yes |
+| Node.js | **Node 26 LTS recommended.** Vite 8 requires Node 20.19+ or 22.12+; use a supported LTS release. | Yes |
 | npm | Included with the Node.js installer. The repo has separate npm lockfiles for the frontend and backend. | Yes |
 | Supabase | A new hosted project in your own Supabase account | Yes |
 | Modern browser | Current Chrome, Edge, Firefox, or Safari | Yes |
@@ -17,11 +17,11 @@ This guide sets up a local copy of the app connected to **your own Supabase proj
 
 The source code, SQL files, package manifests, and lockfiles come with `git clone`. `node_modules`, `.env` files, Supabase credentials, database tables, and database data do not. `npm ci` downloads and installs the locked packages on the new computer.
 
-The project packages include React `^19.2.7`, Vite `^8.3.5`, Express `^5.2.1`, and Supabase JS `^2.107.0`. They are installed by `npm ci`; do not install them globally. The backend requires Node 20.19 or later in the Node 20 line, or Node 22.12 and later. Node 24 LTS is recommended.
+The project packages include React `^19.2.7`, Vite `^8.3.5`, Express `^5.2.1`, and Supabase JS `^2.107.0`. They are installed by `npm ci`; do not install them globally. The backend requires Node 20.19 or later in the Node 20 line, or Node 22.12 and later. Node 26 LTS is recommended.
 
 ## 1. Install Git and Node.js
 
-Install [Git](https://git-scm.com/install/) and [Node.js 24 LTS](https://nodejs.org/en/download/). npm is installed with Node.js. Open a new terminal and check:
+Install [Git](https://git-scm.com/install/) and [Node.js 26 LTS](https://nodejs.org/en/download/). npm is installed with Node.js. Open a new terminal and check:
 
 ```bash
 git --version
