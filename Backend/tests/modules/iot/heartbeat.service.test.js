@@ -163,3 +163,56 @@ test('duplicate or stale heartbeat does not request a live status publish', asyn
     assert.equal(liveStatusRequests.length, 0)
   }
 })
+
+test('heartbeat service rescues device boot counter when prior DB session is stale with higher boot counter', async () => {
+  clearSourceCache()
+  const calls = []
+  const liveStatusRequests = []
+  const client = {
+    from(tableName) {
+      assert.equal(tableName, 'sensor_watchdog_state')
+      return {
+        select() { return this },
+        eq() { return this },
+        async maybeSingle() {
+          return {
+            data: {
+              boot_counter: 999,
+              boot_id: '40000000-0000-4000-8000-000000000099',
+              last_heartbeat_received_at: '2026-08-22T02:58:00.000Z',
+            },
+            error: null,
+          }
+        },
+      }
+    },
+    rpc(functionName, args) {
+      calls.push({ functionName, args })
+      const isOverride = args.p_boot_counter === '1000'
+      return {
+        async single() {
+          return {
+            data: isOverride
+              ? validResult({ state_applied: true, stale: false, connectivity_state: 'online' })
+              : validResult({ state_applied: false, stale: true, connectivity_state: 'offline' }),
+            error: null,
+          }
+        },
+      }
+    },
+  }
+  mockModule('src/database/client.js', { getSupabaseClient: () => client })
+  mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
+  mockModule('src/modules/alerts/alerts.service.js', { publishAlertAction: () => true })
+  mockModule('src/modules/downtime/downtime.service.js', { publishDowntimeEvent: () => true })
+  mockModule('src/modules/iot/liveStatusPublisher.js', { requestLiveStatusPublish: () => liveStatusRequests.push(true) })
+  const service = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+
+  const result = await service.createHeartbeat({ sensor: sensorRecord(), payload: heartbeatPayload({ bootCounter: '3' }) })
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].args.p_boot_counter, '3')
+  assert.equal(calls[1].args.p_boot_counter, '1000')
+  assert.equal(result.stateApplied, true)
+  assert.equal(result.connectivityState, 'online')
+  assert.equal(liveStatusRequests.length, 1)
+})

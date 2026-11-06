@@ -3,9 +3,8 @@ import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
 
 export function connectivityLabel(sensor) {
-  if (!sensor.monitoring?.stateFresh) return 'Unavailable'
-  if (sensor.monitoring.connectivityState === 'online') return 'Connected'
-  if (sensor.monitoring.connectivityState === 'offline') return 'Offline'
+  if (sensor.monitoring?.connectivityState === 'online') return 'Connected'
+  if (sensor.monitoring?.connectivityState === 'offline') return 'Offline'
   return 'Unavailable'
 }
 

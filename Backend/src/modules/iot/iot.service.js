@@ -13,9 +13,12 @@ const { RESERVED_METADATA_KEYS } = require('./iot.model')
 const DUMMY_DEVICE_KEY_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
 const MAX_DEVICE_AUTH_CACHE_ENTRIES = 64
 const MAX_AUTH_TRACKER_ENTRIES = 1024
+const MAX_BOOT_COUNTER_OVERRIDES = 64
 const verifiedDeviceCache = new Map()
 const failedAuthBuckets = new Map()
 const failedAuthAuditCooldowns = new Map()
+const recentDeviceHeartbeats = new Map()
+const deviceBootCounterOverrides = new Map()
 
 const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
 const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
@@ -187,15 +190,66 @@ function toHeartbeatResponse(processing, sensorRecord) {
   }
 }
 
+const MAX_EVALUATION_CLOCK_SKEW_MS = 5_000
+
 function isMonitoringStateFresh(snapshotAt, lastEvaluatedAt) {
   if (env.WATCHDOG_MODE === 'disabled' || !lastEvaluatedAt) return false
   const age = new Date(snapshotAt).getTime() - new Date(lastEvaluatedAt).getTime()
   const maximumAge = (env.WATCHDOG_TICK_INTERVAL_MS * 2) + env.WATCHDOG_EVALUATION_TIMEOUT_MS
-  return age >= 0 && age <= maximumAge
+  return age >= -MAX_EVALUATION_CLOCK_SKEW_MS && age <= maximumAge
+}
+
+function getLatestTimestampMs(timestamps) {
+  let latestMs = null
+  for (const value of timestamps) {
+    if (!value) continue
+    const parsedMs = new Date(value).getTime()
+    if (!Number.isFinite(parsedMs)) continue
+    if (latestMs === null || parsedMs > latestMs) {
+      latestMs = parsedMs
+    }
+  }
+  return latestMs
+}
+
+function resolveLastHeartbeatAt(sensorRecord) {
+  const recentHeartbeatAt = recentDeviceHeartbeats.get(sensorRecord.id) || null
+  const dbHeartbeatAt = sensorRecord.watchdog?.last_heartbeat_received_at || null
+  if (!recentHeartbeatAt) return dbHeartbeatAt
+  if (!dbHeartbeatAt) return recentHeartbeatAt
+  return new Date(recentHeartbeatAt).getTime() > new Date(dbHeartbeatAt).getTime()
+    ? recentHeartbeatAt
+    : dbHeartbeatAt
+}
+
+function resolveConnectivityState(snapshotAt, sensorRecord) {
+  const watchdog = sensorRecord?.watchdog
+  if (!watchdog) return null
+
+  const latestContactMs = getLatestTimestampMs([
+    recentDeviceHeartbeats.get(sensorRecord.id),
+    watchdog.last_heartbeat_received_at,
+    watchdog.last_activity_received_at,
+    sensorRecord.latest_event?.recorded_at,
+  ])
+
+  if (latestContactMs === null) {
+    return watchdog.connectivity_state === 'online' || watchdog.connectivity_state === 'offline'
+      ? watchdog.connectivity_state
+      : null
+  }
+
+  const snapshotMs = new Date(snapshotAt).getTime()
+  if (!Number.isFinite(snapshotMs)) return null
+
+  const age = snapshotMs - latestContactMs
+  if (age > env.IOT_HEARTBEAT_STALE_AFTER_MS) return 'offline'
+  return 'online'
 }
 
 function toLiveSensorResponse(sensorRecord, snapshotAt, machineStatus) {
   const stateFresh = isMonitoringStateFresh(snapshotAt, sensorRecord.watchdog?.last_evaluated_at)
+  const connectivityState = resolveConnectivityState(snapshotAt, sensorRecord)
 
   return {
     id: sensorRecord.id,
@@ -209,9 +263,9 @@ function toLiveSensorResponse(sensorRecord, snapshotAt, machineStatus) {
     purpose: getSensorPurpose(sensorRecord.sensor_code),
     monitoring: {
       stateFresh,
-      connectivityState: stateFresh ? sensorRecord.watchdog.connectivity_state : null,
+      connectivityState,
       detectionState: stateFresh ? sensorRecord.watchdog.detection_state : null,
-      lastHeartbeatAt: sensorRecord.watchdog?.last_heartbeat_received_at || null,
+      lastHeartbeatAt: resolveLastHeartbeatAt(sensorRecord),
       lastActivityAt: sensorRecord.watchdog?.last_activity_received_at || null,
       lastEvaluatedAt: sensorRecord.watchdog?.last_evaluated_at || null,
     },
@@ -275,6 +329,14 @@ function pruneExpiredMapEntries(map, now, maxEntries) {
     if (oldestKey === undefined) break
     map.delete(oldestKey)
   }
+}
+
+function rememberBootCounterOverride(bootId, bootCounter) {
+  if (deviceBootCounterOverrides.size >= MAX_BOOT_COUNTER_OVERRIDES) {
+    const oldestKey = deviceBootCounterOverrides.keys().next().value
+    if (oldestKey !== undefined) deviceBootCounterOverrides.delete(oldestKey)
+  }
+  deviceBootCounterOverrides.set(bootId, bootCounter)
 }
 
 function getCachedSensorEntry(deviceId, now) {
@@ -484,13 +546,45 @@ function validateHeartbeatResult(data, heartbeatId) {
   return data
 }
 
-async function processHeartbeat({ sensor, machine, payload }) {
-  const { data, error } = await getSupabaseClient()
+async function resolveHeartbeatBootCounterOverride({ supabase, sensorId, payload, receivedAt }) {
+  if (typeof supabase.from !== 'function') return null
+  const { data: state, error } = await supabase
+    .from('sensor_watchdog_state')
+    .select('boot_counter, boot_id, last_heartbeat_received_at')
+    .eq('sensor_id', sensorId)
+    .maybeSingle()
+
+  if (error || !state || state.boot_counter === null || state.boot_counter === undefined) {
+    return null
+  }
+
+  const dbBootCounter = BigInt(state.boot_counter)
+  const deviceBootCounter = BigInt(payload.bootCounter)
+  if (dbBootCounter <= deviceBootCounter) return null
+
+  if (state.boot_id === payload.bootId) {
+    return dbBootCounter.toString()
+  }
+
+  const lastHbMs = state.last_heartbeat_received_at
+    ? new Date(state.last_heartbeat_received_at).getTime()
+    : null
+  const receivedMs = new Date(receivedAt).getTime()
+  const isPreviousSessionStale = lastHbMs === null
+    || !Number.isFinite(lastHbMs)
+    || (Number.isFinite(receivedMs) && (receivedMs - lastHbMs > env.IOT_HEARTBEAT_STALE_AFTER_MS))
+
+  if (!isPreviousSessionStale) return null
+  return (dbBootCounter + 1n).toString()
+}
+
+async function callIngestHeartbeatRpc(supabase, { sensor, machine, payload, bootCounter }) {
+  const { data, error } = await supabase
     .rpc('ingest_iot_heartbeat', {
       p_heartbeat_id: payload.heartbeatId,
       p_sensor_id: sensor.id,
       p_machine_id: machine.id,
-      p_boot_counter: payload.bootCounter,
+      p_boot_counter: bootCounter,
       p_boot_id: payload.bootId,
       p_sequence: payload.sequence,
       p_recorded_at: payload.recordedAt,
@@ -511,6 +605,39 @@ async function processHeartbeat({ sensor, machine, payload }) {
   return validateHeartbeatResult(data, payload.heartbeatId)
 }
 
+async function processHeartbeat({ sensor, machine, payload }) {
+  const supabase = getSupabaseClient()
+  const initialBootCounter = deviceBootCounterOverrides.get(payload.bootId) || payload.bootCounter
+  const firstResult = await callIngestHeartbeatRpc(supabase, {
+    sensor,
+    machine,
+    payload,
+    bootCounter: initialBootCounter,
+  })
+
+  if (!firstResult.stale) {
+    return firstResult
+  }
+
+  const overrideBootCounter = await resolveHeartbeatBootCounterOverride({
+    supabase,
+    sensorId: sensor.id,
+    payload,
+    receivedAt: firstResult.received_at,
+  })
+  if (!overrideBootCounter || overrideBootCounter === initialBootCounter) {
+    return firstResult
+  }
+
+  rememberBootCounterOverride(payload.bootId, overrideBootCounter)
+  return callIngestHeartbeatRpc(supabase, {
+    sensor,
+    machine,
+    payload,
+    bootCounter: overrideBootCounter,
+  })
+}
+
 async function createSensorEvent({ sensor, payload }) {
   const machine = getMachineRecord(sensor)
 
@@ -529,6 +656,7 @@ async function createSensorEvent({ sensor, payload }) {
   }
 
   if (processing.state_applied) {
+    recentDeviceHeartbeats.set(sensor.id, processing.recorded_at)
     publishIngestionTransitions({ sensor, machine, processing })
     requestLiveStatusPublish()
   }
@@ -544,7 +672,10 @@ async function createHeartbeat({ sensor, payload }) {
   }
 
   const processing = await processHeartbeat({ sensor, machine, payload })
-  if (processing.state_applied) {
+  if (!processing.duplicate) {
+    recentDeviceHeartbeats.set(sensor.id, processing.received_at)
+  }
+  if (processing.state_applied || (!processing.duplicate && processing.connectivity_state === 'offline')) {
     requestLiveStatusPublish()
   }
   return toHeartbeatResponse(processing, sensor)

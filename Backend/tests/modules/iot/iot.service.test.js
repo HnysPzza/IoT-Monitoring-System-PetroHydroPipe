@@ -1004,6 +1004,7 @@ function loadLiveFeedService({ data = liveSnapshot(), error = null, mode = 'obse
     WATCHDOG_MODE: mode,
     WATCHDOG_TICK_INTERVAL_MS: 15000,
     WATCHDOG_EVALUATION_TIMEOUT_MS: 10000,
+    IOT_HEARTBEAT_STALE_AFTER_MS: 30000,
   })
   mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
   mockModule('src/modules/operations/transitionPublisher.js', { publishIngestionTransitions: () => null })
@@ -1024,20 +1025,43 @@ test('live feed uses one snapshot RPC and returns fresh monitoring state', async
   assert.equal(feed.machine.lastUpdated, '2026-08-22T00:02:00.000Z')
   assert.equal(feed.sensors[0].signal, 'active')
   assert.equal(feed.sensors[0].monitoring.stateFresh, true)
+  assert.equal(feed.sensors[0].monitoring.connectivityState, 'online')
   assert.equal(feed.sensors[0].monitoring.detectionState, 'healthy')
   assert.equal(feed.sensors[1].status, 'Idle')
 })
 
-test('live feed masks watchdog states when monitoring is disabled or stale', async () => {
+test('live feed derives heartbeat connectivity independently of watchdog mode while masking stale detection state', async () => {
   const disabled = await loadLiveFeedService({ mode: 'disabled' }).getLiveFeed()
   assert.equal(disabled.sensors[0].monitoring.stateFresh, false)
-  assert.equal(disabled.sensors[0].monitoring.connectivityState, null)
+  assert.equal(disabled.sensors[0].monitoring.connectivityState, 'online')
   assert.equal(disabled.sensors[0].monitoring.detectionState, null)
+
+  const staleHbFreshEventSnapshot = liveSnapshot()
+  staleHbFreshEventSnapshot.sensors[0].watchdog.connectivity_state = 'offline'
+  staleHbFreshEventSnapshot.sensors[0].watchdog.last_heartbeat_received_at = '2026-08-22T00:01:00.000Z'
+  const staleHbFreshEvent = await loadLiveFeedService({ data: staleHbFreshEventSnapshot, mode: 'disabled' }).getLiveFeed()
+  assert.equal(staleHbFreshEvent.sensors[0].monitoring.connectivityState, 'online')
+
+  const staleHbSnapshot = liveSnapshot()
+  staleHbSnapshot.sensors[0].watchdog.last_heartbeat_received_at = '2026-08-22T00:01:00.000Z'
+  staleHbSnapshot.sensors[0].watchdog.last_activity_received_at = '2026-08-22T00:01:00.000Z'
+  staleHbSnapshot.sensors[0].latest_event.recorded_at = '2026-08-22T00:01:00.000Z'
+  const staleHb = await loadLiveFeedService({ data: staleHbSnapshot, mode: 'disabled' }).getLiveFeed()
+  assert.equal(staleHb.sensors[0].monitoring.connectivityState, 'offline')
+
+  const noHbSnapshot = liveSnapshot()
+  noHbSnapshot.sensors[0].watchdog.connectivity_state = 'unknown'
+  noHbSnapshot.sensors[0].watchdog.last_heartbeat_received_at = null
+  noHbSnapshot.sensors[0].watchdog.last_activity_received_at = null
+  noHbSnapshot.sensors[0].latest_event = null
+  const noHb = await loadLiveFeedService({ data: noHbSnapshot, mode: 'disabled' }).getLiveFeed()
+  assert.equal(noHb.sensors[0].monitoring.connectivityState, null)
 
   const snapshot = liveSnapshot()
   snapshot.sensors[0].watchdog.last_evaluated_at = '2026-08-22T00:00:00.000Z'
   const stale = await loadLiveFeedService({ data: snapshot }).getLiveFeed()
   assert.equal(stale.sensors[0].monitoring.stateFresh, false)
+  assert.equal(stale.sensors[0].monitoring.connectivityState, 'online')
   assert.equal(stale.sensors[0].monitoring.detectionState, null)
 })
 

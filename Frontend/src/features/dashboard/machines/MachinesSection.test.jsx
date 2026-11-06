@@ -61,7 +61,7 @@ describe('MachinesSection live snapshot', () => {
     const sensors = [
       { ...livePayload().sensors[0], id: 'online', sensorCode: 'S-01' },
       { ...livePayload().sensors[0], id: 'offline', sensorCode: 'S-02', monitoring: { stateFresh: true, connectivityState: 'offline' } },
-      { ...livePayload().sensors[0], id: 'unknown', sensorCode: 'S-03', monitoring: { stateFresh: false, connectivityState: 'online' } },
+      { ...livePayload().sensors[0], id: 'unknown', sensorCode: 'S-03', monitoring: { stateFresh: false, connectivityState: null } },
     ]
     getLiveFeed.mockResolvedValue(livePayload({ sensors }))
     renderWithAuth(<MachinesSection />)

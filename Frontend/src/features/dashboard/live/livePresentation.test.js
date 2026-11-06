@@ -38,9 +38,10 @@ describe('live sensor presentation', () => {
     expect(presentLiveSensor(sensor({ status: 'Fault' }), 'disabled')).toMatchObject({ displayStatus: 'Fault', stateLabel: 'Process sensor fault' })
   })
 
-  it('labels disabled and stale monitoring without inventing downtime', () => {
-    expect(presentLiveSensor(sensor(), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled' })
-    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: null, detectionState: null } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring data unavailable' })
+  it('labels disabled and stale monitoring without inventing downtime while preserving heartbeat connectivity', () => {
+    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: 'online', detectionState: null } }), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled', connectivityLabel: 'Connected' })
+    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: 'offline', detectionState: null } }), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled', connectivityLabel: 'Offline' })
+    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: null, detectionState: null } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring data unavailable', connectivityLabel: 'Unavailable' })
   })
 
   it('builds a material changeover banner when S-01, S-02, or S-04 is idle and no sensor is faulted', () => {
