@@ -73,11 +73,13 @@ describe('AuditSection', () => {
     expect(document.querySelector('.audit-date-field .trend-calendar-trigger')).toBeInTheDocument()
     expect(document.querySelector('.audit-history-card .audit-total-chip')).toHaveTextContent('30 total')
     expect(document.querySelector('.audit-controls-actions .audit-total-chip')).not.toBeInTheDocument()
+    expect(document.querySelector('.account-table-wrap .audit-pagination')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Audit pagination')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /next/i }))
 
     await waitFor(() => {
-      expect(getAuditLogs).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }))
+      expect(getAuditLogs).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }), { signal: expect.any(AbortSignal) })
     })
     await waitFor(() => {
       expect(screen.getAllByText(/user account created/i).length).toBeGreaterThan(1)
@@ -238,5 +240,69 @@ describe('AuditSection', () => {
 
     await user.click(clearButton)
     expect(screen.queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument()
+  })
+
+  it('supports weekly audit log filtering via the calendar popover and queries with week date range', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+    await screen.findByText('No audit records match the selected filters.')
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+
+    const weekButtons = await screen.findAllByRole('button', { name: /select week/i })
+    expect(weekButtons.length).toBeGreaterThan(0)
+
+    // Select the first enabled week button
+    const enabledWeek = weekButtons.find((btn) => !btn.disabled)
+    await user.click(enabledWeek)
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenCalledWith(
+        'test-token',
+        expect.objectContaining({
+          dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+        { signal: expect.any(AbortSignal) },
+      )
+    })
+  })
+
+  it('supports monthly audit log filtering via the calendar popover and queries with month date range', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+    await screen.findByText('No audit records match the selected filters.')
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: 'Monthly' }))
+
+    // Click Previous Year to guarantee enabled month buttons
+    await user.click(screen.getByRole('button', { name: /previous year/i }))
+    const enabledMonth = (await screen.findAllByRole('button', { name: /[A-Z][a-z]{2} \d{4}/ })).find((btn) => !btn.disabled)
+    await user.click(enabledMonth)
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenCalledWith(
+        'test-token',
+        expect.objectContaining({
+          dateFrom: expect.stringMatching(/^\d{4}-\d{2}-01$/),
+          dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+        { signal: expect.any(AbortSignal) },
+      )
+    })
   })
 })

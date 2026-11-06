@@ -1,6 +1,6 @@
 const express = require('express')
 const asyncHandler = require('../../utils/asyncHandler')
-const { authenticateAllowingPasswordChange } = require('../../middleware/authenticate')
+const { authenticateAllowingPasswordChange, authenticateRequiringPasswordChange } = require('../../middleware/authenticate')
 const {
   loginRateLimiter,
   refreshRateLimiter,
@@ -69,7 +69,7 @@ router.post('/password-reset', setupLimiter, rejectForeignOrigin, validateReques
   await onboarding.setupPassword(req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
-router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticateAllowingPasswordChange, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
+router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticateRequiringPasswordChange, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {
   await onboarding.changePassword(req.user.sub, req.validated.body)
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))

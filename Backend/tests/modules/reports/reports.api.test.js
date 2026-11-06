@@ -78,8 +78,8 @@ test('GET /api/reports/summary enforces role authorization matrix', async () => 
   const app = loadReportsApp()
 
   await withTestServer(app, async (baseUrl) => {
-    // Allowed view roles: Admin, Operation Manager, Asst. Operation Manager.
-    for (const role of ['Admin', 'Operation Manager', 'Asst. Operation Manager']) {
+    // Allowed view roles: Admin, Operation Manager, Quality Control.
+    for (const role of ['Admin', 'Operation Manager', 'Quality Control']) {
       const { response } = await requestJson(baseUrl, '/api/reports/summary', {
         headers: authHeader(role),
       })
@@ -143,7 +143,7 @@ test('GET /api/reports/summary returns production report with expected structure
   await withTestServer(app, async (baseUrl) => {
     const path = '/api/reports/summary?category=production&type=weekly&date=2026-08-09&compare=true'
     const { response, body } = await requestJson(baseUrl, path, {
-      headers: authHeader('Asst. Operation Manager'),
+      headers: authHeader('Quality Control'),
     })
 
     assert.equal(response.status, 200)

@@ -89,7 +89,7 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
         role="img"
         aria-label={`${metric.label} trend chart from ${selectedRange.requestedStartDate}${visibleEndLabel ? ` through ${visibleEndLabel}` : ' with no elapsed buckets'}${hasComparison ? ', compared with the prior period' : ''}`}
       >
-        <ResponsiveContainer width="100%" height={320} minWidth={0}>
+        <ResponsiveContainer width="100%" height={210} minWidth={0}>
           <AreaChart data={visiblePoints} margin={{ top: 14, right: 20, left: 2, bottom: 4 }}>
             <defs>
               <linearGradient id="analyticsTrendAreaGradient" x1="0" y1="0" x2="0" y2="1">

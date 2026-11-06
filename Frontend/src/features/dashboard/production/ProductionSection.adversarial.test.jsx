@@ -232,6 +232,7 @@ describe('Adversarial Stress Verification — Production Logs Module', () => {
       const pipeNumberInput = screen.getByLabelText('Specification pipe number')
       await user.clear(pipeNumberInput)
 
+      mockLoad.mockResolvedValue({ ...adversarialMockPayload, records: adversarialMockPayload.records.map((record) => record.id === 'adv-001' ? { ...record, customer: null, diameter: null, thickness: null, length: null, pipeNumber: null, tonnage: null, isSpecified: false } : record) })
       await user.click(screen.getByRole('button', { name: 'Save specification' }))
 
       // Verify update payload sent customer as null (not whitespace string)
@@ -245,6 +246,7 @@ describe('Adversarial Stress Verification — Production Logs Module', () => {
             thickness: null,
             length: null,
             pipeNumber: null,
+            tonnage: null,
           },
           '2026-10-31T01:00:00.000Z',
         )
@@ -289,12 +291,8 @@ describe('Adversarial Stress Verification — Production Logs Module', () => {
       await user.type(thicknessInput, '15')
       await user.type(lengthInput, '6000')
 
-      // Check dynamic inline tonnage calculation while editing:
-      // Since OD (10) < Thickness (15), tonnage formula must return null and render clean placeholder
       const editingRow = screen.getAllByRole('row')[3] // row index 3 corresponds to adv-003
-      const cellsWhileEditing = within(editingRow).getAllByRole('cell')
-      // Column index 8 is Tons
-      expect(cellsWhileEditing[8]).toHaveTextContent('—')
+      expect(within(editingRow).getByLabelText('Specification tonnage')).toHaveValue(null)
       expect(within(editingRow).queryByText(/nan/i)).not.toBeInTheDocument()
 
       // Save

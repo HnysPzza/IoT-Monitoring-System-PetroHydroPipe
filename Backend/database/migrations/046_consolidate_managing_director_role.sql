@@ -27,6 +27,7 @@ begin
         'Admin',
         'Operation Manager',
         'Asst. Operation Manager',
+        'Quality Control',
         'Engineering Supervisor',
         'Production Supervisor'
       )
@@ -58,6 +59,7 @@ begin
         'Admin',
         'Operation Manager',
         'Asst. Operation Manager',
+        'Quality Control',
         'Engineering Supervisor',
         'Production Supervisor'
       )

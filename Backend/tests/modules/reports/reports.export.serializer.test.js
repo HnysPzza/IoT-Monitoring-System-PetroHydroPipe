@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const ExcelJS = require('exceljs')
+const ExcelJS = require('@excel.js/exceljs').default
 const { toXlsx } = require('../../../src/modules/reports/reportsXlsx.serializer')
 
 const {
@@ -618,5 +618,71 @@ test('production reports completely exclude Radius and Circumference from PDF an
   const logHeaders = logsSheet.getRow(5).values.filter(Boolean)
   assert.deepEqual(logHeaders, ['Cut Timestamp (PST)', 'Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Pipe #', 'Tons', 'Status'])
   assert.equal(logHeaders.some((h) => String(h).includes('Radius') || String(h).includes('Circumference')), false)
+})
+
+test('production PDF and Excel exports append daily total tons subtotal rows per Manila day in Cut Logs', async () => {
+  const report = createProductionReport({
+    reportType: 'weekly',
+    selectedDate: '2026-09-01',
+    productionLogs: [
+      {
+        id: 'evt-d1-1',
+        deviceEventId: 1,
+        recordedAt: '2026-09-01T01:00:00.000Z', // 2026-09-01 09:00 PST
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 1,
+        tonnage: 1.1514,
+        isSpecified: true,
+      },
+      {
+        id: 'evt-d1-2',
+        deviceEventId: 2,
+        recordedAt: '2026-09-01T15:30:00.000Z', // 2026-09-01 23:30 PST (same Manila day)
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 2,
+        tonnage: 1.1514,
+        isSpecified: true,
+      },
+      {
+        id: 'evt-d2-1',
+        deviceEventId: 3,
+        recordedAt: '2026-09-01T16:30:00.000Z', // 2026-09-02 00:30 PST (next Manila day)
+        customer: 'Regan',
+        diameter: 1020,
+        thickness: 10,
+        length: 12000,
+        pipeNumber: 1,
+        tonnage: 2.989,
+        isSpecified: true,
+      },
+    ],
+  })
+
+  const xlsxBuffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(xlsxBuffer)
+  const logsSheet = workbook.getWorksheet('Production Cut Logs')
+
+  // Row 6 & 7: 2026-09-01 cuts; Row 8: Daily Total (2026-09-01)
+  assert.equal(logsSheet.getCell('A8').value, 'DAILY TOTAL (2026-09-01)')
+  assert.equal(logsSheet.getCell('F8').value, 2)
+  assert.equal(logsSheet.getCell('G8').value, 2.3028)
+  assert.equal(logsSheet.getCell('G8').numFmt, '#,##0.0000')
+
+  // Row 9: 2026-09-02 cut; Row 10: Daily Total (2026-09-02)
+  assert.equal(logsSheet.getCell('A10').value, 'DAILY TOTAL (2026-09-02)')
+  assert.equal(logsSheet.getCell('F10').value, 1)
+  assert.equal(logsSheet.getCell('G10').value, 2.989)
+  assert.equal(logsSheet.getCell('G10').numFmt, '#,##0.0000')
+
+  const pdfBuffer = await toPdf(report)
+  assert.ok(Buffer.isBuffer(pdfBuffer))
+  assert.equal(pdfBuffer.subarray(0, 5).toString('utf8'), '%PDF-')
 })
 

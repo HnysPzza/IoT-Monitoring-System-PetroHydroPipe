@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render as baseRender, screen, waitFor } from '@testing-library/react'
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +9,11 @@ import { ThemeContext } from '../../../shared/context/ThemeContext.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AdminDashboard from './AdminDashboard.jsx'
 import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
+
+function render(ui) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
 
 vi.mock('../alerts/alertsService.js', () => ({
   acknowledgeAlert: vi.fn(),
@@ -94,12 +101,51 @@ describe('AdminDashboard alerts', () => {
     subscribeToAlerts.mockReturnValue(() => { })
   })
 
-  it('uses the route title as the dashboard level-one heading', async () => {
+  it('marks cached alerts stale until the new snapshot is confirmed', async () => {
+    const user = userEvent.setup()
+    const pending = deferred()
+    getAlerts.mockResolvedValueOnce(alertSnapshot([activeAlert()])).mockReturnValueOnce(pending.promise)
+    function ToggleDashboard() {
+      const [show, setShow] = useState(true)
+      return <><button onClick={() => setShow((value) => !value)}>Toggle dashboard</button>{show ? <AdminDashboard /> : null}</>
+    }
+    renderWithAuth(<ToggleDashboard />, { route: '/dashboard' })
+    await screen.findByRole('button', { name: /open alerts, 1 active/i })
+    await user.click(screen.getByRole('button', { name: 'Toggle dashboard' }))
+    await user.click(screen.getByRole('button', { name: 'Toggle dashboard' }))
+    expect(screen.getByText(/cached alerts stale/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /open alerts, status unavailable/i }))
+    expect(screen.getByText(/cached alerts are stale.*updated/i)).toBeInTheDocument()
+    expect(screen.getByText('Outside Filler Wire downtime detected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Acknowledge' })).toBeDisabled()
+    await act(async () => { pending.resolve(alertSnapshot([])); await pending.promise })
+    expect(screen.queryByText(/cached alerts are stale/i)).not.toBeInTheDocument()
+  })
+
+  it('does not show the alert stream as live when the browser goes offline', async () => {
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+    subscribeToAlerts.mockImplementationOnce((_, handlers) => {
+      handlers.onStatusChange('live')
+      return () => {}
+    }).mockReturnValue(() => {})
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    expect(await screen.findByText('Live')).toBeInTheDocument()
+    await screen.findByRole('button', { name: /open alerts, none active/i })
+    act(() => onlineManager.setOnline(false))
+    expect(screen.getByText('Offline')).toBeInTheDocument()
+    expect(screen.queryByText('Live')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
+    expect(screen.getByText(/cached alerts stale/i)).toBeInTheDocument()
+    await act(async () => { onlineManager.setOnline(true); await Promise.resolve() })
+    expect(screen.getByText('Connecting')).toBeInTheDocument()
+  })
+
+  it('does not render a redundant module title in the topbar', async () => {
     getAlerts.mockReturnValue(new Promise(() => { }))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
+    expect(document.querySelector('.topbar-label')).not.toBeInTheDocument()
   })
 
   it('sets Overview as the post-login destination after explicit logout', async () => {

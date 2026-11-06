@@ -44,6 +44,22 @@ function formatDimension(value) {
   return Number.isFinite(num) ? num.toFixed(2) : NOT_AVAILABLE
 }
 
+function formatManilaDayKey(dateStr, fallbackDate) {
+  if (!dateStr) return fallbackDate || 'UNDATED'
+  try {
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return fallbackDate || 'UNDATED'
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d)
+  } catch {
+    return fallbackDate || 'UNDATED'
+  }
+}
+
 function formatManilaDate(dateStr) {
   if (!dateStr) return NOT_AVAILABLE
   try {
@@ -379,7 +395,23 @@ function renderProductionSections(doc, report, printableWidth) {
   ]
 
   const logs = Array.isArray(report.productionLogs) ? report.productionLogs : []
-  const logRows = logs.map((log) => {
+  const logRows = []
+  let currentDayKey = null
+  let dailyPipeCount = 0
+  let dailyTonnage = 0
+
+  logs.forEach((log, index) => {
+    const dayKey = formatManilaDayKey(log.recordedAt, report.selectedDate)
+    if (currentDayKey === null) {
+      currentDayKey = dayKey
+    }
+
+    dailyPipeCount += 1
+    const tonNum = Number(log.tonnage)
+    if (log.tonnage != null && Number.isFinite(tonNum) && tonNum > 0) {
+      dailyTonnage += tonNum
+    }
+
     const timestampText = formatManilaDate(log.recordedAt)
     const customerText = log.customer || (log.isSpecified ? (log.label || NOT_AVAILABLE) : 'Pending Tag')
     const diameterText = formatDimension(log.diameter)
@@ -391,11 +423,30 @@ function renderProductionSections(doc, report, printableWidth) {
     const pipeNumberText = pipeNumberVal != null
       ? (typeof pipeNumberVal === 'number' ? `#${pipeNumberVal}` : String(pipeNumberVal))
       : NOT_AVAILABLE
-    const tonsText = log.tonnage != null && Number.isFinite(Number(log.tonnage))
-      ? Number(log.tonnage).toFixed(4)
+    const tonsText = log.tonnage != null && Number.isFinite(tonNum)
+      ? tonNum.toFixed(4)
       : NOT_AVAILABLE
 
-    return [timestampText, customerText, diameterText, thicknessText, lengthText, pipeNumberText, tonsText]
+    logRows.push([timestampText, customerText, diameterText, thicknessText, lengthText, pipeNumberText, tonsText])
+
+    const nextLog = logs[index + 1]
+    const nextDayKey = nextLog ? formatManilaDayKey(nextLog.recordedAt, report.selectedDate) : null
+
+    if (nextDayKey !== dayKey) {
+      const roundedDailyTons = Math.round(dailyTonnage * 10000) / 10000
+      logRows.push([
+        `DAILY TOTAL (${dayKey})`,
+        '-',
+        '-',
+        '-',
+        '-',
+        `${dailyPipeCount} pcs`,
+        roundedDailyTons.toFixed(4),
+      ])
+      currentDayKey = nextDayKey
+      dailyPipeCount = 0
+      dailyTonnage = 0
+    }
   })
 
   renderGenericTable(doc, {

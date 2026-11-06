@@ -55,5 +55,21 @@ function authenticate(req, res, next) {
   })
 }
 
+function authenticateRequiringPasswordChange(req, res, next) {
+  return authenticateAllowingPasswordChange(req, res, (error) => {
+    if (error) return next(error)
+    if (!req.authenticatedUser.mustChangePassword) {
+      return res.status(403).json({
+        error: {
+          code: 'ACCOUNT_OPERATION_INVALID',
+          message: 'Password change is only permitted when required by your account.',
+        },
+      })
+    }
+    return next()
+  })
+}
+
 module.exports = authenticate
 module.exports.authenticateAllowingPasswordChange = authenticateAllowingPasswordChange
+module.exports.authenticateRequiringPasswordChange = authenticateRequiringPasswordChange

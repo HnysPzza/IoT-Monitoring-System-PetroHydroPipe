@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Info, Lock, Plus, RotateCw, Save } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import './settings-compact.css'
+import { AlertTriangle, Lock, Plus, RotateCcw, RotateCw, Save } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
@@ -43,59 +49,93 @@ function minutesInputToSeconds(value) {
 
 export default function SettingsSection() {
   const { token } = useAuth()
-  const [machine, setMachine] = useState(null)
+  const online = useNetworkOnline()
   const [settings, setSettings] = useState(null)
   const [constraints, setConstraints] = useState(null)
   const [draft, setDraft] = useState(null)
-  const [watchdogMode, setWatchdogMode] = useState('unknown')
   const [notice, setNotice] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
   const [conflict, setConflict] = useState(false)
+  const [enforcementBlocked, setEnforcementBlocked] = useState(false)
+
+  const queryClient = useQueryClient()
+  const machinesQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.machines.list,
+    queryFn: ({ token: currentToken, signal }) => getMachines(currentToken, signal),
+    staleTime: 300000,
+    refetchOnWindowFocus: false,
+  })
+  const machine = machinesQuery.data?.machines?.find((item) => item.machineCode === 'M-01') || null
+  const settingsQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.settings.machine(machine?.id || null),
+    queryFn: ({ token: currentToken, signal }) => getOperationalSettings(currentToken, machine.id, signal),
+    enabled: Boolean(machine),
+    staleTime: 60000,
+    refetchOnWindowFocus: false,
+  })
+  const diagnosticsQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.settings.watchdog,
+    queryFn: ({ token: currentToken, signal }) => getWatchdogDiagnostics(currentToken, signal),
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  })
+  const watchdogMode = !online || diagnosticsQuery.isError || diagnosticsQuery.isFetching ? 'unknown' : diagnosticsQuery.data?.watchdog?.mode || 'unknown'
+  const isLoading = online && (machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending)
+  const [headerControlsSlot, setHeaderControlsSlot] = useState(() => document.getElementById('settings-header-controls'))
+  const [headerVersionSlot, setHeaderVersionSlot] = useState(() => document.getElementById('settings-header-version'))
+
+  useLayoutEffect(() => {
+    const nextControls = document.getElementById('settings-header-controls')
+    const nextVersion = document.getElementById('settings-header-version')
+    if (nextControls !== headerControlsSlot) setHeaderControlsSlot(nextControls)
+    if (nextVersion !== headerVersionSlot) setHeaderVersionSlot(nextVersion)
+  })
 
   useEffect(() => {
-    let active = true
-    async function load() {
-      setIsLoading(true)
-      setNotice(null)
-      setConflict(false)
-      try {
-        const machinePayload = await getMachines(token)
-        const selectedMachine = machinePayload.machines?.find((item) => item.machineCode === 'M-01')
-        if (!selectedMachine) throw new Error('Spiral Mill 01 is not available.')
-        const [settingsResult, diagnosticsResult] = await Promise.allSettled([
-          getOperationalSettings(token, selectedMachine.id),
-          getWatchdogDiagnostics(token),
-        ])
-        if (!active) return
-        if (settingsResult.status === 'rejected') throw settingsResult.reason
-        const payload = settingsResult.value
-        setMachine(selectedMachine)
-        setSettings(payload.settings)
-        setConstraints(payload.constraints)
-        setDraft(toDraft(payload.settings))
-        if (diagnosticsResult.status === 'fulfilled') {
-          setWatchdogMode(diagnosticsResult.value.watchdog?.mode || 'unknown')
-        } else {
-          setWatchdogMode('unknown')
-          setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
-        }
-      } catch (error) {
-        if (!active) return
-        setMachine(null)
-        setSettings(null)
-        setConstraints(null)
-        setDraft(null)
-        setWatchdogMode('unknown')
-        setNotice({ type: 'error', message: error.message || 'Unable to load operational settings.' })
-      } finally {
-        if (active) setIsLoading(false)
-      }
+    const latest = settingsQuery.data?.settings
+    if (!latest || isSaving) return
+    if (!draft || (settings && settingsAreEqual(draft, toDraft(settings)))) {
+      setSettings(latest)
+      setConstraints(settingsQuery.data.constraints)
+      setDraft(toDraft(latest))
+    } else if (settings && latest.version !== settings.version) {
+      setConflict(true)
+      setNotice({ type: 'error', message: 'Another Admin changed these settings. Your draft was kept; reload the latest version before saving.' })
     }
-    load()
-    return () => { active = false }
-  }, [token, reloadKey])
+  }, [settingsQuery.data])
+
+  useEffect(() => {
+    if (diagnosticsQuery.isError) setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
+    else if (machinesQuery.isError || settingsQuery.isError) setNotice({ type: 'error', message: machinesQuery.error?.message || settingsQuery.error?.message || 'Unable to load operational settings.' })
+  }, [diagnosticsQuery.isError, machinesQuery.isError, machinesQuery.error, settingsQuery.isError, settingsQuery.error])
+
+  async function reloadSettings() {
+    setNotice(null)
+    const machineResult = await machinesQuery.refetch()
+    if (machineResult.isError) {
+      setNotice({ type: 'error', message: machineResult.error?.message || 'Unable to load machines.' })
+      return
+    }
+    const selected = machineResult.data?.machines?.find((item) => item.machineCode === 'M-01')
+    if (!selected) {
+      setNotice({ type: 'error', message: 'Spiral Mill 01 is not available.' })
+      return
+    }
+    const [settingsResult, diagnosticsResult] = await Promise.allSettled([
+      queryClient.fetchQuery({ queryKey: queryKeys.settings.machine(selected.id), queryFn: ({ signal }) => getOperationalSettings(token, selected.id, signal), staleTime: 0 }),
+      diagnosticsQuery.refetch({ throwOnError: true }),
+    ])
+    if (settingsResult.status === 'rejected') {
+      setNotice({ type: 'error', message: settingsResult.reason?.message || 'Unable to load operational settings.' })
+      return
+    }
+    setSettings(settingsResult.value.settings)
+    setConstraints(settingsResult.value.constraints)
+    setDraft(toDraft(settingsResult.value.settings))
+    setConflict(false)
+    if (diagnosticsResult.status === 'rejected') setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
+    else setEnforcementBlocked(diagnosticsResult.value.data?.watchdog?.mode === 'enforce')
+  }
 
   const baseline = useMemo(() => (settings ? toDraft(settings) : null), [settings])
   const isDirty = useMemo(() => !settingsAreEqual(draft, baseline), [draft, baseline])
@@ -108,7 +148,7 @@ export default function SettingsSection() {
   const recoveryMinutes = useMemo(() => (
     constraints ? getMinuteBounds(constraints.recoverySeconds) : null
   ), [constraints])
-  const editingBlocked = watchdogMode === 'enforce' || watchdogMode === 'unknown' || conflict
+  const editingBlocked = watchdogMode === 'enforce' || watchdogMode === 'unknown' || conflict || enforcementBlocked
   const canSave = isDirty && !editingBlocked && !isSaving && Object.keys(errors).length === 0
 
   useEffect(() => {
@@ -213,13 +253,20 @@ export default function SettingsSection() {
       })
       setSettings(payload.settings)
       setDraft(toDraft(payload.settings))
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.downtime.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
       setNotice({ type: 'success', message: 'Operational settings saved.' })
     } catch (error) {
       if (error.code === 'SETTINGS_VERSION_CONFLICT') {
         setConflict(true)
         setNotice({ type: 'error', message: 'Another Admin changed these settings. Your draft was kept; reload the latest version before saving.' })
       } else if (error.code === 'SETTINGS_ENFORCEMENT_ACTIVE') {
-        setWatchdogMode('enforce')
+        setEnforcementBlocked(true)
+        setConflict(true)
         setNotice({ type: 'error', message: 'Settings became read-only because watchdog enforcement is active.' })
       } else {
         setNotice({ type: 'error', message: error.message || 'Unable to save operational settings.' })
@@ -229,22 +276,49 @@ export default function SettingsSection() {
     }
   }
 
+  if (!online && (!draft || !constraints)) {
+    return <div role="alert">Unable to refresh while offline. <button type="button" onClick={reloadSettings}>Retry</button></div>
+  }
+
   if (isLoading) {
     return <section className="section-card settings-panel"><div className="skeleton skeleton-heading" /><div className="skeleton skeleton-panel" /></section>
   }
 
+  const headerControls = headerControlsSlot?.isConnected ? headerControlsSlot : document.getElementById('settings-header-controls')
+  const headerVersion = headerVersionSlot?.isConnected ? headerVersionSlot : document.getElementById('settings-header-version')
+  const version = draft && constraints && isDirty ? <span className="settings-version">Unsaved changes</span> : null
+  function discardSettings() {
+    const latest = conflict && settingsQuery.data?.settings?.version !== settings.version ? settingsQuery.data : null
+    const nextSettings = latest?.settings || settings
+    setSettings(nextSettings)
+    if (latest) setConstraints(latest.constraints)
+    setDraft(toDraft(nextSettings))
+    setConflict(false)
+    setNotice(null)
+  }
+  const actions = draft && constraints ? (
+    <div className="settings-header-actions">
+      {!headerVersion ? version : null}
+      <button className="btn btn-secondary settings-action-btn settings-discard-btn" type="button" aria-label="Discard" title="Discard" disabled={!isDirty || isSaving} onClick={discardSettings}><RotateCcw size={14} aria-hidden="true" /><span className="settings-action-label">Discard</span></button>
+      {conflict || enforcementBlocked ? <button className="btn btn-secondary settings-action-btn settings-reload-btn" type="button" aria-label="Reload latest" title="Reload latest" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /><span className="settings-action-label">Reload latest</span></button> : null}
+      <button className="btn btn-primary settings-action-btn settings-save-btn" type="submit" form="operational-settings-form" aria-label={isSaving ? 'Saving…' : 'Save'} title={isSaving ? 'Saving…' : 'Save'} disabled={!canSave}><Save size={14} aria-hidden="true" /><span className="settings-action-label">{isSaving ? 'Saving…' : 'Save'}</span></button>
+    </div>
+  ) : null
+
   return (
     <div className="settings-layout">
+      {headerVersion ? createPortal(version, headerVersion) : null}
+      {headerControls ? createPortal(actions, headerControls) : actions}
+      {!online ? <div className="notice notice-error" role="alert">Settings may be stale. Unable to refresh while offline.</div> : null}
       {notice ? <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : null}<span>{notice.message}</span></div> : null}
 
       {!draft || !constraints ? (
-        <section className="section-card section-placeholder"><div className="section-copy"><p className="section-eyebrow">Configuration unavailable</p><h2>Unable to load operational settings</h2><p>No changes can be made until the current server configuration is loaded.</p><button className="btn btn-secondary" type="button" onClick={() => setReloadKey((value) => value + 1)}><RotateCw size={16} aria-hidden="true" /> Retry</button></div></section>
+        <section className="section-card section-placeholder"><div className="section-copy"><p className="section-eyebrow">Configuration unavailable</p><h2>Unable to load operational settings</h2><p>No changes can be made until the current server configuration is loaded.</p><button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={16} aria-hidden="true" /> Retry</button></div></section>
       ) : (
-        <form className="settings-form" onSubmit={saveSettings}>
+        <form id="operational-settings-form" className="settings-form" onSubmit={saveSettings}>
           <section className="section-card settings-panel" aria-labelledby="operational-settings-title">
             <div className="section-heading">
               <div className="section-copy">
-                <p className="section-eyebrow">Operational configuration</p>
                 <h2 id="operational-settings-title">{machine.name}</h2>
               </div>
               <span className={`status-badge ${watchdogMode === 'observe' ? 'status-idle' : watchdogMode === 'enforce' ? 'status-downtime' : 'status-inactive'}`}>
@@ -261,8 +335,8 @@ export default function SettingsSection() {
                     <tr>
                       <th scope="col" className="col-sensor">Sensor & Monitoring Point</th>
                       <th scope="col" className="col-detect">Absence Detection</th>
-                      <th scope="col" className="col-trigger">Trigger Limit</th>
-                      <th scope="col" className="col-recovery">Recovery Limit</th>
+                      <th scope="col" className="col-trigger">Trigger Limit ({triggerMinutes.minimumWhenEnabled}–{triggerMinutes.maximum}m)</th>
+                      <th scope="col" className="col-recovery">Recovery Limit ({recoveryMinutes.minimumWhenEnabled}–{recoveryMinutes.maximum}m)</th>
                       <th scope="col" className="col-status">Status</th>
                     </tr>
                   </thead>
@@ -385,31 +459,25 @@ export default function SettingsSection() {
                 </table>
               </div>
 
-              <div className="settings-bounds-footer">
-                <Info size={14} aria-hidden="true" className="bounds-icon" />
-                <span>
-                  Minimums: {triggerMinutes.minimumWhenEnabled} min trigger, {recoveryMinutes.minimumWhenEnabled} min recovery. Maximum allowable trigger limit is {triggerMinutes.maximum} min ({recoveryMinutes.maximum} min max recovery).
-                </span>
-              </div>
             </div>
           </section>
 
           <section className="section-card settings-panel" aria-labelledby="shift-settings-title">
             <div className="section-heading">
               <div className="section-copy">
-                <p className="section-eyebrow">Asia/Manila schedule</p>
-                <h2 id="shift-settings-title">Shift and planned breaks</h2>
+                <div className="settings-shift-title"><h2 id="shift-settings-title">Shift and planned breaks</h2><span className="settings-timezone">{constraints.timeZone}</span></div>
               </div>
-            </div>
-
-            <div className="settings-work-bar">
-              <div className="work-bar-header">
-                <strong>Operating hours</strong>
                 {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd) ? (
                   <span className="shift-duration-badge">
                     {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd)}
                   </span>
                 ) : null}
+            </div>
+
+            <div className="settings-work-bar">
+              <div className="work-bar-header">
+                <strong>Operating hours</strong>
+
               </div>
 
               <div className="settings-work-grid">
@@ -467,7 +535,14 @@ export default function SettingsSection() {
                     {draft.shiftSchedule.breaks.length} / {constraints.breaks.maximum}
                   </span>
                 </div>
-                <p className="break-matrix-hint">Rest periods deduct from unplanned downtime calculations.</p>
+              <button
+                className="btn btn-secondary settings-add-break"
+                type="button"
+                disabled={editingBlocked || draft.shiftSchedule.breaks.length >= constraints.breaks.maximum}
+                onClick={addBreak}
+              >
+                <Plus size={15} aria-hidden="true" /> Add break
+              </button>
               </div>
 
               <div className="settings-break-table-container">
@@ -548,35 +623,9 @@ export default function SettingsSection() {
 
               {errors.breaks ? <p className="field-error break-error-note">{errors.breaks}</p> : null}
 
-              <button
-                className="btn btn-secondary settings-add-break"
-                type="button"
-                disabled={editingBlocked || draft.shiftSchedule.breaks.length >= constraints.breaks.maximum}
-                onClick={addBreak}
-              >
-                <Plus size={15} aria-hidden="true" /> Add break
-              </button>
+
             </div>
 
-            <div className="settings-actions">
-              <span>{isDirty ? 'Unsaved changes' : `Version ${settings.version}`}</span>
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={!isDirty || isSaving}
-                onClick={() => { setDraft(toDraft(settings)); setConflict(false); setNotice(null) }}
-              >
-                Discard changes
-              </button>
-              {conflict ? (
-                <button className="btn btn-secondary" type="button" onClick={() => setReloadKey((value) => value + 1)}>
-                  <RotateCw size={16} aria-hidden="true" /> Reload latest
-                </button>
-              ) : null}
-              <button className="btn btn-primary" type="submit" disabled={!canSave}>
-                <Save size={16} aria-hidden="true" /> {isSaving ? 'Saving…' : 'Save settings'}
-              </button>
-            </div>
           </section>
         </form>
       )}

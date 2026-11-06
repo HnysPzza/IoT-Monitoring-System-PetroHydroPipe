@@ -168,7 +168,6 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (typeof tokenPayload.sid !== 'string' || !/^[0-9a-f-]{36}$/i.test(tokenPayload.sid)) {
     throw createAuthError(401, 'UNAUTHENTICATED', 'Sign in again to start a verified session.')
   }
-  // /me refreshes the safe user shape from the database using the JWT subject.
   const userRecord = await findUserById(tokenPayload.sub, options)
 
   if (!userRecord) {

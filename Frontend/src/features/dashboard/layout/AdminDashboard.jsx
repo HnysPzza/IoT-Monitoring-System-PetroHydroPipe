@@ -18,12 +18,15 @@ import {
   UserRoundCheck,
   Users,
 } from 'lucide-react'
+import './sidebar-compact.css'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { onlineManager, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useTheme } from '../../../shared/hooks/useTheme.js'
-import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import {
@@ -40,6 +43,8 @@ import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.
 import { NotebookDot } from '../../../shared/components/NotebookDot.jsx'
 import UsersActionProvider from '../users/UsersActionProvider.jsx'
 import { useLiveFeedStream } from '../live/useLiveFeedStream.js'
+import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 
 const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
 const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
@@ -111,6 +116,8 @@ function matchesMobileDashboard() {
 }
 
 export default function AdminDashboard() {
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
@@ -118,6 +125,7 @@ export default function AdminDashboard() {
   const [alertLoadError, setAlertLoadError] = useState('')
   const [alertAcknowledgementErrors, setAlertAcknowledgementErrors] = useState({})
   const [hasTrustedAlertList, setHasTrustedAlertList] = useState(false)
+  const [cachedAlertsAt, setCachedAlertsAt] = useState(null)
   const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
@@ -151,7 +159,6 @@ export default function AdminDashboard() {
   )
 
   const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/'
-  const pageMeta = dashboardPageMeta[normalizedPathname] || dashboardPageMeta['/dashboard']
   const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
   const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
   const unresolvedAlerts = alerts.filter((alert) => (
@@ -170,6 +177,13 @@ export default function AdminDashboard() {
   })
   const liveFeedRef = useRef(liveFeed)
   liveFeedRef.current = liveFeed
+
+  useEffect(() => {
+    if (!online) {
+      setHasTrustedAlertList(false)
+      setCachedAlertsAt(queryClient.getQueryData(queryKeys.alerts.snapshot)?.updatedAt || null)
+    }
+  }, [online, queryClient])
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
@@ -255,7 +269,7 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!token || isRouteForbidden) return undefined
+    if (!token || isRouteForbidden || !online) return undefined
 
     let isMounted = true
     let pollingId = null
@@ -267,7 +281,9 @@ export default function AdminDashboard() {
     let currentRevision = 0n
     let hasTrustedSnapshot = false
 
-    setAlerts([])
+    const cachedAlerts = queryClient.getQueryData(queryKeys.alerts.snapshot)
+    setAlerts(cachedAlerts?.alerts || [])
+    setCachedAlertsAt(cachedAlerts?.updatedAt || null)
     setAcknowledgingAlertIds([])
     setAlertAcknowledgementErrors({})
     setAlertLoadError('')
@@ -279,6 +295,7 @@ export default function AdminDashboard() {
       currentAlerts = nextAlerts
       currentRevision = nextRevision
       setAlerts(nextAlerts)
+      if (hasTrustedSnapshot) queryClient.setQueryData(queryKeys.alerts.snapshot, { alerts: nextAlerts, updatedAt: Date.now() })
     }
 
     function scheduleAlertReload() {
@@ -328,7 +345,7 @@ export default function AdminDashboard() {
 
       try {
         const payload = await getAlerts(token)
-        if (isMounted && activeListRequest === listRequest) {
+        if (isMounted && onlineManager.isOnline() && activeListRequest === listRequest) {
           const reconciliation = reconcileAlertSnapshot(
             payload,
             [...listRequest.bufferedByRevision.values()],
@@ -348,6 +365,8 @@ export default function AdminDashboard() {
               reloadQueued = true
             }
             hasTrustedSnapshot = true
+            queryClient.setQueryData(queryKeys.alerts.snapshot, { alerts: reconciliation.alerts, updatedAt: Date.now() })
+            setCachedAlertsAt(null)
             setHasTrustedAlertList(true)
             setAlertLoadError('')
           }
@@ -439,7 +458,10 @@ export default function AdminDashboard() {
     void loadAlertState()
     const unsubscribe = subscribeToAlerts(token, {
       onEvent: (event) => {
-        if (!isMounted || typeof event?.type !== 'string') return
+        if (!isMounted || !onlineManager.isOnline() || typeof event?.type !== 'string') return
+        if (event.type === 'sensor.status' || event.type.startsWith('alert.')) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+        }
 
         if (event.type === 'sensor.status') {
           if (event.payload?.live) liveFeedRef.current.applyEvent(event.payload.live)
@@ -461,8 +483,9 @@ export default function AdminDashboard() {
         applyAlertDeltaRef.current(event.payload.alert)
       },
       onFallback: startFallbackPolling,
-      onOpen: () => {
+      onOpen: ({ isReconnect, isRetry } = {}) => {
         if (isMounted) {
+          if (isReconnect || isRetry) void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
           scheduleAlertReload()
           liveFeedRef.current.reload()
         }
@@ -493,7 +516,7 @@ export default function AdminDashboard() {
         window.clearTimeout(resyncTimerId)
       }
     }
-  }, [isRouteForbidden, token])
+  }, [isRouteForbidden, token, queryClient, online])
 
   async function handleAcknowledgeAlert(alertId) {
     if (!token || acknowledgementOperationsRef.current.has(alertId)) return
@@ -506,6 +529,8 @@ export default function AdminDashboard() {
 
     try {
       const payload = await acknowledgeAlert(token, alertId)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       if (sessionTokenRef.current !== token || acknowledgementOperationsRef.current.get(alertId) !== operationId) return
       applyAlertDeltaRef.current(payload.alert, { fromAcknowledgement: true })
     } catch (error) {
@@ -567,6 +592,7 @@ export default function AdminDashboard() {
           <PanelToggle
             ref={desktopSidebarToggleRef}
             className="sidebar-toggle desktop-only"
+            size={16}
             isCollapsed={isDesktopSidebarCollapsed}
             ariaLabel={isDesktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsSidebarCollapsed((value) => !value)}
@@ -600,12 +626,13 @@ export default function AdminDashboard() {
                       to={item.to}
                       end={item.to === '/dashboard'}
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
+                      data-label={item.label}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
                       className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
                     >
                       <Icon
                         className="sidebar-link-icon"
-                        size={20}
+                        size={16}
                         strokeWidth={item.icon === 'logs' ? 2.25 : 1.75}
                         aria-hidden="true"
                       />
@@ -629,11 +656,10 @@ export default function AdminDashboard() {
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
               <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
             </div>
+            <button className="sidebar-logout" type="button" aria-label="Logout" title="Log out" onClick={handleLogout}>
+              <LogOut size={14} aria-hidden="true" />
+            </button>
           </div>
-          <button className="btn btn-secondary sidebar-logout" type="button" aria-label="Logout" onClick={handleLogout}>
-            <LogOut size={18} aria-hidden="true" />
-            <span>Logout</span>
-          </button>
         </div>
       </aside>
 
@@ -650,7 +676,7 @@ export default function AdminDashboard() {
       ) : null}
 
       <div className="dashboard-main">
-        <header className="dashboard-topbar">
+        <header className="dashboard-topbar overview-topbar">
           <div className="topbar-leading">
             <PanelToggle
               ref={mobileMenuButtonRef}
@@ -662,18 +688,19 @@ export default function AdminDashboard() {
                 setIsDrawerOpen(true)
               }}
             />
-            <div>
-              <h1 className="topbar-label">{pageMeta.title}</h1>
-              {pageMeta.subtitle ? (
-                <p className="topbar-subtitle">{pageMeta.subtitle}</p>
-              ) : null}
-            </div>
+            {normalizedPathname === '/dashboard' ? <div id="overview-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/analytics' ? <div id="analytics-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/users' ? <div id="users-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/machines' ? <div id="machines-header-controls" /> : null}
+            {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-version" /> : null}
           </div>
 
           <div className="topbar-trailing">
-            <span className={`alert-connection-status is-${alertConnectionStatus}`} role="status">
-              {alertConnectionStatus === 'live'
-                ? 'Alert stream live'
+            {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-controls" /> : null}
+            {cachedAlertsAt && !hasTrustedAlertList ? <span className="status-badge status-inactive">Cached alerts stale</span> : null}
+            <span className={`alert-connection-status is-${online ? alertConnectionStatus : 'degraded'}`} role="status">
+              {!online ? 'Offline' : alertConnectionStatus === 'live'
+                ? 'Live'
                 : alertConnectionStatus === 'polling'
                   ? 'Polling'
                   : alertConnectionStatus === 'connecting'
@@ -743,6 +770,9 @@ export default function AdminDashboard() {
                     </span>
                   </div>
                 </div>
+                {cachedAlertsAt && !hasTrustedAlertList ? (
+                  <div className="alert-load-error" role="status">Cached alerts are stale. Updated <UpdatedAgo updatedAt={cachedAlertsAt} />.</div>
+                ) : null}
                 {alertLoadError ? (
                   <div className="alert-load-error" role="alert">
                     <span>{alertLoadError}</span>
@@ -801,7 +831,7 @@ export default function AdminDashboard() {
                             <button
                               className="alert-acknowledge-ghost-btn"
                               type="button"
-                              disabled={acknowledgingAlertIds.includes(alert.id)}
+                              disabled={!hasTrustedAlertList || acknowledgingAlertIds.includes(alert.id)}
                               onClick={() => handleAcknowledgeAlert(alert.id)}
                             >
                               Acknowledge
@@ -843,7 +873,7 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        <section className="dashboard-content">
+        <section className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
           {/* Nested /dashboard routes render here. */}
           <UsersActionProvider>
             <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />

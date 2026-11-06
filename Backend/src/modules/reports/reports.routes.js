@@ -10,15 +10,14 @@ const { exportReportSchema, reportSummarySchema } = require('./reports.model')
 const router = express.Router()
 
 router.use(authenticate)
-router.use(authorizeRole(['Admin', 'Operation Manager', 'Asst. Operation Manager']))
+router.use(authorizeRole(['Admin', 'Operation Manager', 'Quality Control']))
 
 router.get('/summary', validateRequest(reportSummarySchema), asyncHandler(reportsController.getSummary))
 
-// Export authorization is narrower than view access per the documented control:
-// Admin and Operation Manager only.
+// Export authorization is granted to Admin, Operation Manager, and Quality Control.
 router.post(
   '/export',
-  authorizeRole(['Admin', 'Operation Manager']),
+  authorizeRole(['Admin', 'Operation Manager', 'Quality Control']),
   exportRateLimiter,
   validateRequest(exportReportSchema),
   asyncHandler(reportsController.exportReport),

@@ -518,7 +518,7 @@ test('machine settings GET supports all dashboard roles and validates machine id
   const app = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
       getSettingsConstraints: () => settingsConstraints,
-      getMachineSettings: async (targetMachineId) => {
+      getMachineSettingsForRead: async (targetMachineId) => {
         assert.equal(targetMachineId, machineId)
         return settings
       },
@@ -530,7 +530,7 @@ test('machine settings GET supports all dashboard roles and validates machine id
     const roles = [
       'Admin',
       'Operation Manager',
-      'Asst. Operation Manager',
+      'Quality Control',
       'Engineering Supervisor',
       'Production Supervisor',
     ]
@@ -576,7 +576,7 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
   const app = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
       getSettingsConstraints: () => settingsConstraints,
-      getMachineSettings: async () => settings,
+      getMachineSettingsForRead: async () => settings,
       updateMachineSettings: async (values) => {
         calls.push(values)
         return settings
@@ -639,7 +639,7 @@ test('machine settings API preserves conflicts and masks internal failures', asy
   const conflictApp = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
       getSettingsConstraints: () => settingsConstraints,
-      getMachineSettings: async () => ({}),
+      getMachineSettingsForRead: async () => ({}),
       updateMachineSettings: async () => { throw conflict },
     },
   })
@@ -668,7 +668,7 @@ test('machine settings API preserves conflicts and masks internal failures', asy
   const failureApp = loadAppWithMocks({
     'src/modules/settings/settings.service.js': {
       getSettingsConstraints: () => settingsConstraints,
-      getMachineSettings: async () => { throw failure },
+      getMachineSettingsForRead: async () => { throw failure },
       updateMachineSettings: async () => ({}),
     },
   })
@@ -703,7 +703,7 @@ test('live monitoring API is role-protected, non-cacheable, and rejects route ta
     for (const role of [
       'Admin',
       'Operation Manager',
-      'Asst. Operation Manager',
+      'Quality Control',
       'Engineering Supervisor',
       'Production Supervisor',
     ]) {
@@ -899,12 +899,12 @@ test('downtime routes list records and reject manual status changes', async () =
     })
     assert.equal(reopen.response.status, 400)
 
-    const assistantEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
+    const qualityControlEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',
-      headers: authHeader('Asst. Operation Manager'),
+      headers: authHeader('Quality Control'),
       body: { notes: 'Unauthorized edit' },
     })
-    assert.equal(assistantEdit.response.status, 403)
+    assert.equal(qualityControlEdit.response.status, 403)
 
     const retiredRoleEdit = await requestJson(baseUrl, `/api/downtime/${downtimeId}`, {
       method: 'PATCH',

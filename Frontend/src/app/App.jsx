@@ -40,6 +40,7 @@ export function ProtectedRoute({ children }) {
   }
 
   if (user?.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
+  if (!user?.mustChangePassword && location.pathname === '/change-password') return <Navigate to="/dashboard" replace />
   return children
 }
 
@@ -98,23 +99,27 @@ export default function App() {
           <Route
             path="live"
             element={
-              <LazyDashboardRoute>
-                <LiveSection />
-              </LazyDashboardRoute>
+              <RequireRole roles={['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor']}>
+                <LazyDashboardRoute>
+                  <LiveSection />
+                </LazyDashboardRoute>
+              </RequireRole>
             }
           />
           <Route
             path="downtime"
             element={
-              <LazyDashboardRoute>
-                <DowntimeSection />
-              </LazyDashboardRoute>
+              <RequireRole roles={['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor']}>
+                <LazyDashboardRoute>
+                  <DowntimeSection />
+                </LazyDashboardRoute>
+              </RequireRole>
             }
           />
           <Route
             path="production"
             element={
-              <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor', 'Production Supervisor']}>
+              <RequireRole roles={['Admin', 'Operation Manager', 'Quality Control', 'Engineering Supervisor', 'Production Supervisor']}>
                 <LazyDashboardRoute>
                   <ProductionSection />
                 </LazyDashboardRoute>
@@ -124,7 +129,7 @@ export default function App() {
           <Route
             path="reports"
             element={
-              <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager']}>
+              <RequireRole roles={['Admin', 'Operation Manager', 'Quality Control']}>
                 <LazyDashboardRoute>
                   <ReportsSection />
                 </LazyDashboardRoute>
@@ -134,7 +139,7 @@ export default function App() {
           <Route
             path="analytics"
             element={
-              <RequireRole roles={['Admin', 'Operation Manager', 'Asst. Operation Manager', 'Engineering Supervisor']}>
+              <RequireRole roles={['Admin', 'Operation Manager', 'Engineering Supervisor']}>
                 <LazyDashboardRoute>
                   <AnalyticsSection />
                 </LazyDashboardRoute>

@@ -144,6 +144,64 @@ it('removes the form when the link is consumed before submission', async () => {
   expect(screen.queryByLabelText('New password')).not.toBeInTheDocument()
 })
 
+it.each([
+  { mode: 'change', props: { changePassword: true }, title: 'Change password' },
+  { mode: 'setup', props: {}, title: 'Create password' },
+  { mode: 'reset', props: { resetPassword: true }, title: 'Reset password' },
+])('renders the unified card design without radio checklist and shows inline field warnings in $mode mode', async ({ props, title }) => {
+  if (!props.changePassword) {
+    window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
+  }
+  const user = userEvent.setup()
+  render(<MemoryRouter><PasswordSetupPage {...props} /></MemoryRouter>)
+
+  const newInput = await screen.findByLabelText('New password')
+  const confirmInput = screen.getByLabelText('Confirm password')
+
+  expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+  expect(screen.getByText('0 / 72 chars')).toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: /password requirements/i })).not.toBeInTheDocument()
+
+  await user.type(newInput, 'weakpass')
+  expect(screen.getByText('8 / 72 chars')).toBeInTheDocument()
+  expect(screen.getByText(/include at least 12 characters, uppercase, lowercase, a number, and a special character/i)).toBeInTheDocument()
+  expect(newInput.closest('.password-input-shell-compact')).toHaveClass('has-error')
+  expect(newInput.closest('.password-input-shell-compact')).toHaveClass('shake')
+
+  await user.clear(newInput)
+  await user.type(newInput, 'Valid-password1!')
+  expect(screen.queryByText(/include at least 12 characters, uppercase, lowercase, a number, and a special character/i)).not.toBeInTheDocument()
+  expect(newInput.closest('.password-input-shell-compact')).not.toHaveClass('has-error')
+
+  await user.type(confirmInput, 'Mismatch-pass1!')
+  expect(screen.getByText('Passwords do not match.')).toBeInTheDocument()
+  expect(confirmInput.closest('.password-input-shell-compact')).toHaveClass('has-error')
+  expect(confirmInput.closest('.password-input-shell-compact')).toHaveClass('shake')
+
+  await user.clear(confirmInput)
+  await user.type(confirmInput, 'Valid-password1!')
+  expect(screen.queryByText('Passwords do not match.')).not.toBeInTheDocument()
+  expect(confirmInput.closest('.password-input-shell-compact')).not.toHaveClass('has-error')
+})
+
+it('shows inline error with thick left red border and subtle shake on current password when incorrect', async () => {
+  apiRequest.mockRejectedValueOnce({ code: 'PASSWORD_INCORRECT' })
+  const user = userEvent.setup()
+
+  render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+
+  const currentInput = screen.getByLabelText('Current password')
+  await user.type(currentInput, 'wrong-current')
+  await user.type(screen.getByLabelText('New password'), 'Valid-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'Valid-password1!')
+  await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+  expect(await screen.findByText('Password does not match.')).toBeInTheDocument()
+  const currentShell = currentInput.closest('.password-input-shell-compact')
+  expect(currentShell).toHaveClass('has-error')
+  expect(currentShell).toHaveClass('shake')
+})
+
 it('submits the legacy password change and signs out after success', async () => {
   apiRequest.mockResolvedValue({ completed: true })
   const user = userEvent.setup()

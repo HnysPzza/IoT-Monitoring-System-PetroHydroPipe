@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
+import { getSessionGeneration } from '../../../shared/services/sessionRefresh.js'
 import {
   AlertTriangle,
   Check,
@@ -17,7 +22,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
-import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
+import ProductionDateRangePicker from './ProductionDateRangePicker.jsx'
 import {
   batchUpdateProductionSpecs,
   getProductionLogs,
@@ -80,14 +85,19 @@ function formatTonnage(value) {
   return Number(value).toFixed(4)
 }
 
-function calculatePipeTonnage(diameter, thickness, length) {
+const STEEL_DENSITY_KG_PER_M3 = 7850
+
+export function calculatePipeTonnage(diameter, thickness, length) {
   if (diameter == null || thickness == null || length == null) return null
+  if (typeof diameter === 'string' && diameter.trim() === '') return null
+  if (typeof thickness === 'string' && thickness.trim() === '') return null
+  if (typeof length === 'string' && length.trim() === '') return null
   const d = Number(diameter)
   const t = Number(thickness)
   const l = Number(length)
   if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
   if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
-  const weightKgPerMeter = (d - t) * t * 0.02466
+  const weightKgPerMeter = Math.PI * (d - t) * t * (STEEL_DENSITY_KG_PER_M3 / 1000000)
   const totalWeightTons = (weightKgPerMeter * l) / 1000000
   return Math.round(totalWeightTons * 10000) / 10000
 }
@@ -99,6 +109,7 @@ export function hasInformation(record) {
   if (record.diameter !== null && record.diameter !== undefined && record.diameter !== '' && !isNaN(Number(record.diameter))) return true
   if (record.thickness !== null && record.thickness !== undefined && record.thickness !== '' && !isNaN(Number(record.thickness))) return true
   if (record.length !== null && record.length !== undefined && record.length !== '' && !isNaN(Number(record.length))) return true
+  if (record.tonnage !== null && record.tonnage !== undefined && record.tonnage !== '' && !isNaN(Number(record.tonnage))) return true
   if (record.label && String(record.label).trim() !== '') return true
   if (record.size && String(record.size).trim() !== '') return true
   if (record.radius !== null && record.radius !== undefined && record.radius !== '' && !isNaN(Number(record.radius))) return true
@@ -106,7 +117,7 @@ export function hasInformation(record) {
   return false
 }
 
-const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor'])
+const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control'])
 
 const CUT_STATUS_OPTIONS = [
   { value: 'accepted', label: 'Accepted' },
@@ -240,7 +251,13 @@ export default function ProductionSection({
   const updateFn = updateProductionSpec || updateProduction
   const batchUpdateFn = batchUpdateProductionSpecsProp || batchUpdateProduction || batchUpdateProductionSpecs
   const { token, user } = useAuth()
-  const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role)
+  const identityRef = useRef(null)
+  identityRef.current = `${user?.id || ''}:${user?.role || ''}`
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [statusFilter, setStatusFilter] = useState('accepted')
@@ -250,24 +267,37 @@ export default function ProductionSection({
   const [page, setPage] = useState(1)
   const pageSize = 25
 
-  const [records, setRecords] = useState([])
-  const [summary, setSummary] = useState({
-    totalAccepted: 0,
-    specifiedCount: 0,
-    unspecifiedCount: 0,
-    rejectedCount: 0,
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
+  const normFilter = typeof dateFilter === 'string'
+    ? (dateFilter ? { type: 'day', startDate: dateFilter, endDate: dateFilter } : { type: 'all' })
+    : dateFilter
+  const start = normFilter?.startDate || normFilter?.date
+  const end = normFilter?.endDate
+  const oneDay = start && (normFilter?.type === 'today' || normFilter?.type === 'day' || start === end)
+  const filters = {
+    date: oneDay ? start : undefined,
+    dateFrom: !oneDay && normFilter?.type !== 'all' && start && end ? start : undefined,
+    dateTo: !oneDay && normFilter?.type !== 'all' && start && end ? end : undefined,
+    status: statusFilter, specStatus: specStatusFilter, search: debouncedSearch || undefined, page, pageSize,
+  }
+  const key = queryKeys.production.list(filters)
+  const query = useAuthenticatedQuery({
+    queryKey: key,
+    queryFn: ({ token: currentToken, signal }) => loadProduction(currentToken, { ...filters, signal }),
+    staleTime: 30000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
   })
-  const [pagination, setPagination] = useState({
-    page: 1,
-    pageSize: 25,
-    total: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPreviousPage: false,
-  })
-
-  const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role) && !query.isPlaceholderData
+  const records = query.data?.records || []
+  const summary = query.data?.summary || { totalAccepted: 0, specifiedCount: 0, unspecifiedCount: 0, rejectedCount: 0 }
+  const pagination = query.data?.pagination || { page: 1, pageSize: 25, total: 0, totalPages: 1 }
+  const setRecords = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, records: typeof update === 'function' ? update(current.records || []) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
+  const setSummary = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, summary: typeof update === 'function' ? update(current.summary || {}) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
+  const isLoading = query.isPending && !query.data
+  const isRefreshing = query.isFetching && Boolean(query.data)
+  const loadData = () => query.refetch()
   const [error, setError] = useState(null)
   const [conflictNotice, setConflictNotice] = useState(null)
   const [announcement, setAnnouncement] = useState('')
@@ -279,6 +309,7 @@ export default function ProductionSection({
     thickness: '',
     length: '',
     pipeNumber: '',
+    tonnage: '',
   })
   const [flashingRecordId, setFlashingRecordId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -287,12 +318,12 @@ export default function ProductionSection({
     diameter: '',
     thickness: '',
     length: '',
+    tonnage: '',
   })
   const [isConfirmingBulk, setIsConfirmingBulk] = useState(false)
   const [isApplyingBulk, setIsApplyingBulk] = useState(false)
   const [flashingRecordIds, setFlashingRecordIds] = useState(() => new Set())
 
-  const requestIdRef = useRef(0)
   const flashTimeoutRef = useRef(null)
   const lastClickedIndexRef = useRef(null)
   const headerCheckboxRef = useRef(null)
@@ -389,6 +420,17 @@ export default function ProductionSection({
     setIsConfirmingBulk(false)
   }
 
+  const handleBulkDimensionChange = (field, value) => {
+    setBulkForm((prev) => {
+      const next = { ...prev, [field]: value }
+      const autoTons = calculatePipeTonnage(next.diameter, next.thickness, next.length)
+      if (autoTons !== null) {
+        next.tonnage = String(autoTons)
+      }
+      return next
+    })
+  }
+
   const handleRepeatLastSpec = () => {
     const lastSpec = records.find(
       (r) =>
@@ -397,15 +439,21 @@ export default function ProductionSection({
           (r.customer && String(r.customer).trim()) ||
           r.diameter != null ||
           r.thickness != null ||
-          r.length != null,
+          r.length != null ||
+          r.tonnage != null,
         ),
     )
     if (!lastSpec) return
+    const fallbackTonnage =
+      lastSpec.tonnage !== null && lastSpec.tonnage !== undefined
+        ? lastSpec.tonnage
+        : calculatePipeTonnage(lastSpec.diameter, lastSpec.thickness, lastSpec.length)
     setBulkForm({
       customer: lastSpec.customer || '',
       diameter: lastSpec.diameter !== null && lastSpec.diameter !== undefined ? String(lastSpec.diameter) : '',
       thickness: lastSpec.thickness !== null && lastSpec.thickness !== undefined ? String(lastSpec.thickness) : '',
       length: lastSpec.length !== null && lastSpec.length !== undefined ? String(lastSpec.length) : '',
+      tonnage: fallbackTonnage !== null && fallbackTonnage !== undefined ? String(fallbackTonnage) : '',
     })
   }
 
@@ -414,7 +462,8 @@ export default function ProductionSection({
       bulkForm.customer.trim() ||
         (bulkForm.diameter !== '' && !isNaN(Number(bulkForm.diameter))) ||
         (bulkForm.thickness !== '' && !isNaN(Number(bulkForm.thickness))) ||
-        (bulkForm.length !== '' && !isNaN(Number(bulkForm.length))),
+        (bulkForm.length !== '' && !isNaN(Number(bulkForm.length))) ||
+        (bulkForm.tonnage !== '' && !isNaN(Number(bulkForm.tonnage))),
     )
     if (!hasField) {
       setError('Provide at least one specification field to update.')
@@ -425,6 +474,9 @@ export default function ProductionSection({
   }
 
   const handleConfirmBulkApply = async () => {
+    const sessionGeneration = getSessionGeneration()
+    const identity = identityRef.current
+    const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
     setIsConfirmingBulk(false)
     setIsApplyingBulk(true)
     setError(null)
@@ -440,13 +492,17 @@ export default function ProductionSection({
       bulkForm.thickness !== '' && !isNaN(Number(bulkForm.thickness)) ? Number(bulkForm.thickness) : undefined
     const newLength =
       bulkForm.length !== '' && !isNaN(Number(bulkForm.length)) ? Number(bulkForm.length) : undefined
+    const newTonnage =
+      bulkForm.tonnage !== '' && !isNaN(Number(bulkForm.tonnage)) ? Number(bulkForm.tonnage) : undefined
 
     const appliedSpec = {}
     if (newCustomer !== undefined) appliedSpec.customer = newCustomer
     if (newDiameter !== undefined) appliedSpec.diameter = newDiameter
     if (newThickness !== undefined) appliedSpec.thickness = newThickness
     if (newLength !== undefined) appliedSpec.length = newLength
+    if (newTonnage !== undefined) appliedSpec.tonnage = newTonnage
 
+    void queryClient.cancelQueries({ queryKey: key, exact: true })
     let newlySpecifiedCount = 0
     const targetSet = new Set(targetIds)
     setRecords((prev) =>
@@ -457,12 +513,18 @@ export default function ProductionSection({
         const effDiameter = newDiameter !== undefined ? newDiameter : r.diameter
         const effThickness = newThickness !== undefined ? newThickness : r.thickness
         const effLength = newLength !== undefined ? newLength : r.length
-        const effTonnage = calculatePipeTonnage(effDiameter, effThickness, effLength)
+        const effTonnage =
+          newTonnage !== undefined
+            ? newTonnage
+            : newDiameter !== undefined || newThickness !== undefined || newLength !== undefined
+              ? calculatePipeTonnage(effDiameter, effThickness, effLength)
+              : (r.tonnage ?? calculatePipeTonnage(effDiameter, effThickness, effLength))
         const isNowSpecified = Boolean(
           (effCustomer && effCustomer.trim() !== '') ||
           effDiameter != null ||
           effThickness != null ||
           effLength != null ||
+          effTonnage != null ||
           r.pipeNumber != null,
         )
         if (!r.isSpecified && isNowSpecified) {
@@ -500,6 +562,14 @@ export default function ProductionSection({
         sensorEventIds: targetIds,
         appliedSpec,
       })
+      if (sessionGeneration === getSessionGeneration()) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+      }
+      if (!isCurrentSession()) return
 
       setSelectedIds(new Set())
       setBulkForm({
@@ -507,10 +577,14 @@ export default function ProductionSection({
         diameter: '',
         thickness: '',
         length: '',
+        tonnage: '',
       })
       setAnnouncement(`Applied specifications to ${targetIds.length} cuts.`)
-      loadData({ silent: true })
     } catch (err) {
+      if (!isCurrentSession()) {
+        if (sessionGeneration === getSessionGeneration()) void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        return
+      }
       setRecords(prevRecords)
       setSummary(prevSummary)
       setError(err.message || 'Unable to update production specifications.')
@@ -533,95 +607,10 @@ export default function ProductionSection({
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  const loadData = useCallback(async ({ silent = false } = {}) => {
-    const requestId = ++requestIdRef.current
-    if (silent) {
-      setIsRefreshing(true)
-    } else {
-      setIsLoading(true)
-    }
-    setError(null)
-
-    try {
-      const payload = await loadProduction(token, {
-        date: dateFilter || undefined,
-        status: statusFilter,
-        specStatus: specStatusFilter,
-        search: debouncedSearch || undefined,
-        page,
-        pageSize,
-      })
-
-      if (requestId !== requestIdRef.current) return
-
-      setRecords(payload?.records || [])
-      setSummary(
-        payload?.summary || {
-          totalAccepted: 0,
-          specifiedCount: 0,
-          unspecifiedCount: 0,
-          rejectedCount: 0,
-        },
-      )
-      setPagination(
-        payload?.pagination || {
-          page: 1,
-          pageSize: 25,
-          total: payload?.records?.length || 0,
-          totalPages: 1,
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-      )
-    } catch (err) {
-      if (requestId !== requestIdRef.current) return
-      setError(err.message || 'Unable to load production logs.')
-      if (!silent) {
-        setRecords([])
-        setSummary({
-          totalAccepted: 0,
-          specifiedCount: 0,
-          unspecifiedCount: 0,
-          rejectedCount: 0,
-        })
-        setPagination({
-          page: 1,
-          pageSize: 25,
-          total: 0,
-          totalPages: 1,
-          hasNextPage: false,
-          hasPreviousPage: false,
-        })
-      }
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setIsLoading(false)
-        setIsRefreshing(false)
-      }
-    }
-  }, [dateFilter, debouncedSearch, loadProduction, page, pageSize, specStatusFilter, statusFilter, token])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
-  const handleDateChange = (e) => {
-    setDateFilter(e.target.value)
-    setPage(1)
-  }
-
-  const selectedProductionDate = parseProductionDate(dateFilter)
   const maxProductionDate = parseProductionDate(getManilaDateInputValue())
-  const dateRangeLabel = selectedProductionDate ? formatProductionDateLabel(selectedProductionDate) : 'All Dates'
 
-  const handleCalendarDateChange = (date) => {
-    if (!date) return
-    setDateFilter(formatProductionDateInput(date))
-    setPage(1)
-  }
-
-  const handleClearDateFilter = () => {
-    setDateFilter('')
+  const handleDateFilterChange = (filter) => {
+    setDateFilter(filter)
     setPage(1)
   }
 
@@ -659,12 +648,17 @@ export default function ProductionSection({
     const rowId = record.id || record.sensorEventId
     setEditingRecordId(rowId)
     setConflictNotice(null)
+    const fallbackTonnage =
+      record.tonnage !== null && record.tonnage !== undefined
+        ? record.tonnage
+        : calculatePipeTonnage(record.diameter, record.thickness, record.length)
     setEditForm({
       customer: record.customer ?? '',
       diameter: record.diameter !== null && record.diameter !== undefined ? String(record.diameter) : '',
       thickness: record.thickness !== null && record.thickness !== undefined ? String(record.thickness) : '',
       length: record.length !== null && record.length !== undefined ? String(record.length) : '',
       pipeNumber: record.pipeNumber !== null && record.pipeNumber !== undefined ? String(record.pipeNumber) : '',
+      tonnage: fallbackTonnage !== null && fallbackTonnage !== undefined ? String(fallbackTonnage) : '',
     })
   }
 
@@ -676,15 +670,23 @@ export default function ProductionSection({
       thickness: '',
       length: '',
       pipeNumber: '',
+      tonnage: '',
     })
   }
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    setEditForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setEditForm((prev) => {
+      const next = {
+        ...prev,
+        [name]: value,
+      }
+      if (name === 'diameter' || name === 'thickness' || name === 'length') {
+        const autoTons = calculatePipeTonnage(next.diameter, next.thickness, next.length)
+        next.tonnage = autoTons !== null ? String(autoTons) : ''
+      }
+      return next
+    })
   }
 
   const handleInputKeyDown = (e, record) => {
@@ -698,6 +700,9 @@ export default function ProductionSection({
   }
 
   const handleSave = async (record) => {
+    const sessionGeneration = getSessionGeneration()
+    const identity = identityRef.current
+    const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
     const rowId = record.id || record.sensorEventId
     setEditingRecordId(null)
 
@@ -710,17 +715,27 @@ export default function ProductionSection({
     const newLength = editForm.length === '' || editForm.length === null ? null : Number(editForm.length)
     const newPipeNumber =
       editForm.pipeNumber === '' || editForm.pipeNumber === null ? null : parseInt(editForm.pipeNumber, 10)
-    const newTonnage = calculatePipeTonnage(newDiameter, newThickness, newLength)
+    const rawManualTonnage =
+      editForm.tonnage === '' || editForm.tonnage === null || editForm.tonnage === undefined
+        ? null
+        : Number(editForm.tonnage)
+    const manualTonnage =
+      rawManualTonnage !== null && Number.isFinite(rawManualTonnage) && rawManualTonnage > 0
+        ? Math.round(rawManualTonnage * 10000) / 10000
+        : null
+    const newTonnage = manualTonnage ?? calculatePipeTonnage(newDiameter, newThickness, newLength)
 
     const isNowSpecified = Boolean(
       newCustomer ||
         newDiameter != null ||
         newThickness != null ||
         newLength != null ||
-        newPipeNumber != null,
+        newPipeNumber != null ||
+        newTonnage != null,
     )
     const wasSpecified = Boolean(record.isSpecified)
 
+    void queryClient.cancelQueries({ queryKey: key, exact: true })
     setRecords((prev) =>
       prev.map((r) => {
         if ((r.id || r.sensorEventId) === rowId) {
@@ -766,6 +781,7 @@ export default function ProductionSection({
       thickness: newThickness,
       length: newLength,
       pipeNumber: newPipeNumber,
+      tonnage: newTonnage,
     }
 
     try {
@@ -775,6 +791,14 @@ export default function ProductionSection({
         payload,
         record.updatedAt,
       )
+      if (sessionGeneration === getSessionGeneration()) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+      }
+      if (!isCurrentSession()) return
 
       if (response?.spec) {
         setRecords((prev) =>
@@ -789,6 +813,10 @@ export default function ProductionSection({
                   : response.spec.pipeNumber != null
                     ? Number(response.spec.pipeNumber)
                     : newPipeNumber
+              const updatedTonnage =
+                response.spec.tonnage != null
+                  ? Number(response.spec.tonnage)
+                  : (newTonnage ?? calculatePipeTonnage(updatedDiameter, updatedThickness, updatedLength))
               return {
                 ...r,
                 customer: response.spec.customer ?? newCustomer,
@@ -796,7 +824,7 @@ export default function ProductionSection({
                 thickness: updatedThickness,
                 length: updatedLength,
                 pipeNumber: updatedPipeNumber,
-                tonnage: calculatePipeTonnage(updatedDiameter, updatedThickness, updatedLength),
+                tonnage: updatedTonnage,
                 updatedAt: response.spec.updatedAt || response.spec.updated_at || r.updatedAt,
               }
             }
@@ -806,6 +834,10 @@ export default function ProductionSection({
       }
       setAnnouncement(`Specification updated for cut at ${record.recordedAt || record.timestamp}.`)
     } catch (err) {
+      if (!isCurrentSession()) {
+        if (sessionGeneration === getSessionGeneration()) void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+        return
+      }
       const isConflict =
         err?.status === 409 ||
         err?.code === 'PRODUCTION_SPEC_CONFLICT' ||
@@ -824,7 +856,7 @@ export default function ProductionSection({
     }
   }
 
-  const sensorLabel = getSensorLabel('S-05', 'Production Output Cutting')
+  if (!online && !query.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => query.refetch()}>Retry</button></div>
 
   return (
     <div className="production-workspace">
@@ -834,13 +866,7 @@ export default function ProductionSection({
       </div>
 
       {/* Header Strip with Eyebrow, Main Heading, and Clean Unified KPI Pills */}
-      <header className="production-header-strip">
-        <div className="production-title-group">
-          <p className="production-eyebrow">{`S-05 · ${sensorLabel.toUpperCase()} · SPIRAL MILL 01`}</p>
-          <h1 className="production-title">Production Logs</h1>
-        </div>
-
-        {/* Clean Unified KPI Pills on right */}
+      <header className="production-header-strip"><div className="production-title-group sr-only"><p className="production-eyebrow">{`S-05 · ${getSensorLabel('S-05', 'Production Output Cutting').toUpperCase()} · SPIRAL MILL 01`}</p><h1 className="production-title">Production Logs</h1></div>
         <div className="production-kpi-strip" role="region" aria-label="Production Summary Metrics">
           <button
             type="button"
@@ -909,6 +935,8 @@ export default function ProductionSection({
         </div>
       ) : null}
 
+      {isRefreshing ? <div role="status">{query.isPlaceholderData ? 'Refreshing production logs for the selected filters; previous results remain visible.' : 'Refreshing production logs...'}</div> : null}
+      {query.isError || (!online && query.data) ? <div className="notice notice-error" role="alert">{query.data ? `Production data is stale.${query.isPlaceholderData ? ' Showing previous filter results.' : ''}${query.dataUpdatedAt ? ` Last updated ${new Date(query.dataUpdatedAt).toLocaleString()}.` : ''} ` : ''}{query.error?.message || 'Unable to refresh while offline.'} <button type="button" onClick={() => query.refetch()}>Retry</button></div> : null}
       {/* Error Notice */}
       {error ? (
         <div className="notice notice-error dashboard-alert production-notice" role="alert">
@@ -957,30 +985,13 @@ export default function ProductionSection({
           ) : null}
         </div>
 
-        <div className="production-date-wrapper">
-          <TrendCalendarControl
-            mode="day"
-            accessibleLabel="Select production date"
-            triggerAriaLabel="Filter by date"
-            triggerLabel="DATE"
-            selectedDate={selectedProductionDate}
-            maxDate={maxProductionDate}
-            rangeLabel={dateRangeLabel}
-            onDateChange={handleCalendarDateChange}
-            popoverClassName="production-calendar-popover"
-          />
-          {dateFilter ? (
-            <button
-              type="button"
-              className="production-square-btn production-date-clear-btn"
-              aria-label="Clear date filter"
-              title="Clear date filter"
-              onClick={handleClearDateFilter}
-            >
-              <X size={15} strokeWidth={1.75} aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
+        <ProductionDateRangePicker
+          value={dateFilter}
+          onChange={handleDateFilterChange}
+          maxDate={maxProductionDate}
+          accessibleLabel="Select production date"
+          triggerAriaLabel="Filter by date"
+        />
 
         <CustomDropdown
           id="production-status-filter"
@@ -1092,7 +1103,7 @@ export default function ProductionSection({
                   step="any"
                   min="0"
                   value={bulkForm.diameter}
-                  onChange={(e) => setBulkForm((prev) => ({ ...prev, diameter: e.target.value }))}
+                  onChange={(e) => handleBulkDimensionChange('diameter', e.target.value)}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1104,7 +1115,7 @@ export default function ProductionSection({
                   step="any"
                   min="0"
                   value={bulkForm.thickness}
-                  onChange={(e) => setBulkForm((prev) => ({ ...prev, thickness: e.target.value }))}
+                  onChange={(e) => handleBulkDimensionChange('thickness', e.target.value)}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1116,9 +1127,21 @@ export default function ProductionSection({
                   step="any"
                   min="0"
                   value={bulkForm.length}
-                  onChange={(e) => setBulkForm((prev) => ({ ...prev, length: e.target.value }))}
+                  onChange={(e) => handleBulkDimensionChange('length', e.target.value)}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
+              </div>
+              <div className="dimension-input-wrapper production-dimension-wrapper">
+                <input
+                  type="number"
+                  placeholder="Tons"
+                  aria-label="Bulk tonnage"
+                  step="0.0001"
+                  min="0"
+                  value={bulkForm.tonnage}
+                  onChange={(e) => setBulkForm((prev) => ({ ...prev, tonnage: e.target.value }))}
+                />
+                <span className="unit-suffix production-unit-badge" aria-hidden="true">t</span>
               </div>
 
               <div className="production-bulk-tools">
@@ -1330,18 +1353,17 @@ export default function ProductionSection({
                             />
                           </td>
                           <td className="production-col-num tabular-data">
-                            {(() => {
-                              const calculatedTonnage = calculatePipeTonnage(
-                                editForm.diameter,
-                                editForm.thickness,
-                                editForm.length,
-                              )
-                              return calculatedTonnage != null ? (
-                                formatTonnage(calculatedTonnage)
-                              ) : (
-                                <span className="production-placeholder">—</span>
-                              )
-                            })()}
+                            <input
+                              type="number"
+                              className="production-inline-input production-inline-num tabular-data"
+                              aria-label="Specification tonnage"
+                              name="tonnage"
+                              step="0.0001"
+                              min="0"
+                              value={editForm.tonnage}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, record)}
+                            />
                           </td>
                         </>
                       ) : (

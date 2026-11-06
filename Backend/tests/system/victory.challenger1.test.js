@@ -19,7 +19,7 @@ function referenceTonnageOracle(od, thickness, length) {
   if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
   if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
 
-  const weightKgPerMeter = (d - t) * t * 0.02466
+  const weightKgPerMeter = Math.PI * (d - t) * t * (7850 / 1000000)
   const totalWeightTons = (weightKgPerMeter * l) / 1000000
   return Math.round(totalWeightTons * 10000) / 10000
 }
@@ -28,14 +28,14 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
 
   test('Challenge 1.1: Standard Industry Spiral Welded Pipe Catalog Verification', () => {
     const catalogSamples = [
-      { od: 625.4, t: 10.0, l: 6000, expectedKgPerM: 151.75764, expectedTons: 0.9105 },
-      { od: 1020.0, t: 12.7, l: 12000, expectedKgPerM: 315.46743, expectedTons: 3.7856 },
-      { od: 1120.0, t: 10.0, l: 9000, expectedKgPerM: 273.726, expectedTons: 2.4635 },
-      { od: 508.0, t: 6.35, l: 6000, expectedKgPerM: 78.55248, expectedTons: 0.4713 },
-      { od: 711.2, t: 9.53, l: 12000, expectedKgPerM: 164.89971, expectedTons: 1.9788 },
-      { od: 812.8, t: 12.7, l: 12000, expectedKgPerM: 250.5756, expectedTons: 3.0069 },
-      { od: 914.4, t: 12.7, l: 12000, expectedKgPerM: 282.4000, expectedTons: 3.3888 },
-      { od: 1219.2, t: 14.27, l: 12000, expectedKgPerM: 424.0129, expectedTons: 5.0882 },
+      { od: 625.4, t: 10.0, l: 6000, expectedKgPerM: 151.75764, expectedTons: 0.9106 },
+      { od: 1020.0, t: 12.7, l: 12000, expectedKgPerM: 315.46743, expectedTons: 3.7858 },
+      { od: 1120.0, t: 10.0, l: 9000, expectedKgPerM: 273.726, expectedTons: 2.4637 },
+      { od: 508.0, t: 6.35, l: 6000, expectedKgPerM: 78.55248, expectedTons: 0.4714 },
+      { od: 711.2, t: 9.53, l: 12000, expectedKgPerM: 164.89971, expectedTons: 1.9789 },
+      { od: 812.8, t: 12.7, l: 12000, expectedKgPerM: 250.5756, expectedTons: 3.0071 },
+      { od: 914.4, t: 12.7, l: 12000, expectedKgPerM: 282.4000, expectedTons: 3.389 },
+      { od: 1219.2, t: 14.27, l: 12000, expectedKgPerM: 424.0129, expectedTons: 5.0885 },
     ]
 
     for (const sample of catalogSamples) {
@@ -404,7 +404,7 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
     assert.ok(xlsxBuffer.length > 1000)
 
     // Inspect XLSX workbook structure using ExcelJS
-    const ExcelJS = require('exceljs')
+    const ExcelJS = require('@excel.js/exceljs').default
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(xlsxBuffer)
 
@@ -458,7 +458,7 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
       const l = Number(length)
       if (!Number.isFinite(d) || !Number.isFinite(t) || !Number.isFinite(l)) return null
       if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
-      const weightKgPerMeter = (d - t) * t * 0.02466
+      const weightKgPerMeter = Math.PI * (d - t) * t * (7850 / 1000000)
       const totalWeightTons = (weightKgPerMeter * l) / 1000000
       return Math.round(totalWeightTons * 10000) / 10000
     }

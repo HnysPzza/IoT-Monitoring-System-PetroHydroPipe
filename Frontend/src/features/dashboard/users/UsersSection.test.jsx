@@ -1,16 +1,18 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeAll, afterAll, beforeEach, expect, it, vi } from 'vitest'
 import UsersActionProvider from './UsersActionProvider.jsx'
 import UsersSection from './UsersSection.jsx'
 import { archiveUser, createUser, getRoles, getUsers, sendPasswordReset, updateUserStatus } from './usersService.js'
 
-vi.mock('../../../shared/hooks/useAuth.js', () => ({ useAuth: () => ({ token: 'test-token', user: { id: 'admin' } }) }))
+vi.mock('../../../shared/hooks/useAuth.js', () => ({ useAuth: () => ({ token: 'test-token', isAuthenticated: true, user: { id: 'admin' } }) }))
 vi.mock('./usersService.js', () => ({ getUsers: vi.fn(), getRoles: vi.fn(), createUser: vi.fn(), archiveUser: vi.fn(), updateUserStatus: vi.fn(), resendSetup: vi.fn(), sendPasswordReset: vi.fn() }))
 
 function renderUsers() {
-  return render(<UsersActionProvider><UsersSection /></UsersActionProvider>)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  return render(<QueryClientProvider client={client}><UsersActionProvider><UsersSection /></UsersActionProvider></QueryClientProvider>)
 }
 
 function UsersRouteHarness() {
@@ -27,12 +29,15 @@ function UsersRouteHarness() {
 }
 
 function renderUsersRoutes() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   return render(
+    <QueryClientProvider client={client}>
     <MemoryRouter initialEntries={['/dashboard/users']}>
       <UsersActionProvider>
         <UsersRouteHarness />
       </UsersActionProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
@@ -58,7 +63,7 @@ it('displays Managing Director while filtering with the internal Admin role', as
   renderUsers()
 
   const roleFilter = await screen.findByLabelText('Role', { selector: '#users-filter-role' })
-  const adminOption = within(roleFilter).getByRole('option', { name: 'Managing Director' })
+  const adminOption = await within(roleFilter).findByRole('option', { name: 'Managing Director' })
   expect(adminOption).toHaveValue('Admin')
 
   await user.selectOptions(roleFilter, 'Admin')
@@ -103,7 +108,7 @@ it('adds a user without credentials and reports unconfirmed email without losing
   await user.type(form.getByLabelText('Username'), 'operator')
   await user.type(form.getByLabelText('Email'), 'operator@example.test')
   await user.selectOptions(form.getByLabelText('Role'), 'Production Supervisor')
-  await user.click(form.getByRole('button', { name: 'Send invite' }))
+  await user.click(form.getByRole('button', { name: 'Add user' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(createUser).toHaveBeenCalledWith('test-token', { name: 'New Operator', username: 'operator', email: 'operator@example.test', role: 'Production Supervisor' })
   expect(screen.getByRole('alert')).toHaveTextContent(/Account saved, but email delivery is unconfirmed/)
@@ -135,7 +140,7 @@ it('sends a password reset link from the account actions and confirms provider a
 
 it('places Add user in the filter row and removes the advanced setup filter', async () => {
   renderUsers()
-  expect(await screen.findByRole('heading', { name: 'Staff accounts' })).toBeInTheDocument()
+  expect(await screen.findByRole('region', { name: 'Staff accounts' })).toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: 'User accounts' })).not.toBeInTheDocument()
   expect(screen.queryByText('Total Users:')).not.toBeInTheDocument()
   const addUserButton = screen.getByRole('button', { name: 'Add user' })
@@ -385,11 +390,11 @@ it('commits the delayed account action after navigating to another dashboard rou
     await act(async () => { await vi.advanceTimersByTimeAsync(7000) })
 
     expect(updateUserStatus).toHaveBeenCalledWith('test-token', account.id, 'Inactive')
+    vi.useRealTimers()
     await act(async () => {
       fireEvent.click(screen.getByRole('link', { name: 'Users' }))
-      await Promise.resolve()
     })
-    expect(within(screen.getByRole('row', { name: /operator zeta/i })).getByText('Inactive')).toBeInTheDocument()
+    expect(within(await screen.findByRole('row', { name: /operator zeta/i })).getByText('Inactive')).toBeInTheDocument()
   } finally {
     view?.unmount()
     vi.useRealTimers()

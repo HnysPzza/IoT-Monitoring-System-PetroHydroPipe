@@ -1,67 +1,99 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import {
-  Check,
   CheckCircle2,
-  Circle,
   CircleAlert,
   Eye,
   EyeOff,
   KeyRound,
   LoaderCircle,
-  LockKeyhole,
   LogIn,
   ShieldCheck,
-  UserRoundCheck,
   Zap,
 } from 'lucide-react'
 import { useAuth } from '../../shared/hooks/useAuth.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
 import './passwordSetup.css'
 
+const STRENGTH_COLORS = ['', 'bg-rose-500', 'bg-amber-500', 'bg-sky-500', 'bg-emerald-500']
+
 function PasswordField({
   autoComplete,
-  describedBy,
   disabled,
+  errorMessage,
+  errorRole = 'status',
+  hasError = false,
   id,
   inputRef,
   label,
+  onAnimationEnd,
   onChange,
+  placeholder,
+  shake = false,
   value,
 }) {
   const [visible, setVisible] = useState(false)
+  const [errorShake, setErrorShake] = useState(false)
+  const prevErrorRef = useRef(false)
   const visibilityLabel = `${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`
+  const errorId = `${id}-error`
+
+  useEffect(() => {
+    if (hasError && !prevErrorRef.current) {
+      setErrorShake(true)
+    } else if (!hasError) {
+      setErrorShake(false)
+    }
+    prevErrorRef.current = hasError
+  }, [hasError])
+
+  const shouldShake = shake || errorShake
 
   return (
-    <div className="password-field">
-      <label htmlFor={id}>{label}</label>
-      <div className="password-input-shell">
-        <LockKeyhole size={18} aria-hidden="true" />
+    <div className="password-field-compact">
+      <label htmlFor={id} className="block text-sm font-medium text-slate-300 mb-1.5">
+        {label}
+      </label>
+      <div
+        className={`password-input-shell-compact relative${hasError ? ' has-error' : ''}${shouldShake ? ' shake' : ''}`}
+        onAnimationEnd={(event) => {
+          setErrorShake(false)
+          onAnimationEnd?.(event)
+        }}
+      >
         <input
           ref={inputRef}
           id={id}
           name={id}
           type={visible ? 'text' : 'password'}
           autoComplete={autoComplete}
+          placeholder={placeholder}
           required
           minLength={id === 'new-password' ? 12 : undefined}
           maxLength={id === 'new-password' ? 72 : undefined}
           value={value}
           onChange={onChange}
           disabled={disabled}
-          aria-describedby={describedBy}
+          aria-invalid={Boolean(hasError)}
+          aria-describedby={errorMessage ? errorId : undefined}
+          className="w-full h-11 pl-3.5 pr-10 rounded-lg bg-[#11192c] border border-slate-800 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
         />
         <button
           type="button"
-          className="password-visibility"
+          className="password-visibility-compact absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] transition-colors"
           aria-label={visibilityLabel}
           aria-pressed={visible}
           disabled={disabled}
           onClick={() => setVisible((current) => !current)}
         >
-          {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+          {visible ? <EyeOff size={16} className="w-4 h-4" aria-hidden="true" /> : <Eye size={16} className="w-4 h-4" aria-hidden="true" />}
         </button>
       </div>
+      {errorMessage ? (
+        <p id={errorId} className="password-field-warning" role={errorRole}>
+          {errorMessage}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -70,7 +102,7 @@ function passwordErrorMessage(code) {
   if (code === 'RATE_LIMITED') return 'Too many attempts. Wait up to 15 minutes, then try again.'
   if (code === 'VALIDATION_ERROR') return 'Check the password requirements and try again.'
   if (code === 'ACCOUNT_OPERATION_INVALID') return 'Link expired or used.'
-  if (code === 'PASSWORD_INCORRECT') return 'Current password is wrong.'
+  if (code === 'PASSWORD_INCORRECT') return 'Password does not match.'
   if (code === 'PASSWORD_UNCHANGED') return 'Choose a different password.'
   if (code === 'REQUEST_TIMEOUT') return 'Request timed out.'
   return 'Could not save password.'
@@ -82,6 +114,8 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
+  const [currentPasswordError, setCurrentPasswordError] = useState('')
+  const [currentPasswordShake, setCurrentPasswordShake] = useState(false)
   const [busy, setBusy] = useState(false)
   const [completed, setCompleted] = useState(false)
   const [error, setError] = useState('')
@@ -92,37 +126,36 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   const validLink = /^[0-9a-f]{64}$/.test(linkToken)
   const passwordBytes = new TextEncoder().encode(password).length
   const passwordCharacters = Array.from(password).length
-  const hasRequiredCharacters = /[a-z]/.test(password) && /[A-Z]/.test(password)
-    && /[0-9]/.test(password) && /[!-/:-@\[-`{-~]/.test(password)
-  const confirmationMatches = confirmation.length > 0 && password === confirmation
+  const hasLength = passwordCharacters >= 12 && passwordBytes <= 72
+  const hasUpperAndLower = /[a-z]/.test(password) && /[A-Z]/.test(password)
+  const hasNumberAndSymbol = /[0-9]/.test(password) && /[!-/:-@\[-`{-~]/.test(password)
+  const hasRequiredCharacters = hasUpperAndLower && hasNumberAndSymbol
+  const confirmationMatches = password.length > 0 && password === confirmation
+  const metRulesCount = [hasLength, hasUpperAndLower, hasNumberAndSymbol, confirmationMatches].filter(Boolean).length
+
+  const newPasswordWarning = password.length > 0 && (!hasLength || !hasRequiredCharacters)
+    ? 'Include at least 12 characters, uppercase, lowercase, a number, and a special character.'
+    : ''
+  const confirmPasswordWarning = confirmation.length > 0 && password !== confirmation
+    ? 'Passwords do not match.'
+    : ''
+
   const mode = changePassword
     ? {
-        badge: 'Password update',
         brandTitle: 'Protect your account',
         title: 'Change password',
-        description: 'Choose a new password.',
       }
     : resetPassword
       ? {
-          badge: 'Password reset',
           brandTitle: 'Reset your password',
           brandDescription: 'Choose a new account password.',
           title: 'Reset password',
-          description: 'Choose a new password for your account.',
         }
     : {
-        badge: 'Secure setup',
         brandTitle: 'Secure account setup',
         brandDescription: 'Create your account password.',
         title: 'Create password',
-        description: 'Finish your account setup.',
       }
-  const requirements = [
-    { label: 'Uppercase, lowercase, number, special character', met: hasRequiredCharacters },
-    { label: 'At least 12 characters', met: passwordCharacters >= 12 },
-    { label: 'Max 72 UTF-8 bytes', met: password.length > 0 && passwordBytes <= 72 },
-    { label: confirmationMatches ? 'Passwords match' : 'Passwords must match', met: confirmationMatches },
-  ]
 
   useEffect(() => {
     if (!changePassword) window.history.replaceState(window.history.state, '', window.location.pathname)
@@ -170,6 +203,14 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   async function submit(event) {
     event.preventDefault()
     if (submitting.current || (!changePassword && linkState !== 'valid')) return
+    setCurrentPasswordError('')
+    setCurrentPasswordShake(false)
+    if (changePassword && !currentPassword) {
+      setCurrentPasswordError('Password does not match.')
+      setCurrentPasswordShake(true)
+      firstFieldRef.current?.focus()
+      return
+    }
     if (password !== confirmation) { setError('Passwords do not match.'); return }
     if (passwordCharacters < 12 || passwordBytes > 72) {
       setError('Use at least 12 characters and no more than 72 UTF-8 bytes.'); return
@@ -189,6 +230,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
       setPassword('')
       setConfirmation('')
       setCurrentPassword('')
+      setCurrentPasswordError('')
       setLinkToken('')
       setCompleted(true)
       if (changePassword) await logout()
@@ -197,6 +239,12 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
         setLinkState('invalid')
         setPassword('')
         setConfirmation('')
+      }
+      if (changePassword && failure.code === 'PASSWORD_INCORRECT') {
+        setCurrentPasswordError('Password does not match.')
+        setCurrentPasswordShake(true)
+        firstFieldRef.current?.focus()
+        return
       }
       setError(passwordErrorMessage(failure.code))
     } finally {
@@ -252,7 +300,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
       </section>
 
       <section className="form-panel password-form-panel" aria-labelledby="password-setup-title">
-        <div className="password-card">
+        <div className="password-card password-card-compact w-full max-w-[480px] bg-[#0b111e]/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-8 shadow-2xl space-y-6">
           {completed ? (
             <div className="password-state" role="status">
               <span className="password-state-icon password-state-success" aria-hidden="true">
@@ -290,80 +338,123 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
             </div>
           ) : (
             <>
-              <span className="password-security-badge">
-                <UserRoundCheck size={16} aria-hidden="true" />
-                {mode.badge}
-              </span>
-
-              <div className="password-heading">
-                <h1 id="password-setup-title">{mode.title}</h1>
-                <p>{mode.description}</p>
+              <div className="password-compact-header flex items-center justify-between">
+                <h1 id="password-setup-title" className="text-xl font-semibold tracking-tight text-white">
+                  {mode.title}
+                </h1>
+                <span className="password-char-counter text-xs font-mono text-slate-500 tabular-nums" aria-live="polite">
+                  {passwordCharacters} / 72 chars
+                </span>
               </div>
 
               {error ? (
                 <div className="password-notice password-notice-error" role="alert">
-                  <CircleAlert size={18} aria-hidden="true" />
+                  <CircleAlert size={16} aria-hidden="true" />
                   <span>{error}</span>
                 </div>
               ) : null}
 
-              <form className="password-form" onSubmit={submit} noValidate>
-                {changePassword ? (
+              <form className="password-form-compact space-y-5" onSubmit={submit} noValidate>
+                <div className="password-inputs-group space-y-4">
+                  {changePassword ? (
+                    <PasswordField
+                      id="current-password"
+                      label="Current password"
+                      placeholder="Enter current password"
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(event) => {
+                        setCurrentPassword(event.target.value)
+                        setCurrentPasswordError('')
+                        setCurrentPasswordShake(false)
+                      }}
+                      disabled={busy}
+                      inputRef={firstFieldRef}
+                      hasError={Boolean(currentPasswordError)}
+                      errorMessage={currentPasswordError}
+                      errorRole="alert"
+                      shake={currentPasswordShake}
+                      onAnimationEnd={() => setCurrentPasswordShake(false)}
+                    />
+                  ) : null}
+
                   <PasswordField
-                    id="current-password"
-                    label="Current password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    id="new-password"
+                    label="New password"
+                    placeholder="Enter new password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value)
+                      setError('')
+                    }}
                     disabled={busy}
-                    inputRef={firstFieldRef}
+                    inputRef={changePassword ? undefined : firstFieldRef}
+                    hasError={Boolean(newPasswordWarning)}
+                    errorMessage={newPasswordWarning}
                   />
-                ) : null}
 
-                <PasswordField
-                  id="new-password"
-                  label="New password"
-                  autoComplete="new-password"
-                  describedBy="password-requirements"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  <PasswordField
+                    id="confirm-password"
+                    label="Confirm password"
+                    placeholder="Confirm new password"
+                    autoComplete="new-password"
+                    value={confirmation}
+                    onChange={(event) => {
+                      setConfirmation(event.target.value)
+                      setError('')
+                    }}
+                    disabled={busy}
+                    hasError={Boolean(confirmPasswordWarning)}
+                    errorMessage={confirmPasswordWarning}
+                  />
+                </div>
+
+                <div className="password-validation-block pt-1">
+                  <div className="password-strength-bar grid grid-cols-4 gap-1.5" aria-hidden="true">
+                    {[1, 2, 3, 4].map((segmentIndex) => {
+                      const activeLevel = segmentIndex <= metRulesCount ? metRulesCount : 0
+                      const colorClass = activeLevel > 0 ? STRENGTH_COLORS[activeLevel] : 'bg-slate-800'
+                      return (
+                        <div
+                          key={segmentIndex}
+                          data-strength-segment={segmentIndex}
+                          data-strength-level={activeLevel}
+                          className={`password-strength-segment h-1.5 rounded-full ${colorClass} transition-colors duration-200`}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="password-submit-compact w-full h-11 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white text-sm font-semibold shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
                   disabled={busy}
-                  inputRef={changePassword ? undefined : firstFieldRef}
-                />
-
-                <ul id="password-requirements" className="password-requirements" aria-label="Password requirements">
-                  {requirements.map((requirement) => (
-                    <li key={requirement.label} className={requirement.met ? 'is-met' : ''}>
-                      {requirement.met ? <Check size={16} aria-hidden="true" /> : <Circle size={14} aria-hidden="true" />}
-                      <span className="sr-only">{requirement.met ? 'Met: ' : 'Required: '}</span>
-                      {requirement.label}
-                    </li>
-                  ))}
-                </ul>
-
-                <PasswordField
-                  id="confirm-password"
-                  label="Confirm password"
-                  autoComplete="new-password"
-                  describedBy="password-requirements"
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                  disabled={busy}
-                />
-
-                <button className="btn btn-primary password-primary-action" disabled={busy}>
-                  {busy ? <LoaderCircle className="password-spinner" size={18} aria-hidden="true" /> : <ShieldCheck size={18} aria-hidden="true" />}
+                >
+                  {busy ? (
+                    <LoaderCircle className="password-spinner w-4 h-4" size={16} aria-hidden="true" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4" size={16} aria-hidden="true" />
+                  )}
                   {busy ? 'Saving...' : changePassword ? 'Change password' : resetPassword ? 'Reset password' : 'Set password'}
                 </button>
               </form>
 
               {changePassword ? (
-                <div className="password-card-footer">
-                  <span>Need another option?</span>
-                  <button type="button" disabled={busy} onClick={logout}>Sign out</button>
+                <div className="password-footer-compact pt-4 border-t border-white/[0.06] flex items-center justify-center gap-1.5 text-xs">
+                  <span className="text-slate-400">Need another option?</span>
+                  <button
+                    type="button"
+                    className="font-medium text-blue-400 hover:text-blue-300 transition-colors"
+                    disabled={busy}
+                    onClick={logout}
+                  >
+                    Sign out
+                  </button>
                 </div>
               ) : (
-                <p className="password-privacy-note">
+                <p className="password-privacy-note password-footer-compact">
                   <ShieldCheck size={16} aria-hidden="true" />
                   Password stays private.
                 </p>

@@ -91,7 +91,7 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
     const chunk = eventIds.slice(i, i + CHUNK_SIZE)
     const { data, error } = await supabase
       .from('production_item_specs')
-      .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, label, size, radius, circumference, updated_at, updated_by')
+      .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, tonnage, label, size, radius, circumference, updated_at, updated_by')
       .in('sensor_event_id', chunk)
 
     if (error) {
@@ -107,7 +107,7 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
 }
 
 async function updateProductionSpec(
-  { eventId, customer, diameter, thickness, length, pipeNumber, actorUserId, expectedUpdatedAt },
+  { eventId, customer, diameter, thickness, length, pipeNumber, tonnage, actorUserId, expectedUpdatedAt },
   suppliedClient,
 ) {
   const supabase = suppliedClient || getSupabaseClient()
@@ -120,6 +120,7 @@ async function updateProductionSpec(
     p_pipe_number: pipeNumber ?? null,
     p_actor_user_id: actorUserId,
     p_expected_updated_at: expectedUpdatedAt ?? null,
+    p_tonnage: tonnage ?? null,
   })
 
   if (error) {
@@ -135,7 +136,7 @@ async function updateProductionSpec(
 }
 
 async function batchUpdateProductionSpecs(
-  { sensorEventIds, startedAt, endedAt, onlyUnlabeled, customer, diameter, thickness, length, actorUserId },
+  { sensorEventIds, startedAt, endedAt, onlyUnlabeled, customer, diameter, thickness, length, tonnage, actorUserId },
   suppliedClient,
 ) {
   const supabase = suppliedClient || getSupabaseClient()
@@ -149,6 +150,7 @@ async function batchUpdateProductionSpecs(
     p_thickness: thickness ?? null,
     p_length: length ?? null,
     p_actor_user_id: actorUserId,
+    p_tonnage: tonnage ?? null,
   })
 
   if (error) {

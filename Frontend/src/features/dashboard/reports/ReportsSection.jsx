@@ -1,10 +1,15 @@
+import './reports-compact.css'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useQueryClient } from '@tanstack/react-query'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import TrendCalendarControl, { normalizeCalendarSelection } from '../overview/TrendCalendarControl.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
-import { exportReport, getReportSummary, reportCategories, reportTypes } from './reportsService.js'
+import { exportReport, getReportSummary, reportCategories } from './reportsService.js'
 import { formatDimension, formatPercentage, formatTonnage, getReportCards } from './reportsPresentation.js'
 import '../production/ProductionSection.css'
 
@@ -71,9 +76,7 @@ function getManilaDateInputValue() {
   }).format(new Date())
 }
 
-function getQueryKey(category, reportType, selectedDate) {
-  return `${category}:${reportType}:${selectedDate}`
-}
+
 
 function parseLocalDate(value) {
   const [year, month, day] = String(value).split('-').map(Number)
@@ -148,10 +151,9 @@ function ReportSummaryCard({ card }) {
     >
       <div className="reports-stat-heading">
         <p className="stat-label">{card.label}</p>
-        {card.isPrimary ? <ReportDeltaBadge delta={card.delta} /> : null}
+        {card.isPrimary ? <ReportDeltaBadge delta={card.delta} /> : card.id === 'downtime' && card.value.includes(' · ') ? <span className="reports-delta-badge">{card.value.split(' · ')[0]}</span> : null}
       </div>
-      <p className="reports-stat-value">{card.value}</p>
-      <p className="stat-helper">{card.helper}</p>
+      <p className="reports-stat-value">{card.id === 'downtime' && card.value.includes(' · ') ? card.value.split(' · ')[1] : card.value}</p>
     </article>
   )
 }
@@ -176,7 +178,8 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
           aria-expanded={isOpen}
           disabled={isBlocked}
         >
-          {isExporting ? <RotateCw className="spin-icon" size={18} aria-hidden="true" /> : <Download size={18} aria-hidden="true" />}
+          {isExporting ? <RotateCw className="spin-icon" size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}
+          <span>Export</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="reports-export-menu" aria-label="Export report format">
@@ -307,9 +310,8 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
               return (
                 <button
                   key={cat.id}
-                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${
-                    isSelected ? 'is-active' : ''
-                  }`}
+                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${isSelected ? 'is-active' : ''
+                    }`}
                   type="button"
                   role="menuitem"
                   aria-checked={isSelected}
@@ -332,77 +334,40 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
 
 export default function ReportsSection() {
   const { token } = useAuth()
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
   const [category, setCategory] = useState('regular')
   const [reportType, setReportType] = useState('daily')
   const [selectedDate, setSelectedDate] = useState(getManilaDateInputValue)
-  const [report, setReport] = useState(null)
-  const [loadedRequestKey, setLoadedRequestKey] = useState('')
-  const [loadState, setLoadState] = useState('loading')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState(null)
-  const [refreshRequest, setRefreshRequest] = useState(0)
   const [exportState, setExportState] = useState('idle')
   const [exportingFormat, setExportingFormat] = useState(null)
   const [exportErrorMessage, setExportErrorMessage] = useState('')
-  const requestIdRef = useRef(0)
-  const successfulReportRef = useRef(null)
   const currentDate = getManilaDateInputValue()
   const selectedCalendarDate = parseLocalDate(selectedDate)
   const maxCalendarDate = parseLocalDate(currentDate)
   const calendarMode = getCalendarMode(reportType)
   const calendarRangeLabel = getCalendarRangeLabel(reportType, selectedCalendarDate)
-  const queryKey = getQueryKey(category, reportType, selectedDate)
-  const requestKey = `${token || 'anonymous'}:${queryKey}`
-  const hasCurrentReport = Boolean(report && loadedRequestKey === requestKey)
+  const params = { category, reportType, selectedDate, includeComparison: true }
+  const query = useAuthenticatedQuery({
+    queryKey: queryKeys.reports.summary(params),
+    queryFn: async ({ token: currentToken, signal }) => {
+      const payload = await getReportSummary(currentToken, params, { signal })
+      return payload.report || { summary: [], rows: [] }
+    },
+    staleTime: 60000,
+    refetchOnWindowFocus: true,
+  })
+  const report = query.data
+  const hasCurrentReport = Boolean(report)
+  const loadState = query.isError || !online ? (report ? 'stale' : 'error') : query.isFetching ? 'loading' : 'success'
+  const errorMessage = query.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load report summary.')
+  const lastSuccessfulUpdate = query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : null
   const isCurrentSuccess = loadState === 'success' && hasCurrentReport
   const reportCards = hasCurrentReport ? getReportCards(report) : []
   const isProduction = category === 'production'
 
-  useEffect(() => {
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    let isCancelled = false
-
-    async function loadReport() {
-      setLoadState('loading')
-      setErrorMessage('')
-
-      try {
-        const payload = await getReportSummary(token, { category, reportType, selectedDate, includeComparison: true })
-        if (isCancelled || requestId !== requestIdRef.current) return
-
-        const nextReport = payload.report || { summary: [], rows: [] }
-        const updatedAt = new Date()
-        successfulReportRef.current = { requestKey, report: nextReport, updatedAt }
-        setReport(nextReport)
-        setLoadedRequestKey(requestKey)
-        setLastSuccessfulUpdate(updatedAt)
-        setLoadState('success')
-      } catch (error) {
-        if (isCancelled || requestId !== requestIdRef.current) return
-
-        setErrorMessage(error.message || 'Unable to load report summary.')
-
-        if (successfulReportRef.current?.requestKey === requestKey) {
-          setReport(successfulReportRef.current.report)
-          setLoadedRequestKey(requestKey)
-          setLastSuccessfulUpdate(successfulReportRef.current.updatedAt)
-          setLoadState('stale')
-        } else {
-          setLoadState('error')
-        }
-      }
-    }
-
-    loadReport()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [category, queryKey, refreshRequest, reportType, requestKey, selectedDate, token])
-
   function retryCurrentReport() {
-    setRefreshRequest((current) => current + 1)
+    void query.refetch()
   }
 
   function handleReportTypeChange(nextReportType) {
@@ -427,6 +392,7 @@ export default function ReportsSection() {
 
     try {
       const { blob, filename } = await exportReport(token, { category, reportType, selectedDate, format })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       downloadBlob(blob, filename)
       setExportState('idle')
       setExportingFormat(null)
@@ -436,6 +402,40 @@ export default function ReportsSection() {
       setExportingFormat(null)
     }
   }
+
+  const controls = (
+        <div className="reports-controls">
+          <ReportCategoryFilter category={category} onSelectCategory={setCategory} />
+          <TrendCalendarControl
+            mode={calendarMode}
+            selectedDate={selectedCalendarDate}
+            maxDate={maxCalendarDate}
+            rangeLabel={calendarRangeLabel}
+            onDateChange={handleCalendarDateChange}
+            onModeChange={(nextMode) => {
+              const nextType = nextMode === 'week' ? 'weekly' : nextMode === 'month' ? 'monthly' : 'daily'
+              handleReportTypeChange(nextType)
+            }}
+          />
+          <div className="reports-controls-actions">
+            <button
+              className="btn reports-icon-button"
+              type="button"
+              aria-label="Refresh report"
+              disabled={loadState === 'loading'}
+              onClick={retryCurrentReport}
+            >
+              <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={18} aria-hidden="true" />
+            </button>
+            <ExportMenu
+              isBlocked={isExportBlocked}
+              exportState={exportState}
+              exportingFormat={exportingFormat}
+              onExport={handleExport}
+            />
+          </div>
+        </div>
+  )
 
   return (
     <div className="reports-layout">
@@ -462,72 +462,8 @@ export default function ReportsSection() {
         </div>
       ) : null}
 
-      <section className="section-card reports-controls-card" aria-labelledby="reports-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Management report</p>
-            <h2 id="reports-title">Generate summary</h2>
-          </div>
-        </div>
-
-        <div className="reports-controls">
-          <ReportCategoryFilter category={category} onSelectCategory={setCategory} />
-          <fieldset className="reports-period-fieldset">
-            <legend className="sr-only">Report period</legend>
-            <div className="trend-mode-toggle reports-period-toggle" role="group" aria-label="Report period">
-              {reportTypes.map((type) => (
-                <button
-                  key={type.id}
-                  className={`trend-mode-button reports-period-button ${reportType === type.id ? 'is-selected' : ''}`}
-                  type="button"
-                  aria-pressed={reportType === type.id}
-                  onClick={() => handleReportTypeChange(type.id)}
-                >
-                  {type.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <TrendCalendarControl
-            mode={calendarMode}
-            selectedDate={selectedCalendarDate}
-            maxDate={maxCalendarDate}
-            rangeLabel={calendarRangeLabel}
-            onDateChange={handleCalendarDateChange}
-          />
-          <div className="reports-controls-actions">
-            <button
-              className="btn reports-icon-button"
-              type="button"
-              aria-label="Refresh report"
-              disabled={loadState === 'loading'}
-              onClick={retryCurrentReport}
-            >
-              <RotateCw className={loadState === 'loading' ? 'spin-icon' : ''} size={18} aria-hidden="true" />
-            </button>
-            <ExportMenu
-              isBlocked={isExportBlocked}
-              exportState={exportState}
-              exportingFormat={exportingFormat}
-              onExport={handleExport}
-            />
-          </div>
-        </div>
-
-        {exportErrorMessage ? (
-          <div className="notice notice-error dashboard-alert" role="alert">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>{exportErrorMessage}</span>
-          </div>
-        ) : null}
-      </section>
-
-      {hasCurrentReport && report.periodState === 'partial' ? (
-        <div className="notice reports-period-banner dashboard-alert" role="status">
-          <Info size={16} aria-hidden="true" />
-          <span>Partial report. Values cover recorded time so far.</span>
-        </div>
-      ) : null}
+      {controls}
+      {exportErrorMessage ? <div className="notice notice-error dashboard-alert" role="alert"><AlertTriangle size={16} aria-hidden="true" /><span>{exportErrorMessage}</span></div> : null}
 
       {hasCurrentReport && report.periodState === 'future' ? (
         <div className="notice reports-period-banner dashboard-alert" role="status">
@@ -553,15 +489,8 @@ export default function ReportsSection() {
         </section>
       ) : hasCurrentReport ? (
         <>
-          <section className="reports-summary-primary-grid" aria-label="Primary report summary">
-            {reportCards.filter((card) => card.isPrimary).map((card) => (
-              <ReportSummaryCard key={card.id} card={card} />
-            ))}
-          </section>
-          <section className="reports-summary-secondary-grid" aria-label="Secondary report summary">
-            {reportCards.filter((card) => !card.isPrimary).map((card) => (
-              <ReportSummaryCard key={card.id} card={card} />
-            ))}
+          <section className="reports-compact-summary" aria-label="Report summary">
+            {reportCards.map((card) => <ReportSummaryCard key={card.id} card={card} />)}
           </section>
         </>
       ) : null}
@@ -572,7 +501,6 @@ export default function ReportsSection() {
             <section className="section-card reports-table-card" aria-labelledby="reports-specs-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Product distribution</p>
                   <h2 id="reports-specs-title">Output by product specification</h2>
                 </div>
               </div>
@@ -634,7 +562,6 @@ export default function ReportsSection() {
             <section className="section-card reports-table-card" aria-labelledby="reports-cuts-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Cut history</p>
                   <h2 id="reports-cuts-title">S-05 cutting events</h2>
                 </div>
               </div>
@@ -697,14 +624,16 @@ export default function ReportsSection() {
           ) : null}
         </>
       ) : (
-        <>
+        <div className="reports-detail-grid">
           {loadState !== 'error' ? (
             <section className="section-card reports-table-card" aria-labelledby="reports-process-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Process activity</p>
                   <h2 id="reports-process-title">Events by process sensor</h2>
                 </div>
+                {hasCurrentReport && report.processSensors?.length > 0 && report.processSensors.every((sensor) => Number.isFinite(sensor.eventCount)) ? (
+                  <span className="section-chip">{report.processSensors.reduce((total, sensor) => total + sensor.eventCount, 0)} events</span>
+                ) : null}
               </div>
 
               <div className="account-table-wrap">
@@ -734,7 +663,6 @@ export default function ReportsSection() {
             <section className="section-card reports-table-card" aria-labelledby="reports-table-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-eyebrow">Grouped output</p>
                   <h2 id="reports-table-title">Downtime by cause and sensor</h2>
                 </div>
               </div>
@@ -757,7 +685,7 @@ export default function ReportsSection() {
                       </tr>
                     ) : hasCurrentReport && report.rows.length === 0 ? (
                       <tr>
-                        <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : 'No downtime rows found for this report range.'}</td>
+                        <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : <span className="reports-empty-state"><Check size={16} aria-hidden="true" /><span>No downtime events</span></span>}</td>
                       </tr>
                     ) : hasCurrentReport ? (
                       report.rows.map((row, index) => (
@@ -775,7 +703,7 @@ export default function ReportsSection() {
               </div>
             </section>
           ) : null}
-        </>
+        </div>
       )}
     </div>
   )

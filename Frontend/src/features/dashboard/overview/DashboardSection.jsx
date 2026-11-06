@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import './overview.css'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useOutletContext } from 'react-router'
 import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { onlineManager } from '@tanstack/react-query'
+import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
@@ -10,14 +17,14 @@ import { getLiveFeed } from '../live/liveService.js'
 import { connectivityLabel, getProcessIdleBanner, getProcessSensorFaultBanner } from '../live/livePresentation.js'
 import DowntimeTrendChart, {
   getTrendRangeLabel,
-  startOfDay,
+  fromDateInputValue,
   toDateInputValue,
   toMonthInputValue,
-  trendModes,
 } from './DowntimeTrendChart.jsx'
 import ProductionAnalytics from './ProductionAnalytics.jsx'
 import TrendCalendarControl from './TrendCalendarControl.jsx'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
+import { getManilaDateInputValue } from '../analytics/analyticsService.js'
 
 const AUTO_REFRESH_MS = 60 * 1000
 
@@ -91,22 +98,6 @@ function getRequestDisplayState({ state, hasCurrentData, errorKey, currentKey })
   return hasCurrentData ? state : 'loading'
 }
 
-function SensorStatusIcon({ status }) {
-  if (status === 'Downtime') {
-    return <AlertTriangle size={16} aria-hidden="true" />
-  }
-
-  if (status === 'Fault') {
-    return <Wrench size={16} aria-hidden="true" />
-  }
-
-  if (status === 'Idle' || status === 'Unavailable') {
-    return <PauseCircle size={16} aria-hidden="true" />
-  }
-
-  return <CircleCheck size={16} aria-hidden="true" />
-}
-
 function isRecoveryPendingAlert(alert) {
   return alert?.status === 'Active' && alert.metadata?.recoveryPending === true
 }
@@ -132,13 +123,6 @@ function isDangerOverviewAlert(alert) {
 export default function DashboardSection() {
   const { token } = useAuth()
   const alertContext = useOutletContext()
-  const [overviewState, setOverviewState] = useState('loading')
-  const [overviewData, setOverviewData] = useState(null)
-  const [overviewRequestKey, setOverviewRequestKey] = useState('')
-  const [overviewError, setOverviewError] = useState('')
-  const [overviewErrorKey, setOverviewErrorKey] = useState('')
-  const [overviewRefresh, setOverviewRefresh] = useState(0)
-  const overviewRequestIdRef = useRef(0)
   const [liveState, setLiveState] = useState('loading')
   const [liveData, setLiveData] = useState({ machine: null, sensors: [], monitoringMode: 'unknown' })
   const [liveRequestKey, setLiveRequestKey] = useState('')
@@ -148,31 +132,56 @@ export default function DashboardSection() {
   const [liveRefresh, setLiveRefresh] = useState(0)
   const liveRequestIdRef = useRef(0)
   const successfulLiveRef = useRef(null)
-  const [downtimeChartState, setDowntimeChartState] = useState('loading')
-  const [downtimeImpact, setDowntimeImpact] = useState(null)
-  const [downtimeChartRequestKey, setDowntimeChartRequestKey] = useState('')
-  const [downtimeChartError, setDowntimeChartError] = useState('')
-  const [downtimeChartErrorKey, setDowntimeChartErrorKey] = useState('')
-  const [downtimeChartLastUpdated, setDowntimeChartLastUpdated] = useState(null)
-  const [downtimeChartRefresh, setDowntimeChartRefresh] = useState(0)
-  const downtimeChartRequestIdRef = useRef(0)
-  const successfulDowntimeChartRef = useRef(null)
+  const wasOfflineRef = useRef(false)
   const [trendMode, setTrendMode] = useState('today')
-  const [trendAnchorDate, setTrendAnchorDate] = useState(() => startOfDay(new Date()))
-  const today = startOfDay(new Date())
+  const [trendAnchorDate, setTrendAnchorDate] = useState(() => fromDateInputValue(getManilaDateInputValue()))
+  const today = fromDateInputValue(getManilaDateInputValue())
   const trendRangeLabel = getTrendRangeLabel(trendMode, trendAnchorDate)
   const calendarValue = trendMode === 'month' ? toMonthInputValue(trendAnchorDate) : toDateInputValue(trendAnchorDate)
-  const overviewKey = `${token || 'anonymous'}:overview`
+  const online = useNetworkOnline()
+  useEffect(() => {
+    if (!online) {
+      wasOfflineRef.current = true
+      if (successfulLiveRef.current) {
+        setLiveState('stale')
+        setLiveError('Unable to refresh while offline.')
+      }
+    } else if (wasOfflineRef.current) {
+      wasOfflineRef.current = false
+      setLiveRefresh((current) => current + 1)
+    }
+  }, [online])
+  const overviewQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.overview.summary,
+    queryFn: ({ token: currentToken, signal }) => getDashboardOverview(currentToken, {}, { signal }),
+    staleTime: 20000,
+  })
+  const chartQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.overview.downtimeImpact({ trendMode, date: calendarValue }),
+    queryFn: async ({ token: currentToken, signal }) => (await getDashboardDowntimeImpact(currentToken, { trendMode, date: calendarValue }, { signal })).downtimeImpact || null,
+    staleTime: 20000,
+  })
+  const overviewData = overviewQuery.data
+  const hasCurrentOverview = Boolean(overviewData)
+  const overviewError = overviewQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load dashboard overview.')
+  const overviewState = overviewQuery.isError || !online ? (overviewData ? 'stale' : 'error') : overviewQuery.isFetching || !overviewData ? 'loading' : overviewData.summary?.length ? 'success' : 'empty'
+  const overviewDisplayState = overviewState
+  const downtimeImpact = chartQuery.data
+  const hasCurrentDowntimeChart = chartQuery.data !== undefined
+  const hasLoadedChartRef = useRef(false)
+  if (hasCurrentDowntimeChart) hasLoadedChartRef.current = true
+  const hasLoadedInitialChart = hasLoadedChartRef.current
+  const downtimeChartLastUpdated = chartQuery.dataUpdatedAt ? new Date(chartQuery.dataUpdatedAt) : null
+  const downtimeChartError = chartQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load downtime chart.')
+  const downtimeChartState = chartQuery.isError || !online ? (hasCurrentDowntimeChart ? 'stale' : 'error') : chartQuery.isFetching || !hasCurrentDowntimeChart ? 'loading' : downtimeImpact?.points?.length ? 'success' : 'empty'
+  const chartDisplayState = downtimeChartState
   const liveKey = `${token || 'anonymous'}:live`
-  const downtimeChartKey = `${token || 'anonymous'}:${trendMode}:${calendarValue}`
-  const hasCurrentOverview = overviewRequestKey === overviewKey && Boolean(overviewData)
   const hasCurrentLive = liveRequestKey === liveKey
-  const hasCurrentDowntimeChart = downtimeChartRequestKey === downtimeChartKey
   const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
   const trustedOverviewAlerts = alertContext?.unresolvedAlerts ?? alertContext?.activeAlerts ?? []
   const overviewAlerts = orderOverviewAlerts(alertContext?.hasTrustedAlertList
     ? trustedOverviewAlerts
-    : overviewData?.alerts || [])
+    : overviewQuery.isFetchedAfterMount && !overviewQuery.isError && online ? overviewData?.alerts || [] : [])
   const overviewAlertDestinations = Array.from(new Map(overviewAlerts.map((alert) => {
     const destination = getAlertDestination(alert)
     return [destination.to, destination]
@@ -185,44 +194,13 @@ export default function DashboardSection() {
     : null
 
   useEffect(() => {
-    const requestId = overviewRequestIdRef.current + 1
-    overviewRequestIdRef.current = requestId
-    let isCancelled = false
-
-    async function loadOverview() {
-      setOverviewState('loading')
-      setOverviewError('')
-
-      try {
-        const payload = await getDashboardOverview(token)
-        if (isCancelled || requestId !== overviewRequestIdRef.current) return
-
-        setOverviewData(payload)
-        setOverviewRequestKey(overviewKey)
-        setOverviewState(payload.summary?.length ? 'success' : 'empty')
-      } catch (error) {
-        if (isCancelled || requestId !== overviewRequestIdRef.current) return
-        setOverviewError(error.message || 'Unable to load dashboard overview.')
-        setOverviewErrorKey(overviewKey)
-        setOverviewState('error')
-      }
-    }
-
-    loadOverview()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [overviewKey, overviewRefresh, token])
-
-  useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setOverviewRefresh((current) => current + 1)
+      void overviewQuery.refetch()
+      void chartQuery.refetch()
       setLiveRefresh((current) => current + 1)
-      setDowntimeChartRefresh((current) => current + 1)
     }, AUTO_REFRESH_MS)
     return () => window.clearInterval(intervalId)
-  }, [overviewKey])
+  }, [liveKey, overviewQuery.refetch, chartQuery.refetch])
 
   useEffect(() => {
     const requestId = liveRequestIdRef.current + 1
@@ -230,12 +208,13 @@ export default function DashboardSection() {
     let isCancelled = false
 
     async function loadLiveStatus() {
-      setLiveState('loading')
+      setLiveState((current) => current === 'stale' ? 'stale' : 'loading')
       setLiveError('')
 
       try {
         const payload = await getLiveFeed(token)
         if (isCancelled || requestId !== liveRequestIdRef.current) return
+        if (!onlineManager.isOnline()) return
 
         const nextLiveData = {
           machine: payload.machine || null,
@@ -271,65 +250,6 @@ export default function DashboardSection() {
     }
   }, [liveKey, liveRefresh, token])
 
-  useEffect(() => {
-    const requestId = downtimeChartRequestIdRef.current + 1
-    downtimeChartRequestIdRef.current = requestId
-    let isCancelled = false
-
-    async function loadDowntimeImpact() {
-      setDowntimeChartState('loading')
-      setDowntimeChartError('')
-
-      try {
-        const payload = await getDashboardDowntimeImpact(token, {
-          trendMode,
-          date: calendarValue,
-        })
-
-        if (isCancelled || requestId !== downtimeChartRequestIdRef.current) return
-
-        const nextImpact = payload.downtimeImpact || null
-        const updatedAt = new Date()
-        successfulDowntimeChartRef.current = { requestKey: downtimeChartKey, data: nextImpact, updatedAt }
-        setDowntimeImpact(nextImpact)
-        setDowntimeChartRequestKey(downtimeChartKey)
-        setDowntimeChartLastUpdated(updatedAt)
-        setDowntimeChartState(nextImpact?.points?.length ? 'success' : 'empty')
-      } catch (error) {
-        if (isCancelled || requestId !== downtimeChartRequestIdRef.current) return
-
-        setDowntimeChartError(error.message || 'Unable to load downtime chart.')
-        setDowntimeChartErrorKey(downtimeChartKey)
-        if (successfulDowntimeChartRef.current?.requestKey === downtimeChartKey) {
-          setDowntimeImpact(successfulDowntimeChartRef.current.data)
-          setDowntimeChartRequestKey(downtimeChartKey)
-          setDowntimeChartLastUpdated(successfulDowntimeChartRef.current.updatedAt)
-          setDowntimeChartState('stale')
-        } else {
-          setDowntimeChartState('error')
-        }
-      }
-    }
-
-    loadDowntimeImpact()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [calendarValue, downtimeChartKey, downtimeChartRefresh, token, trendMode])
-
-  const overviewDisplayState = getRequestDisplayState({
-    state: overviewState,
-    hasCurrentData: hasCurrentOverview,
-    errorKey: overviewErrorKey,
-    currentKey: overviewKey,
-  })
-  const chartDisplayState = getRequestDisplayState({
-    state: downtimeChartState,
-    hasCurrentData: hasCurrentDowntimeChart,
-    errorKey: downtimeChartErrorKey,
-    currentKey: downtimeChartKey,
-  })
   const liveDisplayState = getRequestDisplayState({
     state: liveState,
     hasCurrentData: hasCurrentLive,
@@ -337,7 +257,7 @@ export default function DashboardSection() {
     currentKey: liveKey,
   })
   const overviewIsReady = hasCurrentOverview
-    && (overviewDisplayState === 'success' || overviewDisplayState === 'loading')
+    && (overviewDisplayState === 'success' || overviewDisplayState === 'loading' || overviewDisplayState === 'stale')
   const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
   const productionDifference = selectedAnalytics?.difference ?? 0
   const summaryById = overviewIsReady
@@ -416,52 +336,63 @@ export default function DashboardSection() {
   const isUnifiedRefreshing = overviewState === 'loading' || liveState === 'loading' || downtimeChartState === 'loading'
 
   const handleUnifiedRefresh = () => {
-    setOverviewRefresh((current) => current + 1)
+    void overviewQuery.refetch()
     setLiveRefresh((current) => current + 1)
-    setDowntimeChartRefresh((current) => current + 1)
+    void chartQuery.refetch()
   }
 
-  return (
-    <div className="overview-layout">
+  const controls = (
       <div className="overview-controls-card">
         <div className="overview-meta-strip">
           <span className="overview-meta-item">
             <Factory size={16} aria-hidden="true" />
-            <span>Machine:</span>
+
             <strong>{hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'}</strong>
           </span>
           <span className="overview-meta-item">
             <CircleCheck size={16} aria-hidden="true" />
-            <span>Sensors:</span>
-            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : '5 / 5 reporting'}</strong>
+
+            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : 'Reporting unavailable'}</strong>
           </span>
           <span className="overview-meta-item">
             <Clock3 size={16} aria-hidden="true" />
-            <span>Last sync:</span>
-            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Active session'}</strong>
+
+            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Not synced'}</strong>
           </span>
         </div>
         <button
-          className="btn btn-success overview-refresh-button"
+          className="icon-button overview-refresh-button"
           type="button"
           aria-label="Refresh overview data"
+          title="Refresh overview data"
           disabled={isUnifiedRefreshing}
           onClick={handleUnifiedRefresh}
         >
           <RotateCw className={isUnifiedRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-          Refresh
         </button>
       </div>
+  )
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('overview-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('overview-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('overview-header-controls')
+
+  return (
+    <div className="overview-layout">
+      {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
 
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
+      {overviewDisplayState === 'stale' ? <div className="notice notice-error" role="alert">Overview data is stale. {overviewQuery.dataUpdatedAt ? `Last updated ${formatSuccessfulUpdate(new Date(overviewQuery.dataUpdatedAt))}. ` : ''}{overviewError} <button type="button" onClick={() => overviewQuery.refetch()}>Retry overview</button></div> : null}
       {overviewDisplayState === 'error' ? (
         <section className="section-card section-placeholder" aria-labelledby="overview-error-title">
           <div className="section-copy">
             <p className="section-eyebrow">Overview unavailable</p>
             <h2 id="overview-error-title">Unable to load dashboard overview</h2>
             <p role="alert">{overviewError}</p>
-            <button className="btn btn-secondary" type="button" onClick={() => setOverviewRefresh((current) => current + 1)}>
+            <button className="btn btn-secondary" type="button" onClick={() => overviewQuery.refetch()}>
               Retry overview
             </button>
           </div>
@@ -535,9 +466,12 @@ export default function DashboardSection() {
                 <span className="overview-alert-message">{processIdleBanner.message}</span>
               </div>
               {processIdleBanner.extraCount > 0 ? (
-                <span className="overview-alert-count">
-                  +{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}
-                </span>
+                <details className="overview-idle-details">
+                  <summary>+{processIdleBanner.extraCount} more idle sensor{processIdleBanner.extraCount > 1 ? 's' : ''}</summary>
+                  {processIdleBanner.sensors.slice(1).map((sensor) => (
+                    <div key={sensor.sensorCode}>{sensor.sensorCode} {sensor.label}</div>
+                  ))}
+                </details>
               ) : null}
               <Link
                 to="/dashboard/live"
@@ -559,12 +493,11 @@ export default function DashboardSection() {
             <article key={item.id} className={`section-card stat-card stat-card-${item.tone}`}>
               <div className="stat-card-heading">
                 <span className="stat-card-icon" aria-hidden="true">
-                  <Icon size={22} />
+                  <Icon size={15} />
                 </span>
                 <p className="stat-label">{item.label}</p>
               </div>
               <p className="stat-value">{item.value}</p>
-              <p className="stat-helper">{item.helper}</p>
             </article>
           )
         })}
@@ -580,42 +513,27 @@ export default function DashboardSection() {
         <section className="section-card downtime-chart-card">
           <div className="section-heading">
             <div>
-              <p className="section-eyebrow">Downtime chart</p>
-              {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+              {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
                 <SkeletonBlock className="skeleton-heading" />
               ) : (
                 <h2>Downtime by Period</h2>
               )}
             </div>
-            {chartDisplayState === 'loading' && !hasCurrentDowntimeChart ? (
+            {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
               <div className="trend-controls-skeleton" aria-hidden="true">
-                <SkeletonBlock className="skeleton-toggle" />
                 <SkeletonBlock className="skeleton-control" />
               </div>
             ) : (
               <div className="trend-controls" aria-label="Downtime chart controls">
-                <div className="trend-mode-toggle" role="group" aria-label="Chart range">
-                  {trendModes.map((mode) => (
-                    <button
-                      key={mode.id}
-                      className={`trend-mode-button ${trendMode === mode.id ? 'is-selected' : ''}`}
-                      type="button"
-                      aria-pressed={trendMode === mode.id}
-                      onClick={() => {
-                        setTrendMode(mode.id)
-                        setTrendAnchorDate(startOfDay(new Date()))
-                      }}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
                 <TrendCalendarControl
                   mode={trendMode}
                   selectedDate={trendAnchorDate}
                   maxDate={today}
                   rangeLabel={trendRangeLabel}
                   onDateChange={setTrendAnchorDate}
+                  onModeChange={setTrendMode}
+                  triggerAriaLabel={`Selected period ${trendRangeLabel}`}
+                  triggerLabel=""
                 />
               </div>
             )}
@@ -630,7 +548,7 @@ export default function DashboardSection() {
                 </time>
                 . {downtimeChartError}
               </span>
-              <button className="btn btn-secondary table-action-button" type="button" onClick={() => setDowntimeChartRefresh((current) => current + 1)}>
+              <button className="btn btn-secondary table-action-button" type="button" onClick={() => chartQuery.refetch()}>
                 Retry chart
               </button>
             </div>
@@ -644,7 +562,7 @@ export default function DashboardSection() {
             <div className="notice notice-error dashboard-alert" role="alert">
               <AlertTriangle size={16} aria-hidden="true" />
               <span>{downtimeChartError}</span>
-              <button className="btn btn-secondary table-action-button" type="button" onClick={() => setDowntimeChartRefresh((current) => current + 1)}>
+              <button className="btn btn-secondary table-action-button" type="button" onClick={() => chartQuery.refetch()}>
                 Retry chart
               </button>
             </div>
@@ -705,11 +623,10 @@ export default function DashboardSection() {
           </div>
         </section>
       ) : hasCurrentLive ? (
-        <section className="section-card machine-health-card" aria-labelledby="machine-health-title">
+        <section className="machine-health-card" aria-labelledby="machine-health-title">
           <div className="section-heading">
             <div>
-              <p className="section-eyebrow">Machine health</p>
-              <h2 id="machine-health-title">{liveData.machine?.name || 'Spiral Mill 01'}</h2>
+              <h2 id="machine-health-title">Machine Health · {liveData.machine?.name || 'Spiral Mill 01'}</h2>
             </div>
             <div className="live-refresh">
               <span className="section-chip">
@@ -731,7 +648,7 @@ export default function DashboardSection() {
                 <time dateTime={liveLastUpdated?.toISOString()}>
                   {liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'an earlier update'}
                 </time>
-                . {liveError}
+                {' '}(updated <UpdatedAgo updatedAt={liveLastUpdated} />). {liveError}
               </span>
               <button className="btn btn-secondary table-action-button" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
                 Retry live status
@@ -743,17 +660,12 @@ export default function DashboardSection() {
             {sensorHealth.map((sensor) => (
               <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
                 <div className="overview-sensor-heading">
-                  <span className="sensor-state-icon" aria-hidden="true">
-                    <SensorStatusIcon status={sensor.status} />
-                  </span>
-                  <div>
-                    <p>{sensor.code}</p>
-                    <h3>{sensor.label}</h3>
-                  </div>
+                  <span>{sensor.code}</span>
+                  <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status === 'Fault' ? <Wrench size={12} aria-hidden="true" /> : null}{sensor.status}</span>
                 </div>
+                <h3 title={sensor.label}>{sensor.label}</h3>
                 <div className="overview-sensor-footer">
-                  <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status}</span>
-                  <span>{sensor.lastEventAt ? `Last event ${formatLiveDateTime(sensor.lastEventAt)}` : 'No recent event'}</span>
+                  <span>{sensor.lastEventAt ? formatLiveDateTime(sensor.lastEventAt) : 'No recent event'}</span>
                   <span>Connection: {connectivityLabel(sensor)}</span>
                 </div>
               </article>

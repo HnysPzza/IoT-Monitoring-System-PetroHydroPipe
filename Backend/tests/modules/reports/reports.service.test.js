@@ -162,6 +162,37 @@ function loadReportsService(fakeSupabase) {
   return require(path.join(backendRoot, 'src', 'modules', 'reports', 'reports.service.js'))
 }
 
+test('starts comparison reads while the selected report is pending', async () => {
+  const fake = createFakeSupabase()
+  const originalRpc = fake.rpc
+  let release
+  let calls = 0
+  fake.rpc = (...args) => {
+    calls += 1
+    return calls === 1 ? new Promise((resolve) => { release = () => resolve({ data: [], error: null }) }) : originalRpc(...args)
+  }
+  const service = loadReportsService(fake)
+  const request = service.getSummary({ type: 'daily', date: '2026-08-09', compare: true }, { asOf: new Date('2026-08-10T00:00:00Z') })
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.equal(calls, 2) } finally { release(); await request }
+})
+
+test('starts production comparison reads while selected production is pending', async () => {
+  const fake = createFakeSupabase()
+  const service = loadReportsService(fake)
+  const repository = require('../../../src/modules/reports/reports.repository')
+  const original = repository.findAcceptedCuttingEventsWithSpecs
+  let release
+  let calls = 0
+  repository.findAcceptedCuttingEventsWithSpecs = () => {
+    calls += 1
+    return calls === 1 ? new Promise((resolve) => { release = resolve }) : Promise.resolve([])
+  }
+  const request = service.getSummary({ category: 'production', type: 'daily', date: '2026-08-09', compare: true }, { asOf: new Date('2026-08-10T00:00:00Z') })
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.equal(calls, 2) } finally { release([]); await request; repository.findAcceptedCuttingEventsWithSpecs = original }
+})
+
 function getProductionSummary(report) {
   return report.summary.find((item) => item.id === 'production')
 }
@@ -427,21 +458,21 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
   assert.equal(report.periodState, 'complete')
 
   assert.equal(report.totalProductionOutput, 3)
-  assert.equal(report.totalTonnage, 2.3026)
+  assert.equal(report.totalTonnage, 2.3028)
   assert.equal(report.specifiedPipes, 2)
   assert.equal(report.unspecifiedPipes, 1)
   assert.equal(report.distinctProductSizes, 1)
 
   assert.deepEqual(report.metrics, {
     totalProductionOutput: 3,
-    totalTonnage: 2.3026,
+    totalTonnage: 2.3028,
     specifiedPipes: 2,
     unspecifiedPipes: 1,
     distinctProductSizes: 1,
   })
 
   const tonnageCard = report.summary.find((s) => s.id === 'total-tonnage')
-  assert.equal(tonnageCard.value, '2.3026 tons')
+  assert.equal(tonnageCard.value, '2.3028 tons')
 
   assert.equal(report.specBreakdown.length, 2)
   const specifiedGroup = report.specBreakdown[0]
@@ -449,8 +480,8 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
   assert.equal(specifiedGroup.diameter, 625.4)
   assert.equal(specifiedGroup.thickness, 12.7)
   assert.equal(specifiedGroup.length, 6000)
-  assert.equal(specifiedGroup.singleTonnage, 1.1513)
-  assert.equal(specifiedGroup.totalTonnage, 2.3026)
+  assert.equal(specifiedGroup.singleTonnage, 1.1514)
+  assert.equal(specifiedGroup.totalTonnage, 2.3028)
   assert.equal(specifiedGroup.label, 'Pipe A')
   assert.equal(specifiedGroup.size, '2 inch')
   assert.equal(specifiedGroup.radius, undefined)
@@ -483,12 +514,32 @@ test('production report computes KPIs, grouped specs, and chronological logs', a
   assert.equal(report.productionLogs[0].thickness, 12.7)
   assert.equal(report.productionLogs[0].length, 6000)
   assert.equal(report.productionLogs[0].pipeNumber, 101)
-  assert.equal(report.productionLogs[0].tonnage, 1.1513)
+  assert.equal(report.productionLogs[0].tonnage, 1.1514)
   assert.equal(report.productionLogs[0].isSpecified, true)
   assert.equal(report.productionLogs[2].deviceEventId, 'DEV-103')
   assert.equal(report.productionLogs[2].customer, null)
   assert.equal(report.productionLogs[2].tonnage, null)
   assert.equal(report.productionLogs[2].isSpecified, false)
+})
+
+test('production report uses manual tonnage override when present in production_item_specs', async () => {
+  const sensorEvents = [
+    { id: 'ev-m1', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, device_event_id: 'DEV-201', event_type: 'pulse', recorded_at: '2026-08-09T01:00:00.000Z', output_accepted: true },
+    { id: 'ev-m2', sensor_id: 'sensor-s05-id', machine_id: MACHINE_ID, device_event_id: 'DEV-202', event_type: 'pulse', recorded_at: '2026-08-09T02:00:00.000Z', output_accepted: true },
+  ]
+  const productionSpecs = [
+    { sensor_event_id: 'ev-m1', customer: 'MCWD', diameter: 625.4, thickness: 12.7, length: 6000, tonnage: 1.5, pipe_number: 101 },
+    { sensor_event_id: 'ev-m2', customer: 'MCWD', diameter: 625.4, thickness: 12.7, length: 6000, tonnage: null, pipe_number: 102 },
+  ]
+
+  const fakeSupabase = createFakeSupabase({ sensorEvents, productionSpecs })
+  const reportsService = loadReportsService(fakeSupabase)
+  const report = await reportsService.getSummary({ category: 'production', type: 'daily', date: '2026-08-09' })
+
+  assert.equal(report.totalTonnage, 2.6514)
+  assert.equal(report.specBreakdown[0].totalTonnage, 2.6514)
+  assert.equal(report.productionLogs[0].tonnage, 1.5)
+  assert.equal(report.productionLogs[1].tonnage, 1.1514)
 })
 
 test('production report groups distinct product sizes correctly', async () => {

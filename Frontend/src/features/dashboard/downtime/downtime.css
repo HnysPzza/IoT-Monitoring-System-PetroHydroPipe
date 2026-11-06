@@ -1,0 +1,29 @@
+.downtime-layout { gap: 14px; font-variant-numeric: tabular-nums; }
+.downtime-layout .kpi-grid { gap: 0; overflow: hidden; border: 1px solid var(--card-border); border-radius: 12px; background: var(--card-bg); }
+.downtime-layout .stat-card { min-height: 0; padding: 12px 16px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.downtime-layout .stat-card + .stat-card { border-left: 1px solid var(--card-border); }
+.downtime-layout .stat-value { margin: 8px 0 0; font-size: 24px; }
+.downtime-layout .downtime-controls-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.downtime-date-control { display: flex; align-items: center; gap: 8px; }
+.downtime-layout .downtime-table-card { padding: 16px; }
+@media (max-width: 680px) { .downtime-layout .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .downtime-layout .stat-card:nth-child(3) { border-left: 0; } .downtime-layout .stat-card:nth-child(n+3) { border-top: 1px solid var(--card-border); } }
+.downtime-layout .downtime-controls-card { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: end; gap: 12px; }
+.downtime-layout .downtime-date-control { margin-left: auto; flex-wrap: wrap; }
+.downtime-layout .downtime-date-control .btn { white-space: nowrap; }
+@media (max-width: 680px) { .downtime-layout .downtime-date-control { margin-left: 0; } }
+.downtime-layout .downtime-date-control .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.downtime-calendar-popover.trend-calendar-popover { width: 300px; max-width: calc(100vw - 24px); }
+.downtime-calendar-popover .trend-popover-body { min-height: 0; }
+.downtime-calendar-popover .trend-popover-calendar { padding: 10px 12px; }
+.downtime-calendar-popover .trend-calendar-day-btn { height: 30px; }
+.downtime-layout .downtime-date-control { flex-wrap: nowrap; min-width: 0; }
+.downtime-layout .downtime-date-control .trend-calendar-control { width: auto; min-width: 0; }
+.downtime-layout .downtime-date-control .btn { flex: 0 0 auto; }
+.downtime-layout .filter-field { min-width: 0; }
+.downtime-layout .filter-field select { min-height: 36px; width: 225px; max-width: 100%; padding: 6px 30px 6px 10px; border: 1px solid var(--card-border); border-radius: 6px; background-color: var(--card-bg); font-size: 12px; }
+@media (max-width: 680px) {
+  .downtime-layout .filter-field { width: 100%; }
+  .downtime-layout .filter-field select { width: 100%; }
+  .downtime-layout .downtime-date-control { width: 100%; flex-wrap: wrap; }
+  .downtime-layout .downtime-date-control .trend-calendar-control { flex: 1 1 180px; }
+}

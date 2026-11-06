@@ -15,12 +15,17 @@ const account = {
 }
 
 describe('UsersTable', () => {
+  it('shows the actual account range on the last page', () => {
+    render(<UsersTable accounts={[account]} page={2} pageSize={10} totalCount={11} totalPages={2} onPageChange={vi.fn()} />)
+    expect(screen.getByText('Showing 11–11 of 11 accounts')).toBeInTheDocument()
+  })
+
   it('protects any Admin account even when it is not the current row', async () => {
     const user = userEvent.setup()
     render(<UsersTable accounts={[{ ...account, role: 'Admin' }]} currentUserId="another-user" />)
     const row = screen.getByRole('row', { name: /operator one/i })
     expect(within(row).getByText('Managing Director')).toBeInTheDocument()
-    expect(within(row).getByText('Protected Managing Director')).toBeInTheDocument()
+    expect(within(row).getByText('Protected')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /actions for/i }))
     expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()

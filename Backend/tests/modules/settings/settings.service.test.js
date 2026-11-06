@@ -102,6 +102,28 @@ function readableTables(row = settingsRow()) {
   }
 }
 
+test('settings GET starts both independent reads without changing the update helper', async () => {
+  let release
+  const tables = readableTables()
+  tables.machines = new Promise((resolve) => { release = () => resolve({ data: { id: machineId }, error: null }) })
+  const calls = []
+  const service = loadService({ tableResults: tables, calls })
+  const read = service.getMachineSettingsForRead || service.getMachineSettings
+  const request = read(machineId)
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.ok(calls.some((call) => call.type === 'from' && call.table === 'machine_operational_settings')) } finally { release(); await request }
+})
+
+test('settings GET preserves missing-machine error when settings lookup also fails', async () => {
+  const service = loadService({ tableResults: {
+    machines: { data: null, error: null },
+    machine_operational_settings: { data: null, error: { message: 'private error' } },
+  } })
+  await assert.rejects(() => service.getMachineSettingsForRead(machineId), {
+    status: 404, code: 'MACHINE_NOT_FOUND', message: 'Machine not found.',
+  })
+})
+
 test('settings read validates stored data and returns the public contract', async () => {
   const service = loadService({ tableResults: readableTables() })
   const result = await service.getMachineSettings(machineId)
@@ -183,6 +205,7 @@ test('settings read distinguishes missing machine, missing settings, and query f
   for (const item of cases) {
     const service = loadService({ tableResults: item.tables })
     await assert.rejects(() => service.getMachineSettings(machineId), item.expected)
+    await assert.rejects(() => service.getMachineSettingsForRead(machineId), item.expected)
   }
 })
 
@@ -204,6 +227,10 @@ test('settings read fails closed on malformed stored documents and unsafe versio
     const service = loadService({ tableResults: readableTables(row) })
     await assert.rejects(
       () => service.getMachineSettings(machineId),
+      { status: 500, code: 'SETTINGS_QUERY_FAILED' },
+    )
+    await assert.rejects(
+      () => service.getMachineSettingsForRead(machineId),
       { status: 500, code: 'SETTINGS_QUERY_FAILED' },
     )
   }

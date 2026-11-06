@@ -144,7 +144,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       <section className="section-card analytics-detail-card" aria-labelledby="analytics-downtime-title">
         <div className="section-heading">
           <div>
-            <p className="section-eyebrow">Maintenance and downtime</p>
             <h2 id="analytics-downtime-title">Downtime by cause</h2>
           </div>
           <span className="section-chip">
@@ -155,7 +154,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
 
         {hasRenderableCauseData ? (
           <div className="analytics-downtime-cause-plot">
-            <p className="analytics-downtime-cause-subtitle">Top causes by duration</p>
 
             <div className="analytics-downtime-cause-chart" role="img" aria-label="Downtime by cause chart">
               <div className="analytics-downtime-cause-rows">
@@ -177,7 +175,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                 ))}
               </div>
             </div>
-            <p className="analytics-downtime-cause-hint">Hover a bar for duration and event details.</p>
 
             <ul className="analytics-downtime-cause-accessible-list sr-only" aria-label="Downtime cause distribution">
               {causeDistribution.map((cause) => {
@@ -233,7 +230,6 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
       <section className="section-card analytics-detail-card" aria-labelledby="analytics-process-title">
         <div className="section-heading">
           <div>
-            <p className="section-eyebrow">Process</p>
             <h2 id="analytics-process-title">Event distribution</h2>
           </div>
           <span className="section-chip">

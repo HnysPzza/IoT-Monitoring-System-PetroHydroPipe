@@ -225,6 +225,7 @@ function checkIsSpecified(spec) {
   const hasThickness = parsePositiveDimension(spec.thickness) !== null
   const hasLength = parsePositiveDimension(spec.length) !== null
   const hasPipeNumber = spec.pipe_number != null || spec.pipeNumber != null
+  const hasTonnage = parsePositiveDimension(spec.tonnage) !== null
   const hasLabel = spec.label != null && String(spec.label).trim() !== ''
   const hasSize = spec.size != null && String(spec.size).trim() !== ''
   return (
@@ -233,6 +234,7 @@ function checkIsSpecified(spec) {
     hasThickness ||
     hasLength ||
     hasPipeNumber ||
+    hasTonnage ||
     hasLabel ||
     hasSize ||
     parsePositiveDimension(spec.radius) !== null ||
@@ -354,7 +356,8 @@ async function buildObservedProductionReport({
     const pipeNumber = rawPipeNumber !== null
       ? rawPipeNumber
       : (dailyPipeSequenceByEventId.get(event.id) ?? null)
-    const singleTonnage = calculatePipeTonnage(diameter, thickness, length)
+    const explicitTonnage = parsePositiveDimension(spec?.tonnage)
+    const singleTonnage = explicitTonnage ?? calculatePipeTonnage(diameter, thickness, length)
 
     const label = spec?.label != null && String(spec.label).trim() !== '' ? String(spec.label).trim() : null
     const size = spec?.size != null && String(spec.size).trim() !== '' ? String(spec.size).trim() : null
@@ -380,6 +383,9 @@ async function buildObservedProductionReport({
         if (existing) {
           existing.pipeCount += 1
           existing.lastCutAt = event.recorded_at
+          if (singleTonnage != null) {
+            existing.sumTonnage = (existing.sumTonnage ?? 0) + singleTonnage
+          }
         } else {
           groupsMap.set(groupKey, {
             customer,
@@ -387,6 +393,7 @@ async function buildObservedProductionReport({
             thickness,
             length,
             singleTonnage,
+            sumTonnage: singleTonnage ?? null,
             label,
             size,
             isSpecified: true,
@@ -463,11 +470,13 @@ async function buildObservedProductionReport({
   const totalTonnage = Math.round(accumulatedTonnage * 10000) / 10000
 
   const specBreakdown = metricsOnly ? [] : Array.from(groupsMap.values())
-    .map((group) => ({
+    .map(({ sumTonnage, ...group }) => ({
       ...group,
-      totalTonnage: group.singleTonnage != null
-        ? Math.round(group.singleTonnage * group.pipeCount * 10000) / 10000
-        : null,
+      totalTonnage: sumTonnage != null
+        ? Math.round(sumTonnage * 10000) / 10000
+        : (group.singleTonnage != null
+          ? Math.round(group.singleTonnage * group.pipeCount * 10000) / 10000
+          : null),
       percentageOfTotal: totalProductionOutput > 0
         ? Number(((group.pipeCount / totalProductionOutput) * 100).toFixed(1))
         : 0,
@@ -599,7 +608,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     label: sensorLabel,
   }
 
-  const report = await buildObservedProductionReport({
+  const reportPromise = buildObservedProductionReport({
     type,
     selectedDate,
     machine,
@@ -612,10 +621,10 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     maxLogs: options.maxLogs !== undefined ? options.maxLogs : 200,
   })
 
-  if (!compare) return report
+  if (!compare) return reportPromise
 
   const comparisonWindow = getComparisonWindow(type, requestedWindow, observed.periodState, asOf)
-  const previousReport = await buildObservedProductionReport({
+  const [report, previousReport] = await Promise.all([reportPromise, buildObservedProductionReport({
     type,
     selectedDate: formatBusinessDate(comparisonWindow.start),
     machine,
@@ -626,7 +635,7 @@ async function getProductionSummary({ type = 'daily', date, compare = false } = 
     asOf,
     suppliedClient: options.client,
     metricsOnly: true,
-  })
+  })])
 
   return {
     ...report,
@@ -666,7 +675,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     asOf,
     fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
   })
-  const report = await buildObservedReport({
+  const reportPromise = buildObservedReport({
     type,
     selectedDate,
     machine,
@@ -676,10 +685,10 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     lossEstimateBasis,
   })
 
-  if (!compare) return report
+  if (!compare) return reportPromise
 
   const comparisonWindow = getComparisonWindow(type, requestedWindow, observed.periodState, asOf)
-  const previousReport = await buildObservedReport({
+  const [report, previousReport] = await Promise.all([reportPromise, buildObservedReport({
     type,
     selectedDate: formatBusinessDate(comparisonWindow.start),
     machine,
@@ -687,7 +696,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     periodState: observed.periodState,
     asOf,
     lossEstimateBasis,
-  })
+  })])
 
   return {
     ...report,

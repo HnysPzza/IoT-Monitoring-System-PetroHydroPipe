@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../../features/auth/authSession.jsx'
@@ -234,6 +235,7 @@ describe('ReportsSection request states', () => {
 
     expect(await screen.findByText('S-01 - Raw Material & Coil Joint')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
+    expect(screen.getByText('7 events')).toBeInTheDocument()
   })
 
   it('renders three primary cards and one merged Downtime card', async () => {
@@ -247,8 +249,9 @@ describe('ReportsSection request states', () => {
     expect(screen.getByText('Availability')).toBeInTheDocument()
     expect(screen.getByTestId('report-card-loss')).toHaveTextContent('Estimated Loss')
     expect(screen.getByTestId('report-card-downtime')).toHaveClass('reports-downtime-card')
-    expect(screen.getByText('6 events · 38 min')).toBeInTheDocument()
-    expect(screen.getByText('Open and resolved, unplanned')).toBeInTheDocument()
+    expect(screen.getByTestId('report-card-downtime')).toHaveTextContent('6 events')
+    expect(screen.getByTestId('report-card-downtime')).toHaveTextContent('38 min')
+    expect(screen.queryByText('Open and resolved, unplanned')).not.toBeInTheDocument()
     expect(screen.queryByText('Downtime Events')).not.toBeInTheDocument()
     expect(screen.queryByText('Downtime Duration')).not.toBeInTheDocument()
     expect(screen.queryByTestId('report-card-process-events')).not.toBeInTheDocument()
@@ -263,19 +266,17 @@ describe('ReportsSection request states', () => {
     expect(lossCard).toHaveClass('reports-card-warning')
   })
 
-  it('uses visible period segments and an adaptive calendar control', async () => {
+  it('selects report periods inside the calendar', async () => {
+    const user = userEvent.setup()
     getReportSummary.mockResolvedValue(reportPayload())
-
     renderWithAuth(<ReportsSection />)
 
-    const dailyButton = await screen.findByRole('button', { name: 'Daily' })
-    const weeklyButton = screen.getByRole('button', { name: 'Weekly' })
-    const monthlyButton = screen.getByRole('button', { name: 'Monthly' })
-
-    expect(dailyButton).toHaveAttribute('aria-pressed', 'true')
-    expect(weeklyButton).toHaveAttribute('aria-pressed', 'false')
-    expect(monthlyButton).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: /selected period/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Daily' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /selected period/i }))
+    expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Monthly' }))
+    await waitFor(() => expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ reportType: 'monthly' }), { signal: expect.any(AbortSignal) }))
+    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('exports PDF through the same server endpoint', async () => {
@@ -341,7 +342,8 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText('Partial report. Values cover recorded time so far.')).toBeInTheDocument()
+    expect(await screen.findByText('Production Count')).toBeInTheDocument()
+    expect(screen.queryByText('Partial period')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export report' })).not.toBeDisabled()
   })
 
@@ -378,7 +380,7 @@ describe('ReportsSection request states', () => {
 
     renderWithAuth(<ReportsSection />)
 
-    expect(await screen.findByText('No downtime rows found for this report range.')).toBeInTheDocument()
+    expect(await screen.findByText('No downtime events')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Unable to load this report' })).not.toBeInTheDocument()
   })
 
@@ -411,7 +413,7 @@ describe('ReportsSection request states', () => {
     await selectReportDate(userEvent.setup(), /august 1st, 2026/i)
     expect(await screen.findByRole('heading', { name: 'Unable to load this report' })).toBeInTheDocument()
     expect(screen.queryByText('Old range cause')).not.toBeInTheDocument()
-    expect(screen.queryByText('No downtime rows found for this report range.')).not.toBeInTheDocument()
+    expect(screen.queryByText('No downtime events')).not.toBeInTheDocument()
   })
 
   it('ignores a late response from a superseded range', async () => {
@@ -435,6 +437,7 @@ describe('ReportsSection request states', () => {
   })
 
   it('does not reuse a prior token report after the active session changes', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const nextSessionRequest = deferred()
     getReportSummary
       .mockResolvedValueOnce(reportPayload({ rows: [reportRow('Prior session cause')] }))
@@ -442,17 +445,18 @@ describe('ReportsSection request states', () => {
 
     function renderTree(token) {
       return (
-        <AuthContext.Provider value={{ token }}>
+        <QueryClientProvider client={client}><AuthContext.Provider value={{ token, isAuthenticated: true, user: { id: token } }}>
           <MemoryRouter>
-            <ReportsSection />
+            <ReportsSection key={token} />
           </MemoryRouter>
-        </AuthContext.Provider>
+        </AuthContext.Provider></QueryClientProvider>
       )
     }
 
     const view = render(renderTree('first-token'))
     expect(await screen.findByText('Prior session cause')).toBeInTheDocument()
 
+    client.clear()
     view.rerender(renderTree('second-token'))
 
     expect(screen.queryByText('Prior session cause')).not.toBeInTheDocument()
@@ -482,7 +486,7 @@ describe('ReportsSection request states', () => {
 
     expect(getReportSummary).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
       category: 'production',
-    }))
+    }), { signal: expect.any(AbortSignal) })
 
     // Check Production Report sections
     expect(await screen.findByText('Output by product specification')).toBeInTheDocument()
@@ -806,5 +810,25 @@ describe('ReportsSection request states', () => {
     placeholders.forEach((placeholder) => {
       expect(placeholder.textContent).toBe('—')
     })
+  })
+
+  it('renders filter, datepicker, refresh, and export controls directly inside reports-layout above reports-compact-summary', async () => {
+    getReportSummary.mockResolvedValue(reportPayload())
+
+    const headerSlot = document.createElement('div')
+    headerSlot.id = 'reports-header-controls'
+    document.body.appendChild(headerSlot)
+
+    try {
+      renderWithAuth(<ReportsSection />)
+      const summary = await screen.findByRole('region', { name: 'Report summary' })
+      const controls = document.querySelector('.reports-layout .reports-controls')
+
+      expect(controls).toBeInTheDocument()
+      expect(headerSlot).toBeEmptyDOMElement()
+      expect(controls.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    } finally {
+      headerSlot.remove()
+    }
   })
 })

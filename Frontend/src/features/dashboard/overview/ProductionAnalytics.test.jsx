@@ -41,8 +41,9 @@ describe('ProductionAnalytics', () => {
 
     expect(screen.getByRole('heading', { name: 'Today so far vs Yesterday at same time' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Today so far vs Yesterday at same time production output comparison chart' })).toBeInTheDocument()
-    expect(screen.getByText('+13.0%')).toBeInTheDocument()
-    expect(screen.getByText('Today so far is 13.0% above yesterday at same time.')).toBeInTheDocument()
+    expect(screen.getByText('Today (26 pcs)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (23 pcs)')).toBeInTheDocument()
+    expect(screen.queryByText('+13.0%')).not.toBeInTheDocument()
     expect(screen.queryByText(/target/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Day' })).not.toBeInTheDocument()
     expect(screen.getByText('Now')).toBeInTheDocument()
@@ -55,13 +56,13 @@ describe('ProductionAnalytics', () => {
       <ProductionAnalytics analytics={buildAnalytics({ currentTotal: 20, difference: -3, differencePercent: -13.04 })} />,
     )
 
-    expect(screen.getByText('-13.0%')).toBeInTheDocument()
-    expect(screen.getByText('Today so far is 13.0% below yesterday at same time.')).toBeInTheDocument()
+    expect(screen.getByText('Today (20 pcs)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (23 pcs)')).toBeInTheDocument()
 
     rerender(<ProductionAnalytics analytics={buildAnalytics({ currentTotal: 23, difference: 0, differencePercent: 0 })} />)
 
-    expect(screen.getByText('No change')).toBeInTheDocument()
-    expect(screen.getByText('Today so far matches yesterday at same time at 23 pcs.')).toBeInTheDocument()
+    expect(screen.getByText('Today (23 pcs)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (23 pcs)')).toBeInTheDocument()
   })
 
   it('does not invent a percentage when yesterday has no output', () => {
@@ -69,11 +70,8 @@ describe('ProductionAnalytics', () => {
       <ProductionAnalytics analytics={buildAnalytics({ previousTotal: 0, currentTotal: 4, difference: 4, differencePercent: null })} />,
     )
 
-    expect(screen.getByText('No baseline')).toBeInTheDocument()
-    expect(screen.getByLabelText('No prior output from yesterday'))
-      .toHaveAttribute('aria-describedby', 'analytics-baseline-tooltip')
-    expect(screen.getByRole('tooltip')).toHaveTextContent('No prior output from yesterday')
-    expect(screen.getByText('Today so far recorded 4 pcs; yesterday at same time recorded none.')).toBeInTheDocument()
+    expect(screen.getByText('Today (4 pcs)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (0 pcs)')).toBeInTheDocument()
     expect(screen.queryByText('0.0%')).not.toBeInTheDocument()
   })
 

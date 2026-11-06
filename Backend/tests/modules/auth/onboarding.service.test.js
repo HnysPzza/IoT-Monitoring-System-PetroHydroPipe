@@ -105,7 +105,41 @@ test('Add user stores only a token hash and preserves the account when email fai
   assert.equal(Object.hasOwn(saved.values, 'password'), false)
   assert.ok(email.htmlContent.includes(`href="http://localhost:5173/setup-password#token=${token}"`))
   assert.match(email.htmlContent, /<html lang="en">/)
-  assert.match(email.htmlContent, /<a[^>]+style="[^"]*background[^>]+>Set up password<\/a>/)
+  assert.match(email.htmlContent, /max-width:\s*600px/)
+  assert.match(email.htmlContent, /<img\s+src="https:\/\/[^"]+\/logo\.png"\s+height="28px"\s+alt="PetroHydroPipe Logo"/)
+  assert.match(email.htmlContent, /IoT Monitoring System/)
+  assert.match(email.htmlContent, /Account invitation/)
+  assert.match(email.htmlContent, /Your administrator has created your account\. Choose a secure password to get started with the monitoring system\./)
+  assert.match(email.htmlContent, /<a[^>]+style="[^"]*background-color:\s*#2563eb[^>]+>Set up password<\/a>/)
+  assert.match(email.htmlContent, /font-variant-numeric:\s*tabular-nums/)
+  assert.match(email.htmlContent, /Valid for one hour (?:\u00b7|&middot;) Single-use link/)
   assert.match(email.htmlContent, /already used|once/i)
+  assert.match(email.htmlContent, /If you did not expect this invitation, you can safely ignore this email or contact your administrator\./)
+  assert.match(email.htmlContent, /PetroHydroPipe IoT Monitoring System (?:\u00b7|&middot;) Secure Account Access/)
   assert.match(email.textContent, /single.use/i)
+})
+
+
+test('changePassword rejects accounts where must_change_password is false', async () => {
+  const bcrypt = require('bcryptjs')
+  const passwordHash = await bcrypt.hash('Old-password1!', 10)
+  const result = { data: { password_hash: passwordHash, must_change_password: false }, error: null }
+  const query = {
+    select(fields) { assert.equal(fields, 'password_hash, must_change_password'); return query },
+    eq(field, value) { assert.equal(field, 'id'); assert.equal(value, 'user-ready'); return query },
+    async maybeSingle() { return result },
+  }
+  loadAppWithMocks({
+    'src/database/client.js': {
+      getSupabaseClient: () => ({
+        from: (table) => { assert.equal(table, 'users'); return query },
+        rpc: async () => { throw new Error('RPC should not be called when must_change_password is false') },
+      }),
+    },
+  })
+  const service = require('../../../src/modules/auth/onboarding.service')
+  await assert.rejects(
+    service.changePassword('user-ready', { currentPassword: 'Old-password1!', password: 'New-password1!' }),
+    { status: 403, code: 'ACCOUNT_OPERATION_INVALID' },
+  )
 })

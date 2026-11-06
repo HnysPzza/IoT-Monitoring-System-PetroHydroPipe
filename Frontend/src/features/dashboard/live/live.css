@@ -1,0 +1,24 @@
+.live-layout { gap: 14px; font-variant-numeric: tabular-nums; }
+.live-layout .live-hero-card { padding: 14px 16px; }
+.live-layout .live-hero-card .section-heading { margin-bottom: 10px; }
+.live-layout .live-hero-card h2, .live-layout .live-activity-heading h2 { font-size: 13px; }
+.live-layout .live-machine-grid { padding-top: 10px; }
+.live-layout .live-sensor-grid { gap: 10px; }
+.live-layout .live-sensor-card { gap: 8px; padding: 12px; background: var(--card-bg); box-shadow: 0 1px 2px rgba(15, 23, 42, .03); }
+.live-layout .live-sensor-card h3 { font-size: 13px; }
+.live-layout .live-sensor-card .machine-id { color: var(--c-text-2); font-size: 11px; }
+.live-layout .live-purpose-row { padding-top: 8px; }
+.live-layout .live-activity-card { padding: 14px 16px; }
+.live-layout .live-activity-heading { margin-bottom: 10px; }
+@media (min-width: 1100px) and (min-height: 600px) {
+  .live-layout { display: flex; flex-direction: column; min-height: calc(100vh - 124px); }
+  .live-layout .live-sensor-grid { flex: 1; }
+  .live-layout .live-sensor-card { padding: 18px 16px; gap: 14px; }
+  .live-layout .live-sensor-card h3 { font-size: 15px; line-height: 1.35; }
+  .live-layout .live-sensor-meta { align-self: center; }
+  .live-layout .live-activity-card { padding: 16px; }
+}
+
+@media (min-width: 1100px) and (min-height: 600px) {
+  .live-layout .live-sensor-meta { transform: translateY(6px); }
+}

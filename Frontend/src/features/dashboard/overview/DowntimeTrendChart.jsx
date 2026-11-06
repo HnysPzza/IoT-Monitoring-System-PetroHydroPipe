@@ -124,13 +124,13 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
   return (
     <div className="trend-chart-panel">
       <div role="img" aria-label="Downtime by non-overlapping period bar chart in minutes">
-        <ResponsiveContainer width="100%" height={260} minWidth={0}>
+        <ResponsiveContainer width="100%" height={195} minWidth={0}>
           <BarChart data={data} margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
-            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" label={{ value: `${thresholdMinutes} min limit`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
+            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" label={{ value: `${thresholdMinutes}m threshold`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
             <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
               {data.map((item) => (
                 <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />
@@ -139,11 +139,11 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="downtime-threshold-note">
+      <div className="sr-only">
         <AlertTriangle size={15} aria-hidden="true" />
         <span>Red bars indicate periods at or above {thresholdMinutes} minutes.</span>
       </div>
-      <div className="trend-data-row" role="list" aria-label="Observed downtime period summary">
+      <div className="sr-only" role="list" aria-label="Observed downtime period summary">
         {observedPeriods.slice(-4).map((item) => (
           <span key={item.label} role="listitem">
             {item.label}: {item.minutes}m{item.periodState === 'current' ? ' so far' : ''}
@@ -154,7 +154,7 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
         ) : null}
       </div>
       {lossEstimateBasis ? (
-        <div className="downtime-threshold-note">
+        <div className="sr-only">
           <span>
             Estimated loss uses {lossEstimateBasis.source === 'trailing-7-days'
               ? 'last 7 completed days'

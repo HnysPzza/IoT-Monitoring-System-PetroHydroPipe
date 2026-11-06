@@ -1,6 +1,7 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -44,6 +45,42 @@ function deferred() {
 }
 
 describe('MachinesSection live snapshot', () => {
+  it('switches between grid and table while keeping live sensor data', async () => {
+    const user = userEvent.setup()
+    getLiveFeed.mockResolvedValue(livePayload())
+    renderWithAuth(<MachinesSection />)
+    expect(await screen.findByText('ESP32-03')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Table view' }))
+    expect(screen.getByRole('table')).toHaveTextContent('ESP32-03')
+    expect(screen.getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Grid view' }))
+    expect(screen.getByText('ESP32-03').closest('article')).toBeInTheDocument()
+  })
+
+  it('colors connection based on fresh connectivity', async () => {
+    const sensors = [
+      { ...livePayload().sensors[0], id: 'online', sensorCode: 'S-01' },
+      { ...livePayload().sensors[0], id: 'offline', sensorCode: 'S-02', monitoring: { stateFresh: true, connectivityState: 'offline' } },
+      { ...livePayload().sensors[0], id: 'unknown', sensorCode: 'S-03', monitoring: { stateFresh: false, connectivityState: 'online' } },
+    ]
+    getLiveFeed.mockResolvedValue(livePayload({ sensors }))
+    renderWithAuth(<MachinesSection />)
+    expect(await screen.findByText('Connected')).toHaveClass('machines-connection-connected')
+    expect(screen.getByText('Offline')).toHaveClass('machines-connection-unavailable')
+    const card = screen.getByText('S-03').closest('article')
+    expect(within(card).getAllByText('Unavailable').find((item) => item.classList.contains('machines-connection-unavailable'))).toBeDefined()
+  })
+
+  it('does not invent sensor telemetry or hardware pins', async () => {
+    getLiveFeed.mockResolvedValue(livePayload())
+    renderWithAuth(<MachinesSection />)
+    const card = (await screen.findByText('S-03')).closest('article')
+    expect(within(card).getByText('ESP32-03')).toBeInTheDocument()
+    expect(within(card).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(card).queryByText('Pulse rate')).not.toBeInTheDocument()
+    expect(within(card).queryByText(/GPIO|14 \/ min|300s/i)).not.toBeInTheDocument()
+  })
+
   it('F03 does not replace an in-flight snapshot on a polling tick', async () => {
     const timer = vi.spyOn(window, 'setInterval')
     const pending = deferred()
@@ -180,6 +217,7 @@ describe('MachinesSection live snapshot', () => {
   })
 
   it('ignores a late snapshot from a prior token', async () => {
+    const client = new QueryClient()
     const firstTokenRequest = deferred()
     getLiveFeed
       .mockReturnValueOnce(firstTokenRequest.promise)
@@ -187,9 +225,11 @@ describe('MachinesSection live snapshot', () => {
 
     function renderTree(token) {
       return (
-        <AuthContext.Provider value={{ token }}>
-          <MemoryRouter><MachinesSection /></MemoryRouter>
-        </AuthContext.Provider>
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider value={{ token }}>
+            <MemoryRouter><MachinesSection /></MemoryRouter>
+          </AuthContext.Provider>
+        </QueryClientProvider>
       )
     }
 
@@ -205,5 +245,53 @@ describe('MachinesSection live snapshot', () => {
     expect(screen.getByRole('heading', { name: 'Current token machine' })).toBeInTheDocument()
     expect(getLiveFeed).toHaveBeenCalledWith('first-token')
     expect(getLiveFeed).toHaveBeenCalledWith('second-token')
+  })
+
+  it('portals header controls into the topbar immediately on initial mount when liveFeed is already loaded', () => {
+    const client = new QueryClient()
+    const payload = livePayload()
+    const preloadedFeed = {
+      machine: payload.machine,
+      sensors: payload.sensors,
+      monitoring: payload.monitoring,
+      state: 'ready',
+      error: '',
+      lastUpdated: new Date('2026-08-10T02:00:00.000Z'),
+      isRefreshing: false,
+      reload: vi.fn(),
+    }
+
+    function LayoutShell() {
+      return (
+        <div>
+          <header className="dashboard-topbar">
+            <div id="machines-header-controls" data-testid="machines-topbar-slot" />
+          </header>
+          <Outlet context={{ liveFeed: preloadedFeed }} />
+        </div>
+      )
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthContext.Provider value={{ token: 'test-token' }}>
+          <MemoryRouter initialEntries={['/dashboard/machines']}>
+            <Routes>
+              <Route path="/dashboard" element={<LayoutShell />}>
+                <Route path="machines" element={<MachinesSection />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    const topbarSlot = screen.getByTestId('machines-topbar-slot')
+    const heading = screen.getByRole('heading', { name: 'Spiral Mill 01' })
+    const refreshBtn = screen.getByRole('button', { name: 'Refresh machines' })
+    expect(topbarSlot).toContainElement(heading)
+    expect(topbarSlot).toContainElement(refreshBtn)
+    expect(refreshBtn).not.toHaveTextContent('Refresh')
+    expect(document.querySelector('.machines-layout .machines-header-controls')).not.toBeInTheDocument()
   })
 })

@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { useState } from 'react'
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../auth/authSession.jsx'
@@ -308,6 +309,7 @@ describe('DashboardSection', () => {
     expect(screen.getByText('+2 pcs')).toBeInTheDocument()
     expect(screen.getByText('5 / 5 sensors reporting')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /last hour/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(screen.getByRole('button', { name: /weekly/i }))
@@ -335,25 +337,27 @@ describe('DashboardSection', () => {
       renderWithAuth(<DashboardSection />)
       expect(await screen.findByText('Production Output')).toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: 'Weekly' }))
       await user.click(screen.getByRole('button', { name: /selected period/i }))
+      await user.click(screen.getByRole('button', { name: 'Weekly' }))
       await user.click(await screen.findByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i }))
 
       await waitFor(() => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
           'test-token',
           { trendMode: 'week', date: '2026-07-06' },
+          { signal: expect.any(AbortSignal) },
         )
       })
 
-      await user.click(screen.getByRole('button', { name: 'Monthly' }))
       await user.click(screen.getByRole('button', { name: /selected period/i }))
+      await user.click(screen.getByRole('button', { name: 'Monthly' }))
       await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
 
       await waitFor(() => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
           'test-token',
           { trendMode: 'month', date: '2026-06' },
+          { signal: expect.any(AbortSignal) },
         )
       })
     } finally {
@@ -449,6 +453,17 @@ describe('DashboardSection', () => {
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
   })
 
+  it('marks Overview machine health stale immediately when offline', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    renderWithAuth(<DashboardSection />)
+    await screen.findByRole('heading', { name: 'Machine Health · Spiral Mill 01' })
+    act(() => onlineManager.setOnline(false))
+    expect(screen.getByText(/Live machine status is stale/i)).toHaveTextContent(/updated.*ago/i)
+    await act(async () => { onlineManager.setOnline(true); await Promise.resolve() })
+  })
+
   it('distinguishes chart error from empty and retries the current range', async () => {
     const user = userEvent.setup()
     getDashboardOverview.mockResolvedValue(overviewPayload())
@@ -513,6 +528,7 @@ describe('DashboardSection', () => {
   })
 
   it('hides prior-token live metadata and errors while the new token loads', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
     const user = userEvent.setup()
     const nextTokenLiveRequest = deferred()
     const priorTokenLive = livePayload()
@@ -526,16 +542,16 @@ describe('DashboardSection', () => {
 
     function renderTree(token) {
       return (
-        <AuthContext.Provider value={{ token }}>
+        <QueryClientProvider client={client}><AuthContext.Provider value={{ token, isAuthenticated: true, user: { id: 'one', role: 'Admin' } }}>
           <MemoryRouter>
             <DashboardSection />
           </MemoryRouter>
-        </AuthContext.Provider>
+        </AuthContext.Provider></QueryClientProvider>
       )
     }
 
     const view = render(renderTree('first-token'))
-    expect(await screen.findByRole('heading', { name: 'Prior token machine' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Machine Health · Prior token machine' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
     expect(await screen.findByText(/Live machine status is stale/i)).toHaveTextContent('Prior token refresh failed.')
 
@@ -551,7 +567,7 @@ describe('DashboardSection', () => {
       expect(screen.getByText('Machine Online')).toBeInTheDocument()
     })
     const loadingMachineKpi = screen.getByText('Machine Online').closest('article')
-    expect(loadingMachineKpi).toHaveTextContent('Refreshing live status')
+    expect(loadingMachineKpi).toHaveTextContent('—')
     expect(loadingMachineKpi).not.toHaveTextContent('1 / 1')
   })
 
@@ -568,6 +584,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Old daily point/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
     expect(screen.queryByText(/Old daily point/)).not.toBeInTheDocument()
 
@@ -591,6 +608,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Cached daily point/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
     expect(await screen.findByText('Weekly range failed.')).toBeInTheDocument()
 
@@ -598,7 +616,7 @@ describe('DashboardSection', () => {
 
     expect(screen.queryByText('Weekly range failed.')).not.toBeInTheDocument()
     expect(screen.getByText(/Cached daily point/)).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Refreshing downtime chart...')
+    expect(getDashboardDowntimeImpact).toHaveBeenCalledTimes(2)
   })
 
   it('announces a same-range chart refresh while preserving cached points', async () => {
@@ -652,6 +670,23 @@ describe('DashboardSection', () => {
     expect(
       screen.getByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
     ).toBeInTheDocument()
+  })
+
+  it('expands the additional idle sensors', async () => {
+    const user = userEvent.setup()
+    const live = livePayload()
+    live.sensors[0].status = 'Idle'
+    live.sensors[1].status = 'Idle'
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(live)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(<DashboardSection />)
+    const trigger = await screen.findByText('+1 more idle sensor')
+    expect(trigger.closest('details')).not.toHaveAttribute('open')
+    await user.click(trigger)
+    expect(trigger.closest('details')).toHaveAttribute('open')
+    expect(screen.getByText('S-02 Inside Filler Wire')).toBeVisible()
   })
 
   it('replaces the idle banner on overview when that idle sensor transitions to Fault', async () => {

@@ -14,7 +14,7 @@ const { DASHBOARD_STREAM_ROLES } = require('../../shared/sse/streamPolicies')
 const router = express.Router()
 
 const PRODUCTION_VIEW_ROLES = DASHBOARD_STREAM_ROLES
-const PRODUCTION_EDIT_ROLES = Object.freeze(['Admin', 'Operation Manager', 'Production Supervisor'])
+const PRODUCTION_EDIT_ROLES = Object.freeze(['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control'])
 
 router.use(authenticate)
 

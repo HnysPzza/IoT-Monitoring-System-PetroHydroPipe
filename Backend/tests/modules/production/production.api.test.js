@@ -169,7 +169,7 @@ test('GET /api/production allows all 5 view roles and denies unauthorized roles'
   const authorizedRoles = [
     'Admin',
     'Operation Manager',
-    'Asst. Operation Manager',
+    'Quality Control',
     'Engineering Supervisor',
     'Production Supervisor',
   ]
@@ -213,7 +213,7 @@ test('GET /api/production default query returns accepted S-05 records only, merg
     assert.equal(body.summary.specifiedCount, 1)
     assert.equal(body.summary.unspecifiedCount, 2)
     assert.equal(body.summary.rejectedCount, 1)
-    assert.equal(body.summary.totalTonnage, 1.1513)
+    assert.equal(body.summary.totalTonnage, 1.1514)
 
     assert.equal(body.records.length, 3)
     body.records.forEach((record) => {
@@ -230,7 +230,7 @@ test('GET /api/production default query returns accepted S-05 records only, merg
     assert.equal(specifiedRecord.thickness, 12.7)
     assert.equal(specifiedRecord.length, 6000)
     assert.equal(specifiedRecord.pipeNumber, 101)
-    assert.equal(specifiedRecord.tonnage, 1.1513)
+    assert.equal(specifiedRecord.tonnage, 1.1514)
     assert.equal(specifiedRecord.label, 'Batch Alpha Pipe')
     assert.equal(specifiedRecord.size, '12 inch')
     assert.equal(specifiedRecord.radius, 6.25)
@@ -547,8 +547,8 @@ test('PATCH /api/production/:eventId enforces role matrix (Admin, Operation Mana
     'src/modules/production/production.repository.js': createMockRepository(),
   })
 
-  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
-  const forbiddenRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control']
+  const forbiddenRoles = ['Engineering Supervisor', 'Operator']
 
   await withTestServer(app, async (baseUrl) => {
     for (const role of allowedRoles) {
@@ -578,8 +578,8 @@ test('PATCH /api/production/batch enforces role matrix', async () => {
     'src/modules/production/production.repository.js': createMockRepository(),
   })
 
-  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor']
-  const forbiddenRoles = ['Asst. Operation Manager', 'Engineering Supervisor', 'Operator']
+  const allowedRoles = ['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control']
+  const forbiddenRoles = ['Engineering Supervisor', 'Operator']
 
   await withTestServer(app, async (baseUrl) => {
     for (const role of allowedRoles) {
@@ -702,7 +702,7 @@ test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes bla
         thickness: 12.7,
         length: 6000,
         pipeNumber: 101,
-        tonnage: 1.1513,
+        tonnage: 1.1514,
         label: null,
         size: null,
         radius: null,
@@ -728,7 +728,7 @@ test('PATCH /api/production/:eventId updates spec, sets no-store, normalizes bla
     })
     assert.equal(retryRes.response.status, 200)
     assert.equal(retryRes.body.spec.customer, 'MCWD')
-    assert.equal(retryRes.body.spec.tonnage, 1.1513)
+    assert.equal(retryRes.body.spec.tonnage, 1.1514)
 
     const clearRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
       method: 'PATCH',
@@ -1304,14 +1304,14 @@ test('calculatePipeTonnage pure helper computes metric tonnage correctly and han
 
   // Reference MCWD case: OD 625.4, Thickness 12.7, Length 6000 -> 1.1513 tons
   const mcwdTons = calculatePipeTonnage(625.4, 12.7, 6000)
-  assert.equal(mcwdTons, 1.1513)
+  assert.equal(mcwdTons, 1.1514)
 
   // String coerced inputs
-  assert.equal(calculatePipeTonnage('625.4', '12.7', '6000'), 1.1513)
-  assert.equal(calculatePipeTonnage('  625.4  ', ' 12.7 ', ' 6000 '), 1.1513)
+  assert.equal(calculatePipeTonnage('625.4', '12.7', '6000'), 1.1514)
+  assert.equal(calculatePipeTonnage('  625.4  ', ' 12.7 ', ' 6000 '), 1.1514)
 
   // Another real pipe spec: OD 1020, Thickness 10, Length 12000
-  assert.equal(calculatePipeTonnage(1020, 10, 12000), 2.9888)
+  assert.equal(calculatePipeTonnage(1020, 10, 12000), 2.989)
 
   // Invariant 1: Missing or blank inputs return null
   assert.equal(calculatePipeTonnage(null, 12.7, 6000), null)
@@ -1437,3 +1437,98 @@ test('GET /api/production auto-numbers pipes sequentially per day and resets on 
   })
 })
 
+
+test('PATCH /api/production/:eventId and /batch support explicit manual tonnage override and fallback to 7850 kg/m^3 formula', async () => {
+  let singleParams = null
+  let batchParams = null
+  const customRepo = createMockRepository({
+    updateProductionSpec: async (params) => {
+      singleParams = params
+      return {
+        sensor_event_id: params.eventId,
+        customer: params.customer ?? null,
+        diameter: params.diameter != null ? String(params.diameter) : null,
+        thickness: params.thickness != null ? String(params.thickness) : null,
+        length: params.length != null ? String(params.length) : null,
+        pipe_number: params.pipeNumber ?? null,
+        tonnage: params.tonnage != null ? String(params.tonnage) : null,
+        label: null,
+        size: null,
+        radius: null,
+        circumference: null,
+        updated_at: '2026-03-15T12:30:00.000Z',
+        updated_by: params.actorUserId,
+      }
+    },
+    batchUpdateProductionSpecs: async (params) => {
+      batchParams = params
+      return {
+        matched_count: 2,
+        updated_count: 2,
+        sensor_event_ids: params.sensorEventIds,
+      }
+    },
+  })
+
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': customRepo,
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const overrideRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Quality Control'),
+      body: {
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: 101,
+        tonnage: 1.2345,
+      },
+    })
+
+    assert.equal(overrideRes.response.status, 200)
+    assert.equal(singleParams.tonnage, 1.2345)
+    assert.equal(overrideRes.body.spec.tonnage, 1.2345)
+    assert.equal(overrideRes.body.spec.isSpecified, true)
+
+    const tonnageOnlyRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000002', {
+      method: 'PATCH',
+      headers: authHeader('Quality Control'),
+      body: {
+        tonnage: '2.5000',
+      },
+    })
+
+    assert.equal(tonnageOnlyRes.response.status, 200)
+    assert.equal(singleParams.tonnage, 2.5)
+    assert.equal(tonnageOnlyRes.body.spec.tonnage, 2.5)
+    assert.equal(tonnageOnlyRes.body.spec.isSpecified, true)
+
+    const invalidTonsRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Quality Control'),
+      body: {
+        tonnage: 0,
+      },
+    })
+    assert.equal(invalidTonsRes.response.status, 400)
+    assertError(invalidTonsRes.body, 'VALIDATION_ERROR')
+
+    const batchTonsRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Quality Control'),
+      body: {
+        sensorEventIds: [
+          'e0000000-0000-4000-8000-000000000001',
+          'e0000000-0000-4000-8000-000000000002',
+        ],
+        tonnage: 1.85,
+      },
+    })
+    assert.equal(batchTonsRes.response.status, 200)
+    assert.equal(batchParams.tonnage, 1.85)
+    assert.equal(batchTonsRes.body.updatedCount, 2)
+  })
+})

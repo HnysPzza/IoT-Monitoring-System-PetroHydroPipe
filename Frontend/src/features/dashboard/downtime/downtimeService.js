@@ -11,7 +11,7 @@ export function getDowntimeRecords(token, filters = {}) {
   if (filters.limit) params.set('limit', String(filters.limit))
 
   const queryString = params.toString()
-  return apiRequest(`/api/downtime${queryString ? `?${queryString}` : ''}`, { token })
+  return apiRequest(`/api/downtime${queryString ? `?${queryString}` : ''}`, { token, signal: filters.signal })
 }
 
 export function updateDowntimeRecord(token, recordId, values) {

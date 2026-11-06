@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test')
 const roles = [
   { id: 'admin', name: 'Admin' },
   { id: 'operations', name: 'Operation Manager' },
-  { id: 'assistant', name: 'Asst. Operation Manager' },
+  { id: 'quality_control', name: 'Quality Control' },
   { id: 'engineering', name: 'Engineering Supervisor' },
   { id: 'production', name: 'Production Supervisor' },
 ]
@@ -73,10 +73,10 @@ test('Admin displays as Managing Director and stays unavailable for account assi
   await expect(page.locator('.sidebar-user-role')).toHaveText('Managing Director')
   await page.getByRole('link', { name: 'User Accounts', exact: true }).click()
 
-  await expect(page.getByRole('heading', { name: 'Staff accounts' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Staff accounts' })).toBeVisible()
   const adminRow = page.getByRole('row', { name: /System Administrator/ })
   await expect(adminRow.getByText('Managing Director', { exact: true })).toBeVisible()
-  await expect(adminRow.getByText('Protected Managing Director', { exact: true })).toBeVisible()
+  await expect(adminRow.getByText('Protected', { exact: true })).toBeVisible()
   await expect(page.locator('#users-filter-role option[value="Admin"]')).toHaveText('Managing Director')
 
   await page.getByRole('button', { name: 'Add user' }).click()

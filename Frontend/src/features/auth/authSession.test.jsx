@@ -4,6 +4,9 @@ import { createApiError } from '../../shared/errors/apiError.js'
 import { notifyUnauthorized, setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { useAuth } from '../../shared/hooks/useAuth.js'
 import { AuthProvider } from './authSession.jsx'
+import { queryClient } from '../../shared/services/queryClient.js'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../shared/hooks/useAuthenticatedQuery.js'
 
 vi.mock('./authService.js', () => ({
   login: vi.fn(),
@@ -32,6 +35,7 @@ import { refreshSessionOnce, setSessionRefresher } from '../../shared/services/s
 import { login as loginRequest, logout as logoutRequest } from './authService.js'
 
 let registeredRefresher = null
+let sharedSessionHandler = null
 
 function SessionProbe() {
   const auth = useAuth()
@@ -67,10 +71,12 @@ describe('AuthProvider memory-only sessions', () => {
     loginRequest.mockReset()
     logoutRequest.mockReset()
     registeredRefresher = null
+    sharedSessionHandler = null
 
     // The mocked single-flight helper delegates to whatever refresher the
     // provider registers, so restore/refresh flows run real provider logic.
     setSessionRefresher.mockImplementation((refresher, handler) => {
+      sharedSessionHandler = handler
       registeredRefresher = refresher && (async () => {
         const payload = await refresher()
         if (payload) handler(payload)
@@ -83,9 +89,72 @@ describe('AuthProvider memory-only sessions', () => {
   })
 
   afterEach(() => {
+    queryClient.clear()
     setUnauthorizedHandler(null, null)
     window.localStorage.clear()
     vi.restoreAllMocks()
+  })
+
+  it('preserves cached reads on token refresh and clears them on role change and logout', async () => {
+    apiRequest.mockResolvedValueOnce({ token: 'first', user: { id: 'user-1', role: 'Admin' } })
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    queryClient.setQueryData(['downtime', 'list'], ['private'])
+
+    apiRequest.mockResolvedValueOnce({ token: 'second', user: { id: 'user-1', role: 'Admin' } })
+    await act(async () => registeredRefresher())
+    expect(queryClient.getQueryData(['downtime', 'list'])).toEqual(['private'])
+
+    apiRequest.mockResolvedValueOnce({ token: 'third', user: { id: 'user-1', role: 'Operator' } })
+    await act(async () => registeredRefresher())
+    expect(queryClient.getQueryData(['downtime', 'list'])).toBeUndefined()
+
+    queryClient.setQueryData(['production', 'list'], ['private'])
+    await act(async () => screen.getByText('do-logout').click())
+    expect(queryClient.getQueryData(['production', 'list'])).toBeUndefined()
+  })
+
+  it('clears cached data before a different user is shown', async () => {
+    apiRequest.mockResolvedValueOnce({ token: 'first', user: { id: 'user-1', role: 'Admin' } })
+    loginRequest.mockResolvedValueOnce({ token: 'second', user: { id: 'user-2', role: 'Operator' } })
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    queryClient.setQueryData(['downtime', 'list'], ['user-1 private data'])
+    queryClient.setQueryData(['live', 'snapshot'], { machine: 'user-1 live data' })
+    queryClient.setQueryData(['alerts', 'snapshot'], { alerts: ['user-1 alert'] })
+    await act(async () => screen.getByText('do-login').click())
+    expect(screen.getByText('second')).toBeInTheDocument()
+    expect(queryClient.getQueryData(['downtime', 'list'])).toBeUndefined()
+    expect(queryClient.getQueryData(['live', 'snapshot'])).toBeUndefined()
+    expect(queryClient.getQueryData(['alerts', 'snapshot'])).toBeUndefined()
+  })
+
+  it('never renders the previous account query result after switching accounts', async () => {
+    apiRequest.mockResolvedValueOnce({ token: 'first', user: { id: 'user-1', role: 'Admin' } })
+    loginRequest.mockResolvedValueOnce({ token: 'second', user: { id: 'user-2', role: 'Operator' } })
+    function PrivateData() {
+      const { data } = useAuthenticatedQuery({
+        queryKey: ['private-account-test'],
+        queryFn: async ({ token }) => token === 'first' ? 'user-one-private' : 'user-two-private',
+        staleTime: 30000,
+      })
+      return <span>{data || 'no-private-data'}</span>
+    }
+    render(<QueryClientProvider client={queryClient}><AuthProvider><SessionProbe /><PrivateData /></AuthProvider></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByText('user-one-private')).toBeInTheDocument())
+    await act(async () => screen.getByText('do-login').click())
+    await waitFor(() => expect(screen.getByText('user-two-private')).toBeInTheDocument())
+    expect(screen.queryByText('user-one-private')).not.toBeInTheDocument()
+  })
+
+  it('clears cached data when another tab ends the session', async () => {
+    apiRequest.mockResolvedValueOnce({ token: 'first', user: { id: 'user-1', role: 'Admin' } })
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    queryClient.setQueryData(['production', 'list'], ['private'])
+    act(() => sharedSessionHandler(null))
+    expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(queryClient.getQueryData(['production', 'list'])).toBeUndefined()
   })
 
   it('restores the session silently when a refresh cookie is valid', async () => {

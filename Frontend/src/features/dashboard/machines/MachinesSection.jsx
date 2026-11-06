@@ -1,6 +1,10 @@
+import './machines.css'
+import { useLayoutEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useOutletContext } from 'react-router'
-import { AlertTriangle, Cpu, RotateCw } from 'lucide-react'
+import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
@@ -32,10 +36,17 @@ function formatSuccessfulUpdate(date) {
 }
 
 export default function MachinesSection() {
+  const [sensorView, setSensorView] = useState('grid')
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('machines-header-controls'))
   const { token } = useAuth()
   const outlet = useOutletContext()
   const fallbackStream = useLiveFeedStream(outlet?.liveFeed ? null : token)
   const liveFeed = outlet?.liveFeed || fallbackStream
+
+  useLayoutEffect(() => {
+    const slot = document.getElementById('machines-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
 
   const machine = liveFeed.machine
   const sensors = liveFeed.sensors
@@ -45,6 +56,8 @@ export default function MachinesSection() {
   const lastUpdated = liveFeed.lastUpdated
   const isRefreshing = liveFeed.isRefreshing
   const sensorCountLabel = `${sensors.length} sensor${sensors.length === 1 ? '' : 's'}`
+  const runningCount = sensors.filter((sensor) => sensor.status === 'Running').length
+  const idleCount = sensors.filter((sensor) => sensor.status === 'Idle').length
 
   const refreshSnapshot = () => liveFeed.reload()
 
@@ -79,6 +92,17 @@ export default function MachinesSection() {
     return <div className="machines-layout"><EmptyMachinesState isRefreshing={isRefreshing} onRefresh={refreshSnapshot} /></div>
   }
 
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('machines-header-controls')
+  const headerControls = (
+    <div className="machines-header-controls">
+      <h2 id="machine-admin-title">{machine.name}</h2><span className="machines-header-code machines-mono">{machine.machineCode}</span>
+      <span className={`status-badge ${getMachineStatusClass(machine.status)}`}>{machine.status}</span>
+      <button className="icon-button machines-refresh" type="button" aria-label="Refresh machines" title="Refresh machines" disabled={isRefreshing} onClick={refreshSnapshot}>
+        <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
+      </button>
+    </div>
+  )
+
   return (
     <div className="machines-layout">
       {isRefreshing ? <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing live machine status...</div> : null}
@@ -90,64 +114,54 @@ export default function MachinesSection() {
             <time dateTime={lastUpdated?.toISOString()}>
               {lastUpdated ? formatSuccessfulUpdate(lastUpdated) : 'an earlier update'}
             </time>
-            . {error}
+            {' '}(updated <UpdatedAgo updatedAt={lastUpdated} />). {error}
           </span>
           <button className="btn btn-secondary table-action-button" type="button" onClick={refreshSnapshot}>Retry machines</button>
         </div>
       ) : null}
 
-      <section className="section-card machine-admin-hero" aria-labelledby="machine-admin-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Machine monitoring</p>
-            <h2 id="machine-admin-title">{machine.name}</h2>
-          </div>
-          <div className="live-heading-badges">
-            <button
-              className="icon-button live-refresh-icon"
-              type="button"
-              aria-label="Refresh machines"
-              disabled={isRefreshing}
-              onClick={refreshSnapshot}
-            >
-              <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-            </button>
-            <span className={`status-badge ${getMachineStatusClass(machine.status)}`}>{machine.status}</span>
-          </div>
-        </div>
-
-        <div className="live-machine-grid">
-          <div><span className="live-metric-label">Machine code</span><strong>{machine.machineCode}</strong></div>
-          <div><span className="live-metric-label">Location</span><strong>{machine.location || 'Not set'}</strong></div>
-          <div><span className="live-metric-label">Sensors</span><strong>{sensorCountLabel}</strong></div>
-          <div>
-            <span className="live-metric-label">Status snapshot</span>
-            <strong><time dateTime={capturedAt || undefined}>{formatShortDateTime(capturedAt)}</time></strong>
-          </div>
-        </div>
+      {resolvedHeaderSlot ? createPortal(headerControls, resolvedHeaderSlot) : headerControls}
+      <section className="machines-telemetry-strip" aria-label="Machine status summary">
+        <div><div><span>Machine code</span><strong className="machines-mono">{machine.machineCode}</strong></div><Cpu size={16} aria-hidden="true" /></div>
+        <div><div><span>Location</span><strong>{machine.location || 'Not set'}</strong></div><MapPin size={16} aria-hidden="true" /></div>
+        <div><div><span>Sensors configured</span><strong>{sensorCountLabel}</strong><small>{runningCount} running · {idleCount} idle</small></div><Activity size={16} aria-hidden="true" /></div>
+        <div><div><span>Status snapshot</span><strong><time dateTime={capturedAt || undefined}>{formatShortDateTime(capturedAt)}</time></strong></div><CircleCheck size={16} aria-hidden="true" /></div>
       </section>
 
-      <section className="section-card" aria-labelledby="sensor-admin-title">
-        <div className="section-heading">
-          <div><p className="section-eyebrow">Sensor monitoring</p><h2 id="sensor-admin-title">Inductive proximity sensors</h2></div>
-          <div className="live-refresh"><span className="section-chip"><Cpu size={16} aria-hidden="true" />{sensors.length} shown</span></div>
+      <section className="machines-sensors-section" aria-labelledby="sensor-admin-title">
+        <div className="machines-section-heading">
+          <h2 id="sensor-admin-title">Inductive proximity sensors <span className="machines-count">{sensors.length} configured</span></h2>
+          <div className="machines-view-toggle" role="group" aria-label="Sensor view">
+            <button type="button" aria-label="Grid view" aria-pressed={sensorView === 'grid'} onClick={() => setSensorView('grid')}><LayoutGrid size={16} aria-hidden="true" /></button>
+            <button type="button" aria-label="Table view" aria-pressed={sensorView === 'table'} onClick={() => setSensorView('table')}><List size={16} aria-hidden="true" /></button>
+          </div>
         </div>
 
-        {sensors.length === 0 ? <p className="table-muted">No sensors were returned by the live monitoring source.</p> : (
+        {sensors.length === 0 ? <p className="table-muted">No sensors were returned by the live monitoring source.</p> : sensorView === 'table' ? (
+          <div className="account-table-wrap"><table className="account-table machines-sensor-table"><thead><tr><th scope="col">Sensor</th><th scope="col">Status</th><th scope="col">Hardware</th><th scope="col">Connection</th><th scope="col">Last event</th></tr></thead><tbody>
+            {sensors.map((sensor) => <tr key={sensor.id}><td>{sensor.sensorCode} · {getSensorLabel(sensor.sensorCode, sensor.label)}</td><td><span className={`status-badge ${getSensorStatusClass(sensor.status)}`}>{sensor.status}</span></td><td>{sensor.esp32DeviceId || 'Unavailable'}</td><td><span className={`machines-connection-${connectivityLabel(sensor) === 'Connected' ? 'connected' : 'unavailable'}`}>{connectivityLabel(sensor)}</span></td><td>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</td></tr>)}
+          </tbody></table></div>
+        ) : (
           <div className="admin-sensor-grid">
             {sensors.map((sensor) => {
               const statusClass = getSensorStatusClass(sensor.status)
               return (
                 <article key={sensor.id} className={`machine-card admin-sensor-card ${statusClass}`}>
-                  <div className="machine-card-header">
-                    <div><p className="machine-id">{sensor.sensorCode}</p><h3>{getSensorLabel(sensor.sensorCode, sensor.label)}</h3></div>
+                  <div className="machines-sensor-heading">
+                    <span className="machines-sensor-code">{sensor.sensorCode}</span>
                     <span className={`status-badge ${statusClass}`}>{sensor.status}</span>
                   </div>
-                  <dl className="machine-meta live-sensor-meta">
-                    <div><dt>Device ID</dt><dd>{sensor.esp32DeviceId}</dd></div>
-                    <div><dt>Connection</dt><dd>{connectivityLabel(sensor)}</dd></div>
-                    <div className="admin-sensor-meta-wide"><dt>Purpose</dt><dd>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</dd></div>
-                    <div className="admin-sensor-meta-wide"><dt>Last Event</dt><dd>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</dd></div>
+                  <div className="machines-sensor-identity">
+                    <h3>{getSensorLabel(sensor.sensorCode, sensor.label)}</h3>
+                    <p>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</p>
+                  </div>
+                  <dl className="machines-sensor-telemetry">
+                    <div><dt>Connection</dt><dd className={`machines-connection-${connectivityLabel(sensor) === 'Connected' ? 'connected' : 'unavailable'}`}>{connectivityLabel(sensor)}</dd></div>
+                    <div><dt>Trigger limit</dt><dd>Unavailable</dd></div>
+                  </dl>
+                  <dl className="machines-sensor-footer">
+                    <div><dt>Hardware</dt><dd>{sensor.esp32DeviceId || 'Unavailable'}</dd></div>
+                    <div><dt>Last event</dt><dd>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</dd></div>
                   </dl>
                 </article>
               )

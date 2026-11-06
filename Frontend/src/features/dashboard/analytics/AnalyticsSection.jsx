@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import './analytics-compact.css'
+import { createPortal } from 'react-dom'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
+import { keepPreviousData } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AlertTriangle, Info, RotateCw } from 'lucide-react'
-import { useAuth } from '../../../shared/hooks/useAuth.js'
-import { getAnalyticsKpis, secondaryAnalyticsKpiIds } from './analyticsPresentation.js'
+import { getAnalyticsKpis } from './analyticsPresentation.js'
 import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsDateRangePicker from './AnalyticsDateRangePicker.jsx'
@@ -10,12 +15,6 @@ import AnalyticsKpiCard from './AnalyticsKpiCard.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 
 const AUTO_REFRESH_MS = 60 * 1000
-
-const rangePresets = [
-  { id: 'week', label: 'Weekly' },
-  { id: 'month', label: 'Monthly' },
-  { id: 'all', label: 'All time' },
-]
 
 function getRangeValidation(options) {
   try {
@@ -29,121 +28,66 @@ function getRangeValidation(options) {
 }
 
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
-  const { token } = useAuth()
-  const currentManilaDate = useMemo(() => getManilaDateInputValue(), [])
+  const online = useNetworkOnline()
+  const currentManilaDate = getManilaDateInputValue()
   const [period, setPeriod] = useState('week')
-  const [pickerPeriod, setPickerPeriod] = useState('week')
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
+  const [customRange, setCustomRange] = useState(null)
   const [trendMetric, setTrendMetric] = useState('downtime')
   const [isCaveatOpen, setIsCaveatOpen] = useState(false)
-  const [snapshot, setSnapshot] = useState(null)
-  const [loadState, setLoadState] = useState('loading')
-  const [errorMessage, setErrorMessage] = useState('')
-  const requestIdRef = useRef(0)
-  const requestControllerRef = useRef(null)
-  const successfulSnapshotRef = useRef(null)
-
-  const requestOptions = useMemo(() => (
-    period === 'all'
-      ? { period }
-      : { period: period === 'month' ? 'this-month' : 'this-week', referenceDate: selectedDate }
-  ), [period, selectedDate])
+  const requestOptions = useMemo(() => {
+    if (period === 'all') {
+      return { period: 'all' }
+    }
+    if (period === 'month') {
+      return { period: 'this-month', referenceDate: selectedDate }
+    }
+    if (period === 'custom') {
+      return {
+        period: 'custom',
+        startDate: customRange?.startDate || selectedDate,
+        endDate: customRange?.endDate || selectedDate,
+      }
+    }
+    return { period: 'this-week', referenceDate: selectedDate }
+  }, [customRange, period, selectedDate])
   const { range, errorMessage: rangeErrorMessage } = useMemo(
     () => getRangeValidation(requestOptions),
     [requestOptions],
   )
-  const requestKey = range
-    ? `${token || 'anonymous'}:${range.period}:${range.range || range.startDate}:${range.endDate || ''}:${range.bucket}`
-    : ''
-
-  const loadSnapshot = useCallback(async () => {
-    if (!range) return
-
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    requestControllerRef.current?.abort()
-    const requestController = new AbortController()
-    requestControllerRef.current = requestController
-    const previousResult = successfulSnapshotRef.current
-    const hasPreviousSnapshot = Boolean(previousResult)
-    const hasMatchingSnapshot = previousResult?.requestKey === requestKey
-
-    if (!hasPreviousSnapshot) setSnapshot(null)
-    setLoadState(hasPreviousSnapshot ? 'refreshing' : 'loading')
-    setErrorMessage('')
-
-    try {
-      const nextSnapshot = await loadAnalytics(token, requestOptions, { signal: requestController.signal })
-      if (requestId !== requestIdRef.current) return
-
-      successfulSnapshotRef.current = { requestKey, snapshot: nextSnapshot }
-      setSnapshot(nextSnapshot)
-      setLoadState('success')
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return
-
-      const nextErrorMessage = error?.message || 'Unable to load Analytics.'
-      setErrorMessage(nextErrorMessage)
-
-      if (hasMatchingSnapshot) {
-        setSnapshot(previousResult.snapshot)
-        setLoadState('stale')
-      } else {
-        setSnapshot(null)
-        setLoadState('error')
-      }
-    } finally {
-      if (requestId === requestIdRef.current) requestControllerRef.current = null
-    }
-  }, [loadAnalytics, range, requestKey, requestOptions, token])
-
-  useEffect(() => {
-    if (!range) {
-      // A delayed API response must not overwrite validation after
-      // a user has made the custom range invalid.
-      requestIdRef.current += 1
-      requestControllerRef.current?.abort()
-      requestControllerRef.current = null
-      setSnapshot(null)
-      setErrorMessage('')
-      setLoadState('validation')
-      return
-    }
-
-    loadSnapshot()
-  }, [loadSnapshot, range])
-
-  useEffect(() => {
-    if (!range) return undefined
-
-    const intervalId = window.setInterval(loadSnapshot, AUTO_REFRESH_MS)
-    return () => window.clearInterval(intervalId)
-  }, [loadSnapshot, range])
-
-  useEffect(() => () => {
-    requestIdRef.current += 1
-    requestControllerRef.current?.abort()
-  }, [])
-
+  const query = useAuthenticatedQuery({
+    queryKey: queryKeys.analytics.snapshot(range),
+    queryFn: ({ token, signal }) => loadAnalytics(token, requestOptions, { signal }),
+    enabled: Boolean(range),
+    staleTime: 60000,
+    refetchInterval: AUTO_REFRESH_MS,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
+  })
+  const snapshot = range ? query.data : null
+  const loadState = !range ? 'validation' : query.isError || !online ? (snapshot ? 'stale' : 'error') : query.isFetching ? (snapshot ? 'refreshing' : 'loading') : 'success'
+  const errorMessage = query.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load Analytics.')
+  const loadSnapshot = () => query.refetch()
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
   const hasComparison = snapshot?.comparisonMode !== 'none'
-  const primaryKpis = kpis.filter((kpi) => kpi.isPrimary)
-  const secondaryKpis = kpis.filter((kpi) => secondaryAnalyticsKpiIds.includes(kpi.id))
   const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
-  const isShowingPreviousRange = Boolean(snapshot && successfulSnapshotRef.current?.requestKey !== requestKey)
+  const isShowingPreviousRange = query.isPlaceholderData
 
-  const handlePickerDateChange = useCallback((nextDate) => {
-    setSelectedDate(nextDate)
-    setPeriod(pickerPeriod)
-  }, [pickerPeriod])
+  const handleRangeChange = useCallback(({ period: nextPeriod, startDate: nextStartDate, endDate: nextEndDate }) => {
+    setPeriod(nextPeriod)
+    if (nextPeriod === 'custom') {
+      setCustomRange({ startDate: nextStartDate, endDate: nextEndDate })
+    } else if (nextPeriod === 'week' || nextPeriod === 'month') {
+      setSelectedDate(nextStartDate)
+    }
+  }, [])
 
-  return (
-    <div className="reports-layout analytics-layout">
-      <section className="section-card analytics-controls-card" aria-labelledby="analytics-controls-title">
+  const controls = (
+      <div className="analytics-controls-card">
         <div className="analytics-header-row">
           <div className="analytics-title-group">
-            <h2 id="analytics-controls-title">Analytics</h2>
+            <h2 className="sr-only">Analytics</h2>
             <Popover open={isCaveatOpen} onOpenChange={setIsCaveatOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -163,41 +107,18 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
           </div>
 
           <div className="analytics-header-controls">
-            <fieldset className="analytics-range-fieldset">
-              <legend className="sr-only">Date range</legend>
-              <div className="trend-mode-toggle analytics-range-toggle" role="group" aria-label="Analytics date range">
-                {rangePresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    className={`trend-mode-button ${period === preset.id ? 'is-selected' : ''}`}
-                    type="button"
-                    aria-pressed={period === preset.id}
-                    onClick={() => {
-                      if (preset.id !== 'all') {
-                        setPickerPeriod(preset.id)
-                        setSelectedDate(currentManilaDate)
-                      }
-                      setPeriod(preset.id)
-                    }}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            {period !== 'all' ? (
-              <AnalyticsDateRangePicker
-                period={pickerPeriod}
-                selectedDate={selectedDate}
-                maxDate={currentManilaDate}
-                onChange={handlePickerDateChange}
-                isActive
-              />
-            ) : null}
+            <AnalyticsDateRangePicker
+              period={period}
+              startDate={range?.startDate}
+              endDate={range?.endDate}
+              maxDate={currentManilaDate}
+              onChange={handleRangeChange}
+            />
             <button
               className="btn analytics-refresh-button"
               type="button"
               aria-label="Refresh data"
+              title="Refresh data"
               disabled={!range || loadState === 'loading' || loadState === 'refreshing'}
               onClick={loadSnapshot}
             >
@@ -205,7 +126,18 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
             </button>
           </div>
         </div>
-      </section>
+      </div>
+  )
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('analytics-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('analytics-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('analytics-header-controls')
+
+  return (
+    <div className="reports-layout analytics-layout">
+      {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
 
       {loadState === 'refreshing' ? (
         <div className="notice dashboard-alert" role="status" aria-live="polite">
@@ -255,27 +187,9 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
 
       {snapshot && range && loadState !== 'error' && loadState !== 'validation' ? (
         <>
-          <section className="analytics-kpi-grid analytics-primary-kpi-grid" aria-label="Primary Analytics summary">
-            {primaryKpis.map((kpi) => (
-              <AnalyticsKpiCard
-                key={kpi.id}
-                kpi={kpi}
-                selectedMetric={trendMetric}
-                onSelect={setTrendMetric}
-                showComparison={hasComparison}
-              />
-            ))}
-          </section>
-
-          <section className="analytics-secondary-kpi-row" aria-label="Secondary Analytics summary">
-            {secondaryKpis.map((kpi) => (
-              <AnalyticsKpiCard
-                key={kpi.id}
-                kpi={kpi}
-                selectedMetric={trendMetric}
-                onSelect={setTrendMetric}
-                showComparison={hasComparison}
-              />
+          <section className="analytics-compact-kpis" aria-label="Analytics summary">
+            {kpis.map((kpi) => (
+              <AnalyticsKpiCard key={kpi.id} kpi={kpi} selectedMetric={trendMetric} onSelect={setTrendMetric} showComparison={hasComparison} />
             ))}
           </section>
 

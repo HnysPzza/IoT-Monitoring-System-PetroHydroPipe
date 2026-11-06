@@ -13,7 +13,6 @@ router.use(authenticate)
 router.use(authorizeRole([
   'Admin',
   'Operation Manager',
-  'Asst. Operation Manager',
   'Engineering Supervisor',
 ]))
 router.use(analyticsRateLimiter)

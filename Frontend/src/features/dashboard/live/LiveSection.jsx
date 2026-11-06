@@ -1,7 +1,9 @@
+import './live.css'
 import { useMemo } from 'react'
 import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff, Wrench } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
@@ -48,10 +50,10 @@ export default function LiveSection() {
   const monitoring = liveFeed.monitoring
   const isLoading = liveFeed.isLoading
   const isRefreshing = liveFeed.isRefreshing
-  const notice = liveFeed.error ? {
+  const notice = liveFeed.state === 'stale' || liveFeed.error ? {
     type: 'error',
     message: Boolean(liveFeed.machine)
-      ? `Live data is stale. ${liveFeed.error}`
+      ? <>Live data is stale. Updated <UpdatedAgo updatedAt={liveFeed.lastUpdated} />. {liveFeed.error || 'Waiting for a fresh update.'}</>
       : liveFeed.error,
   } : null
 
@@ -181,8 +183,8 @@ export default function LiveSection() {
       {presentedSensors.length > 0 ? (
         <section className="section-card live-activity-card" aria-labelledby="live-activity-title">
           <div className="live-activity-heading">
-            <div><p className="section-eyebrow">Recent activity</p><h2 id="live-activity-title">Latest event by sensor</h2></div>
-            <p className="live-activity-caption">Columns match the sensor cards above</p>
+            <div><h2 id="live-activity-title">Latest event by sensor</h2></div>
+
           </div>
           <ol className="live-activity-grid" aria-label="Latest event reported by each sensor">
             {presentedSensors.map((sensor) => (

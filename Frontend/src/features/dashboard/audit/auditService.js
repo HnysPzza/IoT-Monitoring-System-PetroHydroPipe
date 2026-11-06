@@ -11,7 +11,14 @@ function buildAuditQuery(filters) {
     params.set('entityType', filters.entityType)
   }
 
-  if (filters.date) {
+  if (filters.dateFrom && filters.dateTo) {
+    params.set('dateFrom', filters.dateFrom)
+    params.set('dateTo', filters.dateTo)
+  } else if (filters.dateFrom) {
+    params.set('dateFrom', filters.dateFrom)
+  } else if (filters.dateTo) {
+    params.set('dateTo', filters.dateTo)
+  } else if (filters.date) {
     params.set('dateFrom', filters.date)
     params.set('dateTo', filters.date)
   }
@@ -28,6 +35,6 @@ function buildAuditQuery(filters) {
   return queryString ? `?${queryString}` : ''
 }
 
-export function getAuditLogs(token, filters) {
-  return apiRequest(`/api/audit${buildAuditQuery(filters)}`, { token })
+export function getAuditLogs(token, filters, { signal } = {}) {
+  return apiRequest(`/api/audit${buildAuditQuery(filters)}`, { token, signal })
 }

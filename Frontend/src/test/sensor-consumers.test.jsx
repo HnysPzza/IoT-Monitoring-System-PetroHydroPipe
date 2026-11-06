@@ -39,9 +39,9 @@ for (const [name, Component] of [['Live Feed', LiveSection], ['Machines', Machin
           throw new Error(`Unexpected API read: ${url}`)
         })
         renderWithAuth(<Component />)
-        await screen.findByText('S-01')
+        await screen.findAllByText('S-01')
         sensorIdentities.forEach((identity, index) => {
-          const card = screen.getByText(identity.code).closest('article')
+          const card = screen.getAllByText(identity.code).find((el) => el.closest('article')).closest('article')
           expect(within(card).getByText(scenario.expected[index], { selector: '.status-badge' })).toBeInTheDocument()
           if (scenario.offlineCode === identity.code) expect(within(card).getByText(/Offline/)).toBeInTheDocument()
         })

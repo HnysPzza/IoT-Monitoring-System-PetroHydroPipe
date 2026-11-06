@@ -1,11 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   Search,
+  RotateCw,
   UserPlus,
   X,
 } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useUsersAction } from './UsersActionProvider.jsx'
 import UserAccountForm from './UserAccountForm.jsx'
@@ -37,24 +43,20 @@ function applyPendingAction(payload, pendingAction, query) {
 
 export default function UsersSection() {
   const { token, user } = useAuth()
-  const { pendingAction, revision: actionRevision, scheduleAccountAction } = useUsersAction()
-  const [directory, setDirectory] = useState({ users: [], total: 0 })
-  const [roles, setRoles] = useState([])
+  const { pendingAction, scheduleAccountAction } = useUsersAction()
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
   const [query, setQuery] = useState(initialQuery)
   const [search, setSearch] = useState('')
-  const [revision, setRevision] = useState(0)
   const [form, setForm] = useState(initialUserForm)
   const [errors, setErrors] = useState({})
   const [notice, setNotice] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
   const [isMutating, setIsMutating] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
   const busy = isMutating || Boolean(pendingAction)
   const dialog = useRef(null)
   const confirmDialog = useRef(null)
   const mutation = useRef(false)
-  const usersRequest = useRef(null)
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery((current) => current.search === search
@@ -69,39 +71,28 @@ export default function UsersSection() {
     return () => clearTimeout(timer)
   }, [notice])
 
+  const rolesQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.users.roles,
+    queryFn: ({ token: currentToken, signal }) => getRoles(currentToken, signal),
+    staleTime: 300000,
+  })
+  const usersQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.users.list(query),
+    queryFn: ({ token: currentToken, signal }) => getUsers(currentToken, query, signal),
+    staleTime: 30000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
+  })
+  const roles = rolesQuery.data?.roles || []
+  const directory = applyPendingAction(usersQuery.data || { users: [], total: 0 }, pendingAction, query)
+  const isLoading = usersQuery.isPending && !usersQuery.data
+  const loadError = usersQuery.error?.message || (rolesQuery.isError ? rolesQuery.error?.message : '') || (!online && usersQuery.data ? 'Unable to refresh while offline.' : '')
+  const staleNotice = loadError && usersQuery.data ? `Account data is stale.${usersQuery.isPlaceholderData ? ' Showing previous filter results.' : ''}${usersQuery.dataUpdatedAt ? ` Last updated ${new Date(usersQuery.dataUpdatedAt).toLocaleString()}.` : ''} ${loadError}` : ''
   useEffect(() => {
-    let active = true
-    getRoles(token).then((payload) => {
-      if (active) setRoles(payload.roles || [])
-    }).catch((error) => {
-      if (active) setNotice({ type: 'error', message: error.message })
-    })
-    return () => { active = false }
-  }, [token])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    usersRequest.current = controller
-    setIsLoading(true)
-    setLoadError('')
-    getUsers(token, query, controller.signal).then((payload) => {
-      if (controller.signal.aborted) return
-      const lastPage = Math.max(1, Math.ceil(payload.total / query.limit))
-      if (query.page > lastPage) {
-        setQuery((current) => ({ ...current, page: lastPage }))
-        return
-      }
-      setDirectory(applyPendingAction(payload, pendingAction, query))
-    }).catch((error) => {
-      if (!controller.signal.aborted) setLoadError(error.message || 'Unable to load accounts.')
-    }).finally(() => {
-      if (!controller.signal.aborted) setIsLoading(false)
-    })
-    return () => {
-      controller.abort()
-      if (usersRequest.current === controller) usersRequest.current = null
-    }
-  }, [token, query, revision, actionRevision])
+    if (!usersQuery.data || usersQuery.isPlaceholderData) return
+    const lastPage = Math.max(1, Math.ceil(usersQuery.data.total / query.limit))
+    if (query.page > lastPage) setQuery((current) => ({ ...current, page: lastPage }))
+  }, [usersQuery.data, usersQuery.isPlaceholderData, query.limit, query.page])
 
   function filter(field, value) {
     setQuery((current) => ({ ...current, [field]: value, page: 1 }))
@@ -122,7 +113,8 @@ export default function UsersSection() {
       setNotice({ type: 'error', message: `${error.message} If the request timed out, check the directory before retrying.` })
       return false
     } finally {
-      setRevision((current) => current + 1)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       mutation.current = false
       setIsMutating(false)
     }
@@ -134,21 +126,7 @@ export default function UsersSection() {
     const removesFromResults = type === 'archive' || (type === 'deactivate' && query.status === 'Active')
     if (!scheduleAccountAction(type, account, removesFromResults)) return
 
-    const nextTotal = Math.max(0, directory.total - (removesFromResults ? 1 : 0))
-    const nextPageCount = Math.max(1, Math.ceil(nextTotal / query.limit))
-    const nextUsers = removesFromResults
-      ? directory.users.filter((userAccount) => userAccount.id !== account.id)
-      : directory.users.map((userAccount) => userAccount.id === account.id
-        ? { ...userAccount, status: 'Inactive' }
-        : userAccount)
-
-    usersRequest.current?.abort()
-    setIsLoading(false)
-    setDirectory((current) => ({
-      ...current,
-      users: nextUsers,
-      total: query.page <= nextPageCount ? nextTotal : current.total,
-    }))
+    void queryClient.cancelQueries({ queryKey: queryKeys.users.all })
 
     setNotice(null)
     confirmDialog.current?.close()
@@ -183,15 +161,33 @@ export default function UsersSection() {
   )
 
   const pages = Math.max(1, Math.ceil(directory.total / query.limit))
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('users-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('users-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('users-header-controls')
+  const headerControls = (
+    <div className="users-header-controls">
+      {!isLoading && !loadError ? <span className="users-count">{directory.total} {hasActiveFilters ? 'matching' : 'staff'} accounts</span> : null}
+      <button className="icon-button users-refresh" type="button" aria-label="Refresh accounts" title="Refresh accounts" disabled={isLoading || busy} onClick={() => usersQuery.refetch()}>
+        <RotateCw size={15} aria-hidden="true" />
+      </button>
+    </div>
+  )
+
+  if (!online && !usersQuery.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => usersQuery.refetch()}>Retry</button></div>
 
   return (
     <div className="users-directory">
       <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
+      {resolvedHeaderSlot ? createPortal(headerControls, resolvedHeaderSlot) : headerControls}
 
-      <section className="section-card users-filters-card" aria-label="User account filters">
+      <section className="section-card users-directory-card" aria-label="Staff accounts">
+        <div className="users-filters-card" aria-label="User account filters">
         <div className="users-filters">
           <label className="filter-field users-search-field" htmlFor="users-search-input">
-            <span>Search</span>
+            <span className="sr-only">Search</span>
             <div className="users-search-control">
               <Search size={16} className="users-search-icon" aria-hidden="true" />
               <input
@@ -207,7 +203,7 @@ export default function UsersSection() {
           </label>
 
           <label className="filter-field" htmlFor="users-filter-role">
-            <span>Role</span>
+            <span className="sr-only">Role</span>
             <select
               id="users-filter-role"
               value={query.role}
@@ -220,7 +216,7 @@ export default function UsersSection() {
           </label>
 
           <label className="filter-field" htmlFor="users-filter-status">
-            <span>Status</span>
+            <span className="sr-only">Status</span>
             <select
               id="users-filter-status"
               value={query.status}
@@ -230,6 +226,26 @@ export default function UsersSection() {
               <option value="">All statuses</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
+            </select>
+          </label>
+
+          <label className="filter-field users-sort-field" htmlFor="users-filter-sort">
+            <span className="sr-only">Sort</span>
+            <select
+              id="users-filter-sort"
+              value={`${query.sort}-${query.direction}`}
+              disabled={busy}
+              onChange={(event) => {
+                const [sort, direction] = event.target.value.split('-')
+                setQuery((current) => ({ ...current, sort, direction, page: 1 }))
+              }}
+            >
+              <option value="created-desc">Newest first</option>
+              <option value="created-asc">Oldest first</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="name-desc">Name (Z–A)</option>
+              <option value="role-asc">Role (A–Z)</option>
+              <option value="status-asc">Status</option>
             </select>
           </label>
 
@@ -258,39 +274,14 @@ export default function UsersSection() {
             </button>
           )}
         </div>
-      </section>
-
-      <section className="section-card users-directory-card" aria-labelledby="users-directory-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Directory</p>
-            <h2 id="users-directory-title">Staff accounts</h2>
-          </div>
-          <label className="filter-field users-sort-field" htmlFor="users-filter-sort">
-            <span>Sort</span>
-            <select
-              id="users-filter-sort"
-              value={`${query.sort}-${query.direction}`}
-              disabled={busy}
-              onChange={(event) => {
-                const [sort, direction] = event.target.value.split('-')
-                setQuery((current) => ({ ...current, sort, direction, page: 1 }))
-              }}
-            >
-              <option value="created-desc">Newest first</option>
-              <option value="created-asc">Oldest first</option>
-              <option value="name-asc">Name (A–Z)</option>
-              <option value="name-desc">Name (Z–A)</option>
-              <option value="role-asc">Role (A–Z)</option>
-              <option value="status-asc">Status</option>
-            </select>
-          </label>
         </div>
 
-        {loadError ? (
+        {staleNotice ? <div role="alert">{staleNotice} <button type="button" onClick={() => usersQuery.refetch()}>Retry</button></div> : null}
+        {usersQuery.isFetching && usersQuery.data ? <div role="status">{usersQuery.isPlaceholderData ? 'Loading selected filters; previous results remain visible.' : 'Refreshing accounts...'}</div> : null}
+        {loadError && !usersQuery.data ? (
           <div className="users-load-error" role="alert">
             <p>{loadError}</p>
-            <button className="btn btn-secondary" type="button" onClick={() => setRevision((current) => current + 1)}>Retry loading</button>
+            <button className="btn btn-secondary" type="button" onClick={() => usersQuery.refetch()}>Retry loading</button>
           </div>
         ) : (
           <UsersTable
@@ -299,10 +290,11 @@ export default function UsersSection() {
             sort={query.sort}
             direction={query.direction}
             isLoading={isLoading}
-            busy={busy}
+            busy={busy || usersQuery.isPlaceholderData}
             page={query.page}
             totalPages={pages}
             totalCount={directory.total}
+            pageSize={query.limit}
             onPageChange={(page) => setQuery((current) => ({ ...current, page }))}
             onRequestDeactivate={(account) => {
               setConfirmAction({ type: 'deactivate', account })

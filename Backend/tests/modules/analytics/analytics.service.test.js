@@ -51,6 +51,31 @@ function createDependencies({ eventRows = [], downtimeRows = [] } = {}) {
   }
 }
 
+test('starts period reads while loss basis is pending', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies()
+  let resolveBasis
+  dependencies.getOutputLossBasis = () => new Promise((resolve) => { resolveBasis = resolve })
+  let calls = 0
+  dependencies.aggregateEvents = async () => { calls += 1; return [] }
+  const request = getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-01' }, dependencies)
+  await new Promise((resolve) => setImmediate(resolve))
+  try { assert.equal(calls, 2) } finally { resolveBasis(LOSS_BASIS); await request }
+})
+
+test('propagates loss basis and period query failures', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies } = createDependencies()
+  const basisFailure = new Error('Basis unavailable')
+  await assert.rejects(getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-01' }, {
+    ...dependencies, getOutputLossBasis: async () => { throw basisFailure },
+  }), (error) => error === basisFailure)
+  const eventFailure = new Error('Events unavailable')
+  await assert.rejects(getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-01' }, {
+    ...dependencies, aggregateEvents: async () => { throw eventFailure },
+  }), (error) => error === eventFailure)
+})
+
 test('Analytics compares a partial Manila range with the matching elapsed preceding range', async () => {
   const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies({

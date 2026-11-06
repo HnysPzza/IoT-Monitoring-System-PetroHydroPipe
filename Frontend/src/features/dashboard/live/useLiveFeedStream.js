@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { onlineManager, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '../../../shared/services/queryClient.js'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { getLiveFeed } from './liveService.js'
 import { presentLiveSensors } from './livePresentation.js'
 
@@ -28,17 +31,21 @@ function getTimestamp(isoString) {
 }
 
 export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
-  const [data, setData] = useState(null)
-  const [state, setState] = useState('loading')
+  const queryClient = useQueryClient()
+  const online = useNetworkOnline()
+  const cached = token ? queryClient.getQueryData(queryKeys.live.snapshot) : null
+  const [data, setData] = useState(cached?.data || null)
+  const [state, setState] = useState(cached ? 'stale' : 'loading')
   const [error, setError] = useState('')
-  const [lastUpdated, setLastUpdated] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(cached ? new Date(cached.updatedAt) : null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const inFlightRef = useRef(false)
   const requestIdRef = useRef(0)
-  const latestCapturedAtRef = useRef(0)
+  const latestCapturedAtRef = useRef(getTimestamp(cached?.data?.monitoring?.capturedAt))
   const mountedRef = useRef(true)
-  const hasSuccessfulDataRef = useRef(false)
+  const hasSuccessfulDataRef = useRef(Boolean(cached?.data?.machine))
+  const wasOfflineRef = useRef(!online)
 
   const loadFeed = useCallback(async ({ initial = false } = {}) => {
     if (!token) return false
@@ -46,12 +53,13 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
     inFlightRef.current = true
     const requestId = ++requestIdRef.current
 
-    if (initial) setState('loading')
+    if (initial && !hasSuccessfulDataRef.current) setState('loading')
     else setIsRefreshing(true)
 
     try {
       const payload = await getLiveFeed(token)
       if (!mountedRef.current || requestId !== requestIdRef.current) return false
+      if (!onlineManager.isOnline()) return false
 
       const feedCapturedAt = getTimestamp(payload.monitoring?.capturedAt)
       if (feedCapturedAt > 0 && feedCapturedAt < latestCapturedAtRef.current) {
@@ -63,6 +71,7 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
       }
 
       const normalized = normalizeLivePayload(payload)
+      queryClient.setQueryData(queryKeys.live.snapshot, { data: normalized, updatedAt: Date.now() })
       setData(normalized)
       setLastUpdated(new Date())
       setError('')
@@ -84,10 +93,10 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
         setIsRefreshing(false)
       }
     }
-  }, [token])
+  }, [token, queryClient])
 
   const applyEvent = useCallback((incomingLive) => {
-    if (!incomingLive || typeof incomingLive !== 'object') return false
+    if (!onlineManager.isOnline() || !incomingLive || typeof incomingLive !== 'object') return false
 
     const eventCapturedAt = getTimestamp(incomingLive.monitoring?.capturedAt)
     if (eventCapturedAt > 0 && eventCapturedAt < latestCapturedAtRef.current) {
@@ -99,13 +108,26 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
     }
 
     const normalized = normalizeLivePayload(incomingLive)
+    queryClient.setQueryData(queryKeys.live.snapshot, { data: normalized, updatedAt: Date.now() })
     setData(normalized)
     setLastUpdated(new Date())
     setError('')
     hasSuccessfulDataRef.current = Boolean(normalized?.machine)
     setState(normalized?.machine ? 'success' : 'empty')
     return true
-  }, [])
+  }, [queryClient])
+
+  useEffect(() => {
+    if (!token) return
+    if (!online) {
+      wasOfflineRef.current = true
+      setError('Unable to refresh while offline.')
+      setState(hasSuccessfulDataRef.current ? 'stale' : 'error')
+    } else if (wasOfflineRef.current) {
+      wasOfflineRef.current = false
+      void loadFeed()
+    }
+  }, [online, token, loadFeed])
 
   useEffect(() => {
     mountedRef.current = true

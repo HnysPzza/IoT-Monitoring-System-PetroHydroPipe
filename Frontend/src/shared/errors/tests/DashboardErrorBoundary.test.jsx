@@ -100,4 +100,28 @@ describe('DashboardErrorBoundary', () => {
     expect(screen.getByRole('heading', { name: /something went wrong on our end\./i })).toBeInTheDocument()
     expect(screen.queryByText(/sensitive chunk detail/i)).not.toBeInTheDocument()
   })
+
+  it('identifies an offline chunk failure and offers recovery without a false server error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const reloadPage = vi.fn()
+    const RejectedSection = lazy(() => Promise.reject(new TypeError('Failed to fetch dynamically imported module: /assets/section.js')))
+    renderWithAuth(
+      <DashboardErrorBoundary resetKey="/dashboard/downtime" reloadPage={reloadPage}>
+        <Suspense fallback={<p>Loading</p>}><RejectedSection /></Suspense>
+      </DashboardErrorBoundary>,
+    )
+    expect(await screen.findByRole('alert')).toHaveFocus()
+    expect(screen.getByText(/offline/i)).toBeInTheDocument()
+    expect(screen.queryByText('INTERNAL SERVER ERROR')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }))
+    expect(reloadPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps unexpected render failures as server errors while offline', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    renderWithAuth(<DashboardErrorBoundary resetKey="/dashboard"><ThrowError /></DashboardErrorBoundary>)
+    expect(screen.getByText('INTERNAL SERVER ERROR')).toBeInTheDocument()
+  })
 })

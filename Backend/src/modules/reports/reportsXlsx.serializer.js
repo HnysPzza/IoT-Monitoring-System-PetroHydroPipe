@@ -1,4 +1,4 @@
-const ExcelJS = require('exceljs')
+const ExcelJS = require('@excel.js/exceljs').default
 
 const COLOR = {
   ink: 'FF1F3A5F',
@@ -35,6 +35,22 @@ function dateValue(value) {
   const [year, month, day] = value.split('-').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day))
   return date.toISOString().slice(0, 10) === value ? date : null
+}
+
+function formatManilaDayKey(dateStr, fallbackDate) {
+  if (!dateStr) return fallbackDate || 'UNDATED'
+  try {
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return fallbackDate || 'UNDATED'
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d)
+  } catch {
+    return fallbackDate || 'UNDATED'
+  }
 }
 
 function formatManilaDate(dateStr) {
@@ -367,8 +383,21 @@ async function renderProductionWorkbook(workbook, report) {
     emptyRow.getCell(1).border = { bottom: THIN_RULE }
     emptyRow.height = 24
   } else {
+    let currentRowNumber = 6
+    let dailyPipeCount = 0
+    let dailyTonnage = 0
+
     productionLogs.forEach((log, index) => {
-      const row = logsSheet.getRow(6 + index)
+      const dayKey = formatManilaDayKey(log.recordedAt, report.selectedDate)
+      dailyPipeCount += 1
+      const tonVal = numericValue(log.tonnage)
+      if (tonVal !== null && tonVal > 0) {
+        dailyTonnage += tonVal
+      }
+
+      const row = logsSheet.getRow(currentRowNumber)
+      currentRowNumber += 1
+
       const recordedAt = formatManilaDate(log.recordedAt)
       const customer = escapeFormula(log.customer || (log.isSpecified ? (log.label || 'N/A') : 'Pending Tag'))
       const diameter = numericValue(log.diameter) ?? 'N/A'
@@ -379,7 +408,7 @@ async function renderProductionWorkbook(workbook, report) {
         : (typeof log.deviceEventId === 'string'
             ? escapeFormula(log.deviceEventId)
             : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')))
-      const tons = numericValue(log.tonnage) ?? 'N/A'
+      const tons = tonVal ?? 'N/A'
       const status = log.isSpecified ? 'Specified' : 'Pending Tag'
 
       row.values = [recordedAt, customer, diameter, thickness, length, pipeNum, tons, status]
@@ -403,6 +432,38 @@ async function renderProductionWorkbook(workbook, report) {
       }
 
       row.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }
+
+      const nextLog = productionLogs[index + 1]
+      const nextDayKey = nextLog ? formatManilaDayKey(nextLog.recordedAt, report.selectedDate) : null
+
+      if (nextDayKey !== dayKey) {
+        const dailyRow = logsSheet.getRow(currentRowNumber)
+        currentRowNumber += 1
+        const roundedDailyTons = Math.round(dailyTonnage * 10000) / 10000
+
+        dailyRow.values = [
+          `DAILY TOTAL (${dayKey})`,
+          '-',
+          '-',
+          '-',
+          '-',
+          dailyPipeCount,
+          roundedDailyTons,
+          '-',
+        ]
+        styleTableBody(dailyRow)
+        dailyRow.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
+        dailyRow.getCell(6).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
+        dailyRow.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' }
+        dailyRow.getCell(6).numFmt = '#,##0 "pcs"'
+        dailyRow.getCell(7).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
+        dailyRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
+        dailyRow.getCell(7).numFmt = '#,##0.0000'
+        dailyRow.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }
+
+        dailyPipeCount = 0
+        dailyTonnage = 0
+      }
     })
   }
 }

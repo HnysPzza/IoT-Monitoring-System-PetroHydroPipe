@@ -1,4 +1,5 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -78,6 +79,76 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByLabelText('S-05 trigger minutes')).toBeDisabled()
   })
 
+  it('keeps an unsaved draft when the window loses and regains focus', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    fireEvent.blur(window)
+    fireEvent.focus(window)
+    expect(trigger).toHaveValue(5)
+    expect(getOperationalSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('updates a clean cached draft when newer settings arrive', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['machines', 'list'], { machines: [machine] })
+    client.setQueryData(['settings', 'machine', machine.id], { settings: settingsFixture(), constraints }, { updatedAt: Date.now() - 120000 })
+    let resolveSettings
+    getOperationalSettings.mockReturnValue(new Promise((resolve) => { resolveSettings = resolve }))
+    renderWithAuth(<QueryClientProvider client={client}><SettingsSection /></QueryClientProvider>)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    expect(trigger).toHaveValue(2)
+    await act(async () => resolveSettings({ settings: settingsFixture({ version: '2', sensorThresholds: { ...settingsFixture().sensorThresholds, 'S-01': { ...settingsFixture().sensorThresholds['S-01'], triggerSeconds: 300 } } }), constraints }))
+    await waitFor(() => expect(trigger).toHaveValue(5))
+    expect(screen.queryByText(/Version/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps unsaved edits when a newer cached settings request completes', async () => {
+    const user = userEvent.setup()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['machines', 'list'], { machines: [machine] })
+    client.setQueryData(['settings', 'machine', machine.id], { settings: settingsFixture(), constraints }, { updatedAt: Date.now() - 120000 })
+    let resolveSettings
+    getOperationalSettings.mockReturnValue(new Promise((resolve) => { resolveSettings = resolve }))
+    renderWithAuth(<QueryClientProvider client={client}><SettingsSection /></QueryClientProvider>)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '7')
+    await act(async () => resolveSettings({ settings: settingsFixture({ version: '2' }), constraints }))
+    expect(trigger).toHaveValue(7)
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your draft was kept')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reload latest' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(trigger).toHaveValue(2)
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Version/i)).not.toBeInTheDocument()
+  })
+
+  it('saves edits from the header controls', async () => {
+    const user = userEvent.setup()
+    const header = document.createElement('div')
+    header.id = 'settings-header-controls'
+    document.body.appendChild(header)
+    updateOperationalSettings.mockResolvedValue({ settings: settingsFixture({ version: '2' }) })
+    try {
+      renderWithAuth(<SettingsSection />)
+      const trigger = await screen.findByLabelText('S-01 trigger minutes')
+      await user.clear(trigger)
+      await user.type(trigger, '5')
+      const save = screen.getByRole('button', { name: 'Save' })
+      expect(header).toContainElement(save)
+      await user.click(save)
+      await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+      expect(updateOperationalSettings.mock.calls[0][2].sensorThresholds['S-01'].triggerSeconds).toBe(300)
+    } finally {
+      header.remove()
+    }
+  })
+
   it('converts edited minute inputs back to seconds when saving', async () => {
     const user = userEvent.setup()
     const saved = settingsFixture({ version: '2' })
@@ -87,7 +158,7 @@ describe('SettingsSection operational settings', () => {
     const trigger = await screen.findByLabelText('S-01 trigger minutes')
     await user.clear(trigger)
     await user.type(trigger, '5')
-    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
     const [token, machineId, payload] = updateOperationalSettings.mock.calls[0]
@@ -106,7 +177,24 @@ describe('SettingsSection operational settings', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/read-only/i)
     expect(screen.getByLabelText('S-01 trigger minutes')).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('keeps editing blocked after the server reports enforcement, even if the draft is discarded', async () => {
+    const user = userEvent.setup()
+    const error = Object.assign(new Error('Enforcement active'), { code: 'SETTINGS_ENFORCEMENT_ACTIVE' })
+    updateOperationalSettings.mockRejectedValue(error)
+    renderWithAuth(<SettingsSection />)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('read-only')
+    expect(trigger).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(trigger).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(trigger).toBeEnabled())
   })
 
   it('keeps the draft and requires reload after a version conflict', async () => {
@@ -119,12 +207,28 @@ describe('SettingsSection operational settings', () => {
     const trigger = await screen.findByLabelText('S-01 trigger minutes')
     await user.clear(trigger)
     await user.type(trigger, '5')
-    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/draft was kept/i)
     expect(trigger).toHaveValue(5)
     expect(screen.getByRole('button', { name: 'Reload latest' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('keeps the conflict and draft when reloading machines fails', async () => {
+    const user = userEvent.setup()
+    updateOperationalSettings.mockRejectedValue(Object.assign(new Error('Conflict'), { code: 'SETTINGS_VERSION_CONFLICT' }))
+    renderWithAuth(<SettingsSection />)
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByRole('button', { name: 'Reload latest' })
+    getMachines.mockRejectedValueOnce(new Error('Machine reload failed'))
+    await user.click(screen.getByRole('button', { name: 'Reload latest' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Machine reload failed')
+    expect(trigger).toHaveValue(5)
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('populates default whole-minute limits when enabling a sensor with null or sub-minute recovery', async () => {
