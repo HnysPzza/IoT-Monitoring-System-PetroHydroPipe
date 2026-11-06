@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './settings-compact.css'
 import { AlertTriangle, Lock, Plus, RotateCcw, RotateCw, Save } from 'lucide-react'
@@ -81,6 +81,15 @@ export default function SettingsSection() {
   })
   const watchdogMode = !online || diagnosticsQuery.isError || diagnosticsQuery.isFetching ? 'unknown' : diagnosticsQuery.data?.watchdog?.mode || 'unknown'
   const isLoading = online && (machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending)
+  const [headerControlsSlot, setHeaderControlsSlot] = useState(() => document.getElementById('settings-header-controls'))
+  const [headerVersionSlot, setHeaderVersionSlot] = useState(() => document.getElementById('settings-header-version'))
+
+  useLayoutEffect(() => {
+    const nextControls = document.getElementById('settings-header-controls')
+    const nextVersion = document.getElementById('settings-header-version')
+    if (nextControls !== headerControlsSlot) setHeaderControlsSlot(nextControls)
+    if (nextVersion !== headerVersionSlot) setHeaderVersionSlot(nextVersion)
+  })
 
   useEffect(() => {
     const latest = settingsQuery.data?.settings
@@ -275,9 +284,9 @@ export default function SettingsSection() {
     return <section className="section-card settings-panel"><div className="skeleton skeleton-heading" /><div className="skeleton skeleton-panel" /></section>
   }
 
-  const headerControls = document.getElementById('settings-header-controls')
-  const headerVersion = document.getElementById('settings-header-version')
-  const version = draft && constraints ? <span className="settings-version">{isDirty ? 'Unsaved changes' : `Version ${settings.version}`}</span> : null
+  const headerControls = headerControlsSlot?.isConnected ? headerControlsSlot : document.getElementById('settings-header-controls')
+  const headerVersion = headerVersionSlot?.isConnected ? headerVersionSlot : document.getElementById('settings-header-version')
+  const version = draft && constraints && isDirty ? <span className="settings-version">Unsaved changes</span> : null
   function discardSettings() {
     const latest = conflict && settingsQuery.data?.settings?.version !== settings.version ? settingsQuery.data : null
     const nextSettings = latest?.settings || settings
@@ -290,9 +299,9 @@ export default function SettingsSection() {
   const actions = draft && constraints ? (
     <div className="settings-header-actions">
       {!headerVersion ? version : null}
-      <button className="btn btn-secondary" type="button" disabled={!isDirty || isSaving} onClick={discardSettings}><RotateCcw size={14} aria-hidden="true" /> Discard</button>
-      {conflict || enforcementBlocked ? <button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /> Reload latest</button> : null}
-      <button className="btn btn-primary" type="submit" form="operational-settings-form" disabled={!canSave}><Save size={14} aria-hidden="true" /> {isSaving ? 'Saving…' : 'Save'}</button>
+      <button className="btn btn-secondary settings-action-btn settings-discard-btn" type="button" aria-label="Discard" title="Discard" disabled={!isDirty || isSaving} onClick={discardSettings}><RotateCcw size={14} aria-hidden="true" /><span className="settings-action-label">Discard</span></button>
+      {conflict || enforcementBlocked ? <button className="btn btn-secondary settings-action-btn settings-reload-btn" type="button" aria-label="Reload latest" title="Reload latest" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /><span className="settings-action-label">Reload latest</span></button> : null}
+      <button className="btn btn-primary settings-action-btn settings-save-btn" type="submit" form="operational-settings-form" aria-label={isSaving ? 'Saving…' : 'Save'} title={isSaving ? 'Saving…' : 'Save'} disabled={!canSave}><Save size={14} aria-hidden="true" /><span className="settings-action-label">{isSaving ? 'Saving…' : 'Save'}</span></button>
     </div>
   ) : null
 

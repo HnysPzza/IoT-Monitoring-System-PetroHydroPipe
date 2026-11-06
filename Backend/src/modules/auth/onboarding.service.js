@@ -37,16 +37,23 @@ function setupOrigin() {
 async function sendPasswordLinkEmail(email, token, origin, purpose = 'setup') {
   const isReset = purpose === 'reset'
   const link = `${origin}/${isReset ? 'reset-password' : 'setup-password'}#token=${token}`
+  const logoUrl = /^https:\/\/(?!localhost|127\.0\.0\.1)/i.test(origin) ? `${origin}/assets/logo.png` : 'https://raw.githubusercontent.com/HnysPzza/IoT-Monitoring-System-PetroHydroPipe/main/Frontend/public/assets/logo.png'
   const subject = isReset ? 'Reset your PetroHydroPipe password' : 'Set up your PetroHydroPipe account'
-  const eyebrow = isReset ? 'PASSWORD RESET' : 'ACCOUNT INVITATION'
+  const eyebrow = isReset ? 'Password reset' : 'Account invitation'
   const heading = isReset ? 'Reset your password.' : 'Welcome to your workspace.'
   const message = isReset
-    ? 'Your administrator requested a password reset. Choose a new private password to continue using the monitoring system.'
-    : 'Your administrator has created your account. Choose a private password to get started with the monitoring system.'
+    ? 'Your administrator requested a password reset. Choose a new secure password to continue using the monitoring system.'
+    : 'Your administrator has created your account. Choose a secure password to get started with the monitoring system.'
   const buttonText = isReset ? 'Reset password' : 'Set up password'
+  const expirationDescription = isReset
+    ? 'This link expires one hour after it is issued. Saving your new password signs out your active sessions.'
+    : 'This link expires one hour after it is issued and cannot be used again after your password is saved.'
+  const helpText = isReset
+    ? 'Expired or already used? Ask your administrator for a new reset link.'
+    : 'Expired or already used? Sign in if you have set your password, or ask your administrator for a new invitation.'
   const endNote = isReset
     ? 'If you did not request this reset, ignore this email and contact your administrator.'
-    : 'If you did not expect this invitation, contact your administrator.'
+    : 'If you did not expect this invitation, you can safely ignore this email or contact your administrator.'
   try {
     await createEmailService().sendTransactionalEmail({
       recipientEmail: email,
@@ -54,27 +61,42 @@ async function sendPasswordLinkEmail(email, token, origin, purpose = 'setup') {
       htmlContent: `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${subject}</title></head>
-<body style="margin:0;padding:0;background:#f1f5f9;color:#1e293b;font-family:Arial,Helvetica,sans-serif;">
-  <div style="display:none;max-height:0;overflow:hidden;">${isReset ? 'Choose a new password using your one-time link within one hour.' : 'Your account is ready to set up. Create your password within one hour.'}</div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;"><tr><td align="center" style="padding:32px 16px;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
-      <tr><td style="padding:28px 32px;background:#142d4e;border-bottom:4px solid #38bdf8;">
-        <p style="margin:0;color:#ffffff;font-size:22px;font-weight:bold;">PetroHydroPipe</p>
-        <p style="margin:8px 0 0;color:#cbd5e1;font-size:12px;letter-spacing:1px;">IoT Machine Monitoring System</p>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #334155;">
+  <div style="display: none; max-height: 0; overflow: hidden;">${isReset ? 'Choose a new password using your one-time link within one hour.' : 'Your account is ready to set up. Create your password within one hour.'}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc;"><tr><td align="center" style="background-color: #f8fafc; padding: 40px 16px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #334155; text-align: left;">
+      <tr><td style="background-color: #ffffff; border-bottom: 1px solid #f1f5f9; padding: 32px 40px 24px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+          <tr>
+            <td align="left" valign="middle" style="vertical-align: middle;">
+              <img src="${logoUrl}" height="28px" alt="PetroHydroPipe Logo" style="height: 28px; width: auto; display: inline-block; vertical-align: middle; border: 0;" />
+              <span style="font-size: 16px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-left: 10px; vertical-align: middle;">PetroHydroPipe</span>
+            </td>
+            <td align="right" valign="middle" style="vertical-align: middle; text-align: right;">
+              <span style="display: inline-block; font-size: 11px; font-weight: 500; color: #64748b; background-color: #f1f5f9; padding: 4px 8px; border-radius: 6px;">IoT Monitoring System</span>
+            </td>
+          </tr>
+        </table>
       </td></tr>
-      <tr><td style="padding:32px;">
-        <p style="margin:0 0 12px;color:#0369a1;font-size:12px;font-weight:bold;letter-spacing:1px;">${eyebrow}</p>
-        <h1 style="margin:0 0 16px;color:#0f172a;font-size:28px;line-height:1.2;">${heading}</h1>
-        <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">${message}</p>
-        <table role="presentation" cellspacing="0" cellpadding="0"><tr><td style="border-radius:8px;background:#0369a1;">
-          <a href="${link}" style="display:inline-block;padding:16px 28px;background:#0369a1;border:1px solid #0369a1;border-radius:8px;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;">${buttonText}</a>
+      <tr><td style="padding: 32px 40px;">
+        <p style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #2563eb; margin: 0 0 8px 0; margin-bottom: 8px;">${eyebrow}</p>
+        <h1 style="font-size: 24px; font-weight: 600; color: #0f172a; letter-spacing: -0.03em; margin: 0 0 16px 0;">${heading}</h1>
+        <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 24px 0;">${message}</p>
+        <table role="presentation" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;"><tr><td bgcolor="#2563eb" style="border-radius: 8px; background-color: #2563eb;">
+          <a href="${link}" style="display: inline-block; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; padding: 12px 24px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">${buttonText}</a>
         </td></tr></table>
-        <p style="margin:24px 0 0;padding:16px;background:#f0f9ff;border-left:3px solid #0284c7;font-size:14px;line-height:1.6;"><strong>Valid for one hour. Works once.</strong><br>${isReset ? 'Saving your new password signs out your active sessions.' : 'This link expires one hour after it is issued and cannot be used again after your password is saved.'}</p>
-        <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#475569;">${isReset ? 'Expired or already used? Ask your administrator for a new reset link.' : 'Expired or already used? Sign in if you have set your password, or ask your administrator for a new invitation.'}</p>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 24px; font-variant-numeric: tabular-nums;">
+          <span style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 4px; display: block; font-variant-numeric: tabular-nums;">Valid for one hour &middot; Single-use link</span>
+          <p style="font-size: 12px; line-height: 1.5; color: #64748b; margin: 0; font-variant-numeric: tabular-nums;">${expirationDescription}</p>
+        </div>
+        <p style="font-size: 13px; line-height: 1.5; color: #64748b; margin: 0;">${helpText}</p>
       </td></tr>
-      <tr><td style="padding:24px 32px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.6;">Keep this email private. Your administrator will never receive your chosen password.<br>${endNote}</td></tr>
+      <tr><td style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 24px 40px; text-align: center;">
+        <p style="font-size: 12px; color: #94a3b8; line-height: 1.5; margin: 0 0 8px 0;">Keep this email private. Your administrator will never receive your chosen password.</p>
+        <p style="font-size: 12px; color: #94a3b8; line-height: 1.5; margin: 0 0 16px 0;">${endNote}</p>
+        <p style="font-size: 11px; color: #cbd5e1; margin: 0;">PetroHydroPipe IoT Monitoring System &middot; Secure Account Access</p>
+      </td></tr>
     </table>
-    <p style="margin:20px 0 0;color:#64748b;font-size:12px;">PetroHydroPipe &middot; Secure account access</p>
   </td></tr></table>
 </body></html>`,
       textContent: `${isReset ? 'Your administrator requested a password reset.' : 'Welcome to PetroHydroPipe. Your administrator has created your account.'} ${isReset ? 'Reset your password' : 'Set your password'} using this single-use link within one hour of issue: ${link}\n\n${isReset ? 'Saving your new password signs out your active sessions. If it has expired, ask your administrator for a new reset link.' : 'This link cannot be used again after your password is saved. If it has expired, ask your administrator for a new invitation.'} Keep this email private. ${endNote}`,

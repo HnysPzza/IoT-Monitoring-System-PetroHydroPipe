@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
@@ -161,12 +161,17 @@ export default function UsersSection() {
   )
 
   const pages = Math.max(1, Math.ceil(directory.total / query.limit))
-  const headerSlot = document.getElementById('users-header-controls')
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('users-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('users-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('users-header-controls')
   const headerControls = (
     <div className="users-header-controls">
       {!isLoading && !loadError ? <span className="users-count">{directory.total} {hasActiveFilters ? 'matching' : 'staff'} accounts</span> : null}
-      <button className="btn btn-secondary users-refresh" type="button" aria-label="Refresh accounts" disabled={isLoading || busy} onClick={() => usersQuery.refetch()}>
-        <RotateCw size={15} aria-hidden="true" /> Refresh
+      <button className="icon-button users-refresh" type="button" aria-label="Refresh accounts" title="Refresh accounts" disabled={isLoading || busy} onClick={() => usersQuery.refetch()}>
+        <RotateCw size={15} aria-hidden="true" />
       </button>
     </div>
   )
@@ -176,7 +181,7 @@ export default function UsersSection() {
   return (
     <div className="users-directory">
       <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
-      {headerSlot ? createPortal(headerControls, headerSlot) : headerControls}
+      {resolvedHeaderSlot ? createPortal(headerControls, resolvedHeaderSlot) : headerControls}
 
       <section className="section-card users-directory-card" aria-label="Staff accounts">
         <div className="users-filters-card" aria-label="User account filters">

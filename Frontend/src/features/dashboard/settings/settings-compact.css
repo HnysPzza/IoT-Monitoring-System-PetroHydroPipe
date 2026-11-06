@@ -19,13 +19,19 @@
   .settings-header-actions { flex-wrap: wrap; }
   .settings-work-grid { grid-template-columns: 1fr; }
 }
-#settings-header-version:not(:empty) { border-left: 1px solid var(--c-border); padding-left: 12px; }
+#settings-header-version:not(:empty) { border-left: 0; padding-left: 0; }
 @media (max-width: 1000px) {
   .dashboard-topbar:has(#settings-header-controls) { flex-wrap: wrap; row-gap: 8px; }
   .dashboard-topbar:has(#settings-header-controls) .topbar-leading { flex-wrap: wrap; min-width: 0; }
   .dashboard-topbar:has(#settings-header-controls) .topbar-trailing { flex-wrap: wrap; justify-content: flex-end; }
 }
+@media (max-width: 900px) {
+  .settings-action-label { display: none; }
+  .settings-header-actions .settings-action-btn { width: 32px; height: 32px; min-height: 32px; padding: 0; justify-content: center; }
+  .settings-header-actions .settings-reload-btn { background: transparent; border-color: transparent; color: var(--c-text-2); }
+  .settings-header-actions .settings-reload-btn:hover:not(:disabled) { background: var(--hover-bg); color: var(--c-text); }
+}
 @media (max-width: 680px) {
-  #settings-header-controls { flex: 1 1 100%; width: 100%; order: 10; }
-  .settings-header-actions { width: 100%; justify-content: flex-end; }
+  #settings-header-controls { flex: 0 0 auto; width: auto; order: 0; }
+  .settings-header-actions { width: auto; justify-content: flex-end; flex-wrap: nowrap; }
 }

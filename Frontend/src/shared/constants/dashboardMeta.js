@@ -91,41 +91,32 @@ export const navGroups = [
 export const dashboardPageMeta = {
   '/dashboard': {
     title: 'Overview',
-    subtitle: 'Production and downtime monitoring for Spiral Mill 01.',
   },
   '/dashboard/live': {
     title: 'Live Feed',
-    subtitle: 'Current status across five monitoring points.',
   },
   '/dashboard/downtime': {
     title: 'Downtime Records',
-    subtitle: 'Stoppage review and cause assignment.',
   },
   '/dashboard/production': {
     title: 'Production Logs',
   },
   '/dashboard/reports': {
     title: 'Reports',
-    subtitle: 'Daily, weekly, and monthly production summaries.',
   },
   '/dashboard/analytics': {
     title: 'Analytics',
-    subtitle: 'Production, downtime, and process trends.',
   },
   '/dashboard/users': {
     title: 'User Accounts',
-    subtitle: 'Access management for operational staff.',
   },
   '/dashboard/machines': {
     title: 'Machines',
-    subtitle: 'Current machine and sensor status for Spiral Mill 01.',
   },
   '/dashboard/audit': {
     title: 'Audit Log',
-    subtitle: 'Administrative accountability trail.',
   },
   '/dashboard/settings': {
     title: 'Settings',
-    subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 }

@@ -26,7 +26,7 @@ import { onlineManager, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useTheme } from '../../../shared/hooks/useTheme.js'
-import { dashboardPageMeta, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import {
@@ -159,7 +159,6 @@ export default function AdminDashboard() {
   )
 
   const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/'
-  const pageMeta = dashboardPageMeta[normalizedPathname] || dashboardPageMeta['/dashboard']
   const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
   const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
   const unresolvedAlerts = alerts.filter((alert) => (
@@ -677,7 +676,7 @@ export default function AdminDashboard() {
       ) : null}
 
       <div className="dashboard-main">
-        <header className={`dashboard-topbar ${['/dashboard', '/dashboard/analytics', '/dashboard/reports', '/dashboard/users', '/dashboard/machines', '/dashboard/settings'].includes(normalizedPathname) ? 'overview-topbar' : ''}`}>
+        <header className="dashboard-topbar overview-topbar">
           <div className="topbar-leading">
             <PanelToggle
               ref={mobileMenuButtonRef}
@@ -689,12 +688,6 @@ export default function AdminDashboard() {
                 setIsDrawerOpen(true)
               }}
             />
-            <div>
-              <h1 className="topbar-label">{pageMeta.title}</h1>
-              {pageMeta.subtitle && !['/dashboard', '/dashboard/analytics', '/dashboard/reports', '/dashboard/users', '/dashboard/machines', '/dashboard/settings'].includes(normalizedPathname) ? (
-                <p className="topbar-subtitle">{pageMeta.subtitle}</p>
-              ) : null}
-            </div>
             {normalizedPathname === '/dashboard' ? <div id="overview-header-controls" /> : null}
             {normalizedPathname === '/dashboard/analytics' ? <div id="analytics-header-controls" /> : null}
             {normalizedPathname === '/dashboard/users' ? <div id="users-header-controls" /> : null}
@@ -707,7 +700,7 @@ export default function AdminDashboard() {
             {cachedAlertsAt && !hasTrustedAlertList ? <span className="status-badge status-inactive">Cached alerts stale</span> : null}
             <span className={`alert-connection-status is-${online ? alertConnectionStatus : 'degraded'}`} role="status">
               {!online ? 'Offline' : alertConnectionStatus === 'live'
-                ? 'Alert stream live'
+                ? 'Live'
                 : alertConnectionStatus === 'polling'
                   ? 'Polling'
                   : alertConnectionStatus === 'connecting'

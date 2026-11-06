@@ -1,5 +1,5 @@
 import './overview.css'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useOutletContext } from 'react-router'
 import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp, Wrench } from 'lucide-react'
@@ -361,22 +361,27 @@ export default function DashboardSection() {
           </span>
         </div>
         <button
-          className="btn btn-secondary overview-refresh-button"
+          className="icon-button overview-refresh-button"
           type="button"
           aria-label="Refresh overview data"
+          title="Refresh overview data"
           disabled={isUnifiedRefreshing}
           onClick={handleUnifiedRefresh}
         >
           <RotateCw className={isUnifiedRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
-          Refresh
         </button>
       </div>
   )
-  const headerSlot = document.getElementById('overview-header-controls')
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('overview-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('overview-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('overview-header-controls')
 
   return (
     <div className="overview-layout">
-      {headerSlot ? createPortal(controls, headerSlot) : controls}
+      {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
 
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 

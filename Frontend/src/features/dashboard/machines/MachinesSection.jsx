@@ -1,5 +1,5 @@
 import './machines.css'
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw } from 'lucide-react'
@@ -37,10 +37,16 @@ function formatSuccessfulUpdate(date) {
 
 export default function MachinesSection() {
   const [sensorView, setSensorView] = useState('grid')
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('machines-header-controls'))
   const { token } = useAuth()
   const outlet = useOutletContext()
   const fallbackStream = useLiveFeedStream(outlet?.liveFeed ? null : token)
   const liveFeed = outlet?.liveFeed || fallbackStream
+
+  useLayoutEffect(() => {
+    const slot = document.getElementById('machines-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
 
   const machine = liveFeed.machine
   const sensors = liveFeed.sensors
@@ -86,13 +92,13 @@ export default function MachinesSection() {
     return <div className="machines-layout"><EmptyMachinesState isRefreshing={isRefreshing} onRefresh={refreshSnapshot} /></div>
   }
 
-  const headerSlot = document.getElementById('machines-header-controls')
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('machines-header-controls')
   const headerControls = (
     <div className="machines-header-controls">
       <h2 id="machine-admin-title">{machine.name}</h2><span className="machines-header-code machines-mono">{machine.machineCode}</span>
       <span className={`status-badge ${getMachineStatusClass(machine.status)}`}>{machine.status}</span>
-      <button className="btn btn-secondary machines-refresh" type="button" aria-label="Refresh machines" disabled={isRefreshing} onClick={refreshSnapshot}>
-        <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" /> Refresh
+      <button className="icon-button machines-refresh" type="button" aria-label="Refresh machines" title="Refresh machines" disabled={isRefreshing} onClick={refreshSnapshot}>
+        <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
       </button>
     </div>
   )
@@ -114,7 +120,7 @@ export default function MachinesSection() {
         </div>
       ) : null}
 
-      {headerSlot ? createPortal(headerControls, headerSlot) : headerControls}
+      {resolvedHeaderSlot ? createPortal(headerControls, resolvedHeaderSlot) : headerControls}
       <section className="machines-telemetry-strip" aria-label="Machine status summary">
         <div><div><span>Machine code</span><strong className="machines-mono">{machine.machineCode}</strong></div><Cpu size={16} aria-hidden="true" /></div>
         <div><div><span>Location</span><strong>{machine.location || 'Not set'}</strong></div><MapPin size={16} aria-hidden="true" /></div>

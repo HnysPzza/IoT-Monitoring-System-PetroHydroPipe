@@ -102,7 +102,7 @@ describe('SettingsSection operational settings', () => {
     expect(trigger).toHaveValue(2)
     await act(async () => resolveSettings({ settings: settingsFixture({ version: '2', sensorThresholds: { ...settingsFixture().sensorThresholds, 'S-01': { ...settingsFixture().sensorThresholds['S-01'], triggerSeconds: 300 } } }), constraints }))
     await waitFor(() => expect(trigger).toHaveValue(5))
-    expect(screen.getByText('Version 2')).toBeInTheDocument()
+    expect(screen.queryByText(/Version/i)).not.toBeInTheDocument()
   })
 
   it('keeps unsaved edits when a newer cached settings request completes', async () => {
@@ -124,7 +124,8 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByRole('button', { name: 'Reload latest' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Discard' }))
     expect(trigger).toHaveValue(2)
-    expect(screen.getByText('Version 2')).toBeInTheDocument()
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Version/i)).not.toBeInTheDocument()
   })
 
   it('saves edits from the header controls', async () => {

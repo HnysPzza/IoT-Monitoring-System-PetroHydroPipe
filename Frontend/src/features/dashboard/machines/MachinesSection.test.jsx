@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
@@ -245,5 +245,53 @@ describe('MachinesSection live snapshot', () => {
     expect(screen.getByRole('heading', { name: 'Current token machine' })).toBeInTheDocument()
     expect(getLiveFeed).toHaveBeenCalledWith('first-token')
     expect(getLiveFeed).toHaveBeenCalledWith('second-token')
+  })
+
+  it('portals header controls into the topbar immediately on initial mount when liveFeed is already loaded', () => {
+    const client = new QueryClient()
+    const payload = livePayload()
+    const preloadedFeed = {
+      machine: payload.machine,
+      sensors: payload.sensors,
+      monitoring: payload.monitoring,
+      state: 'ready',
+      error: '',
+      lastUpdated: new Date('2026-08-10T02:00:00.000Z'),
+      isRefreshing: false,
+      reload: vi.fn(),
+    }
+
+    function LayoutShell() {
+      return (
+        <div>
+          <header className="dashboard-topbar">
+            <div id="machines-header-controls" data-testid="machines-topbar-slot" />
+          </header>
+          <Outlet context={{ liveFeed: preloadedFeed }} />
+        </div>
+      )
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthContext.Provider value={{ token: 'test-token' }}>
+          <MemoryRouter initialEntries={['/dashboard/machines']}>
+            <Routes>
+              <Route path="/dashboard" element={<LayoutShell />}>
+                <Route path="machines" element={<MachinesSection />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    const topbarSlot = screen.getByTestId('machines-topbar-slot')
+    const heading = screen.getByRole('heading', { name: 'Spiral Mill 01' })
+    const refreshBtn = screen.getByRole('button', { name: 'Refresh machines' })
+    expect(topbarSlot).toContainElement(heading)
+    expect(topbarSlot).toContainElement(refreshBtn)
+    expect(refreshBtn).not.toHaveTextContent('Refresh')
+    expect(document.querySelector('.machines-layout .machines-header-controls')).not.toBeInTheDocument()
   })
 })

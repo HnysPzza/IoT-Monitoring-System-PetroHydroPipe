@@ -725,10 +725,11 @@
     justify-content: center;
   }
 }
-#users-header-controls { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--card-border); }
+#users-header-controls { margin-left: 0; padding-left: 0; border-left: 0; }
 .users-header-controls { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
 .users-count { padding: 4px 8px; border-radius: 999px; background: var(--panel-bg); color: var(--c-text-2); font-size: 11px; white-space: nowrap; }
-.users-refresh { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.users-refresh { display: inline-grid; place-items: center; width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 6px; cursor: pointer; }
+.users-refresh:disabled { opacity: 0.55; cursor: not-allowed; }
 .users-directory { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
 .users-directory .users-directory-card { padding: 0; overflow: hidden; }
 .users-directory .users-filters-card { padding: 14px; border-bottom: 1px solid var(--card-border); }

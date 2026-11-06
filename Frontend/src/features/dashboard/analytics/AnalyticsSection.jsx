@@ -1,6 +1,6 @@
 import './analytics-compact.css'
 import { createPortal } from 'react-dom'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import { keepPreviousData } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
@@ -118,6 +118,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
               className="btn analytics-refresh-button"
               type="button"
               aria-label="Refresh data"
+              title="Refresh data"
               disabled={!range || loadState === 'loading' || loadState === 'refreshing'}
               onClick={loadSnapshot}
             >
@@ -127,11 +128,16 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
         </div>
       </div>
   )
-  const headerSlot = document.getElementById('analytics-header-controls')
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('analytics-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('analytics-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  })
+  const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('analytics-header-controls')
 
   return (
     <div className="reports-layout analytics-layout">
-      {headerSlot ? createPortal(controls, headerSlot) : controls}
+      {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
 
       {loadState === 'refreshing' ? (
         <div className="notice dashboard-alert" role="status" aria-live="polite">

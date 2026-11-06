@@ -6196,9 +6196,8 @@ button:disabled {
 
 @media (min-width: 901px) {
   .audit-controls-card {
-    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    column-gap: 16px;
   }
 
   .audit-controls {

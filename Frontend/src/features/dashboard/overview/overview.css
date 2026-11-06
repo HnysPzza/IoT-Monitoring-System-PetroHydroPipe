@@ -4,8 +4,9 @@
 .overview-meta-strip { gap: 12px; font-size: 12px; }
 .overview-meta-item { gap: 5px; }
 .overview-meta-item svg { display: none; }
-.overview-refresh-button { min-height: 30px; padding: 4px 10px; width: auto; font-size: 12px; }
-#overview-header-controls { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--card-border); }
+.overview-refresh-button { display: inline-grid; place-items: center; width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 6px; cursor: pointer; }
+.overview-refresh-button:disabled { opacity: 0.55; cursor: not-allowed; }
+#overview-header-controls { margin-left: 0; padding-left: 0; border-left: 0; }
 .overview-layout .alerts-stack { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 10px; }
 .overview-layout .dashboard-alert { margin: 0; }
 .overview-layout .kpi-grid { gap: 0; overflow: hidden; border: 1px solid var(--card-border); border-radius: 12px; background: var(--card-bg); }

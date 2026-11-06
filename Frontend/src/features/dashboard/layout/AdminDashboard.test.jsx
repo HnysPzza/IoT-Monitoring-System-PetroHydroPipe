@@ -129,23 +129,23 @@ describe('AdminDashboard alerts', () => {
       return () => {}
     }).mockReturnValue(() => {})
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
-    expect(await screen.findByText('Alert stream live')).toBeInTheDocument()
+    expect(await screen.findByText('Live')).toBeInTheDocument()
     await screen.findByRole('button', { name: /open alerts, none active/i })
     act(() => onlineManager.setOnline(false))
     expect(screen.getByText('Offline')).toBeInTheDocument()
-    expect(screen.queryByText('Alert stream live')).not.toBeInTheDocument()
+    expect(screen.queryByText('Live')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /open alerts, status unavailable/i })).toBeInTheDocument()
     expect(screen.getByText(/cached alerts stale/i)).toBeInTheDocument()
     await act(async () => { onlineManager.setOnline(true); await Promise.resolve() })
     expect(screen.getByText('Connecting')).toBeInTheDocument()
   })
 
-  it('uses the route title as the dashboard level-one heading', async () => {
+  it('does not render a redundant module title in the topbar', async () => {
     getAlerts.mockReturnValue(new Promise(() => { }))
 
     renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
+    expect(document.querySelector('.topbar-label')).not.toBeInTheDocument()
   })
 
   it('sets Overview as the post-login destination after explicit logout', async () => {

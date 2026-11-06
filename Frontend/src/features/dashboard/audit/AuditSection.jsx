@@ -158,12 +158,7 @@ export default function AuditSection() {
       {isRefreshing ? <div role="status">{query.isPlaceholderData ? 'Loading selected filters; previous results remain visible.' : 'Refreshing audit log...'}</div> : null}
 
       <section className="section-card reports-controls-card audit-controls-card" aria-labelledby="audit-title">
-        <div className="section-heading">
-          <div>
-            <p className="section-eyebrow">Accountability</p>
-            <h2 id="audit-title">Audit log</h2>
-          </div>
-        </div>
+        <h2 id="audit-title" className="sr-only">Audit log</h2>
 
         <div className="audit-controls">
           <label className="filter-field" htmlFor="audit-action-filter">
