@@ -3,19 +3,19 @@ const test = require('node:test')
 
 const { createLiveStatusPublisher } = require('../../../src/modules/iot/liveStatusPublisher')
 
-function buildLive({ machineStatus = 'Running', s01 = 'Running', s03 = 'Running', evaluatedAt = '2026-10-31T00:00:00.000Z' } = {}) {
-  const sensor = (sensorCode, status) => ({
+function buildLive({ machineStatus = 'Running', s01 = 'Running', s03 = 'Running', s03LastEventAt = '2026-10-31T00:00:00.000Z', evaluatedAt = '2026-10-31T00:00:00.000Z' } = {}) {
+  const sensor = (sensorCode, status, lastEventAt = '2026-10-31T00:00:00.000Z') => ({
     sensorCode,
     status,
     physicalStatus: status === 'Running' ? 'Active' : 'Inactive',
     signal: status === 'Running' ? 'active' : 'idle',
-    lastEventAt: '2026-10-31T00:00:00.000Z',
+    lastEventAt,
     monitoring: { connectivityState: 'online', detectionState: 'healthy', lastEvaluatedAt: evaluatedAt },
   })
   return {
     monitoring: { mode: 'enforce', capturedAt: evaluatedAt },
     machine: { machineCode: 'M-01', status: machineStatus },
-    sensors: [sensor('S-01', s01), sensor('S-03', s03)],
+    sensors: [sensor('S-01', s01), sensor('S-03', s03, s03LastEventAt)],
   }
 }
 
@@ -83,6 +83,21 @@ test('publishes a status change that has no alert', async () => {
   await flushScheduled()
 
   assert.deepEqual(published.map((live) => live.sensors[0].status), ['Idle', 'Running'])
+})
+
+test('publishes when a sensor receives a new event timestamp with the same active signal', async () => {
+  const { publisher, published, flushScheduled } = setup([
+    buildLive({ s03LastEventAt: '2026-10-31T00:00:00.000Z' }),
+    buildLive({ s03LastEventAt: '2026-10-31T00:00:02.000Z' }),
+  ])
+
+  publisher.requestPublish()
+  await flushScheduled()
+  publisher.requestPublish()
+  await flushScheduled()
+
+  assert.equal(published.length, 2)
+  assert.equal(published[1].sensors[1].lastEventAt, '2026-10-31T00:00:02.000Z')
 })
 
 test('publishes when only the machine status changes', async () => {

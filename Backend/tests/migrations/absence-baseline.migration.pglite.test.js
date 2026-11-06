@@ -299,3 +299,70 @@ test('migration 050 reports readiness 50 and is safe to reapply', async (t) => {
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 50)
 })
 
+test('S-03 recovers immediately on active pulse when absence detection is disabled after a watchdog fault', async (t) => {
+  const db = await database(t)
+
+  const { rows: [settings] } = await db.query('select * from machine_operational_settings limit 1')
+  settings.sensor_thresholds['S-03'] = {
+    absenceDetectionEnabled: true,
+    triggerSeconds: 60,
+    recoverySeconds: 30,
+  }
+  await db.query(
+    'select * from update_machine_operational_settings($1,$2,$3::jsonb,$4::jsonb,null)',
+    [settings.machine_id, settings.version, JSON.stringify(settings.sensor_thresholds), JSON.stringify(settings.shift_schedule)],
+  )
+
+  const { rows: [sensor] } = await db.query("select id, machine_id from sensors where sensor_code = 'S-03'")
+
+  await db.query(`
+    update sensor_watchdog_state
+    set last_heartbeat_id = gen_random_uuid(),
+        last_heartbeat_payload_hash = 's03-disable-recovery-fixture',
+        last_heartbeat_received_at = '2026-08-21T01:00:00Z',
+        last_activity_received_at = '2026-08-21T00:00:00Z',
+        connectivity_state = 'online',
+        detection_state = 'healthy',
+        absence_baseline_at = '2026-08-21T00:00:00Z'
+    where sensor_id = $1
+  `, [sensor.id])
+
+  const faultTick = (await db.query(
+    'select * from evaluate_sensor_watchdog($1, $2, $3, 300)',
+    [sensor.id, '2026-08-21T01:00:00Z', 'enforce'],
+  )).rows[0]
+  assert.equal(faultTick.detection_state, 'downtime')
+  assert.equal((await db.query('select status from machines where id = $1', [sensor.machine_id])).rows[0].status, 'Downtime')
+
+  const { rows: [currentSettings] } = await db.query('select * from machine_operational_settings limit 1')
+  currentSettings.sensor_thresholds['S-03'] = {
+    absenceDetectionEnabled: false,
+    triggerSeconds: 60,
+    recoverySeconds: 30,
+  }
+  await db.query(
+    'select * from update_machine_operational_settings($1,$2,$3::jsonb,$4::jsonb,null)',
+    [currentSettings.machine_id, currentSettings.version, JSON.stringify(currentSettings.sensor_thresholds), JSON.stringify(currentSettings.shift_schedule)],
+  )
+
+  assert.equal((await db.query("select status from downtime_events where status = 'Open'")).rows.length, 1)
+
+  const pulseRes = (await db.query(`
+    select * from ingest_iot_sensor_event(
+      gen_random_uuid(), $1, $2, 'pulse', '{"signal":"active","metadata":{}}'::jsonb, '2026-08-21T01:01:00Z'
+    )
+  `, [sensor.id, sensor.machine_id])).rows[0]
+
+  assert.equal(pulseRes.state_applied, true)
+  assert.equal(pulseRes.new_machine_status, 'Running')
+  assert.equal(pulseRes.downtime_action, 'resolved')
+
+  const s03After = (await db.query('select status, fault_source from sensors where id = $1', [sensor.id])).rows[0]
+  assert.equal(s03After.status, 'Active')
+  assert.equal(s03After.fault_source, null)
+
+  const watchdogAfter = (await db.query('select detection_state, recovery_observation_count from sensor_watchdog_state where sensor_id = $1', [sensor.id])).rows[0]
+  assert.equal(watchdogAfter.detection_state, 'disabled')
+  assert.equal(watchdogAfter.recovery_observation_count, 0)
+})
+

@@ -9,6 +9,7 @@ function toStatusKey(live) {
       sensor.status,
       sensor.physicalStatus,
       sensor.signal,
+      sensor.lastEventAt ?? null,
       sensor.monitoring?.connectivityState ?? null,
       sensor.monitoring?.detectionState ?? null,
     ]),
