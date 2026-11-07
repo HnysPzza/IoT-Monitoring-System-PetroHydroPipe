@@ -537,24 +537,9 @@ function assertAllowedEventMetadata(metadata) {
 async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
   assertAllowedEventMetadata(payload.metadata)
   const supabase = getSupabaseClient()
-  const isConfirmedDeviceRecovery = payload.eventType === 'recovered'
-    && payload.signal === 'active'
-    && payload.metadata?.recoveryConfirmed === true
-
-  if (isConfirmedDeviceRecovery && typeof supabase.from === 'function') {
-    await supabase
-      .from('sensors')
-      .update({ fault_source: 'explicit' })
-      .eq('id', sensor.id)
-      .eq('status', 'Fault')
-  }
-
-  const rpcName = isConfirmedDeviceRecovery
-    ? 'ingest_iot_grouped_sensor_event'
-    : 'ingest_iot_sensor_event'
 
   const { data, error } = await supabase
-    .rpc(rpcName, {
+    .rpc('ingest_iot_sensor_event', {
       p_device_event_id: payload.eventId,
       p_sensor_id: sensor.id,
       p_machine_id: machine.id,

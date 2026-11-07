@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 54
+const releaseSchemaVersion = 55
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -328,3 +328,155 @@ test('migration 054 accepts S-05 output during Idle and single/double process fa
   assert.equal(s05Row.status, 'Active')
   assert.equal(s05Row.fault_source, null)
 })
+
+test('migration 055 atomically clears confirmed device recovery and rejects stale or duplicate packets', async (t) => {
+  const db = await database(t)
+
+  async function ingest(sensorCode, eventType, recordedAt, options = {}) {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    const eventId = options.eventId || randomUUID()
+    const metadata = options.metadata || {}
+    return (await db.query(`
+      select result.*
+      from sensors sensor
+      cross join lateral ingest_iot_sensor_event(
+        $1,
+        sensor.id,
+        sensor.machine_id,
+        $2,
+        $3::jsonb,
+        $4
+      ) result
+      where sensor.sensor_code = $5
+    `, [eventId, eventType, JSON.stringify({ signal, metadata }), recordedAt, sensorCode])).rows[0]
+  }
+
+  // 1. Enable absence detection and trigger watchdog fault on S-01
+  await db.query(`
+    update machine_operational_settings
+    set sensor_thresholds = jsonb_set(
+      sensor_thresholds,
+      '{S-01,absenceDetectionEnabled}',
+      'true'::jsonb
+    )
+  `)
+  await db.query(`
+    update sensors
+    set status = 'Fault', fault_source = 'absence_watchdog'
+    where sensor_code = 'S-01'
+  `)
+  await db.query(`
+    update sensor_watchdog_state
+    set detection_state = 'downtime'
+    where sensor_id in (select id from sensors where sensor_code = 'S-01')
+  `)
+
+  // 2. An event without recoveryConfirmed routes to watchdog observation (advances recovery observations, keeps Fault status)
+  const unconfirmed = await ingest('S-01', 'recovered', '2026-08-21T17:00:00+08:00', { metadata: {} })
+  const unconfirmedSensor = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(unconfirmedSensor.status, 'Fault')
+  assert.equal(unconfirmedSensor.fault_source, 'absence_watchdog')
+  const unconfirmedWatchdog = (await db.query(`
+    select detection_state, recovery_observation_count
+    from sensor_watchdog_state
+    where sensor_id in (select id from sensors where sensor_code = 'S-01')
+  `)).rows[0]
+  assert.equal(unconfirmedWatchdog.detection_state, 'recovering')
+  assert.equal(unconfirmedWatchdog.recovery_observation_count, 1)
+
+  // 3. A confirmed device recovery (recoveryConfirmed: true) routes to grouped sensor event and atomically clears fault
+  const confirmedId = randomUUID()
+  const confirmed = await ingest('S-01', 'recovered', '2026-08-21T17:00:10+08:00', {
+    eventId: confirmedId,
+    metadata: { recoveryConfirmed: true },
+  })
+  assert.equal(confirmed.state_applied, true)
+  assert.equal(confirmed.duplicate, false)
+  assert.equal(confirmed.stale, false)
+  const recoveredSensor = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(recoveredSensor.status, 'Active')
+  assert.equal(recoveredSensor.fault_source, null)
+  const recoveredWatchdog = (await db.query(`
+    select detection_state, open_downtime_id
+    from sensor_watchdog_state
+    where sensor_id in (select id from sensors where sensor_code = 'S-01')
+  `)).rows[0]
+  assert.equal(recoveredWatchdog.detection_state, 'healthy')
+
+  // 4. Duplicate confirmed device recovery packet does NOT mutate state
+  const dup = await ingest('S-01', 'recovered', '2026-08-21T17:00:10+08:00', {
+    eventId: confirmedId,
+    metadata: { recoveryConfirmed: true },
+  })
+  assert.equal(dup.duplicate, true)
+  assert.equal(dup.state_applied, false)
+
+  // 5. Stale confirmed device recovery packet does NOT mutate state
+  await ingest('S-01', 'pulse', '2026-08-21T17:01:00+08:00')
+  await db.query(`
+    update sensors
+    set status = 'Fault', fault_source = 'absence_watchdog'
+    where sensor_code = 'S-01'
+  `)
+  const stale = await ingest('S-01', 'recovered', '2026-08-21T17:00:30+08:00', {
+    metadata: { recoveryConfirmed: true },
+  })
+  assert.equal(stale.stale, true)
+  assert.equal(stale.state_applied, false)
+  const stillFaultedSensor = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(stillFaultedSensor.status, 'Fault')
+  assert.equal(stillFaultedSensor.fault_source, 'absence_watchdog')
+
+  // 6. Malformed non-boolean recoveryConfirmed (e.g. arbitrary string) does NOT throw 22P02, routes to observation, and does not clear fault
+  const malformed = await ingest('S-01', 'recovered', '2026-08-21T17:01:30+08:00', {
+    metadata: { recoveryConfirmed: 'invalid_string_not_boolean' },
+  })
+  assert.equal(malformed.state_applied, true)
+  const stillFaultedAfterMalformed = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(stillFaultedAfterMalformed.status, 'Fault')
+  assert.equal(stillFaultedAfterMalformed.fault_source, 'absence_watchdog')
+
+  // 7. String 'true' recoveryConfirmed does NOT count as boolean true and does NOT clear fault
+  const stringTrue = await ingest('S-01', 'recovered', '2026-08-21T17:01:40+08:00', {
+    metadata: { recoveryConfirmed: 'true' },
+  })
+  assert.equal(stringTrue.state_applied, true)
+  const stillFaultedAfterStringTrue = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(stillFaultedAfterStringTrue.status, 'Fault')
+  assert.equal(stillFaultedAfterStringTrue.fault_source, 'absence_watchdog')
+
+  // 8. Number 1, boolean false, and null recoveryConfirmed do NOT count as boolean true and do NOT clear fault
+  const numberOne = await ingest('S-01', 'recovered', '2026-08-21T17:01:50+08:00', {
+    metadata: { recoveryConfirmed: 1 },
+  })
+  assert.equal(numberOne.state_applied, true)
+  const stillFaultedAfterNumberOne = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(stillFaultedAfterNumberOne.status, 'Fault')
+  assert.equal(stillFaultedAfterNumberOne.fault_source, 'absence_watchdog')
+
+  const booleanFalse = await ingest('S-01', 'recovered', '2026-08-21T17:02:00+08:00', {
+    metadata: { recoveryConfirmed: false },
+  })
+  assert.equal(booleanFalse.state_applied, true)
+  const stillFaultedAfterBooleanFalse = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(stillFaultedAfterBooleanFalse.status, 'Fault')
+  assert.equal(stillFaultedAfterBooleanFalse.fault_source, 'absence_watchdog')
+})
+
+test('migration 055 reports readiness 55, repairs out-of-order v52-v54 readiness chain, and is safe to reapply', async (t) => {
+  // Simulate live database where get_backend_readiness_v52 returned 50 and v53/v54 were skipped
+  const db = await database(t, 54)
+  await db.exec(`
+    create or replace function public.get_backend_readiness_v52()
+    returns integer language sql stable as $$ select 50 $$;
+  `)
+  await assert.rejects(db.query('select public.get_backend_readiness()'), /Required database dependencies are missing/i)
+
+  const migration055 = fs.readFileSync(path.join(databaseRoot, 'migrations', '055_atomic_confirmed_device_recovery.sql'), 'utf8')
+  await db.exec(migration055)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 55)
+
+  await db.exec(migration055)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 55)
+})
+

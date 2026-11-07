@@ -1229,3 +1229,52 @@ test('getDeviceOperationalThresholds returns rotationStallMs only for S-03 with 
   const outOfRangeHighS03 = await iotService.getDeviceOperationalThresholds({ ...baseSensor, sensor_code: 'S-03' })
   assert.equal(outOfRangeHighS03.rotationStallMs, 3000)
 })
+
+test('createSensorEvent with recoveryConfirmed routes to ingest_iot_sensor_event without direct table mutation', async () => {
+  const rpcCalls = []
+  const tableMutations = []
+  const iotService = loadIotService({
+    eventType: 'recovered',
+    signal: 'active',
+    rpcCalls,
+  })
+
+  const clientModule = require(path.join(backendRoot, 'src', 'database', 'client.js'))
+  const originalGetClient = clientModule.getSupabaseClient
+  const client = originalGetClient()
+  const originalFrom = client.from.bind(client)
+  client.from = (table) => {
+    const builder = originalFrom(table)
+    return {
+      ...builder,
+      update(values) {
+        tableMutations.push({ table, values })
+        return {
+          eq() { return this },
+          then(resolve) { resolve({ data: null, error: null }) },
+        }
+      },
+    }
+  }
+
+  const result = await iotService.createSensorEvent({
+    sensor: createSensorRecord(),
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'recovered',
+      signal: 'active',
+      metadata: { recoveryConfirmed: true },
+    },
+  })
+
+  assert.equal(result.id, 'event-recovered')
+  assert.equal(tableMutations.length, 0, 'No direct table updates allowed; must use atomic RPC')
+  assert.equal(rpcCalls.length, 1)
+  assert.equal(rpcCalls[0].functionName, 'ingest_iot_sensor_event')
+  assert.equal(rpcCalls[0].args.p_event_type, 'recovered')
+  assert.deepEqual(rpcCalls[0].args.p_event_value, {
+    signal: 'active',
+    metadata: { recoveryConfirmed: true },
+  })
+})
+
