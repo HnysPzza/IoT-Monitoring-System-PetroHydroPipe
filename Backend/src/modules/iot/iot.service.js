@@ -46,6 +46,7 @@ function getMachineRecord(sensorRecord) {
 
 function mapSensorStatusToLiveStatus(sensorCode, status, machineStatus) {
   if (sensorCode === 'S-03' && machineStatus === 'Downtime') return 'Downtime'
+  if (sensorCode === 'S-05') return status === 'Active' ? 'Running' : 'Idle'
   if (status === 'Active') return 'Running'
   if (status === 'Fault') return 'Fault'
   return 'Idle'
@@ -247,24 +248,61 @@ function resolveConnectivityState(snapshotAt, sensorRecord) {
   return 'online'
 }
 
+const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
+
+function hasFreshActiveProcessSignal(sensorRecord, snapshotAt, connectivityState) {
+  if (!PROCESS_SENSOR_CODES.has(sensorRecord.sensor_code)) return false
+  if (sensorRecord.status === 'Fault' || connectivityState !== 'online') return false
+  if (sensorRecord.latest_event?.signal !== 'active') return false
+
+  const snapshotMs = new Date(snapshotAt).getTime()
+  const activityTimestamp = sensorRecord.watchdog?.last_activity_received_at || sensorRecord.latest_event?.recorded_at
+  const activityMs = activityTimestamp ? new Date(activityTimestamp).getTime() : NaN
+  if (!Number.isFinite(snapshotMs) || !Number.isFinite(activityMs)) return false
+
+  const heartbeatMs = sensorRecord.watchdog?.last_heartbeat_received_at
+    ? new Date(sensorRecord.watchdog.last_heartbeat_received_at).getTime()
+    : NaN
+  if (Number.isFinite(heartbeatMs) && heartbeatMs > activityMs + 1000) return false
+
+  const maxActiveWindowMs = Math.max((env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS || 10_000) * 1.5, 15_000)
+  const ageMs = snapshotMs - activityMs
+  return ageMs >= -MAX_EVALUATION_CLOCK_SKEW_MS && ageMs <= maxActiveWindowMs
+}
+
 function toLiveSensorResponse(sensorRecord, snapshotAt, machineStatus) {
   const stateFresh = isMonitoringStateFresh(snapshotAt, sensorRecord.watchdog?.last_evaluated_at)
   const connectivityState = resolveConnectivityState(snapshotAt, sensorRecord)
+  const activeProcessSignal = hasFreshActiveProcessSignal(sensorRecord, snapshotAt, connectivityState)
+  const physicalStatus = activeProcessSignal ? 'Active' : sensorRecord.status
+
+  let detectionState = stateFresh ? sensorRecord.watchdog.detection_state : null
+  if (stateFresh && PROCESS_SENSOR_CODES.has(sensorRecord.sensor_code)) {
+    if (activeProcessSignal && detectionState === 'grace') {
+      detectionState = 'healthy'
+    } else if (
+      physicalStatus === 'Inactive'
+      && sensorRecord.latest_event?.signal === 'idle'
+      && detectionState === 'healthy'
+    ) {
+      detectionState = 'grace'
+    }
+  }
 
   return {
     id: sensorRecord.id,
     sensorCode: sensorRecord.sensor_code,
     label: getSensorLabel(sensorRecord.sensor_code, sensorRecord.label),
     esp32DeviceId: sensorRecord.esp32_device_id,
-    status: mapSensorStatusToLiveStatus(sensorRecord.sensor_code, sensorRecord.status, machineStatus),
-    physicalStatus: sensorRecord.status,
+    status: mapSensorStatusToLiveStatus(sensorRecord.sensor_code, physicalStatus, machineStatus),
+    physicalStatus,
     signal: sensorRecord.latest_event?.signal || null,
     lastEventAt: sensorRecord.latest_event?.recorded_at || null,
     purpose: getSensorPurpose(sensorRecord.sensor_code),
     monitoring: {
       stateFresh,
       connectivityState,
-      detectionState: stateFresh ? sensorRecord.watchdog.detection_state : null,
+      detectionState,
       lastHeartbeatAt: resolveLastHeartbeatAt(sensorRecord),
       lastActivityAt: sensorRecord.watchdog?.last_activity_received_at || null,
       lastEvaluatedAt: sensorRecord.watchdog?.last_evaluated_at || null,
@@ -499,8 +537,24 @@ function assertAllowedEventMetadata(metadata) {
 async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
   assertAllowedEventMetadata(payload.metadata)
   const supabase = getSupabaseClient()
+  const isConfirmedDeviceRecovery = payload.eventType === 'recovered'
+    && payload.signal === 'active'
+    && payload.metadata?.recoveryConfirmed === true
+
+  if (isConfirmedDeviceRecovery && typeof supabase.from === 'function') {
+    await supabase
+      .from('sensors')
+      .update({ fault_source: 'explicit' })
+      .eq('id', sensor.id)
+      .eq('status', 'Fault')
+  }
+
+  const rpcName = isConfirmedDeviceRecovery
+    ? 'ingest_iot_grouped_sensor_event'
+    : 'ingest_iot_sensor_event'
+
   const { data, error } = await supabase
-    .rpc('ingest_iot_sensor_event', {
+    .rpc(rpcName, {
       p_device_event_id: payload.eventId,
       p_sensor_id: sensor.id,
       p_machine_id: machine.id,
@@ -638,6 +692,60 @@ async function processHeartbeat({ sensor, machine, payload }) {
   })
 }
 
+async function getDeviceOperationalThresholds(sensor) {
+  const supabase = getSupabaseClient()
+  if (!sensor || typeof supabase?.from !== 'function') return null
+  const machine = getMachineRecord(sensor)
+  const machineId = sensor.machine_id || machine?.id
+  if (!machineId || !sensor.sensor_code) return null
+
+  try {
+    const { data, error } = await supabase
+      .from('machine_operational_settings')
+      .select('sensor_thresholds, version')
+      .eq('machine_id', machineId)
+      .maybeSingle()
+
+    if (error || !data?.sensor_thresholds) return null
+    const threshold = data.sensor_thresholds[sensor.sensor_code]
+    if (!threshold || typeof threshold !== 'object') return null
+
+    const triggerSeconds = Number.isInteger(threshold.triggerSeconds)
+      && threshold.triggerSeconds >= 1
+      && threshold.triggerSeconds <= 3600
+      ? threshold.triggerSeconds
+      : null
+    const recoverySeconds = Number.isInteger(threshold.recoverySeconds)
+      && threshold.recoverySeconds >= 1
+      && threshold.recoverySeconds <= 300
+      ? threshold.recoverySeconds
+      : null
+    const absenceDetectionEnabled = Boolean(threshold.absenceDetectionEnabled)
+      && sensor.sensor_code !== 'S-05'
+      && triggerSeconds !== null
+      && recoverySeconds !== null
+    const rotationStallMs = sensor.sensor_code === 'S-03'
+      ? (Number.isInteger(threshold.rotationStallMs)
+        && threshold.rotationStallMs >= 500
+        && threshold.rotationStallMs <= 30000
+        ? threshold.rotationStallMs
+        : 3000)
+      : null
+
+    return {
+      sensorCode: sensor.sensor_code,
+      machineCode: machine?.machine_code || null,
+      version: data.version !== undefined && data.version !== null ? String(data.version) : null,
+      absenceDetectionEnabled,
+      triggerSeconds,
+      recoverySeconds,
+      ...(rotationStallMs !== null ? { rotationStallMs } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
 async function createSensorEvent({ sensor, payload }) {
   const machine = getMachineRecord(sensor)
 
@@ -728,6 +836,7 @@ module.exports = {
   authenticateDevice,
   createHeartbeat,
   createSensorEvent,
+  getDeviceOperationalThresholds,
   getLiveFeed,
   requestLiveStatusPublish,
 }

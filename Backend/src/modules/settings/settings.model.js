@@ -4,9 +4,11 @@ const registry = require('../../shared/sensor-registry.json')
 const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const SENSOR_CODES = Object.freeze(registry.sensors.map((sensor) => sensor.code))
+const SPINDLE_SENSOR_CODE = 'S-03'
 const SETTINGS_LIMITS = Object.freeze({
   triggerSeconds: Object.freeze({ minimum: 1, maximum: 3600 }),
   recoverySeconds: Object.freeze({ minimum: 1, maximum: 300 }),
+  rotationStallMs: Object.freeze({ minimum: 500, maximum: 30000, default: 3000 }),
   breaks: Object.freeze({ maximum: 10 }),
   rampUpGraceMinutes: Object.freeze({ minimum: 0, maximum: 30 }),
 })
@@ -27,11 +29,20 @@ function toMinutes(time) {
   return (hours * 60) + minutes
 }
 
-const sensorThresholdSchema = z.strictObject({
+const baseThresholdFields = {
   absenceDetectionEnabled: z.boolean(),
   triggerSeconds: z.number().int().min(SETTINGS_LIMITS.triggerSeconds.minimum).max(SETTINGS_LIMITS.triggerSeconds.maximum).nullable(),
   recoverySeconds: z.number().int().min(SETTINGS_LIMITS.recoverySeconds.minimum).max(SETTINGS_LIMITS.recoverySeconds.maximum).nullable(),
-}).superRefine((threshold, context) => {
+}
+
+const rotationStallMsSchema = z
+  .number()
+  .int()
+  .min(SETTINGS_LIMITS.rotationStallMs.minimum)
+  .max(SETTINGS_LIMITS.rotationStallMs.maximum)
+  .multipleOf(100, 'Rotation stall window must use 100 ms steps.')
+
+function refineSensorThreshold(threshold, context) {
   if (threshold.absenceDetectionEnabled
     && (threshold.triggerSeconds === null || threshold.recoverySeconds === null)) {
     context.addIssue({
@@ -39,13 +50,56 @@ const sensorThresholdSchema = z.strictObject({
       message: 'Enabled absence detection requires trigger and recovery values.',
     })
   }
-})
+}
 
-const sensorShape = Object.fromEntries(
-  SENSOR_CODES.map((sensorCode) => [sensorCode, sensorThresholdSchema]),
-)
+function refineSpindleThreshold(threshold, context) {
+  refineSensorThreshold(threshold, context)
+  if (threshold.absenceDetectionEnabled
+    && threshold.triggerSeconds !== null
+    && threshold.rotationStallMs !== undefined
+    && threshold.rotationStallMs >= (threshold.triggerSeconds * 1000)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['rotationStallMs'],
+      message: 'Rotation stall window must be shorter than the trigger limit.',
+    })
+  }
+}
 
-const completeSensorThresholdsSchema = z.strictObject(sensorShape).superRefine((thresholds, context) => {
+const sensorThresholdSchema = z.strictObject(baseThresholdFields).superRefine(refineSensorThreshold)
+
+const spindleThresholdSchema = z.strictObject({
+  ...baseThresholdFields,
+  rotationStallMs: rotationStallMsSchema.default(SETTINGS_LIMITS.rotationStallMs.default),
+}).superRefine(refineSpindleThreshold)
+
+const patchSpindleThresholdSchema = z.strictObject({
+  ...baseThresholdFields,
+  rotationStallMs: rotationStallMsSchema.optional(),
+}).superRefine(refineSpindleThreshold)
+
+function normalizeStoredSpindleThreshold(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.rotationStallMs !== undefined) {
+    return value
+  }
+  const fallbackMs = value.absenceDetectionEnabled === true
+    && Number.isInteger(value.triggerSeconds)
+    && value.triggerSeconds > 0
+    ? Math.min(
+      SETTINGS_LIMITS.rotationStallMs.default,
+      Math.max(
+        SETTINGS_LIMITS.rotationStallMs.minimum,
+        Math.floor(((value.triggerSeconds * 1000) - 100) / 100) * 100,
+      ),
+    )
+    : SETTINGS_LIMITS.rotationStallMs.default
+  return {
+    ...value,
+    rotationStallMs: fallbackMs,
+  }
+}
+
+function refineOutputSensorThreshold(thresholds, context) {
   const outputThreshold = thresholds[OUTPUT_SENSOR_CODE]
   if (outputThreshold.absenceDetectionEnabled
     || outputThreshold.triggerSeconds !== null
@@ -56,10 +110,36 @@ const completeSensorThresholdsSchema = z.strictObject(sensorShape).superRefine((
       message: `${OUTPUT_SENSOR_CODE} cannot use absence detection.`,
     })
   }
-})
+}
+
+const storedSpindleThresholdSchema = z.preprocess(
+  normalizeStoredSpindleThreshold,
+  spindleThresholdSchema,
+)
+
+const sensorShape = Object.fromEntries(
+  SENSOR_CODES.map((sensorCode) => [
+    sensorCode,
+    sensorCode === SPINDLE_SENSOR_CODE ? spindleThresholdSchema : sensorThresholdSchema,
+  ]),
+)
+
+const storedSensorShape = Object.fromEntries(
+  SENSOR_CODES.map((sensorCode) => [
+    sensorCode,
+    sensorCode === SPINDLE_SENSOR_CODE ? storedSpindleThresholdSchema : sensorThresholdSchema,
+  ]),
+)
+
+const completeSensorThresholdsSchema = z.strictObject(sensorShape).superRefine(refineOutputSensorThreshold)
+
+const storedSensorThresholdsSchema = z.strictObject(storedSensorShape).superRefine(refineOutputSensorThreshold)
 
 const patchSensorThresholdsSchema = z.strictObject(
-  Object.fromEntries(SENSOR_CODES.map((sensorCode) => [sensorCode, sensorThresholdSchema.optional()])),
+  Object.fromEntries(SENSOR_CODES.map((sensorCode) => [
+    sensorCode,
+    (sensorCode === SPINDLE_SENSOR_CODE ? patchSpindleThresholdSchema : sensorThresholdSchema).optional(),
+  ])),
 ).refine(
   (thresholds) => Object.values(thresholds).some((threshold) => threshold !== undefined),
   { message: 'At least one sensor threshold is required.' },
@@ -179,7 +259,7 @@ const completeSettingsSchema = z.strictObject({
 
 const storedSettingsRecordSchema = z.strictObject({
   machine_id: z.string().uuid(),
-  sensor_thresholds: completeSensorThresholdsSchema,
+  sensor_thresholds: storedSensorThresholdsSchema,
   shift_schedule: shiftScheduleSchema,
   version: z.union([
     positiveVersionSchema,
@@ -192,11 +272,14 @@ const storedSettingsRecordSchema = z.strictObject({
 module.exports = {
   SENSOR_CODES,
   SETTINGS_LIMITS,
+  SPINDLE_SENSOR_CODE,
   completeSensorThresholdsSchema,
   completeSettingsSchema,
   patchSettingsSchema,
+  patchSpindleThresholdSchema,
   sensorThresholdSchema,
   settingsParamsSchema,
   shiftScheduleSchema,
+  spindleThresholdSchema,
   storedSettingsRecordSchema,
 }
