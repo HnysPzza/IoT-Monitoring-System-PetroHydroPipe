@@ -81,13 +81,13 @@ from public.roles
 where name = 'Admin';
 ```
 
-Now run every SQL file in `Backend/database/migrations/` from **029 through 046**, in numeric order. Migration 046 stops if the legacy Managing Director role is assigned to any user and validates the exact five-role catalog. The base schema already includes migrations through 028, so do not replay migrations 001–028 on this fresh database. Finally run:
+Now run every SQL file in `Backend/database/migrations/` from **029 through 055**, in numeric order. Migration 046 stops if the legacy Managing Director role is assigned to any user and validates the exact five-role catalog. The base schema already includes migrations through 028, so do not replay migrations 001–028 on this fresh database. Finally run:
 
 ```sql
 select public.get_backend_readiness();
 ```
 
-It must return `45`. The detailed database instructions are in [`Backend/database/README.md`](../Backend/database/README.md).
+It must return `55`. The detailed database instructions are in [`Backend/database/README.md`](../Backend/database/README.md).
 
 ## 5. Configure Local Environment Files
 

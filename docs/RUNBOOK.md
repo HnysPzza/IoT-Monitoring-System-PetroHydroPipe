@@ -63,11 +63,11 @@ node --test tests/request-deadline.api.test.js tests/env.test.js
 
 Expected: `0 fail`.
 
-### Current backend migration chain through 046
+### Current backend migration chain through 055
 
-For existing installations, apply pending migrations 029 through 046 in numeric order before deploying the current backend, which requires readiness version 46. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Existing installations use only pending migrations, not the complete schema or old migration replays.
+For existing installations, apply pending migrations 029 through 055 in numeric order before deploying the current backend, which requires readiness version 55. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Existing installations use only pending migrations, not the complete schema or old migration replays.
 
-For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 046. Do not replay migrations 001 through 028 over the fresh baseline.
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 055. Do not replay migrations 001 through 028 over the fresh baseline.
 
 ### Telemetry staleness migration 028
 
@@ -95,7 +95,7 @@ select stale, count(*) from public.sensor_events group by stale;
 
 ### Migration readiness versions
 
-Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Apply both before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
+Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Subsequent migrations 047 through 055 advance readiness to `55` (atomic confirmed device recovery and live readiness repair). Apply all migrations through 055 before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
 
 ### S-05 output validation migration 044
 
@@ -128,7 +128,7 @@ select public.get_backend_readiness();
 select name from public.roles order by name;
 ```
 
-Expected readiness is `52`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
+Expected readiness is `55`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
 
 ### Health and readiness (historical migration 024 checks)
 
