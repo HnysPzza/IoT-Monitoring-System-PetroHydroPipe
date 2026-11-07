@@ -308,4 +308,25 @@ describe('SettingsSection operational settings', () => {
     expect(updateOperationalSettings.mock.calls[0][2].sensorThresholds['S-03'].rotationStallMs).toBe(4500)
     expect(await screen.findByText('Operational settings saved.')).toBeInTheDocument()
   })
+
+  it('displays S-03 rotation stall and trigger errors simultaneously in their own columns', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const stallInput = await screen.findByLabelText('S-03 rotation stall seconds')
+    const checkboxes = screen.getAllByRole('checkbox', { name: /Detect missing pulse/i })
+    await user.click(checkboxes[2])
+
+    const s03Trigger = screen.getByLabelText('S-03 trigger minutes')
+    await user.clear(stallInput)
+    await user.type(stallInput, '0.2')
+    await user.clear(s03Trigger)
+    await user.type(s03Trigger, '0')
+
+    const stallError = screen.getByText('Rotation stall must be 0.5-30 seconds.')
+    const triggerError = screen.getByText('Trigger must be 1-60 minutes.')
+    expect(stallInput.closest('.col-sensor')).toContainElement(stallError)
+    expect(s03Trigger.closest('.col-trigger')).toContainElement(triggerError)
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
 })

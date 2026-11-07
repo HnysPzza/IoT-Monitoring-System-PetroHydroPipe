@@ -94,9 +94,22 @@ describe('settings validation', () => {
       recoverySeconds: 60,
       rotationStallMs: 60000,
     }
-    expect(validateOperationalSettings(stallAtOrAboveTrigger, {
+    const stallVsTriggerErrors = validateOperationalSettings(stallAtOrAboveTrigger, {
       ...withStallConstraints,
       rotationStallMs: { minimum: 500, maximum: 90000, default: 3000 },
-    })['S-03']).toBe('Rotation stall must be shorter than the trigger limit.')
+    })
+    expect(stallVsTriggerErrors['S-03']).toBe('Rotation stall must be shorter than the trigger limit.')
+    expect(stallVsTriggerErrors['S-03.rotationStallMs']).toBe('Rotation stall must be shorter than the trigger limit.')
+
+    const bothInvalid = validSettings()
+    bothInvalid.sensorThresholds['S-03'] = {
+      absenceDetectionEnabled: true,
+      triggerSeconds: 0,
+      recoverySeconds: 60,
+      rotationStallMs: 200,
+    }
+    const bothErrors = validateOperationalSettings(bothInvalid, withStallConstraints)
+    expect(bothErrors['S-03.rotationStallMs']).toBe('Rotation stall must be 0.5-30 seconds.')
+    expect(bothErrors['S-03']).toBe('Trigger must be 1-60 minutes.')
   })
 })

@@ -61,37 +61,44 @@ export function validateOperationalSettings(settings, constraints) {
       errors[sensorCode] = 'Production output sensing cannot use absence detection.'
       continue
     }
+    let stallError = null
+    let thresholdError = null
+
     if (sensorCode === spindleSensorCode && (requireStallValidation || threshold.rotationStallMs !== undefined)) {
       if (!Number.isInteger(threshold.rotationStallMs)
         || threshold.rotationStallMs < stallBounds.minimumMs
         || threshold.rotationStallMs > stallBounds.maximumMs) {
-        errors[sensorCode] = `Rotation stall must be ${stallBounds.minimum}-${stallBounds.maximum} seconds.`
-        continue
-      }
-      if (threshold.rotationStallMs % 100 !== 0) {
-        errors[sensorCode] = 'Rotation stall must use 0.1-second steps.'
-        continue
+        stallError = `Rotation stall must be ${stallBounds.minimum}-${stallBounds.maximum} seconds.`
+      } else if (threshold.rotationStallMs % 100 !== 0) {
+        stallError = 'Rotation stall must use 0.1-second steps.'
       }
     }
-    if (!threshold.absenceDetectionEnabled) continue
-    if (!Number.isInteger(threshold.triggerSeconds)
-      || threshold.triggerSeconds % 60 !== 0
-      || threshold.triggerSeconds < triggerMinutes.minimumWhenEnabled * 60
-      || threshold.triggerSeconds > triggerMinutes.maximum * 60) {
-      errors[sensorCode] = `Trigger must be ${formatMinuteRange(triggerMinutes)}.`
-      continue
+    if (threshold.absenceDetectionEnabled) {
+      if (!Number.isInteger(threshold.triggerSeconds)
+        || threshold.triggerSeconds % 60 !== 0
+        || threshold.triggerSeconds < triggerMinutes.minimumWhenEnabled * 60
+        || threshold.triggerSeconds > triggerMinutes.maximum * 60) {
+        thresholdError = `Trigger must be ${formatMinuteRange(triggerMinutes)}.`
+      } else if (!Number.isInteger(threshold.recoverySeconds)
+        || threshold.recoverySeconds % 60 !== 0
+        || threshold.recoverySeconds < recoveryMinutes.minimumWhenEnabled * 60
+        || threshold.recoverySeconds > recoveryMinutes.maximum * 60) {
+        thresholdError = `Recovery must be ${formatMinuteRange(recoveryMinutes)}.`
+      } else if (!stallError
+        && sensorCode === spindleSensorCode
+        && threshold.rotationStallMs !== undefined
+        && threshold.rotationStallMs >= threshold.triggerSeconds * 1000) {
+        stallError = 'Rotation stall must be shorter than the trigger limit.'
+      }
     }
-    if (!Number.isInteger(threshold.recoverySeconds)
-      || threshold.recoverySeconds % 60 !== 0
-      || threshold.recoverySeconds < recoveryMinutes.minimumWhenEnabled * 60
-      || threshold.recoverySeconds > recoveryMinutes.maximum * 60) {
-      errors[sensorCode] = `Recovery must be ${formatMinuteRange(recoveryMinutes)}.`
-      continue
+
+    if (stallError) {
+      errors[`${sensorCode}.rotationStallMs`] = stallError
     }
-    if (sensorCode === spindleSensorCode
-      && threshold.rotationStallMs !== undefined
-      && threshold.rotationStallMs >= threshold.triggerSeconds * 1000) {
-      errors[sensorCode] = 'Rotation stall must be shorter than the trigger limit.'
+    if (thresholdError) {
+      errors[sensorCode] = thresholdError
+    } else if (stallError) {
+      errors[sensorCode] = stallError
     }
   }
 
