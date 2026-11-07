@@ -195,7 +195,11 @@ begin
       v_accumulated := public.watchdog_eligible_seconds(v_machine.id, v_baseline, p_evaluated_at);
 
       if v_accumulated < v_trigger_seconds then
-        v_detection := case when v_accumulated = 0 then 'healthy' else 'grace' end;
+        v_detection := case
+          when v_accumulated = 0 and not (v_sensor.status = 'Inactive' and v_state.detection_state = 'grace')
+            then 'healthy'
+          else 'grace'
+        end;
       else
         v_detection := 'downtime';
         v_transition_at := public.watchdog_advance_eligible_time(
@@ -489,10 +493,26 @@ begin
         when detection_state = 'grace' then 'healthy'
         else detection_state
       end,
-      absence_baseline_at = case when not v_absence_enabled then null else absence_baseline_at end,
+      absence_baseline_at = case when not v_absence_enabled then null else clock_timestamp() end,
       recovery_started_at = case when not v_absence_enabled then null else recovery_started_at end,
       recovery_observation_count = case when not v_absence_enabled then 0 else recovery_observation_count end,
       open_downtime_id = case when not v_absence_enabled then null else open_downtime_id end
+    where sensor_id = p_sensor_id;
+  end if;
+
+  if v_sensor.sensor_code in ('S-01', 'S-02', 'S-03', 'S-04')
+    and v_sensor.status <> 'Fault'
+    and p_event_type = 'idle' then
+    update public.sensor_watchdog_state
+    set detection_state = case
+        when not v_absence_enabled then 'disabled'
+        when detection_state = 'healthy' then 'grace'
+        else detection_state
+      end,
+      absence_baseline_at = case
+        when not v_absence_enabled then null
+        else coalesce(absence_baseline_at, clock_timestamp())
+      end
     where sensor_id = p_sensor_id;
   end if;
 
