@@ -235,24 +235,38 @@ test('settings read normalizes legacy S-03 rows without rotationStallMs and pres
   )
 })
 
-test('settings update is blocked while watchdog enforcement is active', async () => {
+test('settings update succeeds while watchdog enforcement is active and delegates to atomic RPC', async () => {
   const calls = []
+  const updatedThresholds = validThresholds()
+  updatedThresholds['S-01'] = { absenceDetectionEnabled: true, triggerSeconds: 300, recoverySeconds: 60 }
   const service = loadService({
     calls,
     tableResults: readableTables(),
     envOverrides: { WATCHDOG_MODE: 'enforce' },
+    rpcResult: { data: settingsRow({ sensor_thresholds: updatedThresholds, version: '2', updated_by: actorId }), error: null },
   })
 
-  await assert.rejects(
-    () => service.updateMachineSettings({
-      machineId,
-      expectedVersion: '1',
-      sensorThresholds: { 'S-01': validThresholds()['S-01'] },
-      actorUserId: actorId,
-    }),
-    { status: 409, code: 'SETTINGS_ENFORCEMENT_ACTIVE' },
-  )
-  assert.equal(calls.length, 0)
+  const result = await service.updateMachineSettings({
+    machineId,
+    expectedVersion: '1',
+    sensorThresholds: { 'S-01': updatedThresholds['S-01'] },
+    actorUserId: actorId,
+  })
+
+  assert.equal(result.version, '2')
+  assert.deepEqual(result.sensorThresholds, updatedThresholds)
+  const rpcCall = calls.find((call) => call.type === 'rpc')
+  assert.deepEqual(rpcCall, {
+    type: 'rpc',
+    functionName: 'update_machine_operational_settings',
+    args: {
+      p_machine_id: machineId,
+      p_expected_version: '1',
+      p_sensor_thresholds: updatedThresholds,
+      p_shift_schedule: validSchedule(),
+      p_actor_user_id: actorId,
+    },
+  })
 })
 
 test('settings read distinguishes missing machine, missing settings, and query failures', async () => {

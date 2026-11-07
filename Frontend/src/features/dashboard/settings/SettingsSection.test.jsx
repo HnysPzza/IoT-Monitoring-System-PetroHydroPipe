@@ -180,6 +180,25 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
+  it('allows editing and saving operational settings while watchdog mode is enforce', async () => {
+    const user = userEvent.setup()
+    getWatchdogDiagnostics.mockResolvedValue({ watchdog: { mode: 'enforce' } })
+    updateOperationalSettings.mockResolvedValue({ settings: settingsFixture({ version: '2' }) })
+    renderWithAuth(<SettingsSection />)
+
+    expect(await screen.findByText(/Enforcement is active\. Saved changes apply immediately/i)).toBeInTheDocument()
+    const trigger = screen.getByLabelText('S-01 trigger minutes')
+    expect(trigger).toBeEnabled()
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeEnabled()
+    await user.click(save)
+
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+    expect(updateOperationalSettings.mock.calls[0][2].sensorThresholds['S-01'].triggerSeconds).toBe(300)
+  })
+
   it('keeps editing blocked after the server reports enforcement, even if the draft is discarded', async () => {
     const user = userEvent.setup()
     const error = Object.assign(new Error('Enforcement active'), { code: 'SETTINGS_ENFORCEMENT_ACTIVE' })

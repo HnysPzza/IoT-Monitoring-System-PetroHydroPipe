@@ -205,14 +205,6 @@ async function updateMachineSettings({
   shiftSchedule,
   actorUserId,
 }) {
-  if (env.WATCHDOG_MODE === 'enforce') {
-    throw createSettingsError(
-      409,
-      'SETTINGS_ENFORCEMENT_ACTIVE',
-      'Disable enforcement before changing operational settings.',
-    )
-  }
-
   const supabase = getSupabaseClient()
   const current = await getMachineSettings(machineId, supabase)
   const candidate = {

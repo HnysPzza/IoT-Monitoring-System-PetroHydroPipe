@@ -157,7 +157,7 @@ export default function SettingsSection() {
     setDraft(toDraft(settingsResult.value.settings, settingsResult.value.constraints))
     setConflict(false)
     if (diagnosticsResult.status === 'rejected') setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
-    else setEnforcementBlocked(diagnosticsResult.value.data?.watchdog?.mode === 'enforce')
+    else setEnforcementBlocked(false)
   }
 
   const baseline = useMemo(() => (settings ? toDraft(settings, constraints) : null), [settings, constraints])
@@ -175,7 +175,7 @@ export default function SettingsSection() {
   const stallSecondsBounds = useMemo(() => (
     constraints ? getRotationStallSecondsBounds(constraints.rotationStallMs) : null
   ), [constraints])
-  const editingBlocked = watchdogMode === 'enforce' || watchdogMode === 'unknown' || conflict || enforcementBlocked
+  const editingBlocked = watchdogMode === 'unknown' || conflict || enforcementBlocked
   const canSave = isDirty && !editingBlocked && !isSaving && Object.keys(errors).length === 0
 
   useEffect(() => {
@@ -354,7 +354,7 @@ export default function SettingsSection() {
               </span>
             </div>
             {watchdogMode === 'observe' ? <p className="settings-mode-note">Observe mode evaluates these values but does not create operational downtime or alerts.</p> : null}
-            {watchdogMode === 'enforce' ? <p className="settings-mode-note is-warning">Enforcement is active. Settings are read-only until it is disabled outside this page.</p> : null}
+            {watchdogMode === 'enforce' ? <p className="settings-mode-note">Enforcement is active. Saved changes apply immediately to live watchdog evaluation and connected sensors.</p> : null}
 
             <div className="settings-matrix-container">
               <div className="settings-matrix-table-wrap">
