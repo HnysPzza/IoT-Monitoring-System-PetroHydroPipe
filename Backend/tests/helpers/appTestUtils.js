@@ -6,6 +6,7 @@ const backendRoot = path.resolve(__dirname, '..', '..')
 process.env.NODE_ENV = 'test'
 process.env.CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
+process.env.WATCHDOG_MODE = 'disabled'
 
 function clearBackendCache() {
   Object.keys(require.cache).forEach((cacheKey) => {
