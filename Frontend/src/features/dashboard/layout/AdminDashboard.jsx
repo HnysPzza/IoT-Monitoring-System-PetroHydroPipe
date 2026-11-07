@@ -464,6 +464,7 @@ export default function AdminDashboard() {
         }
 
         if (event.type === 'sensor.status') {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
           if (event.payload?.live) liveFeedRef.current.applyEvent(event.payload.live)
           else liveFeedRef.current.reload()
           return
@@ -485,7 +486,10 @@ export default function AdminDashboard() {
       onFallback: startFallbackPolling,
       onOpen: ({ isReconnect, isRetry } = {}) => {
         if (isMounted) {
-          if (isReconnect || isRetry) void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+          if (isReconnect || isRetry) {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
+          }
           scheduleAlertReload()
           liveFeedRef.current.reload()
         }

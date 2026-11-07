@@ -29,9 +29,11 @@ describe('live sensor presentation', () => {
     }
   })
 
-  it('gives confirmed operational downtime precedence and never assigns absence state to S-05', () => {
+  it('gives confirmed operational downtime precedence and never assigns absence, fault, or downtime state to S-05', () => {
     expect(presentLiveSensor(sensor({ status: 'Downtime' }), 'observe').stateLabel).toBe('Confirmed operational downtime')
     expect(presentLiveSensor(sensor({ sensorCode: 'S-05', monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'downtime' } }), 'enforce')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Production output sensing' })
+    expect(presentLiveSensor(sensor({ sensorCode: 'S-05', status: 'Fault' }), 'enforce')).toMatchObject({ displayStatus: 'Running', stateLabel: 'Production output sensing' })
+    expect(presentLiveSensor(sensor({ sensorCode: 'S-05', status: 'Downtime' }), 'enforce')).toMatchObject({ displayStatus: 'Running', stateLabel: 'Production output sensing' })
   })
 
   it('labels a process sensor fault without calling it downtime', () => {
