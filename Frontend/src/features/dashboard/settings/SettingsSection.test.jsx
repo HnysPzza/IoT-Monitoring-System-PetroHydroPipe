@@ -246,4 +246,47 @@ describe('SettingsSection operational settings', () => {
     expect(s03Recovery).toBeEnabled()
     expect(s03Recovery).toHaveValue(1)
   })
+
+  it('edits S-03 rotation stall window in seconds while absence detection is disabled and saves milliseconds', async () => {
+    const user = userEvent.setup()
+    const saved = settingsFixture({
+      version: '2',
+      sensorThresholds: {
+        ...settingsFixture().sensorThresholds,
+        'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null, rotationStallMs: 4500 },
+      },
+    })
+    updateOperationalSettings.mockResolvedValue({ settings: saved })
+    renderWithAuth(<SettingsSection />)
+
+    const stallInput = await screen.findByLabelText('S-03 rotation stall seconds')
+    expect(stallInput).toBeEnabled()
+    expect(stallInput).toHaveValue(3)
+    expect(screen.queryByLabelText('S-01 rotation stall seconds')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('S-05 rotation stall seconds')).not.toBeInTheDocument()
+
+    await user.clear(stallInput)
+    await user.type(stallInput, '0.2')
+    const stallError = screen.getByText('Rotation stall must be 0.5-30 seconds.')
+    expect(stallError).toBeInTheDocument()
+    expect(stallInput).toHaveAttribute('aria-invalid', 'true')
+    expect(stallInput.closest('.col-sensor')).toContainElement(stallError)
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    await user.clear(stallInput)
+    await user.type(stallInput, '3.55')
+    expect(screen.getByText('Rotation stall must use 0.1-second steps.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    await user.clear(stallInput)
+    await user.type(stallInput, '4.5')
+    expect(stallInput).not.toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByText('Rotation stall must be 0.5-30 seconds.')).not.toBeInTheDocument()
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+    expect(updateOperationalSettings.mock.calls[0][2].sensorThresholds['S-03'].rotationStallMs).toBe(4500)
+    expect(await screen.findByText('Operational settings saved.')).toBeInTheDocument()
+  })
 })
