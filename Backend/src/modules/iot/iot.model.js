@@ -55,6 +55,10 @@ const sensorEventSchema = z.object({
   }),
 })
 
+const deviceConfigRequestSchema = z.object({
+  headers: deviceHeadersSchema,
+})
+
 const liveFeedRequestSchema = z.object({
   query: z.strictObject({}).optional().default({}),
 })
@@ -62,6 +66,7 @@ const liveFeedRequestSchema = z.object({
 module.exports = {
   MIN_RECORDED_AT,
   RESERVED_METADATA_KEYS,
+  deviceConfigRequestSchema,
   deviceHeadersSchema,
   liveFeedRequestSchema,
   recordedAtTimestampSchema,

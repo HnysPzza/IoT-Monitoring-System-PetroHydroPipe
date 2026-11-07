@@ -325,7 +325,7 @@ function assertAcceptedS05Pulse(event) {
     [event.stateApplied === true, 'was not applied'],
     [event.duplicate === false, 'was unexpectedly duplicate'],
     [event.stale === false, 'was unexpectedly stale'],
-    [event.machineStatus === 'Running', `changed machine status to ${event.machineStatus || 'missing'}`],
+    [event.machineStatus === 'Running' || event.machineStatus === 'Idle', `changed machine status to ${event.machineStatus || 'missing'}`],
     [event.downtimeAction === null, `returned downtime action ${event.downtimeAction || 'missing'}`],
     [event.downtimeId === null, 'returned a downtime ID'],
     [event.downtimeSensorCode === null, 'returned a downtime owner'],
@@ -372,7 +372,7 @@ async function readS05PulseContext(token) {
     || openDowntime.sensor !== 'S-03' || live.machine.status !== 'Downtime')) {
     throw new Error('S-05 pulse preflight failed: open downtime is not an S-03 machine downtime.')
   }
-  if (!openDowntime && live.machine.status !== 'Running') {
+  if (!openDowntime && live.machine.status === 'Downtime') {
     throw new Error(`S-05 pulse preflight failed: machine is ${live.machine.status || 'unknown'} without open downtime.`)
   }
   return openDowntime
@@ -384,7 +384,7 @@ async function assertNormalS05PulseState(pulseEvent, token) {
     readStateEndpoint('/api/downtime?status=Open&limit=100', token),
   ])
   const outputSensor = live?.sensors?.find((sensor) => sensor.sensorCode === 'S-05')
-  if (live?.machine?.status !== 'Running'
+  if (live?.machine?.status === 'Downtime'
     || downtime?.summary?.open !== 0
     || downtime?.records?.some((record) => record.status === 'Open')
     || outputSensor?.lastEventAt !== pulseEvent.recordedAt) {

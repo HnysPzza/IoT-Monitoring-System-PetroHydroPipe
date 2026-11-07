@@ -1074,6 +1074,53 @@ test('live feed keeps a single process sensor fault distinct from downtime', asy
   assert.equal(feed.sensors[0].status, 'Fault')
 })
 
+test('live feed keeps S-01, S-02, and S-04 Running while active signal is fresh, Idle within trigger limit, and Fault past trigger limit', async () => {
+  for (const sensorIndex of [0, 1, 3]) {
+    const runningSnapshot = liveSnapshot()
+    runningSnapshot.sensors[sensorIndex].status = 'Inactive'
+    runningSnapshot.sensors[sensorIndex].latest_event = {
+      id: `20000000-0000-4000-8000-00000000000${sensorIndex + 1}`,
+      event_type: 'pulse',
+      signal: 'active',
+      recorded_at: '2026-08-22T00:02:00.000Z',
+    }
+    runningSnapshot.sensors[sensorIndex].watchdog.detection_state = 'grace'
+    runningSnapshot.sensors[sensorIndex].watchdog.last_activity_received_at = '2026-08-22T00:02:05.000Z'
+    const runningFeed = await loadLiveFeedService({ data: runningSnapshot }).getLiveFeed()
+    assert.equal(runningFeed.sensors[sensorIndex].status, 'Running')
+    assert.equal(runningFeed.sensors[sensorIndex].physicalStatus, 'Active')
+    assert.equal(runningFeed.sensors[sensorIndex].monitoring.detectionState, 'healthy')
+
+    const idleSnapshot = liveSnapshot()
+    idleSnapshot.sensors[sensorIndex].status = 'Inactive'
+    idleSnapshot.sensors[sensorIndex].latest_event = {
+      id: `20000000-0000-4000-8000-00000000000${sensorIndex + 1}`,
+      event_type: 'idle',
+      signal: 'idle',
+      recorded_at: '2026-08-22T00:02:00.000Z',
+    }
+    idleSnapshot.sensors[sensorIndex].watchdog.detection_state = 'healthy'
+    const idleFeed = await loadLiveFeedService({ data: idleSnapshot }).getLiveFeed()
+    assert.equal(idleFeed.sensors[sensorIndex].status, 'Idle')
+    assert.equal(idleFeed.sensors[sensorIndex].physicalStatus, 'Inactive')
+    assert.equal(idleFeed.sensors[sensorIndex].monitoring.detectionState, 'grace')
+
+    const faultSnapshot = liveSnapshot()
+    faultSnapshot.sensors[sensorIndex].status = 'Fault'
+    faultSnapshot.sensors[sensorIndex].latest_event = {
+      id: `20000000-0000-4000-8000-00000000000${sensorIndex + 1}`,
+      event_type: 'fault',
+      signal: 'fault',
+      recorded_at: '2026-08-22T00:02:00.000Z',
+    }
+    faultSnapshot.sensors[sensorIndex].watchdog.detection_state = 'downtime'
+    const faultFeed = await loadLiveFeedService({ data: faultSnapshot }).getLiveFeed()
+    assert.equal(faultFeed.sensors[sensorIndex].status, 'Fault')
+    assert.equal(faultFeed.sensors[sensorIndex].physicalStatus, 'Fault')
+    assert.equal(faultFeed.sensors[sensorIndex].monitoring.detectionState, 'downtime')
+  }
+})
+
 test('live feed keeps S-03 physical input separate from machine downtime authority', async () => {
   const snapshot = liveSnapshot({ machine: { ...liveSnapshot().machine, status: 'Downtime' } })
   snapshot.sensors[2].status = 'Active'
@@ -1120,4 +1167,65 @@ test('duplicate, stale, and failed sensor events do not request a live status pu
     liveStatusRequests,
   }))
   assert.equal(liveStatusRequests.length, 0)
+})
+
+test('getDeviceOperationalThresholds returns rotationStallMs only for S-03 with 3000 ms legacy fallback', async () => {
+  clearSourceCache()
+  let settingsRowData = {
+    version: 4,
+    sensor_thresholds: {
+      'S-01': { absenceDetectionEnabled: true, triggerSeconds: 120, recoverySeconds: 60 },
+      'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null },
+    },
+  }
+  mockModule('src/database/client.js', {
+    getSupabaseClient: () => ({
+      from(table) {
+        assert.equal(table, 'machine_operational_settings')
+        return {
+          select() { return this },
+          eq() { return this },
+          async maybeSingle() { return { data: settingsRowData, error: null } },
+        }
+      },
+    }),
+  })
+  const iotService = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  const baseSensor = createSensorRecord()
+
+  const s01Thresholds = await iotService.getDeviceOperationalThresholds({ ...baseSensor, sensor_code: 'S-01' })
+  assert.equal(s01Thresholds.rotationStallMs, undefined)
+
+  const legacyS03 = await iotService.getDeviceOperationalThresholds({ ...baseSensor, sensor_code: 'S-03' })
+  assert.equal(legacyS03.rotationStallMs, 3000)
+
+  settingsRowData = {
+    version: 5,
+    sensor_thresholds: {
+      ...settingsRowData.sensor_thresholds,
+      'S-03': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 60, rotationStallMs: 5500 },
+    },
+  }
+  const updatedS03 = await iotService.getDeviceOperationalThresholds({ ...baseSensor, sensor_code: 'S-03' })
+  assert.equal(updatedS03.rotationStallMs, 5500)
+
+  settingsRowData = {
+    version: 6,
+    sensor_thresholds: {
+      ...settingsRowData.sensor_thresholds,
+      'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null, rotationStallMs: 50 },
+    },
+  }
+  const outOfRangeLowS03 = await iotService.getDeviceOperationalThresholds({ ...baseSensor, sensor_code: 'S-03' })
+  assert.equal(outOfRangeLowS03.rotationStallMs, 3000)
+
+  settingsRowData = {
+    version: 7,
+    sensor_thresholds: {
+      ...settingsRowData.sensor_thresholds,
+      'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null, rotationStallMs: 99999 },
+    },
+  }
+  const outOfRangeHighS03 = await iotService.getDeviceOperationalThresholds({ ...baseSensor, sensor_code: 'S-03' })
+  assert.equal(outOfRangeHighS03.rotationStallMs, 3000)
 })

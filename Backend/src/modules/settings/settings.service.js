@@ -4,6 +4,7 @@ const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 const {
   SENSOR_CODES,
   SETTINGS_LIMITS,
+  SPINDLE_SENSOR_CODE,
   completeSettingsSchema,
   storedSettingsRecordSchema,
 } = require('./settings.model')
@@ -71,6 +72,7 @@ function getSettingsConstraints() {
   return {
     sensorCodes: SENSOR_CODES,
     outputSensorCode: OUTPUT_SENSOR_CODE,
+    spindleSensorCode: SPINDLE_SENSOR_CODE,
     triggerSeconds: {
       ...SETTINGS_LIMITS.triggerSeconds,
       minimumWhenEnabled: Math.max(
@@ -85,6 +87,7 @@ function getSettingsConstraints() {
         Math.ceil((env.IOT_HEARTBEAT_EXPECTED_INTERVAL_MS * 2) / 1000),
       ),
     },
+    rotationStallMs: SETTINGS_LIMITS.rotationStallMs,
     breaks: SETTINGS_LIMITS.breaks,
     rampUpGraceMinutes: SETTINGS_LIMITS.rampUpGraceMinutes,
     sameDayShiftOnly: true,
@@ -175,6 +178,26 @@ function mapUpdateError(error) {
   return createSettingsError(500, 'SETTINGS_UPDATE_FAILED', 'Unable to update machine settings.')
 }
 
+function mergeSensorThresholds(currentThresholds, patchThresholds) {
+  if (patchThresholds === undefined) return currentThresholds
+  const merged = { ...currentThresholds }
+  for (const [sensorCode, patch] of Object.entries(patchThresholds)) {
+    if (patch === undefined) continue
+    if (sensorCode === SPINDLE_SENSOR_CODE) {
+      merged[SPINDLE_SENSOR_CODE] = {
+        ...currentThresholds[SPINDLE_SENSOR_CODE],
+        ...patch,
+        rotationStallMs: patch.rotationStallMs
+          ?? currentThresholds[SPINDLE_SENSOR_CODE]?.rotationStallMs
+          ?? SETTINGS_LIMITS.rotationStallMs.default,
+      }
+    } else {
+      merged[sensorCode] = patch
+    }
+  }
+  return merged
+}
+
 async function updateMachineSettings({
   machineId,
   expectedVersion,
@@ -193,15 +216,14 @@ async function updateMachineSettings({
   const supabase = getSupabaseClient()
   const current = await getMachineSettings(machineId, supabase)
   const candidate = {
-    sensorThresholds: sensorThresholds === undefined
-      ? current.sensorThresholds
-      : { ...current.sensorThresholds, ...sensorThresholds },
+    sensorThresholds: mergeSensorThresholds(current.sensorThresholds, sensorThresholds),
     shiftSchedule: shiftSchedule === undefined ? current.shiftSchedule : shiftSchedule,
   }
   const parsed = completeSettingsSchema.safeParse(candidate)
 
   if (!parsed.success) {
-    throw createSettingsError(400, 'VALIDATION_ERROR', 'Machine settings are invalid.')
+    const issueMessage = parsed.error.issues[0]?.message || 'Machine settings are invalid.'
+    throw createSettingsError(400, 'VALIDATION_ERROR', issueMessage)
   }
   validateWatchdogCapability(parsed.data.sensorThresholds)
 

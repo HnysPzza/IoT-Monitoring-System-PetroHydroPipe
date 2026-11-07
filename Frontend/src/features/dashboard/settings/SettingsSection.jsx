@@ -10,7 +10,7 @@ import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
-import { cloneSettings, getMinuteBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
+import { cloneSettings, getMinuteBounds, getRotationStallSecondsBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 
 function getBreakDurationLabel(start, end) {
@@ -27,12 +27,20 @@ function getBreakDurationLabel(start, end) {
   return `${mins}m`
 }
 
-function toDraft(settings) {
-  return cloneSettings({ sensorThresholds: settings.sensorThresholds, shiftSchedule: settings.shiftSchedule })
+function toDraft(settings, constraints) {
+  const cloned = cloneSettings({ sensorThresholds: settings.sensorThresholds, shiftSchedule: settings.shiftSchedule })
+  const spindleCode = constraints?.spindleSensorCode || 'S-03'
+  const stallBounds = getRotationStallSecondsBounds(constraints?.rotationStallMs)
+  if (cloned.sensorThresholds?.[spindleCode] && cloned.sensorThresholds[spindleCode].rotationStallMs === undefined) {
+    cloned.sensorThresholds[spindleCode].rotationStallMs = stallBounds.defaultMs
+  }
+  return cloned
 }
 
 function numericValue(value) {
-  return value === '' ? null : Number(value)
+  if (value === null || value === undefined || String(value).trim() === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function secondsToMinutesValue(seconds, enabled = true) {
@@ -42,9 +50,20 @@ function secondsToMinutesValue(seconds, enabled = true) {
 }
 
 function minutesInputToSeconds(value) {
-  if (value === '') return null
+  if (value === null || value === undefined || String(value).trim() === '') return null
   const minutes = Number(value)
-  return Number.isNaN(minutes) ? null : Number((minutes * 60).toFixed(4))
+  return Number.isFinite(minutes) ? Number((minutes * 60).toFixed(4)) : null
+}
+
+function msToSecondsValue(milliseconds) {
+  if (milliseconds === null || milliseconds === undefined) return ''
+  return Number((milliseconds / 1000).toFixed(3))
+}
+
+function secondsInputToMs(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null
+  const seconds = Number(value)
+  return Number.isFinite(seconds) ? Math.round(seconds * 1000) : null
 }
 
 export default function SettingsSection() {
@@ -93,16 +112,20 @@ export default function SettingsSection() {
 
   useEffect(() => {
     const latest = settingsQuery.data?.settings
+    const latestConstraints = settingsQuery.data?.constraints
     if (!latest || isSaving) return
-    if (!draft || (settings && settingsAreEqual(draft, toDraft(settings)))) {
+    if (settings && /^\d+$/.test(String(latest.version)) && /^\d+$/.test(String(settings.version)) && BigInt(latest.version) < BigInt(settings.version)) {
+      return
+    }
+    if (!draft || (settings && settingsAreEqual(draft, toDraft(settings, constraints || latestConstraints)))) {
       setSettings(latest)
-      setConstraints(settingsQuery.data.constraints)
-      setDraft(toDraft(latest))
+      setConstraints(latestConstraints)
+      setDraft(toDraft(latest, latestConstraints))
     } else if (settings && latest.version !== settings.version) {
       setConflict(true)
       setNotice({ type: 'error', message: 'Another Admin changed these settings. Your draft was kept; reload the latest version before saving.' })
     }
-  }, [settingsQuery.data])
+  }, [settingsQuery.data, isSaving])
 
   useEffect(() => {
     if (diagnosticsQuery.isError) setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
@@ -131,13 +154,13 @@ export default function SettingsSection() {
     }
     setSettings(settingsResult.value.settings)
     setConstraints(settingsResult.value.constraints)
-    setDraft(toDraft(settingsResult.value.settings))
+    setDraft(toDraft(settingsResult.value.settings, settingsResult.value.constraints))
     setConflict(false)
     if (diagnosticsResult.status === 'rejected') setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
     else setEnforcementBlocked(diagnosticsResult.value.data?.watchdog?.mode === 'enforce')
   }
 
-  const baseline = useMemo(() => (settings ? toDraft(settings) : null), [settings])
+  const baseline = useMemo(() => (settings ? toDraft(settings, constraints) : null), [settings, constraints])
   const isDirty = useMemo(() => !settingsAreEqual(draft, baseline), [draft, baseline])
   const errors = useMemo(() => (
     draft && constraints ? validateOperationalSettings(draft, constraints) : {}
@@ -147,6 +170,10 @@ export default function SettingsSection() {
   ), [constraints])
   const recoveryMinutes = useMemo(() => (
     constraints ? getMinuteBounds(constraints.recoverySeconds) : null
+  ), [constraints])
+  const spindleSensorCode = constraints?.spindleSensorCode || 'S-03'
+  const stallSecondsBounds = useMemo(() => (
+    constraints ? getRotationStallSecondsBounds(constraints.rotationStallMs) : null
   ), [constraints])
   const editingBlocked = watchdogMode === 'enforce' || watchdogMode === 'unknown' || conflict || enforcementBlocked
   const canSave = isDirty && !editingBlocked && !isSaving && Object.keys(errors).length === 0
@@ -252,7 +279,7 @@ export default function SettingsSection() {
         shiftSchedule: { ...draft.shiftSchedule, breaks: sortBreaks(draft.shiftSchedule.breaks) },
       })
       setSettings(payload.settings)
-      setDraft(toDraft(payload.settings))
+      setDraft(toDraft(payload.settings, constraints))
       void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
@@ -290,9 +317,10 @@ export default function SettingsSection() {
   function discardSettings() {
     const latest = conflict && settingsQuery.data?.settings?.version !== settings.version ? settingsQuery.data : null
     const nextSettings = latest?.settings || settings
+    const nextConstraints = latest?.constraints || constraints
     setSettings(nextSettings)
     if (latest) setConstraints(latest.constraints)
-    setDraft(toDraft(nextSettings))
+    setDraft(toDraft(nextSettings, nextConstraints))
     setConflict(false)
     setNotice(null)
   }
@@ -315,7 +343,7 @@ export default function SettingsSection() {
       {!draft || !constraints ? (
         <section className="section-card section-placeholder"><div className="section-copy"><p className="section-eyebrow">Configuration unavailable</p><h2>Unable to load operational settings</h2><p>No changes can be made until the current server configuration is loaded.</p><button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={16} aria-hidden="true" /> Retry</button></div></section>
       ) : (
-        <form id="operational-settings-form" className="settings-form" onSubmit={saveSettings}>
+        <form id="operational-settings-form" className="settings-form" noValidate onSubmit={saveSettings}>
           <section className="section-card settings-panel" aria-labelledby="operational-settings-title">
             <div className="section-heading">
               <div className="section-copy">
@@ -344,8 +372,10 @@ export default function SettingsSection() {
                     {constraints.sensorCodes.map((sensorCode) => {
                       const threshold = draft.sensorThresholds[sensorCode]
                       const isOutput = sensorCode === constraints.outputSensorCode
+                      const isSpindle = sensorCode === spindleSensorCode
                       const sensorLabel = getSensorLabel(sensorCode, 'Plant Sensor')
                       const hasError = Boolean(errors[sensorCode])
+                      const isStallError = isSpindle && hasError && errors[sensorCode].startsWith('Rotation stall')
 
                       if (isOutput) {
                         return (
@@ -392,6 +422,30 @@ export default function SettingsSection() {
                               <span className="settings-sensor-badge">{sensorCode}</span>
                               <div className="settings-sensor-meta">
                                 <strong className="settings-sensor-title">{sensorLabel}</strong>
+                                {isSpindle && stallSecondsBounds ? (
+                                  <div className="settings-spindle-stall">
+                                    <span className="settings-spindle-stall-label" id="s03-stall-range">
+                                      Rotation stall ({stallSecondsBounds.minimum}–{stallSecondsBounds.maximum}s)
+                                    </span>
+                                    <div className="settings-input-group settings-stall-input-group">
+                                      <input
+                                        aria-label={`${sensorCode} rotation stall seconds`}
+                                        aria-describedby={isStallError ? 's03-stall-range s03-stall-error' : 's03-stall-range'}
+                                        aria-invalid={isStallError ? 'true' : undefined}
+                                        type="number"
+                                        className="settings-num-input"
+                                        min={stallSecondsBounds.minimum}
+                                        max={stallSecondsBounds.maximum}
+                                        step={0.1}
+                                        disabled={editingBlocked}
+                                        value={msToSecondsValue(threshold.rotationStallMs)}
+                                        onChange={(event) => updateThreshold(sensorCode, 'rotationStallMs', secondsInputToMs(event.target.value))}
+                                      />
+                                      <span className="input-group-unit" aria-hidden="true">sec</span>
+                                    </div>
+                                    {isStallError ? <p id="s03-stall-error" className="field-error">{errors[sensorCode]}</p> : null}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           </td>
@@ -421,7 +475,7 @@ export default function SettingsSection() {
                               />
                               <span className="input-group-unit" aria-hidden="true">min</span>
                             </div>
-                            {hasError ? <p className="field-error">{errors[sensorCode]}</p> : null}
+                            {hasError && !isStallError ? <p className="field-error">{errors[sensorCode]}</p> : null}
                           </td>
                           <td className="col-recovery">
                             <div className="settings-input-group">

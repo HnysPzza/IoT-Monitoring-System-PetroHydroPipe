@@ -572,6 +572,23 @@ test('S-05 pulse verification accepts output when no downtime is open', async (t
   assert.match(result.stdout, /S-05 pulse was accepted with no open downtime/i)
 })
 
+test('S-05 pulse verification accepts output when machine is Idle with no open downtime', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  baseline.live.machine.status = 'Idle'
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => {
+    baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-05').lastEventAt = event.recordedAt
+    return s05PulseResponse(event, {
+      downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+      machineStatus: 'Idle', stateApplied: true, duplicate: false, stale: false,
+      outputAccepted: true, outputRejectionReason: null,
+    })
+  }, baseline)
+
+  assert.equal(result.exitCode, 0, result.stderr)
+  assert.deepEqual(result.receivedEvents.map((event) => [event.metadata.sensorCode, event.eventType]), [['S-05', 'pulse']])
+  assert.match(result.stdout, /S-05 pulse was accepted with no open downtime/i)
+})
+
 test('S-05 pulse verification rejects output when S-03 downtime is open', async (t) => {
   const baseline = cleanVerificationBaseline()
   baseline.live.machine.status = 'Downtime'
