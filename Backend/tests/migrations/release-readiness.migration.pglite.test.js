@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 56
+const releaseSchemaVersion = 57
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -606,5 +606,148 @@ test('migration 056 clears Fault and reconciles Downtime when absence detection 
   const openDowntimes = (await db.query("select count(*)::int as count from downtime_events where status = 'Open'")).rows[0]
   assert.equal(openDowntimes.count, 0)
 })
+
+test('migration 057 enforces atomic user status updates and account archiving with audit rollback and revokes direct users mutations', async (t) => {
+  const db = await database(t)
+  const adminId = (await db.query("select id from users where username = 'release-admin'")).rows[0].id
+  const passwordHash = '$2b$10$' + 'a'.repeat(53)
+  const targetId = (await db.query(`
+    insert into users (name, username, email, password_hash, role_id, onboarding_state)
+    select 'Status Target', 'status-target', 'status-target@example.test', $1, id, 'Ready'
+    from roles
+    where name = 'Production Supervisor'
+    returning id
+  `, [passwordHash])).rows[0].id
+
+  await db.exec('set role service_role;')
+
+  // 1. Direct INSERT, UPDATE, and DELETE on public.users are blocked for service_role
+  await assert.rejects(
+    db.query("update public.users set status = 'Inactive' where id = $1", [targetId]),
+    /permission denied/i,
+  )
+  await assert.rejects(
+    db.query('delete from public.users where id = $1', [targetId]),
+    /permission denied/i,
+  )
+
+  // 2. Self-deactivation, self-archive, and Admin target mutations are rejected
+  await assert.rejects(
+    db.query("select public.update_user_account_status($1, $1, 'Inactive')", [adminId]),
+    /cannot deactivate their own account/i,
+  )
+  await assert.rejects(
+    db.query('select public.archive_user_account($1, $1)', [adminId]),
+    /cannot archive their own account/i,
+  )
+
+  // 3. Non-admin actor is rejected
+  await assert.rejects(
+    db.query("select public.update_user_account_status($1, $2, 'Inactive')", [targetId, adminId]),
+    /Admin access required/i,
+  )
+  await assert.rejects(
+    db.query('select public.archive_user_account($1, $2)', [targetId, adminId]),
+    /Admin access required/i,
+  )
+
+  // 4. Atomic rollback when audit_logs write fails during status update or archive
+  await db.exec('reset role;')
+  await db.exec(`
+    create function fail_user_mutation_audit() returns trigger language plpgsql as $$
+    begin
+      if new.action in ('USER_STATUS_UPDATED', 'USER_ARCHIVED') then
+        raise exception 'audit unavailable';
+      end if;
+      return new;
+    end $$;
+    create trigger fail_user_mutation_audit
+    before insert on public.audit_logs
+    for each row execute function fail_user_mutation_audit();
+  `)
+  await db.exec('set role service_role;')
+
+  await assert.rejects(
+    db.query("select public.update_user_account_status($1, $2, 'Inactive')", [adminId, targetId]),
+    /audit unavailable/i,
+  )
+  const afterFailedStatus = (await db.query('select status, deleted_at from public.users where id = $1', [targetId])).rows[0]
+  assert.deepEqual(afterFailedStatus, { status: 'Active', deleted_at: null })
+
+  await assert.rejects(
+    db.query('select public.archive_user_account($1, $2)', [adminId, targetId]),
+    /audit unavailable/i,
+  )
+  const afterFailedArchive = (await db.query('select status, deleted_at from public.users where id = $1', [targetId])).rows[0]
+  assert.deepEqual(afterFailedArchive, { status: 'Active', deleted_at: null })
+
+  await db.exec('reset role;')
+  await db.exec('drop trigger fail_user_mutation_audit on public.audit_logs; drop function fail_user_mutation_audit();')
+  await db.exec('set role service_role;')
+
+  // 5. Status update succeeds, revokes active sessions on deactivation, writes audit log, and is idempotent on retry
+  await db.query("select public.issue_refresh_token($1, $2, now() + interval '1 hour', $3)", [targetId, 'a'.repeat(64), passwordHash])
+  const deactivated = (await db.query(
+    "select public.update_user_account_status($1, $2, 'Inactive') as result",
+    [adminId, targetId],
+  )).rows[0].result
+  assert.equal(deactivated.id, targetId)
+  assert.equal(deactivated.status, 'Inactive')
+  assert.equal(deactivated.role, 'Production Supervisor')
+  assert.ok((await db.query('select revoked_at from public.auth_sessions where user_id = $1', [targetId])).rows[0].revoked_at)
+  assert.ok((await db.query('select revoked_at from public.refresh_tokens where user_id = $1', [targetId])).rows[0].revoked_at)
+
+  // Retry with identical status does not duplicate audit row
+  await db.query("select public.update_user_account_status($1, $2, 'Inactive')", [adminId, targetId])
+  const statusAudits = (await db.query(`
+    select user_id, metadata
+    from public.audit_logs
+    where entity_id = $1 and action = 'USER_STATUS_UPDATED'
+  `, [targetId])).rows
+  assert.equal(statusAudits.length, 1)
+  assert.equal(statusAudits[0].user_id, adminId)
+  assert.deepEqual(statusAudits[0].metadata, {
+    targetUsername: 'status-target',
+    targetRole: 'Production Supervisor',
+    newStatus: 'Inactive',
+  })
+
+  // Reactivate before archiving so previousStatus is 'Active'
+  const reactivated = (await db.query(
+    "select public.update_user_account_status($1, $2, 'Active') as result",
+    [adminId, targetId],
+  )).rows[0].result
+  assert.equal(reactivated.status, 'Active')
+
+  // 6. Archive succeeds, sets deleted_at + status Inactive, writes USER_ARCHIVED audit log, and rejects second archive with P0002
+  const archived = (await db.query(
+    'select public.archive_user_account($1, $2) as result',
+    [adminId, targetId],
+  )).rows[0].result
+  assert.equal(archived.id, targetId)
+  assert.equal(archived.status, 'Inactive')
+  assert.ok(archived.deletedAt)
+
+  const archiveAudits = (await db.query(`
+    select user_id, metadata
+    from public.audit_logs
+    where entity_id = $1 and action = 'USER_ARCHIVED'
+  `, [targetId])).rows
+  assert.equal(archiveAudits.length, 1)
+  assert.equal(archiveAudits[0].user_id, adminId)
+  assert.equal(archiveAudits[0].metadata.targetUsername, 'status-target')
+  assert.equal(archiveAudits[0].metadata.targetRole, 'Production Supervisor')
+  assert.equal(archiveAudits[0].metadata.previousStatus, 'Active')
+  assert.equal(archiveAudits[0].metadata.newStatus, 'Inactive')
+  assert.ok(archiveAudits[0].metadata.archivedAt)
+
+  await assert.rejects(
+    db.query('select public.archive_user_account($1, $2)', [adminId, targetId]),
+    /User not found/i,
+  )
+
+  await db.exec('reset role;')
+})
+
 
 
