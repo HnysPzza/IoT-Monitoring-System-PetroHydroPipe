@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 55
+const releaseSchemaVersion = 56
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -479,4 +479,132 @@ test('migration 055 reports readiness 55, repairs out-of-order v52-v54 readiness
   await db.exec(migration055)
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 55)
 })
+
+test('migration 056 clears Fault and reconciles Downtime when absence detection is disabled via idle event or watchdog evaluator', async (t) => {
+  const db = await database(t)
+
+  const ingest = async (sensorCode, eventType, recordedAt, {
+    eventId = randomUUID(),
+    signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active',
+    metadata = {},
+  } = {}) => (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_sensor_event(
+        $1::uuid,
+        sensor.id,
+        sensor.machine_id,
+        $2::text,
+        $3::jsonb,
+        $4::timestamptz
+      ) result
+      where sensor.sensor_code = $5
+    `, [eventId, eventType, JSON.stringify({ signal, metadata }), recordedAt, sensorCode])).rows[0]
+
+  const setAbsenceEnabled = async (sensorCode, enabled) => {
+    const updated = (await db.query(`
+      update machine_operational_settings
+      set sensor_thresholds = jsonb_set(
+        sensor_thresholds,
+        array[$1::text, 'absenceDetectionEnabled'],
+        to_jsonb($2::boolean)
+      ),
+      version = version + 1
+      returning machine_id, version, shift_schedule, sensor_thresholds
+    `, [sensorCode, enabled])).rows[0]
+
+    await db.query(`
+      update machine_operational_settings_history
+      set effective_to = clock_timestamp()
+      where machine_id = $1 and effective_to is null
+    `, [updated.machine_id])
+
+    await db.query(`
+      insert into machine_operational_settings_history (
+        machine_id, version, effective_from, shift_schedule, sensor_thresholds
+      ) values ($1, $2, '2026-08-21T00:00:00+08:00'::timestamptz, $3, $4)
+    `, [updated.machine_id, updated.version, updated.shift_schedule, updated.sensor_thresholds])
+  }
+
+  // Case 1: S-01, S-02, S-04 are in Fault + Machine is in Downtime. Disabling absence detection on S-01 and ingesting 'idle' clears S-01 Fault and resolves grouped Downtime.
+  await setAbsenceEnabled('S-01', true)
+  await setAbsenceEnabled('S-02', true)
+  await setAbsenceEnabled('S-04', true)
+  await ingest('S-02', 'fault', '2026-08-21T09:59:50+08:00')
+  await ingest('S-04', 'fault', '2026-08-21T09:59:55+08:00')
+  const fault1 = await ingest('S-01', 'fault', '2026-08-21T10:00:00+08:00')
+  assert.equal(fault1.new_machine_status, 'Downtime')
+  assert.equal(fault1.downtime_action, 'created')
+
+  // When absence detection is still enabled, 'idle' keeps Fault and Downtime
+  const idleWhileEnabled = await ingest('S-01', 'idle', '2026-08-21T10:00:05+08:00')
+  assert.equal(idleWhileEnabled.new_machine_status, 'Downtime')
+  const s01StillFault = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.equal(s01StillFault.status, 'Fault')
+
+  // Acknowledge the active S-01 process alert so we can verify it auto-resolves on disable + idle
+  await db.query(`
+    update alerts
+    set status = 'Acknowledged'
+    where source_type = 'sensor'
+      and sensor_id = (select id from sensors where sensor_code = 'S-01')
+      and status = 'Active'
+  `)
+
+  // Disable S-01 absence detection and send 'idle' (as ESP32 firmware does upon config sync)
+  await setAbsenceEnabled('S-01', false)
+  const idleAfterDisable = await ingest('S-01', 'idle', '2026-08-21T10:00:10+08:00')
+  assert.equal(idleAfterDisable.state_applied, true)
+  assert.equal(idleAfterDisable.new_machine_status, 'Running')
+  assert.equal(idleAfterDisable.downtime_action, 'resolved')
+
+  const s01Cleared = (await db.query("select status, fault_source from sensors where sensor_code = 'S-01'")).rows[0]
+  assert.deepEqual(s01Cleared, { status: 'Inactive', fault_source: null })
+
+  const s01Watchdog = (await db.query(`
+    select detection_state, absence_baseline_at, recovery_started_at, recovery_observation_count, open_downtime_id
+    from sensor_watchdog_state
+    where sensor_id = (select id from sensors where sensor_code = 'S-01')
+  `)).rows[0]
+  assert.deepEqual(s01Watchdog, {
+    detection_state: 'disabled',
+    absence_baseline_at: null,
+    recovery_started_at: null,
+    recovery_observation_count: 0,
+    open_downtime_id: null,
+  })
+
+  const s01Alert = (await db.query(`
+    select status
+    from alerts
+    where source_type = 'sensor'
+      and sensor_id = (select id from sensors where sensor_code = 'S-01')
+    order by created_at desc limit 1
+  `)).rows[0]
+  assert.equal(s01Alert.status, 'Resolved')
+
+  // Case 2: S-03 is in Fault + Machine is in Downtime. Disabling absence detection and running evaluate_sensor_watchdog('enforce') clears Fault and Downtime even if device is offline.
+  await setAbsenceEnabled('S-03', true)
+  const fault3 = await ingest('S-03', 'fault', '2026-08-21T10:01:00+08:00')
+  assert.equal(fault3.new_machine_status, 'Downtime')
+  assert.equal(fault3.downtime_action, 'created')
+
+  await setAbsenceEnabled('S-03', false)
+  const s03Id = (await db.query("select id from sensors where sensor_code = 'S-03'")).rows[0].id
+  const evalResult = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-08-21T10:01:15+08:00'::timestamptz, 'enforce', 15)",
+    [s03Id],
+  )).rows[0]
+  assert.equal(evalResult.detection_state, 'disabled')
+
+  const s03Cleared = (await db.query("select status, fault_source from sensors where sensor_code = 'S-03'")).rows[0]
+  assert.deepEqual(s03Cleared, { status: 'Inactive', fault_source: null })
+
+  const machineAfterWatchdog = (await db.query("select status from machines where machine_code = 'M-01'")).rows[0]
+  assert.equal(machineAfterWatchdog.status, 'Idle')
+
+  const openDowntimes = (await db.query("select count(*)::int as count from downtime_events where status = 'Open'")).rows[0]
+  assert.equal(openDowntimes.count, 0)
+})
+
 
