@@ -28,14 +28,14 @@ Use `node scripts\run-tests.js --list` to list available suites or `node scripts
 
 ## Required Test Suite
 
-Backend: verifies all API, database, security, analytics, watchdog, health, and shutdown behavior. Expected: `0 fail` (current baseline: 308 tests).
+Backend: verifies all API, database, security, analytics, watchdog, health, and shutdown behavior. Expected: `0 fail` (current baseline: 784 tests).
 
 ```bash
 cd Backend
 npm test
 ```
 
-Frontend: verifies UI behavior and production compilation. Expected: all tests pass (current baseline: 250 tests) and Vite build completes.
+Frontend: verifies UI behavior and production compilation. Expected: all tests pass (current baseline: 650 tests across 67 test files) and Vite build completes.
 
 ```bash
 cd Frontend
@@ -63,11 +63,11 @@ node --test tests/request-deadline.api.test.js tests/env.test.js
 
 Expected: `0 fail`.
 
-### Current backend migration chain through 055
+### Current backend migration chain through 058
 
-For existing installations, apply pending migrations 029 through 055 in numeric order before deploying the current backend, which requires readiness version 55. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Existing installations use only pending migrations, not the complete schema or old migration replays.
+For existing installations, apply pending migrations 029 through 058 in numeric order before deploying the current backend, which requires readiness version 58. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Migrations 056 through 058 add absence-disable fault clearing, atomic user status/archive audit RPCs, and analytics/audit/report query indexes. Existing installations use only pending migrations, not the complete schema or old migration replays.
 
-For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 055. Do not replay migrations 001 through 028 over the fresh baseline.
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 058. Do not replay migrations 001 through 028 over the fresh baseline.
 
 ### Telemetry staleness migration 028
 
@@ -95,7 +95,7 @@ select stale, count(*) from public.sensor_events group by stale;
 
 ### Migration readiness versions
 
-Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Subsequent migrations 047 through 055 advance readiness to `55` (atomic confirmed device recovery and live readiness repair). Apply all migrations through 055 before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
+Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Subsequent migrations 047 through 055 advance readiness to `55` (atomic confirmed device recovery and live readiness repair). Migration 056 advances readiness to `56` (clearing active fault/downtime when absence detection is disabled). Migration 057 advances readiness to `57` (atomic user status and archive RPCs with `audit_logs` and revoked direct `service_role` user mutations). Migration 058 advances readiness to `58` (query speed indexes for audit logs, analytics pulses, and S-05 reports plus bounded first-event lookup). Apply all migrations through 058 before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
 
 ### S-05 output validation migration 044
 
@@ -121,14 +121,14 @@ The application now stores five roles. The protected internal role remains `Admi
 
 Migration 046 takes short locks on `roles` and `users`, then checks that no account references the legacy Managing Director role before deleting that role row. If an account is found, the transaction aborts without changing the role or account. It also aborts if the role catalog contains any unexpected or missing role. Its two-second lock timeout makes it abort and roll back if the required locks are not promptly available. On success, readiness advances from `45` to `46`.
 
-After applying the migration, verify readiness and the role catalog:
+After applying the full migration chain, verify readiness and the role catalog:
 
 ```sql
 select public.get_backend_readiness();
 select name from public.roles order by name;
 ```
 
-Expected readiness is `55`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
+Expected readiness is `58`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
 
 ### Health and readiness (historical migration 024 checks)
 
