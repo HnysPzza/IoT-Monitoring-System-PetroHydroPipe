@@ -136,6 +136,7 @@ describe('DowntimeSection', () => {
     renderWithAuth(<DowntimeSection />)
 
     expect(await screen.findByText('S-03 08:42 AM')).toBeInTheDocument()
+    expect(screen.getByText('Jun 11, 2026')).toBeInTheDocument()
     expect(screen.getByText('S-03 - Machine Main Sensor')).toBeInTheDocument()
     expect(screen.getByText('Needs cause review')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Resolve$/i })).not.toBeInTheDocument()

@@ -6,6 +6,7 @@
 .downtime-layout .downtime-controls-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
 .downtime-date-control { display: flex; align-items: center; gap: 8px; }
 .downtime-layout .downtime-table-card { padding: 16px; }
+.downtime-event-date { display: block; margin-top: 2px; font-size: 0.75rem; line-height: 1.25; }
 @media (max-width: 680px) { .downtime-layout .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .downtime-layout .stat-card:nth-child(3) { border-left: 0; } .downtime-layout .stat-card:nth-child(n+3) { border-top: 1px solid var(--card-border); } }
 .downtime-layout .downtime-controls-card { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: end; gap: 12px; }
 .downtime-layout .downtime-date-control { margin-left: auto; flex-wrap: wrap; }

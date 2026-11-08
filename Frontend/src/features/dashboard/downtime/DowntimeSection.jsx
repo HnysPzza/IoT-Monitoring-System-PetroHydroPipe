@@ -87,6 +87,18 @@ function getDisplayLabel(record) {
   return record.sensor ? `${record.sensor} ${formatShortDateTime(record.startedAt)}` : formatShortDateTime(record.startedAt)
 }
 
+function formatEventDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 function getManilaDateInputValue() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
@@ -414,6 +426,7 @@ export default function DowntimeSection() {
                     <tr className={`${expandedRecordId === record.id ? 'is-expanded' : ''} ${record.needsCauseReview ? 'needs-cause-review' : ''}`}>
                       <td data-label="Event">
                         <span className="audit-action-label">{getDisplayLabel(record)}</span>
+                        {record.startedAt ? <span className="table-muted downtime-event-date">{formatEventDate(record.startedAt)}</span> : null}
                         {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
                       </td>
                       <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{getSensorName(record)}</span></td>
