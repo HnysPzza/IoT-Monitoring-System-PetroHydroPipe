@@ -40,4 +40,21 @@ describe('downtimeService', () => {
 
     expect(apiRequest).toHaveBeenCalledWith('/api/downtime?page=1&limit=25', { token: 'test-token' })
   })
+
+  it('sends dateFrom and dateTo when filtering by weekly, monthly, or custom range', async () => {
+    apiRequest.mockResolvedValue({ records: [], pagination: { page: 1, totalPages: 1 } })
+
+    await getDowntimeRecords('test-token', {
+      date: '2026-07-06',
+      dateFrom: '2026-07-06',
+      dateTo: '2026-07-12',
+      page: 1,
+      limit: 25,
+    })
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      '/api/downtime?dateFrom=2026-07-06&dateTo=2026-07-12&page=1&limit=25',
+      { token: 'test-token', signal: undefined },
+    )
+  })
 })

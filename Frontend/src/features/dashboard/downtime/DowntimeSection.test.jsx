@@ -370,4 +370,34 @@ describe('DowntimeSection', () => {
     expect(await screen.findByText(/Showing the last 30 days/)).toBeInTheDocument()
     expect(getDowntimeRecords).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ date: '' }))
   })
+
+  it('offers Daily, Weekly, Monthly, and Custom Range presets on the downtime calendar', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [downtimeRecord()],
+      summary: { open: 1, resolved: 2, minutes: 12, loss: 28 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+    await screen.findByText('S-03 08:42 AM')
+
+    await user.click(screen.getByRole('button', { name: 'Select downtime date' }))
+    expect(screen.getByRole('button', { name: 'Daily' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Custom Range' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(getDowntimeRecords).toHaveBeenLastCalledWith(
+        'test-token',
+        expect.objectContaining({
+          dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+    })
+  })
 })
