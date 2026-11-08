@@ -1278,3 +1278,65 @@ test('createSensorEvent with recoveryConfirmed routes to ingest_iot_sensor_event
   })
 })
 
+test('getDeviceOperationalThresholds reuses bounded cache when useCache is true and invalidates on update', async () => {
+  clearSourceCache()
+  let queryCount = 0
+  let settingsRowData = {
+    version: 10,
+    sensor_thresholds: {
+      'S-01': { absenceDetectionEnabled: true, triggerSeconds: 120, recoverySeconds: 60 },
+      'S-03': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 30, rotationStallMs: 4200 },
+    },
+  }
+  mockModule('src/database/client.js', {
+    getSupabaseClient: () => ({
+      from(table) {
+        assert.equal(table, 'machine_operational_settings')
+        return {
+          select() { return this },
+          eq() { return this },
+          async maybeSingle() {
+            queryCount += 1
+            return { data: settingsRowData, error: null }
+          },
+        }
+      },
+    }),
+  })
+  const iotService = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  const baseSensor = createSensorRecord()
+
+  const firstS01 = await iotService.getDeviceOperationalThresholds(
+    { ...baseSensor, sensor_code: 'S-01' },
+    { useCache: true },
+  )
+  assert.equal(queryCount, 1)
+  assert.equal(firstS01.version, '10')
+  assert.equal(firstS01.triggerSeconds, 120)
+
+  const cachedS03 = await iotService.getDeviceOperationalThresholds(
+    { ...baseSensor, sensor_code: 'S-03' },
+    { useCache: true },
+  )
+  assert.equal(queryCount, 1, 'Expected cached machine settings row to serve second sensor without extra DB query')
+  assert.equal(cachedS03.rotationStallMs, 4200)
+
+  settingsRowData = {
+    version: 11,
+    sensor_thresholds: {
+      'S-01': { absenceDetectionEnabled: false, triggerSeconds: 90, recoverySeconds: null },
+      'S-03': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 30, rotationStallMs: 5000 },
+    },
+  }
+  iotService.invalidateDeviceThresholdsCache(baseSensor.machine_id)
+
+  const refreshedS03 = await iotService.getDeviceOperationalThresholds(
+    { ...baseSensor, sensor_code: 'S-03' },
+    { useCache: true },
+  )
+  assert.equal(queryCount, 2, 'Expected invalidated cache to reload machine settings from DB')
+  assert.equal(refreshedS03.version, '11')
+  assert.equal(refreshedS03.rotationStallMs, 5000)
+})
+
+

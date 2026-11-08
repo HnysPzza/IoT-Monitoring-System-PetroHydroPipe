@@ -14,11 +14,14 @@ const DUMMY_DEVICE_KEY_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68
 const MAX_DEVICE_AUTH_CACHE_ENTRIES = 64
 const MAX_AUTH_TRACKER_ENTRIES = 1024
 const MAX_BOOT_COUNTER_OVERRIDES = 64
+const MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES = 16
+const DEVICE_THRESHOLDS_CACHE_TTL_MS = 5_000
 const verifiedDeviceCache = new Map()
 const failedAuthBuckets = new Map()
 const failedAuthAuditCooldowns = new Map()
 const recentDeviceHeartbeats = new Map()
 const deviceBootCounterOverrides = new Map()
+const deviceThresholdsCache = new Map()
 
 const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
 const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
@@ -677,7 +680,15 @@ async function processHeartbeat({ sensor, machine, payload }) {
   })
 }
 
-async function getDeviceOperationalThresholds(sensor) {
+function invalidateDeviceThresholdsCache(machineId) {
+  if (machineId) {
+    deviceThresholdsCache.delete(machineId)
+    return
+  }
+  deviceThresholdsCache.clear()
+}
+
+async function getDeviceOperationalThresholds(sensor, { useCache = false } = {}) {
   const supabase = getSupabaseClient()
   if (!sensor || typeof supabase?.from !== 'function') return null
   const machine = getMachineRecord(sensor)
@@ -685,13 +696,33 @@ async function getDeviceOperationalThresholds(sensor) {
   if (!machineId || !sensor.sensor_code) return null
 
   try {
-    const { data, error } = await supabase
-      .from('machine_operational_settings')
-      .select('sensor_thresholds, version')
-      .eq('machine_id', machineId)
-      .maybeSingle()
+    const now = Date.now()
+    let data = null
+    if (useCache) {
+      const cached = deviceThresholdsCache.get(machineId)
+      if (cached && cached.expiresAt > now) {
+        data = cached.data
+      } else if (cached) {
+        deviceThresholdsCache.delete(machineId)
+      }
+    }
 
-    if (error || !data?.sensor_thresholds) return null
+    if (!data) {
+      const { data: queriedData, error } = await supabase
+        .from('machine_operational_settings')
+        .select('sensor_thresholds, version')
+        .eq('machine_id', machineId)
+        .maybeSingle()
+
+      if (error || !queriedData?.sensor_thresholds) return null
+      data = queriedData
+      pruneExpiredMapEntries(deviceThresholdsCache, now, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
+      deviceThresholdsCache.set(machineId, {
+        data: queriedData,
+        expiresAt: now + DEVICE_THRESHOLDS_CACHE_TTL_MS,
+      })
+    }
+
     const threshold = data.sensor_thresholds[sensor.sensor_code]
     if (!threshold || typeof threshold !== 'object') return null
 
@@ -823,5 +854,6 @@ module.exports = {
   createSensorEvent,
   getDeviceOperationalThresholds,
   getLiveFeed,
+  invalidateDeviceThresholdsCache,
   requestLiveStatusPublish,
 }
