@@ -250,6 +250,12 @@
   color: #94A3B8;
 }
 
+.trend-calendar-day-btn.is-in-range:not(.is-selected) {
+  background: #DBEAFE;
+  color: #1E40AF;
+  border-radius: 4px;
+}
+
 .trend-calendar-day-btn.is-selected {
   background: #2563EB;
   color: #FFFFFF;
@@ -510,6 +516,11 @@
 
 :root[data-theme='dark'] .trend-calendar-day-btn.is-outside:not(.is-selected) {
   color: #64748B;
+}
+
+:root[data-theme='dark'] .trend-calendar-day-btn.is-in-range:not(.is-selected) {
+  background: #1E3A8A;
+  color: #93C5FD;
 }
 
 :root[data-theme='dark'] .trend-calendar-day-btn.is-selected {

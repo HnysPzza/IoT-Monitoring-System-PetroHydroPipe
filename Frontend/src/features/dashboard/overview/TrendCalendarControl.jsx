@@ -98,6 +98,7 @@ function normalizeMode(m) {
   if (m === 'day' || m === 'today' || m === 'daily') return 'today'
   if (m === 'week' || m === 'weekly') return 'week'
   if (m === 'month' || m === 'monthly') return 'month'
+  if (m === 'custom') return 'custom'
   return 'today'
 }
 
@@ -112,9 +113,11 @@ const DEFAULT_PRESETS = [
 export default function TrendCalendarControl({
   mode = 'today',
   selectedDate,
+  selectedRange,
   maxDate,
   rangeLabel,
   onDateChange,
+  onRangeChange,
   onModeChange,
   accessibleLabel: accessibleLabelOverride,
   triggerAriaLabel,
@@ -126,7 +129,13 @@ export default function TrendCalendarControl({
   const [isOpen, setIsOpen] = useState(false)
   const [draftMode, setDraftMode] = useState(mode)
   const [draftDate, setDraftDate] = useState(selectedDate)
-  const [viewDate, setViewDate] = useState(() => selectedDate || new Date())
+  const [draftRange, setDraftRange] = useState(() => ({
+    startDate: selectedRange?.startDate || selectedDate || null,
+    endDate: selectedRange?.endDate || selectedDate || null,
+  }))
+  const [isSelectingRange, setIsSelectingRange] = useState(false)
+  const [hoveredDay, setHoveredDay] = useState(null)
+  const [viewDate, setViewDate] = useState(() => selectedRange?.startDate || selectedDate || new Date())
 
   // Keep internal mode in sync when caller mode changes
   useEffect(() => {
@@ -139,7 +148,13 @@ export default function TrendCalendarControl({
     if (nextOpen) {
       setDraftMode(mode)
       setDraftDate(selectedDate)
-      setViewDate(selectedDate || new Date())
+      setDraftRange({
+        startDate: selectedRange?.startDate || selectedDate || null,
+        endDate: selectedRange?.endDate || selectedDate || null,
+      })
+      setIsSelectingRange(false)
+      setHoveredDay(null)
+      setViewDate(selectedRange?.startDate || selectedDate || new Date())
     }
   }
 
@@ -148,11 +163,22 @@ export default function TrendCalendarControl({
     ? 'Select chart month'
     : normDraftMode === 'week'
       ? 'Select chart week'
-      : 'Select chart date')
+      : normDraftMode === 'custom'
+        ? 'Select custom date range'
+        : 'Select chart date')
 
   function handlePresetClick(presetId) {
     const nextMode = presetId === 'today' && mode === 'day' ? 'day' : presetId
     setDraftMode(nextMode)
+    setIsSelectingRange(false)
+    setHoveredDay(null)
+    if (presetId === 'custom') {
+      const base = draftDate || selectedRange?.startDate || selectedDate || null
+      setDraftRange({
+        startDate: selectedRange?.startDate || base,
+        endDate: selectedRange?.endDate || base,
+      })
+    }
     onModeChange?.(nextMode)
   }
 
@@ -160,8 +186,24 @@ export default function TrendCalendarControl({
     const modeToUse = selectionMode || draftMode
     if (!date) return
 
-    const normalized = normalizeCalendarSelection(modeToUse, date)
+    const normalized = normalizeCalendarSelection(modeToUse === 'custom' ? 'day' : modeToUse, date)
     if (maxDate && normalized > maxDate) return
+
+    if (normalizeMode(modeToUse) === 'custom') {
+      if (!isSelectingRange || !draftRange.startDate) {
+        setDraftRange({ startDate: normalized, endDate: null })
+        setIsSelectingRange(true)
+        setHoveredDay(null)
+      } else {
+        const start = normalized < draftRange.startDate ? normalized : draftRange.startDate
+        const end = normalized < draftRange.startDate ? draftRange.startDate : normalized
+        setDraftRange({ startDate: start, endDate: end })
+        setDraftDate(start)
+        setIsSelectingRange(false)
+        setHoveredDay(null)
+      }
+      return
+    }
 
     setDraftDate(normalized)
     onDateChange(normalized)
@@ -169,6 +211,20 @@ export default function TrendCalendarControl({
   }
 
   function handleApply() {
+    if (normDraftMode === 'custom') {
+      if (!draftRange.startDate || !draftRange.endDate) return
+      const startDate = normalizeCalendarSelection('day', draftRange.startDate)
+      const endDate = normalizeCalendarSelection('day', draftRange.endDate)
+      if (maxDate && (startDate > maxDate || endDate > maxDate)) return
+      if (onRangeChange) {
+        onRangeChange({ startDate, endDate })
+      } else {
+        onDateChange(startDate)
+      }
+      setIsOpen(false)
+      return
+    }
+
     const targetDate = draftDate || selectedDate
     if (!targetDate) {
       setIsOpen(false)
@@ -185,6 +241,12 @@ export default function TrendCalendarControl({
   function handleCancel() {
     setDraftMode(mode)
     setDraftDate(selectedDate)
+    setDraftRange({
+      startDate: selectedRange?.startDate || selectedDate || null,
+      endDate: selectedRange?.endDate || selectedDate || null,
+    })
+    setIsSelectingRange(false)
+    setHoveredDay(null)
     setIsOpen(false)
   }
 
@@ -212,8 +274,29 @@ export default function TrendCalendarControl({
 
   // Determine footer summary label dynamically based on active selection and current draft mode
   const activeDate = draftDate || selectedDate
+  const customPreviewStart = normDraftMode === 'custom'
+    ? (isSelectingRange && draftRange.startDate && hoveredDay
+      ? (hoveredDay < draftRange.startDate ? hoveredDay : draftRange.startDate)
+      : draftRange.startDate)
+    : null
+  const customPreviewEnd = normDraftMode === 'custom'
+    ? (isSelectingRange && draftRange.startDate && hoveredDay
+      ? (hoveredDay < draftRange.startDate ? draftRange.startDate : hoveredDay)
+      : draftRange.endDate)
+    : null
+  const isApplyDisabled = normDraftMode === 'custom' && (!draftRange.startDate || !draftRange.endDate)
+
   let footerSelectionLabel = ''
-  if (activeDate) {
+  if (normDraftMode === 'custom') {
+    if (!draftRange.startDate) {
+      footerSelectionLabel = 'Select start date'
+    } else if (!draftRange.endDate) {
+      footerSelectionLabel = 'Select end date'
+    } else {
+      const days = Math.round((draftRange.endDate.getTime() - draftRange.startDate.getTime()) / 86400000) + 1
+      footerSelectionLabel = `${formatWeekDate(draftRange.startDate)} - ${formatWeekDate(draftRange.endDate)} · ${days} ${days === 1 ? 'day' : 'days'}`
+    }
+  } else if (activeDate) {
     if (normDraftMode === 'month') {
       footerSelectionLabel = activeDate.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
     } else if (normDraftMode === 'week') {
@@ -399,20 +482,41 @@ export default function TrendCalendarControl({
                       <span key={w} className="trend-calendar-weekday">{w}</span>
                     ))}
                   </div>
-                  <div className="trend-calendar-day-grid" role="grid">
+                  <div
+                    className="trend-calendar-day-grid"
+                    role="grid"
+                    onMouseLeave={() => {
+                      if (normDraftMode === 'custom') setHoveredDay(null)
+                    }}
+                  >
                     {monthDays.map((day) => {
-                      const isSelected = Boolean(activeDate && isSameDay(day, activeDate))
+                      const isSelected = normDraftMode === 'custom'
+                        ? Boolean(
+                          (customPreviewStart && isSameDay(day, customPreviewStart)) ||
+                          (customPreviewEnd && isSameDay(day, customPreviewEnd))
+                        )
+                        : Boolean(activeDate && isSameDay(day, activeDate))
+                      const isInRange = normDraftMode === 'custom' && Boolean(
+                        customPreviewStart &&
+                        customPreviewEnd &&
+                        day > customPreviewStart &&
+                        day < customPreviewEnd &&
+                        !isSelected
+                      )
                       const isDisabled = Boolean(maxDate && day > maxDate)
                       const isOutside = day.getMonth() !== viewDate.getMonth()
                       return (
                         <button
                           key={day.toISOString()}
                           type="button"
-                          className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
+                          className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isInRange ? 'is-in-range' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={getDayAriaLabel(day)}
                           aria-pressed={isSelected}
                           disabled={isDisabled}
-                          onClick={() => handleSelect(day, 'day')}
+                          onMouseEnter={() => {
+                            if (normDraftMode === 'custom' && !isDisabled) setHoveredDay(day)
+                          }}
+                          onClick={() => handleSelect(day, normDraftMode === 'custom' ? 'custom' : 'day')}
                         >
                           {day.getDate()}
                         </button>
@@ -439,6 +543,7 @@ export default function TrendCalendarControl({
               <button
                 type="button"
                 className="trend-popover-apply-btn"
+                disabled={isApplyDisabled}
                 onClick={handleApply}
               >
                 Apply
