@@ -77,25 +77,27 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
   }
 
   const supabase = suppliedClient || getSupabaseClient()
-  const rows = []
-
+  const chunks = []
   for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
-    const chunk = uniqueIds.slice(i, i + CHUNK_SIZE)
-    const { data, error } = await supabase
-      .from('production_item_specs')
-      .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, tonnage, label, size, radius, circumference, updated_at, updated_by')
-      .in('sensor_event_id', chunk)
-
-    if (error) {
-      throw createRepositoryError('REPORT_PRODUCTION_SPECS_QUERY_FAILED', 'Unable to load production specifications.', error)
-    }
-
-    if (data) {
-      rows.push(...data)
-    }
+    chunks.push(uniqueIds.slice(i, i + CHUNK_SIZE))
   }
 
-  return new Map(rows.map((row) => [row.sensor_event_id, row]))
+  const results = await Promise.all(
+    chunks.map(async (chunk) => {
+      const { data, error } = await supabase
+        .from('production_item_specs')
+        .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, tonnage, label, size, radius, circumference, updated_at, updated_by')
+        .in('sensor_event_id', chunk)
+
+      if (error) {
+        throw createRepositoryError('REPORT_PRODUCTION_SPECS_QUERY_FAILED', 'Unable to load production specifications.', error)
+      }
+
+      return data || []
+    }),
+  )
+
+  return new Map(results.flat().map((row) => [row.sensor_event_id, row]))
 }
 
 async function findAcceptedCuttingEventsWithSpecs({ sensorId, startIso, endIso }, suppliedClient) {

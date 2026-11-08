@@ -156,11 +156,12 @@ async function getEventSummary(machineId, window) {
   }
 }
 
-async function buildObservedReport({ type, selectedDate, machine, window, periodState, asOf, lossEstimateBasis }) {
-  const [eventSummary, downtimeRows, settingsHistory] = await Promise.all([
+async function buildObservedReport({ type, selectedDate, machine, window, periodState, asOf, lossBasisPromise }) {
+  const [eventSummary, downtimeRows, settingsHistory, lossEstimateBasis] = await Promise.all([
     getEventSummary(machine.id, window),
     getOverlappingDowntime(machine.id, window),
     getSettingsHistory(machine.id, window),
+    lossBasisPromise,
   ])
   const lossRatePiecesPerMinute = lossEstimateBasis.ratePiecesPerMinute
   const metrics = calculateMachineMetrics({
@@ -670,7 +671,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
       : getUnobservedReport(type, selectedDate, asOf)
   }
 
-  const lossEstimateBasis = await getOutputLossBasis({
+  const lossBasisPromise = getOutputLossBasis({
     machineId: machine.id,
     asOf,
     fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
@@ -682,7 +683,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     window: observed.window,
     periodState: observed.periodState,
     asOf,
-    lossEstimateBasis,
+    lossBasisPromise,
   })
 
   if (!compare) return reportPromise
@@ -695,7 +696,7 @@ async function getSummary({ category = 'regular', type = 'daily', date, compare 
     window: comparisonWindow,
     periodState: observed.periodState,
     asOf,
-    lossEstimateBasis,
+    lossBasisPromise,
   })])
 
   return {

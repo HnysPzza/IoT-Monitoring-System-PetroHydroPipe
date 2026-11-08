@@ -159,7 +159,7 @@ async function getAllFilteredRecords(filters, dateRange) {
   return records
 }
 
-async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossEstimateBasis) {
+async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossBasisPromise) {
   const recordMetrics = new Map()
   const pageIds = new Set(pageRecords.map((record) => record.id))
   const machineTotals = []
@@ -170,13 +170,23 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossE
     recordsByMachine.set(record.machine_id, grouped)
   })
 
-  for (const [machineId, machineRecords] of recordsByMachine) {
+  const machineEntries = [...recordsByMachine.entries()].map(([machineId, machineRecords]) => {
     const recordWindow = getRecordsSpan(machineRecords, asOf)
     const historyWindow = {
       start: dateRange.start < recordWindow.start ? dateRange.start : recordWindow.start,
       end: dateRange.end > recordWindow.end ? dateRange.end : recordWindow.end,
     }
-    const settingsHistory = await getSettingsHistory(machineId, historyWindow)
+    return { machineId, machineRecords, recordWindow, historyWindow }
+  })
+
+  const [lossEstimateBasis, ...settingsHistories] = await Promise.all([
+    lossBasisPromise,
+    ...machineEntries.map(({ machineId, historyWindow }) => getSettingsHistory(machineId, historyWindow)),
+  ])
+
+  for (let index = 0; index < machineEntries.length; index += 1) {
+    const { machineRecords, recordWindow } = machineEntries[index]
+    const settingsHistory = settingsHistories[index]
     const positiveRecords = machineRecords.filter((record) => {
       const endedAt = record.ended_at ? new Date(record.ended_at) : asOf
       return new Date(record.started_at) < endedAt
@@ -211,6 +221,7 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossE
   }
 
   return {
+    lossEstimateBasis,
     recordMetrics,
     durationMinutes: machineTotals.reduce((sum, metric) => sum + metric.durationMinutes, 0),
     unplannedMinutes: machineTotals.reduce((sum, metric) => sum + metric.unplannedMinutes, 0),
@@ -248,16 +259,17 @@ async function listDowntime(filters = {}) {
     new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
   ))
   const pageRecords = ordered.slice(from, from + limit)
-  const lossEstimateBasis = allRecords.length === 0
-    ? null
-    : await getOutputLossBasis({
+  const lossBasisPromise = allRecords.length === 0
+    ? Promise.resolve(null)
+    : getOutputLossBasis({
       machineId: allRecords[0].machine_id,
       asOf,
       fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
     })
   const metrics = allRecords.length === 0
-    ? { recordMetrics: new Map(), durationMinutes: 0, unplannedMinutes: 0, plannedExcludedMinutes: 0, estimatedLoss: 0 }
-    : await calculateListMetrics(allRecords, pageRecords, dateRange, asOf, lossEstimateBasis)
+    ? { lossEstimateBasis: null, recordMetrics: new Map(), durationMinutes: 0, unplannedMinutes: 0, plannedExcludedMinutes: 0, estimatedLoss: 0 }
+    : await calculateListMetrics(allRecords, pageRecords, dateRange, asOf, lossBasisPromise)
+  const lossEstimateBasis = metrics.lossEstimateBasis
   const records = pageRecords
     .map((record) => toDowntimeRecord(record, metrics.recordMetrics.get(record.id)))
   const total = allRecords.length
