@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 57
+const releaseSchemaVersion = 58
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -748,6 +748,63 @@ test('migration 057 enforces atomic user status updates and account archiving wi
 
   await db.exec('reset role;')
 })
+
+test('migration 058 creates query optimization indexes and preserves get_analytics_first_recorded_at bounds', async (t) => {
+  const db = await database(t)
+
+  const indexes = (await db.query(`
+    select indexname
+    from pg_indexes
+    where schemaname = 'public'
+      and indexname in (
+        'idx_audit_logs_created_at',
+        'idx_sensor_events_analytics_pulse',
+        'idx_sensor_events_s05_accepted_ordered'
+      )
+    order by indexname
+  `)).rows.map((row) => row.indexname)
+  assert.deepEqual(indexes, [
+    'idx_audit_logs_created_at',
+    'idx_sensor_events_analytics_pulse',
+    'idx_sensor_events_s05_accepted_ordered',
+  ])
+
+  const machineId = (await db.query("select id from public.machines where machine_code = 'M-01'")).rows[0].id
+  const sensorsByCode = Object.fromEntries(
+    (await db.query('select sensor_code, id from public.sensors where machine_id = $1', [machineId]))
+      .rows.map((row) => [row.sensor_code, row.id]),
+  )
+
+  await db.exec('set role service_role;')
+  const emptyFirst = (await db.query('select public.get_analytics_first_recorded_at($1) as first_at', [machineId])).rows[0].first_at
+  assert.equal(emptyFirst, null)
+
+  await db.exec('reset role;')
+  // Rejected S-05 pulse and S-03 pulse should be ignored by get_analytics_first_recorded_at
+  await db.query(`
+    insert into public.sensor_events (sensor_id, machine_id, device_event_id, event_type, event_value, recorded_at, stale, output_accepted)
+    values
+      ($1, $3, $4, 'pulse', '{"signal":"active"}'::jsonb, '2026-06-01T01:00:00Z'::timestamptz, false, false),
+      ($2, $3, $5, 'pulse', '{"signal":"active"}'::jsonb, '2026-06-01T02:00:00Z'::timestamptz, false, null),
+      ($1, $3, $6, 'pulse', '{"signal":"active"}'::jsonb, '2026-06-01T04:00:00Z'::timestamptz, false, true)
+  `, [sensorsByCode['S-05'], sensorsByCode['S-03'], machineId, randomUUID(), randomUUID(), randomUUID()])
+
+  await db.exec('set role service_role;')
+  const pulseFirst = (await db.query('select public.get_analytics_first_recorded_at($1) as first_at', [machineId])).rows[0].first_at
+  assert.equal(new Date(pulseFirst).toISOString(), '2026-06-01T04:00:00.000Z')
+
+  await db.exec('reset role;')
+  await db.query(`
+    insert into public.downtime_events (machine_id, sensor_id, started_at, status, cause)
+    values ($1, $2, '2026-06-01T03:00:00Z'::timestamptz, 'Open', 'Test cause')
+  `, [machineId, sensorsByCode['S-01']])
+
+  await db.exec('set role service_role;')
+  const downtimeFirst = (await db.query('select public.get_analytics_first_recorded_at($1) as first_at', [machineId])).rows[0].first_at
+  assert.equal(new Date(downtimeFirst).toISOString(), '2026-06-01T03:00:00.000Z')
+  await db.exec('reset role;')
+})
+
 
 
 

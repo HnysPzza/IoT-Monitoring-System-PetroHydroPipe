@@ -382,6 +382,7 @@ create index if not exists idx_downtime_events_sensor_id on downtime_events(sens
 create unique index if not exists idx_downtime_events_one_open_per_sensor on downtime_events(machine_id, sensor_id) where status = 'Open';
 create index if not exists idx_production_counts_machine_window on production_counts(machine_id, window_start desc);
 create index if not exists idx_audit_logs_user_created_at on audit_logs(user_id, created_at desc);
+create index if not exists idx_audit_logs_created_at on audit_logs(created_at desc);
 create unique index if not exists idx_alerts_unresolved_source on alerts(source_type, source_id) where status in ('Active', 'Acknowledged');
 create index if not exists idx_alerts_status_created_at on alerts(status, created_at desc);
 create index if not exists idx_alerts_machine_id on alerts(machine_id);
