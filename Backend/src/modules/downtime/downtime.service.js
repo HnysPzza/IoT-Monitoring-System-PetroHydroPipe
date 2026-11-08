@@ -219,10 +219,22 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossE
   }
 }
 
-function getListDateRange(date, asOf) {
-  if (date) return getBusinessDayRange(date)
+function getListDateRange(filters = {}, asOf) {
+  if (filters.dateFrom || filters.dateTo) {
+    const startDate = filters.dateFrom || filters.dateTo
+    const endDate = filters.dateTo || filters.dateFrom
+    if (startDate > endDate) {
+      throw createDowntimeError(400, 'INVALID_DOWNTIME_DATE_RANGE', 'Start date must be on or before end date.')
+    }
+    const { start } = getBusinessDayRange(startDate)
+    const { end } = getBusinessDayRange(endDate)
+    return { start, end, isDefault: false }
+  }
+  if (filters.date) {
+    return { ...getBusinessDayRange(filters.date), isDefault: false }
+  }
   const end = addBusinessDays(startOfBusinessDay(asOf), 1)
-  return { start: addBusinessDays(end, -DEFAULT_LIST_WINDOW_DAYS), end }
+  return { start: addBusinessDays(end, -DEFAULT_LIST_WINDOW_DAYS), end, isDefault: true }
 }
 
 async function listDowntime(filters = {}) {
@@ -230,7 +242,7 @@ async function listDowntime(filters = {}) {
   const page = filters.page || 1
   const limit = filters.limit || 25
   const from = (page - 1) * limit
-  const dateRange = getListDateRange(filters.date, asOf)
+  const dateRange = getListDateRange(filters, asOf)
   const allRecords = await getAllFilteredRecords(filters, dateRange)
   const ordered = [...allRecords].sort((left, right) => (
     new Date(right.started_at) - new Date(left.started_at) || String(right.id).localeCompare(String(left.id))
@@ -257,7 +269,7 @@ async function listDowntime(filters = {}) {
     range: {
       start: dateRange.start.toISOString(),
       end: dateRange.end.toISOString(),
-      isDefault: !filters.date,
+      isDefault: dateRange.isDefault,
     },
     summary: {
       open: allRecords.filter((record) => record.status === 'Open').length,

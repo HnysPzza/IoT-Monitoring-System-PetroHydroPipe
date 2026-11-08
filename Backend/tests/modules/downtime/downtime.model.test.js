@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-const { updateDowntimeSchema } = require('../../../src/modules/downtime/downtime.model')
+const { listDowntimeSchema, updateDowntimeSchema } = require('../../../src/modules/downtime/downtime.model')
 
 const downtimeId = '55555555-5555-4555-8555-555555555555'
 const approvedCauses = [
@@ -33,4 +33,16 @@ test('downtime updates reject system and legacy causes as new manual assignments
     })
     assert.equal(result.success, false, cause)
   }
+})
+
+test('downtime list schema accepts valid dateFrom and dateTo range and rejects inverted range', () => {
+  const valid = listDowntimeSchema.safeParse({
+    query: { dateFrom: '2026-07-06', dateTo: '2026-07-12' },
+  })
+  assert.equal(valid.success, true)
+
+  const inverted = listDowntimeSchema.safeParse({
+    query: { dateFrom: '2026-07-13', dateTo: '2026-07-06' },
+  })
+  assert.equal(inverted.success, false)
 })
