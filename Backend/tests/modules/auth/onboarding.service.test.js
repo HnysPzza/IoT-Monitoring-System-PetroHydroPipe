@@ -143,3 +143,105 @@ test('changePassword rejects accounts where must_change_password is false', asyn
     { status: 403, code: 'ACCOUNT_OPERATION_INVALID' },
   )
 })
+
+test('updateUserStatus and archiveUser use atomic RPCs and map error codes accurately', async () => {
+  const rpcCalls = []
+  let rpcResponse = { data: null, error: null }
+
+  loadAppWithMocks({
+    'src/database/client.js': {
+      getSupabaseClient: () => ({
+        from: () => { throw new Error('Direct users table access should not be used') },
+        rpc: async (name, params) => {
+          rpcCalls.push({ name, params })
+          return rpcResponse
+        },
+      }),
+    },
+  })
+
+  const usersService = require('../../../src/modules/users/users.service')
+
+  await assert.rejects(
+    usersService.updateUserStatus({ userId: 'admin-1', status: 'Inactive', actorUserId: 'admin-1' }),
+    { status: 400, code: 'SELF_DEACTIVATION_BLOCKED' },
+  )
+  await assert.rejects(
+    usersService.archiveUser({ userId: 'admin-1', actorUserId: 'admin-1' }),
+    { status: 400, code: 'SELF_ARCHIVE_BLOCKED' },
+  )
+  assert.equal(rpcCalls.length, 0)
+
+  rpcResponse = {
+    data: {
+      id: 'user-2',
+      name: 'Operator Two',
+      username: 'operator02',
+      email: 'op2@example.test',
+      role: 'Production Supervisor',
+      status: 'Inactive',
+      mustChangePassword: false,
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastLoginAt: null,
+      deletedAt: null,
+    },
+    error: null,
+  }
+  const updated = await usersService.updateUserStatus({
+    userId: 'user-2',
+    status: 'Inactive',
+    actorUserId: 'admin-1',
+  })
+  assert.equal(updated.id, 'user-2')
+  assert.equal(updated.status, 'Inactive')
+  assert.equal(updated.role, 'Production Supervisor')
+  assert.deepEqual(rpcCalls[0], {
+    name: 'update_user_account_status',
+    params: { p_actor: 'admin-1', p_user_id: 'user-2', p_status: 'Inactive' },
+  })
+
+  rpcResponse = {
+    data: {
+      id: 'user-2',
+      name: 'Operator Two',
+      username: 'operator02',
+      email: 'op2@example.test',
+      role: 'Production Supervisor',
+      status: 'Inactive',
+      mustChangePassword: false,
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastLoginAt: null,
+      deletedAt: '2026-07-02T00:00:00.000Z',
+    },
+    error: null,
+  }
+  const archived = await usersService.archiveUser({
+    userId: 'user-2',
+    actorUserId: 'admin-1',
+  })
+  assert.equal(archived.id, 'user-2')
+  assert.equal(archived.status, 'Inactive')
+  assert.equal(archived.deletedAt, '2026-07-02T00:00:00.000Z')
+  assert.deepEqual(rpcCalls[1], {
+    name: 'archive_user_account',
+    params: { p_actor: 'admin-1', p_user_id: 'user-2' },
+  })
+
+  rpcResponse = { data: null, error: { code: 'P0002', message: 'User not found.' } }
+  await assert.rejects(
+    usersService.updateUserStatus({ userId: 'missing', status: 'Inactive', actorUserId: 'admin-1' }),
+    { status: 404, code: 'USER_NOT_FOUND' },
+  )
+
+  rpcResponse = { data: null, error: { code: '42501', message: 'Admin account cannot be deactivated.' } }
+  await assert.rejects(
+    usersService.updateUserStatus({ userId: 'other-admin', status: 'Inactive', actorUserId: 'admin-1' }),
+    { status: 403, code: 'ACCOUNT_PROTECTED' },
+  )
+
+  rpcResponse = { data: null, error: { code: '08006', message: 'connection failure' } }
+  await assert.rejects(
+    usersService.archiveUser({ userId: 'user-2', actorUserId: 'admin-1' }),
+    { status: 500, code: 'USER_ARCHIVE_FAILED' },
+  )
+})

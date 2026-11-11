@@ -225,5 +225,37 @@ describe('TrendCalendarControl', () => {
     expect(julMonth).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Aug 2026' })).toBeDisabled()
   })
+
+  it('supports Custom Range selection and applies startDate and endDate', async () => {
+    const user = userEvent.setup()
+    const onRangeChange = vi.fn()
+    const onModeChange = vi.fn()
+    renderCalendar({
+      presets: [
+        { id: 'today', label: 'Daily' },
+        { id: 'week', label: 'Weekly' },
+        { id: 'month', label: 'Monthly' },
+        { id: 'custom', label: 'Custom Range' },
+      ],
+      onRangeChange,
+      onModeChange,
+    })
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: 'Custom Range' }))
+    expect(onModeChange).toHaveBeenCalledWith('custom')
+
+    await user.click(await screen.findByRole('button', { name: /july 10th, 2026/i }))
+    await user.click(await screen.findByRole('button', { name: /july 14th, 2026/i }))
+
+    const footerText = document.querySelector('.trend-popover-footer-text')
+    expect(footerText).toHaveTextContent(/Jul 10, 2026 - Jul 14, 2026 · 5 days/i)
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onRangeChange).toHaveBeenCalledWith({
+      startDate: new Date(2026, 6, 10),
+      endDate: new Date(2026, 6, 14),
+    })
+  })
 })
 

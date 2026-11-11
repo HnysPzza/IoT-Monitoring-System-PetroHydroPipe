@@ -157,7 +157,7 @@ export default function SettingsSection() {
     setDraft(toDraft(settingsResult.value.settings, settingsResult.value.constraints))
     setConflict(false)
     if (diagnosticsResult.status === 'rejected') setNotice({ type: 'error', message: 'Settings are read-only because watchdog diagnostics are unavailable.' })
-    else setEnforcementBlocked(diagnosticsResult.value.data?.watchdog?.mode === 'enforce')
+    else setEnforcementBlocked(false)
   }
 
   const baseline = useMemo(() => (settings ? toDraft(settings, constraints) : null), [settings, constraints])
@@ -175,7 +175,7 @@ export default function SettingsSection() {
   const stallSecondsBounds = useMemo(() => (
     constraints ? getRotationStallSecondsBounds(constraints.rotationStallMs) : null
   ), [constraints])
-  const editingBlocked = watchdogMode === 'enforce' || watchdogMode === 'unknown' || conflict || enforcementBlocked
+  const editingBlocked = watchdogMode === 'unknown' || conflict || enforcementBlocked
   const canSave = isDirty && !editingBlocked && !isSaving && Object.keys(errors).length === 0
 
   useEffect(() => {
@@ -354,7 +354,7 @@ export default function SettingsSection() {
               </span>
             </div>
             {watchdogMode === 'observe' ? <p className="settings-mode-note">Observe mode evaluates these values but does not create operational downtime or alerts.</p> : null}
-            {watchdogMode === 'enforce' ? <p className="settings-mode-note is-warning">Enforcement is active. Settings are read-only until it is disabled outside this page.</p> : null}
+            {watchdogMode === 'enforce' ? <p className="settings-mode-note">Enforcement is active. Saved changes apply immediately to live watchdog evaluation and connected sensors.</p> : null}
 
             <div className="settings-matrix-container">
               <div className="settings-matrix-table-wrap">
@@ -374,8 +374,10 @@ export default function SettingsSection() {
                       const isOutput = sensorCode === constraints.outputSensorCode
                       const isSpindle = sensorCode === spindleSensorCode
                       const sensorLabel = getSensorLabel(sensorCode, 'Plant Sensor')
-                      const hasError = Boolean(errors[sensorCode])
-                      const isStallError = isSpindle && hasError && errors[sensorCode].startsWith('Rotation stall')
+                      const stallError = isSpindle ? errors[`${sensorCode}.rotationStallMs`] : null
+                      const thresholdError = errors[sensorCode] && errors[sensorCode] !== stallError ? errors[sensorCode] : null
+                      const hasError = Boolean(stallError || thresholdError)
+                      const isStallError = Boolean(stallError)
 
                       if (isOutput) {
                         return (
@@ -443,7 +445,7 @@ export default function SettingsSection() {
                                       />
                                       <span className="input-group-unit" aria-hidden="true">sec</span>
                                     </div>
-                                    {isStallError ? <p id="s03-stall-error" className="field-error">{errors[sensorCode]}</p> : null}
+                                    {isStallError ? <p id="s03-stall-error" className="field-error">{stallError}</p> : null}
                                   </div>
                                 ) : null}
                               </div>
@@ -475,7 +477,7 @@ export default function SettingsSection() {
                               />
                               <span className="input-group-unit" aria-hidden="true">min</span>
                             </div>
-                            {hasError && !isStallError ? <p className="field-error">{errors[sensorCode]}</p> : null}
+                            {thresholdError ? <p className="field-error">{thresholdError}</p> : null}
                           </td>
                           <td className="col-recovery">
                             <div className="settings-input-group">

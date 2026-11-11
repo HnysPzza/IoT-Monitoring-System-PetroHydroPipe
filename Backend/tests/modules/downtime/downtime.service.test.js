@@ -475,3 +475,29 @@ test('explicit date keeps the single Manila day and reports a non-default range'
     isDefault: false,
   })
 })
+
+test('dateFrom and dateTo span inclusive Manila business days and reject inverted ranges', async () => {
+  const calls = []
+  const records = [
+    { id: 'before-week', started_at: '2026-07-05T15:00:00.000Z', ended_at: '2026-07-05T15:30:00.000Z', status: 'Resolved' },
+    { id: 'in-week', started_at: '2026-07-08T01:00:00.000Z', ended_at: '2026-07-08T01:20:00.000Z', status: 'Resolved' },
+    { id: 'after-week', started_at: '2026-07-12T16:00:00.000Z', ended_at: '2026-07-12T16:15:00.000Z', status: 'Resolved' },
+  ].map((record) => attachRelations({ machine_id: MACHINE_ID, sensor_id: 'sensor-3', cause: 'Other', ...record }))
+  const service = loadDowntimeService({ records, calls })
+
+  const result = await service.listDowntime({ dateFrom: '2026-07-06', dateTo: '2026-07-12' })
+
+  assert.deepEqual(result.records.map((record) => record.id), ['in-week'])
+  assert.deepEqual(result.range, {
+    start: '2026-07-05T16:00:00.000Z',
+    end: '2026-07-12T16:00:00.000Z',
+    isDefault: false,
+  })
+  assert.equal(calls.find((call) => call.operation === 'lt').value, '2026-07-12T16:00:00.000Z')
+  assert.match(calls.find((call) => call.operation === 'or').value, /ended_at\.gt\.2026-07-05T16:00:00\.000Z/)
+
+  await assert.rejects(
+    () => service.listDowntime({ dateFrom: '2026-07-13', dateTo: '2026-07-06' }),
+    { code: 'INVALID_DOWNTIME_DATE_RANGE', status: 400 },
+  )
+})

@@ -180,6 +180,25 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
+  it('allows editing and saving operational settings while watchdog mode is enforce', async () => {
+    const user = userEvent.setup()
+    getWatchdogDiagnostics.mockResolvedValue({ watchdog: { mode: 'enforce' } })
+    updateOperationalSettings.mockResolvedValue({ settings: settingsFixture({ version: '2' }) })
+    renderWithAuth(<SettingsSection />)
+
+    expect(await screen.findByText(/Enforcement is active\. Saved changes apply immediately/i)).toBeInTheDocument()
+    const trigger = screen.getByLabelText('S-01 trigger minutes')
+    expect(trigger).toBeEnabled()
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeEnabled()
+    await user.click(save)
+
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+    expect(updateOperationalSettings.mock.calls[0][2].sensorThresholds['S-01'].triggerSeconds).toBe(300)
+  })
+
   it('keeps editing blocked after the server reports enforcement, even if the draft is discarded', async () => {
     const user = userEvent.setup()
     const error = Object.assign(new Error('Enforcement active'), { code: 'SETTINGS_ENFORCEMENT_ACTIVE' })
@@ -288,5 +307,26 @@ describe('SettingsSection operational settings', () => {
     await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
     expect(updateOperationalSettings.mock.calls[0][2].sensorThresholds['S-03'].rotationStallMs).toBe(4500)
     expect(await screen.findByText('Operational settings saved.')).toBeInTheDocument()
+  })
+
+  it('displays S-03 rotation stall and trigger errors simultaneously in their own columns', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const stallInput = await screen.findByLabelText('S-03 rotation stall seconds')
+    const checkboxes = screen.getAllByRole('checkbox', { name: /Detect missing pulse/i })
+    await user.click(checkboxes[2])
+
+    const s03Trigger = screen.getByLabelText('S-03 trigger minutes')
+    await user.clear(stallInput)
+    await user.type(stallInput, '0.2')
+    await user.clear(s03Trigger)
+    await user.type(s03Trigger, '0')
+
+    const stallError = screen.getByText('Rotation stall must be 0.5-30 seconds.')
+    const triggerError = screen.getByText('Trigger must be 1-60 minutes.')
+    expect(stallInput.closest('.col-sensor')).toContainElement(stallError)
+    expect(s03Trigger.closest('.col-trigger')).toContainElement(triggerError)
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 })

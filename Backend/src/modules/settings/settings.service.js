@@ -1,6 +1,7 @@
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
 const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
+const { invalidateDeviceThresholdsCache } = require('../iot/iot.service')
 const {
   SENSOR_CODES,
   SETTINGS_LIMITS,
@@ -205,14 +206,6 @@ async function updateMachineSettings({
   shiftSchedule,
   actorUserId,
 }) {
-  if (env.WATCHDOG_MODE === 'enforce') {
-    throw createSettingsError(
-      409,
-      'SETTINGS_ENFORCEMENT_ACTIVE',
-      'Disable enforcement before changing operational settings.',
-    )
-  }
-
   const supabase = getSupabaseClient()
   const current = await getMachineSettings(machineId, supabase)
   const candidate = {
@@ -245,6 +238,7 @@ async function updateMachineSettings({
     throw createSettingsError(500, 'SETTINGS_UPDATE_FAILED', 'Unable to update machine settings.')
   }
 
+  invalidateDeviceThresholdsCache?.(machineId)
   return parseSettingsDocument(data, 'SETTINGS_UPDATE_FAILED', machineId)
 }
 

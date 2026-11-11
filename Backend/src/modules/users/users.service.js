@@ -1,6 +1,5 @@
 const { addUser, callOnboarding } = require('../auth/onboarding.service')
 const { getSupabaseClient } = require('../../database/client')
-const { recordAuditLog } = require('../audit/audit.service')
 
 function createUserError(status, code, message) {
   const error = new Error(message)
@@ -14,7 +13,7 @@ function getRoleName(userRecord) {
     return userRecord.roles[0]?.name || null
   }
 
-  return userRecord.roles?.name || null
+  return userRecord.roles?.name || userRecord.role || null
 }
 
 function toUserResponse(userRecord) {
@@ -26,28 +25,11 @@ function toUserResponse(userRecord) {
     email: userRecord.email,
     role: getRoleName(userRecord),
     status: userRecord.status,
-    mustChangePassword: Boolean(userRecord.must_change_password),
-    createdAt: userRecord.created_at,
-    lastLoginAt: userRecord.last_login_at,
-    deletedAt: userRecord.deleted_at,
+    mustChangePassword: Boolean(userRecord.must_change_password ?? userRecord.mustChangePassword),
+    createdAt: userRecord.created_at ?? userRecord.createdAt,
+    lastLoginAt: userRecord.last_login_at ?? userRecord.lastLoginAt ?? null,
+    deletedAt: userRecord.deleted_at ?? userRecord.deletedAt ?? null,
   }
-}
-
-function getUserSelect() {
-  return `
-    id,
-    name,
-    username,
-    email,
-    status,
-    must_change_password,
-    created_at,
-    last_login_at,
-    deleted_at,
-    roles (
-      name
-    )
-  `
 }
 
 async function listUsers(query) {
@@ -72,29 +54,25 @@ async function listRoles() {
   return data
 }
 
-async function fetchUserById(userId) {
-  const supabase = getSupabaseClient()
-
-  const { data, error } = await supabase
-    .from('users')
-    .select(getUserSelect())
-    .eq('id', userId)
-    .is('deleted_at', null)
-    .maybeSingle()
-
-  if (error) {
-    throw createUserError(500, 'USER_QUERY_FAILED', 'Unable to load user account.')
-  }
-
-  if (!data) {
-    throw createUserError(404, 'USER_NOT_FOUND', 'User account not found.')
-  }
-
-  return data
-}
-
 async function createUser(values) {
   return addUser(values)
+}
+
+function mapUserMutationRpcError(error, { selfCode, selfMessage, fallbackCode, fallbackMessage }) {
+  const message = String(error?.message || '')
+  if (error?.code === 'P0002' || /not found/i.test(message)) {
+    return createUserError(404, 'USER_NOT_FOUND', 'User account not found.')
+  }
+  if (error?.code === '42501' && /cannot be (deactivated|archived)|Protected administrator/i.test(message)) {
+    return createUserError(403, 'ACCOUNT_PROTECTED', 'The Admin account is protected.')
+  }
+  if (error?.code === '42501') {
+    return createUserError(403, 'FORBIDDEN', 'Admin access required.')
+  }
+  if (error?.code === '22023' && /own account/i.test(message)) {
+    return createUserError(400, selfCode, selfMessage)
+  }
+  return createUserError(500, fallbackCode, fallbackMessage)
 }
 
 async function updateUserStatus({ userId, status, actorUserId }) {
@@ -102,35 +80,27 @@ async function updateUserStatus({ userId, status, actorUserId }) {
     throw createUserError(400, 'SELF_DEACTIVATION_BLOCKED', 'You cannot deactivate your own account.')
   }
 
-  const target = await fetchUserById(userId)
-  if (getRoleName(target) === 'Admin') throw createUserError(403, 'ACCOUNT_PROTECTED', 'The Admin account is protected.')
-
   const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from('users')
-    .update({ status })
-    .eq('id', userId)
-    .select(getUserSelect())
-    .single()
-
-  if (error) {
-    throw createUserError(500, 'USER_STATUS_UPDATE_FAILED', 'Unable to update user status.')
-  }
-
-  const user = toUserResponse(data)
-  await recordAuditLog({
-    userId: actorUserId,
-    action: 'USER_STATUS_UPDATED',
-    entityType: 'user',
-    entityId: user.id,
-    metadata: {
-      targetUsername: user.username,
-      targetRole: user.role,
-      newStatus: user.status,
-    },
+  const { data, error } = await supabase.rpc('update_user_account_status', {
+    p_actor: actorUserId,
+    p_user_id: userId,
+    p_status: status,
   })
 
-  return user
+  if (error) {
+    throw mapUserMutationRpcError(error, {
+      selfCode: 'SELF_DEACTIVATION_BLOCKED',
+      selfMessage: 'You cannot deactivate your own account.',
+      fallbackCode: 'USER_STATUS_UPDATE_FAILED',
+      fallbackMessage: 'Unable to update user status.',
+    })
+  }
+
+  if (!data) {
+    throw createUserError(404, 'USER_NOT_FOUND', 'User account not found.')
+  }
+
+  return toUserResponse(data)
 }
 
 async function archiveUser({ userId, actorUserId }) {
@@ -138,41 +108,26 @@ async function archiveUser({ userId, actorUserId }) {
     throw createUserError(400, 'SELF_ARCHIVE_BLOCKED', 'You cannot archive your own account.')
   }
 
-  const existingUser = toUserResponse(await fetchUserById(userId))
-  if (existingUser.role === 'Admin') throw createUserError(403, 'ACCOUNT_PROTECTED', 'The Admin account is protected.')
   const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from('users')
-    .update({
-      status: 'Inactive',
-      deleted_at: new Date().toISOString(),
-      deleted_by: actorUserId,
-    })
-    .eq('id', userId)
-    .is('deleted_at', null)
-    .select(getUserSelect())
-    .single()
-
-  if (error) {
-    throw createUserError(500, 'USER_ARCHIVE_FAILED', 'Unable to archive user account.')
-  }
-
-  const archivedUser = toUserResponse(data)
-  await recordAuditLog({
-    userId: actorUserId,
-    action: 'USER_ARCHIVED',
-    entityType: 'user',
-    entityId: archivedUser.id,
-    metadata: {
-      targetUsername: existingUser.username,
-      targetRole: existingUser.role,
-      previousStatus: existingUser.status,
-      newStatus: archivedUser.status,
-      archivedAt: archivedUser.deletedAt,
-    },
+  const { data, error } = await supabase.rpc('archive_user_account', {
+    p_actor: actorUserId,
+    p_user_id: userId,
   })
 
-  return archivedUser
+  if (error) {
+    throw mapUserMutationRpcError(error, {
+      selfCode: 'SELF_ARCHIVE_BLOCKED',
+      selfMessage: 'You cannot archive your own account.',
+      fallbackCode: 'USER_ARCHIVE_FAILED',
+      fallbackMessage: 'Unable to archive user account.',
+    })
+  }
+
+  if (!data) {
+    throw createUserError(404, 'USER_NOT_FOUND', 'User account not found.')
+  }
+
+  return toUserResponse(data)
 }
 
 module.exports = {

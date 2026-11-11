@@ -16,8 +16,13 @@ const listDowntimeSchema = z.object({
     status: z.enum(['All', 'Open', 'Resolved']).optional(),
     cause: z.string().trim().optional(),
     date: z.string().date('Invalid downtime date.').optional(),
+    dateFrom: z.string().date('Invalid start date.').optional(),
+    dateTo: z.string().date('Invalid end date.').optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().min(1).max(100).default(25),
+  }).refine((query) => !query.dateFrom || !query.dateTo || query.dateFrom <= query.dateTo, {
+    message: 'Start date must be on or before end date.',
+    path: ['dateFrom'],
   }),
 })
 

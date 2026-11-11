@@ -31,6 +31,30 @@ const historicalDowntimeCauses = [
   'Pending Cause Review',
 ]
 const downtimeEditRoles = new Set(['Admin', 'Operation Manager', 'Engineering Supervisor', 'Production Supervisor'])
+const downtimeCalendarPresets = [
+  { id: 'day', label: 'Daily' },
+  { id: 'week', label: 'Weekly' },
+  { id: 'month', label: 'Monthly' },
+  { id: 'custom', label: 'Custom Range' },
+]
+
+function formatDowntimeDateLabel(date) {
+  return date.toLocaleDateString('en-PH', { month: 'short', day: '2-digit', year: 'numeric' })
+}
+
+function getWeekBounds(date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  start.setDate(start.getDate() - (start.getDay() || 7) + 1)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return { start, end }
+}
+
+function getMonthBounds(date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), 1)
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  return { start, end }
+}
 
 function formatLossBasis(basis) {
   if (!basis) return 'Rate unavailable'
@@ -63,6 +87,18 @@ function getDisplayLabel(record) {
   return record.sensor ? `${record.sensor} ${formatShortDateTime(record.startedAt)}` : formatShortDateTime(record.startedAt)
 }
 
+function formatEventDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 function getManilaDateInputValue() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
@@ -76,14 +112,18 @@ export default function DowntimeSection() {
   const { token, user } = useAuth()
   const [page, setPage] = useState(1)
   const [causeFilter, setCauseFilter] = useState('All')
+  const [calendarMode, setCalendarMode] = useState('day')
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
+  const [dateRange, setDateRange] = useState({ dateFrom: '', dateTo: '' })
   const [notice, setNotice] = useState(null)
   const [updatingRecordId, setUpdatingRecordId] = useState('')
   const [expandedRecordId, setExpandedRecordId] = useState('')
   const [draftNotes, setDraftNotes] = useState({})
   const queryClient = useQueryClient()
   const online = useNetworkOnline()
-  const filters = { cause: causeFilter, date: dateFilter, page, limit: 25 }
+  const filters = dateRange.dateFrom && dateRange.dateTo
+    ? { cause: causeFilter, date: dateFilter, dateFrom: dateRange.dateFrom, dateTo: dateRange.dateTo, page, limit: 25 }
+    : { cause: causeFilter, date: dateFilter, page, limit: 25 }
   const query = useAuthenticatedQuery({
     queryKey: queryKeys.downtime.list(filters),
     queryFn: ({ token: currentToken, signal }) => getDowntimeRecords(currentToken, { ...filters, signal }),
@@ -202,6 +242,72 @@ export default function DowntimeSection() {
 
   if (!online && !query.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => query.refetch()}>Retry</button></div>
 
+  const todayManila = getManilaDateInputValue()
+  const maxDowntimeDate = fromDateInputValue(todayManila)
+  const selectedDowntimeDate = dateFilter ? fromDateInputValue(dateFilter) : maxDowntimeDate
+  const selectedCustomRange = dateRange.dateFrom && dateRange.dateTo
+    ? { startDate: fromDateInputValue(dateRange.dateFrom), endDate: fromDateInputValue(dateRange.dateTo) }
+    : { startDate: selectedDowntimeDate, endDate: selectedDowntimeDate }
+  const isDefaultTodayView = calendarMode === 'day' && dateFilter === todayManila && !dateRange.dateFrom
+
+  let downtimeRangeLabel = 'Last 30 days'
+  if (dateFilter) {
+    if (calendarMode === 'month') {
+      const d = fromDateInputValue(dateRange.dateFrom || dateFilter)
+      downtimeRangeLabel = d.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+    } else if (calendarMode === 'week' || calendarMode === 'custom') {
+      const start = fromDateInputValue(dateRange.dateFrom || dateFilter)
+      const end = fromDateInputValue(dateRange.dateTo || dateFilter)
+      downtimeRangeLabel = `${formatDowntimeDateLabel(start)} - ${formatDowntimeDateLabel(end)}`
+    } else {
+      downtimeRangeLabel = formatDowntimeDateLabel(selectedDowntimeDate)
+    }
+  }
+
+  function handleDowntimeDateChange(date) {
+    if (!date) return
+    if (calendarMode === 'month') {
+      const { start, end } = getMonthBounds(date)
+      const startStr = toDateInputValue(start)
+      const endStr = toDateInputValue(end > maxDowntimeDate ? maxDowntimeDate : end)
+      setDateFilter(startStr)
+      setDateRange({ dateFrom: startStr, dateTo: endStr })
+    } else if (calendarMode === 'week') {
+      const { start, end } = getWeekBounds(date)
+      const startStr = toDateInputValue(start)
+      const endStr = toDateInputValue(end > maxDowntimeDate ? maxDowntimeDate : end)
+      setDateFilter(startStr)
+      setDateRange({ dateFrom: startStr, dateTo: endStr })
+    } else {
+      const dateStr = toDateInputValue(date)
+      setDateFilter(dateStr)
+      setDateRange({ dateFrom: '', dateTo: '' })
+    }
+    setPage(1)
+  }
+
+  function handleDowntimeRangeChange({ startDate, endDate }) {
+    if (!startDate || !endDate) return
+    const startStr = toDateInputValue(startDate)
+    const endStr = toDateInputValue(endDate > maxDowntimeDate ? maxDowntimeDate : endDate)
+    setCalendarMode('custom')
+    setDateFilter(startStr)
+    setDateRange({ dateFrom: startStr, dateTo: endStr })
+    setPage(1)
+  }
+
+  function clearDowntimeDate() {
+    setDateFilter('')
+    setDateRange({ dateFrom: '', dateTo: '' })
+    setPage(1)
+  }
+
+  const periodHelperText = !dateFilter
+    ? 'Last 30 days'
+    : isDefaultTodayView
+      ? 'Today only'
+      : downtimeRangeLabel
+
   return (
     <div className="downtime-layout">
       {query.isFetching && query.data ? <div role="status">{query.isPlaceholderData ? 'Refreshing downtime records for the selected filters; previous results remain visible.' : 'Refreshing downtime records...'}</div> : null}
@@ -224,14 +330,14 @@ export default function DowntimeSection() {
           <p className="stat-helper">Requires review</p>
         </article>
         <article className="section-card stat-card">
-          <p className="stat-label">Resolved Today</p>
+          <p className="stat-label">{isDefaultTodayView ? 'Resolved Today' : 'Resolved'}</p>
           <p className="stat-value">{summary.resolved}</p>
-          <p className="stat-helper">Today only</p>
+          <p className="stat-helper">{periodHelperText}</p>
         </article>
         <article className="section-card stat-card">
           <p className="stat-label">Total Downtime</p>
           <p className="stat-value">{summary.minutes} min</p>
-          <p className="stat-helper">Today only</p>
+          <p className="stat-helper">{periodHelperText}</p>
         </article>
         <article className="section-card stat-card">
           <p className="stat-label">Estimated Loss</p>
@@ -261,16 +367,20 @@ export default function DowntimeSection() {
         </label>
         <div className="downtime-date-control">
           <TrendCalendarControl
-            selectedDate={dateFilter ? fromDateInputValue(dateFilter) : new Date()}
-            rangeLabel={dateFilter ? fromDateInputValue(dateFilter).toLocaleDateString('en-PH', { month: 'short', day: '2-digit', year: 'numeric' }) : 'Last 30 days'}
-            maxDate={fromDateInputValue(getManilaDateInputValue())}
+            mode={calendarMode}
+            selectedDate={selectedDowntimeDate}
+            selectedRange={selectedCustomRange}
+            rangeLabel={downtimeRangeLabel}
+            maxDate={maxDowntimeDate}
             popoverClassName="downtime-calendar-popover"
             triggerAriaLabel="Select downtime date"
             triggerLabel=""
-            showPresets={false}
-            onDateChange={(date) => { setDateFilter(toDateInputValue(date)); setPage(1) }}
+            presets={downtimeCalendarPresets}
+            onModeChange={setCalendarMode}
+            onDateChange={handleDowntimeDateChange}
+            onRangeChange={handleDowntimeRangeChange}
           />
-          {dateFilter ? <button className="btn btn-secondary" type="button" onClick={() => { setDateFilter(''); setPage(1) }}>Clear date</button> : null}
+          {dateFilter ? <button className="btn btn-secondary" type="button" onClick={clearDowntimeDate}>Clear date</button> : null}
         </div>
       </section>
 
@@ -316,6 +426,7 @@ export default function DowntimeSection() {
                     <tr className={`${expandedRecordId === record.id ? 'is-expanded' : ''} ${record.needsCauseReview ? 'needs-cause-review' : ''}`}>
                       <td data-label="Event">
                         <span className="audit-action-label">{getDisplayLabel(record)}</span>
+                        {record.startedAt ? <span className="table-muted downtime-event-date">{formatEventDate(record.startedAt)}</span> : null}
                         {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
                       </td>
                       <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{getSensorName(record)}</span></td>

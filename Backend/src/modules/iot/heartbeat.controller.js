@@ -12,7 +12,7 @@ async function createHeartbeat(req, res) {
       payload: req.validated.body,
     }),
     typeof iotService.getDeviceOperationalThresholds === 'function'
-      ? iotService.getDeviceOperationalThresholds(req.iotDevice)
+      ? iotService.getDeviceOperationalThresholds(req.iotDevice, { useCache: true })
       : null,
   ])
 

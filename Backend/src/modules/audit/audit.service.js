@@ -47,6 +47,11 @@ function parseNumericField(value) {
   return null
 }
 
+function parseIntegerField(value) {
+  const num = parseNumericField(value)
+  return num !== null && Number.isInteger(num) ? num : null
+}
+
 function sanitizeText(value) {
   if (value == null || typeof value === 'boolean') return null
   if (value instanceof Date) {
@@ -66,9 +71,15 @@ function sanitizeProductionSpec(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null
 
   const sanitized = {}
+  if (spec.customer !== undefined) sanitized.customer = sanitizeText(spec.customer)
   if (spec.label !== undefined) sanitized.label = sanitizeText(spec.label)
   if (spec.size !== undefined) sanitized.size = sanitizeText(spec.size)
   if (spec.diameter !== undefined) sanitized.diameter = parseNumericField(spec.diameter)
+  if (spec.thickness !== undefined) sanitized.thickness = parseNumericField(spec.thickness)
+  if (spec.length !== undefined) sanitized.length = parseNumericField(spec.length)
+  const rawPipeNumber = spec.pipeNumber !== undefined ? spec.pipeNumber : spec.pipe_number
+  if (rawPipeNumber !== undefined) sanitized.pipeNumber = parseIntegerField(rawPipeNumber)
+  if (spec.tonnage !== undefined) sanitized.tonnage = parseNumericField(spec.tonnage)
   if (spec.radius !== undefined) sanitized.radius = parseNumericField(spec.radius)
   if (spec.circumference !== undefined) sanitized.circumference = parseNumericField(spec.circumference)
   return sanitized
@@ -80,13 +91,19 @@ function sanitizeAuditMetadata(action, rawMetadata) {
   }
 
   if (action === 'PRODUCTION_SPEC_UPDATED') {
+    const rawPipeNumber = rawMetadata.pipeNumber !== undefined ? rawMetadata.pipeNumber : rawMetadata.pipe_number
     return {
       sensorCode: sanitizeText(rawMetadata.sensorCode),
       machineCode: sanitizeText(rawMetadata.machineCode),
       recordedAt: sanitizeText(rawMetadata.recordedAt),
+      customer: sanitizeText(rawMetadata.customer),
       label: sanitizeText(rawMetadata.label),
       size: sanitizeText(rawMetadata.size),
       diameter: parseNumericField(rawMetadata.diameter),
+      thickness: parseNumericField(rawMetadata.thickness),
+      length: parseNumericField(rawMetadata.length),
+      pipeNumber: parseIntegerField(rawPipeNumber),
+      tonnage: parseNumericField(rawMetadata.tonnage),
       radius: parseNumericField(rawMetadata.radius),
       circumference: parseNumericField(rawMetadata.circumference),
       previous: sanitizeProductionSpec(rawMetadata.previous),
