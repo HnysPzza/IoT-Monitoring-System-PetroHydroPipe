@@ -13,10 +13,26 @@ function toMinutes(value) {
   return (hours * 60) + minutes
 }
 
+const DEFAULT_SPINDLE_SENSOR_CODE = 'S-03'
+const DEFAULT_ROTATION_STALL_BOUNDS = { minimum: 500, maximum: 30000, default: 3000 }
+
 export function getMinuteBounds(secondBounds) {
   return {
     minimumWhenEnabled: Math.max(1, Math.ceil((secondBounds?.minimumWhenEnabled || 60) / 60)),
     maximum: Math.max(1, Math.floor((secondBounds?.maximum || 60) / 60)),
+  }
+}
+
+export function getRotationStallSecondsBounds(stallBounds = DEFAULT_ROTATION_STALL_BOUNDS) {
+  const minimumMs = stallBounds?.minimum ?? DEFAULT_ROTATION_STALL_BOUNDS.minimum
+  const maximumMs = stallBounds?.maximum ?? DEFAULT_ROTATION_STALL_BOUNDS.maximum
+  const defaultMs = stallBounds?.default ?? DEFAULT_ROTATION_STALL_BOUNDS.default
+  return {
+    minimumMs,
+    maximumMs,
+    defaultMs,
+    minimum: Number((minimumMs / 1000).toFixed(3)),
+    maximum: Number((maximumMs / 1000).toFixed(3)),
   }
 }
 
@@ -31,6 +47,9 @@ export function validateOperationalSettings(settings, constraints) {
   const thresholds = settings?.sensorThresholds || {}
   const triggerMinutes = getMinuteBounds(constraints.triggerSeconds)
   const recoveryMinutes = getMinuteBounds(constraints.recoverySeconds)
+  const spindleSensorCode = constraints.spindleSensorCode || DEFAULT_SPINDLE_SENSOR_CODE
+  const stallBounds = getRotationStallSecondsBounds(constraints.rotationStallMs)
+  const requireStallValidation = Boolean(constraints.rotationStallMs)
 
   for (const sensorCode of constraints.sensorCodes) {
     const threshold = thresholds[sensorCode]
@@ -41,6 +60,18 @@ export function validateOperationalSettings(settings, constraints) {
     if (sensorCode === constraints.outputSensorCode && threshold.absenceDetectionEnabled) {
       errors[sensorCode] = 'Production output sensing cannot use absence detection.'
       continue
+    }
+    if (sensorCode === spindleSensorCode && (requireStallValidation || threshold.rotationStallMs !== undefined)) {
+      if (!Number.isInteger(threshold.rotationStallMs)
+        || threshold.rotationStallMs < stallBounds.minimumMs
+        || threshold.rotationStallMs > stallBounds.maximumMs) {
+        errors[sensorCode] = `Rotation stall must be ${stallBounds.minimum}-${stallBounds.maximum} seconds.`
+        continue
+      }
+      if (threshold.rotationStallMs % 100 !== 0) {
+        errors[sensorCode] = 'Rotation stall must use 0.1-second steps.'
+        continue
+      }
     }
     if (!threshold.absenceDetectionEnabled) continue
     if (!Number.isInteger(threshold.triggerSeconds)
@@ -55,6 +86,12 @@ export function validateOperationalSettings(settings, constraints) {
       || threshold.recoverySeconds < recoveryMinutes.minimumWhenEnabled * 60
       || threshold.recoverySeconds > recoveryMinutes.maximum * 60) {
       errors[sensorCode] = `Recovery must be ${formatMinuteRange(recoveryMinutes)}.`
+      continue
+    }
+    if (sensorCode === spindleSensorCode
+      && threshold.rotationStallMs !== undefined
+      && threshold.rotationStallMs >= threshold.triggerSeconds * 1000) {
+      errors[sensorCode] = 'Rotation stall must be shorter than the trigger limit.'
     }
   }
 

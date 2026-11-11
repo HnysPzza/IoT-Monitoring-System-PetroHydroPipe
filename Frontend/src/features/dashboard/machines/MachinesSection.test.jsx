@@ -7,8 +7,10 @@ import { AuthContext } from '../../auth/authSession.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import MachinesSection from './MachinesSection.jsx'
 import { getLiveFeed } from '../live/liveService.js'
+import { getOperationalSettings } from '../settings/settingsService.js'
 
 vi.mock('../live/liveService.js', () => ({ getLiveFeed: vi.fn() }))
+vi.mock('../settings/settingsService.js', () => ({ getOperationalSettings: vi.fn() }))
 
 function livePayload({ machine = {}, sensors } = {}) {
   return {
@@ -81,6 +83,36 @@ describe('MachinesSection live snapshot', () => {
     expect(within(card).queryByText(/GPIO|14 \/ min|300s/i)).not.toBeInTheDocument()
   })
 
+  it('displays configured trigger limits from operational settings on sensor cards', async () => {
+    const sensors = [
+      { ...livePayload().sensors[0], id: 's-1', sensorCode: 'S-01' },
+      { ...livePayload().sensors[0], id: 's-3', sensorCode: 'S-03' },
+      { ...livePayload().sensors[0], id: 's-5', sensorCode: 'S-05' },
+    ]
+    getLiveFeed.mockResolvedValue(livePayload({ sensors }))
+    getOperationalSettings.mockResolvedValue({
+      settings: {
+        sensorThresholds: {
+          'S-01': { absenceDetectionEnabled: false, triggerSeconds: 300, recoverySeconds: 60 },
+          'S-03': { absenceDetectionEnabled: true, triggerSeconds: 300, recoverySeconds: 60 },
+          'S-05': { absenceDetectionEnabled: false, triggerSeconds: 300, recoverySeconds: 60 },
+        },
+      },
+      constraints: { outputSensorCode: 'S-05' },
+    })
+
+    renderWithAuth(<MachinesSection />)
+
+    const s01Card = (await screen.findByText('S-01')).closest('article')
+    const s03Card = screen.getByText('S-03').closest('article')
+    const s05Card = screen.getByText('S-05').closest('article')
+
+    expect(await within(s03Card).findByText('5 min')).toBeInTheDocument()
+    expect(within(s01Card).getByText('Disabled')).toBeInTheDocument()
+    expect(within(s05Card).getByText('Not applicable')).toBeInTheDocument()
+    expect(getOperationalSettings).toHaveBeenCalledWith('test-token', 'machine-1', expect.anything())
+  })
+
   it('F03 does not replace an in-flight snapshot on a polling tick', async () => {
     const timer = vi.spyOn(window, 'setInterval')
     const pending = deferred()
@@ -110,6 +142,8 @@ describe('MachinesSection live snapshot', () => {
   })
   beforeEach(() => {
     getLiveFeed.mockReset()
+    getOperationalSettings.mockReset()
+    getOperationalSettings.mockResolvedValue({ settings: { sensorThresholds: {} }, constraints: { outputSensorCode: 'S-05' } })
   })
 
   it('shows a live-snapshot failure, then retries it', async () => {

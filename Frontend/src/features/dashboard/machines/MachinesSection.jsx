@@ -4,12 +4,27 @@ import { createPortal } from 'react-dom'
 import { useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
+import { queryKeys } from '../../../shared/services/queryClient.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
 import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { connectivityLabel } from '../live/livePresentation.js'
 import { useLiveFeedStream } from '../live/useLiveFeedStream.js'
+import { getOperationalSettings } from '../settings/settingsService.js'
+
+function formatTriggerLimit(sensorCode, settingsPayload) {
+  const threshold = settingsPayload?.settings?.sensorThresholds?.[sensorCode]
+  if (!threshold) return 'Unavailable'
+  const outputSensorCode = settingsPayload?.constraints?.outputSensorCode || 'S-05'
+  if (sensorCode === outputSensorCode) return 'Not applicable'
+  if (!threshold.absenceDetectionEnabled) return 'Disabled'
+  const triggerSeconds = Number(threshold.triggerSeconds)
+  if (!Number.isFinite(triggerSeconds) || triggerSeconds <= 0) return 'Unavailable'
+  if (triggerSeconds % 60 === 0) return `${triggerSeconds / 60} min`
+  return `${triggerSeconds}s`
+}
 
 function EmptyMachinesState({ isRefreshing = false, onRefresh }) {
   return (
@@ -50,6 +65,13 @@ export default function MachinesSection() {
 
   const machine = liveFeed.machine
   const sensors = liveFeed.sensors
+  const settingsQuery = useAuthenticatedQuery({
+    queryKey: queryKeys.settings.machine(machine?.id || null),
+    queryFn: ({ token: currentToken, signal }) => getOperationalSettings(currentToken, machine.id, signal),
+    enabled: Boolean(machine?.id),
+    staleTime: 60000,
+    refetchOnWindowFocus: false,
+  })
   const capturedAt = liveFeed.monitoring?.capturedAt || null
   const requestState = liveFeed.state
   const error = liveFeed.error
@@ -59,7 +81,10 @@ export default function MachinesSection() {
   const runningCount = sensors.filter((sensor) => sensor.status === 'Running').length
   const idleCount = sensors.filter((sensor) => sensor.status === 'Idle').length
 
-  const refreshSnapshot = () => liveFeed.reload()
+  const refreshSnapshot = () => {
+    if (machine?.id) void settingsQuery.refetch()
+    return liveFeed.reload()
+  }
 
   if (requestState === 'loading' && !machine) {
     return (
@@ -157,7 +182,7 @@ export default function MachinesSection() {
                   </div>
                   <dl className="machines-sensor-telemetry">
                     <div><dt>Connection</dt><dd className={`machines-connection-${connectivityLabel(sensor) === 'Connected' ? 'connected' : 'unavailable'}`}>{connectivityLabel(sensor)}</dd></div>
-                    <div><dt>Trigger limit</dt><dd>Unavailable</dd></div>
+                    <div><dt>Trigger limit</dt><dd>{formatTriggerLimit(sensor.sensorCode, settingsQuery.data)}</dd></div>
                   </dl>
                   <dl className="machines-sensor-footer">
                     <div><dt>Hardware</dt><dd>{sensor.esp32DeviceId || 'Unavailable'}</dd></div>

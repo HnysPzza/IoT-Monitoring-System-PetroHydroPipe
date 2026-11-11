@@ -10,6 +10,11 @@
 .settings-matrix-table th, .settings-break-table th { font-size: 11px; }
 .settings-matrix-table td { padding-top: 8px; padding-bottom: 8px; }
 .settings-sensor-title, .settings-check, .settings-locked-banner { font-size: 12px; }
+.settings-sensor-meta { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.settings-spindle-stall { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings-spindle-stall-label { color: var(--c-text-2); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.settings-stall-input-group { width: 96px; }
+.settings-stall-input-group .settings-num-input { padding-right: 32px; }
 .settings-time-input, .settings-text-input, .settings-num-input { min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
 .work-bar-header strong, .break-matrix-title { font-size: 12px; }
 .settings-break-matrix-wrap { padding-top: 0; }

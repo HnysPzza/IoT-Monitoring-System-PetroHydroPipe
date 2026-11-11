@@ -29,6 +29,10 @@ for (const [name, Component] of [['Live Feed', LiveSection], ['Machines', Machin
               monitoring: { stateFresh: true, connectivityState: scenario.offlineCode === identity.code ? 'offline' : 'online', detectionState: scenario.detection[index] },
             })),
           }
+          if (url.startsWith('/api/machines/') && url.endsWith('/settings')) return {
+            settings: { sensorThresholds: {} },
+            constraints: { outputSensorCode: 'S-05' },
+          }
           if (url.startsWith('/api/dashboard/downtime-impact')) return { downtimeImpact: { thresholdMinutes: 30, points: [] } }
           if (url.startsWith('/api/dashboard/overview')) return {
             summary: [], alerts: [], productionAnalytics: { day: {

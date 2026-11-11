@@ -112,6 +112,58 @@ test('sensor thresholds enforce enabled values, bounds, complete keys, and S-05 
   }
 })
 
+test('S-03 rotation stall window defaults legacy rows, enforces bounds and trigger order, and is rejected on other sensors', () => {
+  const legacyParsed = completeSensorThresholdsSchema.safeParse(validThresholds())
+  assert.equal(legacyParsed.success, true)
+  assert.equal(legacyParsed.data['S-03'].rotationStallMs, 3000)
+
+  const validPatch = patchSettingsSchema.safeParse({
+    params: { machineId },
+    body: {
+      expectedVersion: '1',
+      sensorThresholds: {
+        'S-03': { ...threshold(60, 30, true), rotationStallMs: 4500 },
+      },
+    },
+  })
+  assert.equal(validPatch.success, true)
+
+  const invalidPatches = [
+    { 'S-03': { ...threshold(60), rotationStallMs: 499 } },
+    { 'S-03': { ...threshold(60), rotationStallMs: 30001 } },
+    { 'S-03': { ...threshold(60), rotationStallMs: 1500.5 } },
+    { 'S-03': { ...threshold(60), rotationStallMs: 1250 } },
+    { 'S-03': { ...threshold(60), rotationStallMs: null } },
+    { 'S-03': { ...threshold(3, 10, true), rotationStallMs: 3000 } },
+    { 'S-01': { ...threshold(60), rotationStallMs: 3000 } },
+    { 'S-05': { ...threshold(null), rotationStallMs: 3000 } },
+  ]
+
+  for (const sensorThresholds of invalidPatches) {
+    const result = patchSettingsSchema.safeParse({
+      params: { machineId },
+      body: { expectedVersion: '1', sensorThresholds },
+    })
+    assert.equal(result.success, false)
+  }
+
+  const legacyShortTriggerRow = {
+    machine_id: machineId,
+    sensor_thresholds: {
+      ...validThresholds(),
+      'S-03': { absenceDetectionEnabled: true, triggerSeconds: 3, recoverySeconds: 6 },
+    },
+    shift_schedule: validSchedule(),
+    version: 1,
+    updated_at: '2026-08-22T00:00:00.000Z',
+    updated_by: null,
+  }
+  const { storedSettingsRecordSchema } = require('../../../src/modules/settings/settings.model')
+  const parsedLegacyShort = storedSettingsRecordSchema.safeParse(legacyShortTriggerRow)
+  assert.equal(parsedLegacyShort.success, true)
+  assert.ok(parsedLegacyShort.data.sensor_thresholds['S-03'].rotationStallMs < 3000)
+})
+
 test('shift schedule accepts same-day boundaries and zero grace', () => {
   const schedule = {
     workStart: '00:00',

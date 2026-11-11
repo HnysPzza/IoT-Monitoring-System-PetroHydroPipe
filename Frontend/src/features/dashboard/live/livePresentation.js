@@ -18,14 +18,17 @@ export function presentLiveSensor(sensor, mode) {
     connectivityLabel: connectivityLabel(sensor),
   }
 
+  if (sensor.sensorCode === 'S-05') {
+    const safeStatus = operationalStatus === 'Fault' || operationalStatus === 'Downtime'
+      ? 'Running'
+      : operationalStatus
+    return { ...result, displayStatus: safeStatus, stateLabel: 'Production output sensing' }
+  }
   if (operationalStatus === 'Downtime') {
     return { ...result, stateLabel: 'Confirmed operational downtime' }
   }
   if (operationalStatus === 'Fault') {
     return { ...result, stateLabel: 'Process sensor fault' }
-  }
-  if (sensor.sensorCode === 'S-05') {
-    return { ...result, stateLabel: 'Production output sensing' }
   }
   if (mode === 'disabled') {
     return { ...result, stateLabel: 'Monitoring disabled' }

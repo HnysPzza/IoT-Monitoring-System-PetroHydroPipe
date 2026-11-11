@@ -26,7 +26,7 @@ function validThresholds() {
   return {
     'S-01': { absenceDetectionEnabled: false, triggerSeconds: 600, recoverySeconds: null },
     'S-02': { absenceDetectionEnabled: false, triggerSeconds: 300, recoverySeconds: null },
-    'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null },
+    'S-03': { absenceDetectionEnabled: false, triggerSeconds: 60, recoverySeconds: null, rotationStallMs: 3000 },
     'S-04': { absenceDetectionEnabled: false, triggerSeconds: 300, recoverySeconds: null },
     'S-05': { absenceDetectionEnabled: false, triggerSeconds: null, recoverySeconds: null },
   }
@@ -147,13 +147,92 @@ test('settings constraints expose backend limits and heartbeat-derived minimums'
   assert.deepEqual(service.getSettingsConstraints(), {
     sensorCodes: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'],
     outputSensorCode: 'S-05',
+    spindleSensorCode: 'S-03',
     triggerSeconds: { minimum: 1, maximum: 3600, minimumWhenEnabled: 13 },
     recoverySeconds: { minimum: 1, maximum: 300, minimumWhenEnabled: 25 },
+    rotationStallMs: { minimum: 500, maximum: 30000, default: 3000 },
     breaks: { maximum: 10 },
     rampUpGraceMinutes: { minimum: 0, maximum: 30 },
     sameDayShiftOnly: true,
     timeZone: 'Asia/Manila',
   })
+})
+
+test('settings read normalizes legacy S-03 rows without rotationStallMs and preserves custom stall on partial S-03 patch', async () => {
+  const legacyThresholds = validThresholds()
+  delete legacyThresholds['S-03'].rotationStallMs
+
+  const readService = loadService({ tableResults: readableTables(settingsRow({ sensor_thresholds: legacyThresholds })) })
+  const readResult = await readService.getMachineSettings(machineId)
+  assert.equal(readResult.sensorThresholds['S-03'].rotationStallMs, 3000)
+
+  const calls = []
+  const customStored = validThresholds()
+  customStored['S-03'].rotationStallMs = 4500
+  const expectedMerged = validThresholds()
+  expectedMerged['S-03'] = {
+    absenceDetectionEnabled: true,
+    triggerSeconds: 120,
+    recoverySeconds: 60,
+    rotationStallMs: 4500,
+  }
+  const updateService = loadService({
+    calls,
+    tableResults: readableTables(settingsRow({ sensor_thresholds: customStored })),
+    rpcResult: { data: settingsRow({ sensor_thresholds: expectedMerged, version: '2', updated_by: actorId }), error: null },
+  })
+
+  const updated = await updateService.updateMachineSettings({
+    machineId,
+    expectedVersion: '1',
+    sensorThresholds: {
+      'S-03': { absenceDetectionEnabled: true, triggerSeconds: 120, recoverySeconds: 60 },
+    },
+    actorUserId: actorId,
+  })
+  assert.equal(updated.sensorThresholds['S-03'].rotationStallMs, 4500)
+  assert.equal(calls.find((call) => call.type === 'rpc').args.p_sensor_thresholds['S-03'].rotationStallMs, 4500)
+
+  const undefPatchCalls = []
+  const expectedS01Patch = validThresholds()
+  expectedS01Patch['S-01'] = { absenceDetectionEnabled: false, triggerSeconds: 900, recoverySeconds: null }
+  const undefPatchService = loadService({
+    calls: undefPatchCalls,
+    tableResults: readableTables(),
+    rpcResult: { data: settingsRow({ sensor_thresholds: expectedS01Patch, version: '2', updated_by: actorId }), error: null },
+  })
+  const undefPatched = await undefPatchService.updateMachineSettings({
+    machineId,
+    expectedVersion: '1',
+    sensorThresholds: {
+      'S-01': expectedS01Patch['S-01'],
+      'S-03': undefined,
+      'S-04': undefined,
+    },
+    actorUserId: actorId,
+  })
+  assert.equal(undefPatched.sensorThresholds['S-03'].rotationStallMs, 3000)
+
+  const conflictStallRow = validThresholds()
+  conflictStallRow['S-03'] = { absenceDetectionEnabled: false, triggerSeconds: 20, recoverySeconds: null, rotationStallMs: 25000 }
+  const conflictStallService = loadService({
+    tableResults: readableTables(settingsRow({ sensor_thresholds: conflictStallRow })),
+  })
+  await assert.rejects(
+    () => conflictStallService.updateMachineSettings({
+      machineId,
+      expectedVersion: '1',
+      sensorThresholds: {
+        'S-03': { absenceDetectionEnabled: true, triggerSeconds: 20, recoverySeconds: 20 },
+      },
+      actorUserId: actorId,
+    }),
+    {
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Rotation stall window must be shorter than the trigger limit.',
+    },
+  )
 })
 
 test('settings update is blocked while watchdog enforcement is active', async () => {

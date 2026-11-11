@@ -62,4 +62,41 @@ describe('settings validation', () => {
     expect(errors['S-05']).toMatch(/cannot use absence/i)
     expect(errors.breaks).toMatch(/no overlap/i)
   })
+
+  it('validates S-03 rotation stall bounds even when absence detection is disabled', () => {
+    const withStallConstraints = {
+      ...constraints,
+      spindleSensorCode: 'S-03',
+      rotationStallMs: { minimum: 500, maximum: 30000, default: 3000 },
+    }
+    const valid = validSettings()
+    valid.sensorThresholds['S-03'].rotationStallMs = 4500
+    expect(validateOperationalSettings(valid, withStallConstraints)).toEqual({})
+
+    for (const invalidStall of [null, 400, 30100]) {
+      const candidate = validSettings()
+      candidate.sensorThresholds['S-03'].rotationStallMs = invalidStall
+      expect(validateOperationalSettings(candidate, withStallConstraints)['S-03']).toBe(
+        'Rotation stall must be 0.5-30 seconds.',
+      )
+    }
+
+    const badStep = validSettings()
+    badStep.sensorThresholds['S-03'].rotationStallMs = 3250
+    expect(validateOperationalSettings(badStep, withStallConstraints)['S-03']).toBe(
+      'Rotation stall must use 0.1-second steps.',
+    )
+
+    const stallAtOrAboveTrigger = validSettings()
+    stallAtOrAboveTrigger.sensorThresholds['S-03'] = {
+      absenceDetectionEnabled: true,
+      triggerSeconds: 60,
+      recoverySeconds: 60,
+      rotationStallMs: 60000,
+    }
+    expect(validateOperationalSettings(stallAtOrAboveTrigger, {
+      ...withStallConstraints,
+      rotationStallMs: { minimum: 500, maximum: 90000, default: 3000 },
+    })['S-03']).toBe('Rotation stall must be shorter than the trigger limit.')
+  })
 })

@@ -3,8 +3,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 
+const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 53
+const releaseSchemaVersion = 54
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -249,4 +250,81 @@ test('migration 053 adds editable tonnage to production_item_specs and supports 
   const resetSpec1 = (await db.query('select tonnage, diameter from production_item_specs where sensor_event_id = $1', [evt1])).rows[0]
   assert.equal(resetSpec1.tonnage, null)
   assert.equal(Number(resetSpec1.diameter), 1020)
+})
+
+test('migration 054 accepts S-05 output during Idle and single/double process faults, rejecting only during machine downtime', async (t) => {
+  const db = await database(t)
+
+  async function ingest(sensorCode, eventType, recordedAt) {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from sensors sensor
+      cross join lateral ingest_iot_sensor_event(
+        $1,
+        sensor.id,
+        sensor.machine_id,
+        $2,
+        $3::jsonb,
+        $4
+      ) result
+      where sensor.sensor_code = $5
+    `, [randomUUID(), eventType, JSON.stringify({ signal, metadata: {} }), recordedAt, sensorCode])).rows[0]
+  }
+
+  async function acceptedS05Count() {
+    const { rows } = await db.query(`
+      select count(*)::int as count
+      from sensor_events event
+      join sensors sensor on sensor.id = event.sensor_id
+      where sensor.sensor_code = 'S-05'
+        and event.event_type = 'pulse'
+        and event.output_accepted is true
+    `)
+    return rows[0].count
+  }
+
+  // 1. Accepted when S-03 is Idle (machine stationary / idle)
+  await ingest('S-03', 'idle', '2026-08-21T16:50:00+08:00')
+  const idlePulse = await ingest('S-05', 'pulse', '2026-08-21T16:50:05+08:00')
+  assert.equal(idlePulse.state_applied, true)
+  assert.equal(idlePulse.event_value.metadata.outputAccepted, true)
+  assert.equal(idlePulse.event_value.metadata.outputRejectionReason, null)
+  assert.equal(await acceptedS05Count(), 1)
+
+  // 2. Accepted when S-01 and S-02 are in Fault (process issue only, no machine downtime)
+  await ingest('S-01', 'fault', '2026-08-21T16:51:00+08:00')
+  await ingest('S-02', 'fault', '2026-08-21T16:51:05+08:00')
+  const processFaultPulse = await ingest('S-05', 'pulse', '2026-08-21T16:51:10+08:00')
+  assert.equal(processFaultPulse.state_applied, true)
+  assert.equal(processFaultPulse.event_value.metadata.outputAccepted, true)
+  assert.equal(await acceptedS05Count(), 2)
+
+  // 3. Rejected when S-04 also faults -> grouped S-01+S-02+S-04 downtime opens
+  await ingest('S-04', 'fault', '2026-08-21T16:52:00+08:00')
+  const groupedDowntimePulse = await ingest('S-05', 'pulse', '2026-08-21T16:52:05+08:00')
+  assert.equal(groupedDowntimePulse.state_applied, false)
+  assert.equal(groupedDowntimePulse.event_value.metadata.outputAccepted, false)
+  assert.equal(groupedDowntimePulse.event_value.metadata.outputRejectionReason, 'machine_downtime')
+  assert.equal(await acceptedS05Count(), 2)
+
+  // 4. Recover grouped downtime via S-01 recovery -> S-05 output accepted again
+  await ingest('S-01', 'recovered', '2026-08-21T16:53:00+08:00')
+  const recoveredPulse = await ingest('S-05', 'pulse', '2026-08-21T16:53:05+08:00')
+  assert.equal(recoveredPulse.state_applied, true)
+  assert.equal(recoveredPulse.event_value.metadata.outputAccepted, true)
+  assert.equal(await acceptedS05Count(), 3)
+
+  // 5. Rejected during direct S-03 downtime
+  await ingest('S-03', 'fault', '2026-08-21T16:54:00+08:00')
+  const s03DowntimePulse = await ingest('S-05', 'pulse', '2026-08-21T16:54:05+08:00')
+  assert.equal(s03DowntimePulse.state_applied, false)
+  assert.equal(s03DowntimePulse.event_value.metadata.outputAccepted, false)
+  assert.equal(s03DowntimePulse.event_value.metadata.outputRejectionReason, 'machine_downtime')
+  assert.equal(await acceptedS05Count(), 3)
+
+  // 6. S-05 operational status remains Active with no fault_source
+  const s05Row = (await db.query("select status, fault_source from sensors where sensor_code = 'S-05'")).rows[0]
+  assert.equal(s05Row.status, 'Active')
+  assert.equal(s05Row.fault_source, null)
 })
