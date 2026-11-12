@@ -1,13 +1,14 @@
+import Status from '../../../shared/components/Status.jsx'
 import './live.css'
 import { useMemo } from 'react'
 import { useOutletContext } from 'react-router'
-import { Activity, AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff, Wrench } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
-import { getLiveStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
+import { getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getProcessIdleBanner, presentLiveSensors } from './livePresentation.js'
 import { useLiveFeedStream } from './useLiveFeedStream.js'
 
@@ -21,13 +22,6 @@ const RELATIVE_TIME_UNITS = [
   ['second', 1000],
 ]
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('en-PH', { numeric: 'auto' })
-
-function StatusIcon({ status }) {
-  if (status === 'Running') return <Activity size={18} aria-hidden="true" />
-  if (status === 'Downtime') return <AlertTriangle size={18} aria-hidden="true" />
-  if (status === 'Fault') return <Wrench size={18} aria-hidden="true" />
-  return <PauseCircle size={18} aria-hidden="true" />
-}
 
 function formatEventAge(value) {
   if (!value) return 'No event yet'
@@ -113,11 +107,8 @@ export default function LiveSection() {
               >
                 <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={18} strokeWidth={2.4} aria-hidden="true" />
               </button>
-              <span className="status-badge status-inactive">Watchdog {monitoring.mode}</span>
-              <span className={`status-badge ${getLiveStatusClass(machine.status)}`}>
-                <StatusIcon status={machine.status} />
-                {machine.status}
-              </span>
+              <Status>Watchdog {monitoring.mode}</Status>
+              <Status>{machine.status}</Status>
             </div>
           </div>
           <div className="live-machine-grid">
@@ -153,10 +144,7 @@ export default function LiveSection() {
                 <p className="machine-id">{sensor.sensorCode}</p>
                 <h3>{getSensorLabel(sensor.sensorCode, sensor.label)}</h3>
               </div>
-              <span className={`status-badge ${getSensorStatusClass(sensor.displayStatus)}`}>
-                <StatusIcon status={sensor.displayStatus} />
-                {sensor.displayStatus}
-              </span>
+              <Status>{sensor.displayStatus}</Status>
             </div>
             <p className="live-detection-state">{sensor.stateLabel}</p>
             <dl className="machine-meta live-sensor-meta">

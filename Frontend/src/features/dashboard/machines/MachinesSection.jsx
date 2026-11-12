@@ -1,4 +1,5 @@
 import './machines.css'
+import Status from '../../../shared/components/Status.jsx'
 import { useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useOutletContext } from 'react-router'
@@ -9,7 +10,7 @@ import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
-import { getMachineStatusClass, getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
+import { getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
 import { connectivityLabel } from '../live/livePresentation.js'
 import { useLiveFeedStream } from '../live/useLiveFeedStream.js'
 import { getOperationalSettings } from '../settings/settingsService.js'
@@ -121,7 +122,7 @@ export default function MachinesSection() {
   const headerControls = (
     <div className="machines-header-controls">
       <h2 id="machine-admin-title">{machine.name}</h2><span className="machines-header-code machines-mono">{machine.machineCode}</span>
-      <span className={`status-badge ${getMachineStatusClass(machine.status)}`}>{machine.status}</span>
+      <Status>{machine.status}</Status>
       <button className="icon-button machines-refresh" type="button" aria-label="Refresh machines" title="Refresh machines" disabled={isRefreshing} onClick={refreshSnapshot}>
         <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
       </button>
@@ -164,7 +165,7 @@ export default function MachinesSection() {
 
         {sensors.length === 0 ? <p className="table-muted">No sensors were returned by the live monitoring source.</p> : sensorView === 'table' ? (
           <div className="account-table-wrap"><table className="account-table machines-sensor-table"><thead><tr><th scope="col">Sensor</th><th scope="col">Status</th><th scope="col">Hardware</th><th scope="col">Connection</th><th scope="col">Last event</th></tr></thead><tbody>
-            {sensors.map((sensor) => <tr key={sensor.id}><td>{sensor.sensorCode} · {getSensorLabel(sensor.sensorCode, sensor.label)}</td><td><span className={`status-badge ${getSensorStatusClass(sensor.status)}`}>{sensor.status}</span></td><td>{sensor.esp32DeviceId || 'Unavailable'}</td><td><span className={`machines-connection-${connectivityLabel(sensor) === 'Connected' ? 'connected' : 'unavailable'}`}>{connectivityLabel(sensor)}</span></td><td>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</td></tr>)}
+            {sensors.map((sensor) => <tr key={sensor.id}><td>{sensor.sensorCode} · {getSensorLabel(sensor.sensorCode, sensor.label)}</td><td><Status>{sensor.status}</Status></td><td>{sensor.esp32DeviceId || 'Unavailable'}</td><td><span className={`machines-connection-${connectivityLabel(sensor) === 'Connected' ? 'connected' : 'unavailable'}`}>{connectivityLabel(sensor)}</span></td><td>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</td></tr>)}
           </tbody></table></div>
         ) : (
           <div className="admin-sensor-grid">
@@ -174,7 +175,7 @@ export default function MachinesSection() {
                 <article key={sensor.id} className={`machine-card admin-sensor-card ${statusClass}`}>
                   <div className="machines-sensor-heading">
                     <span className="machines-sensor-code">{sensor.sensorCode}</span>
-                    <span className={`status-badge ${statusClass}`}>{sensor.status}</span>
+                    <Status>{sensor.status}</Status>
                   </div>
                   <div className="machines-sensor-identity">
                     <h3>{getSensorLabel(sensor.sensorCode, sensor.label)}</h3>

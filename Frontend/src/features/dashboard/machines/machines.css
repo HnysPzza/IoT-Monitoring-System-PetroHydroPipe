@@ -44,5 +44,5 @@
 
 .machines-header-code { color: var(--c-text-2); font-size: 12px; }
 
-.machines-layout .machines-connection-connected { color: var(--status-active-text); font-weight: 600; }
-.machines-layout .machines-connection-unavailable { color: var(--status-downtime-text); font-weight: 600; }
+.machines-layout .machines-connection-connected,
+.machines-layout .machines-connection-unavailable { color: var(--c-text-2); font-weight: 400; }

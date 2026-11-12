@@ -123,7 +123,7 @@ describe('LiveSection polling', () => {
     renderWithAuth(<LiveSection />)
 
     const faultBadge = await screen.findByText('Fault')
-    expect(faultBadge).toHaveClass('status-badge', 'status-fault')
+    expect(faultBadge).toHaveClass('status', 'status-danger')
     expect(faultBadge).not.toHaveClass('status-downtime')
     expect(faultBadge.closest('.live-sensor-card')).toHaveClass('status-fault')
   })
@@ -183,7 +183,7 @@ describe('LiveSection polling', () => {
 
     await user.click(screen.getByRole('button', { name: 'Refresh live feed' }))
 
-    expect(await screen.findByText('Fault')).toHaveClass('status-badge', 'status-fault')
+    expect(await screen.findByText('Fault')).toHaveClass('status', 'status-danger')
     expect(
       screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
     ).not.toBeInTheDocument()

@@ -216,7 +216,7 @@ describe('MachinesSection live snapshot', () => {
     renderWithAuth(<MachinesSection />)
 
     const faultBadge = await screen.findByText('Fault')
-    expect(faultBadge).toHaveClass('status-badge', 'status-fault')
+    expect(faultBadge).toHaveClass('status', 'status-danger')
     expect(faultBadge).not.toHaveClass('status-downtime')
     expect(faultBadge.closest('.admin-sensor-card')).toHaveClass('status-fault')
   })
