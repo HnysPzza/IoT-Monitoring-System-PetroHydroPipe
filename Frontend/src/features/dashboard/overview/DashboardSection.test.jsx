@@ -214,8 +214,63 @@ describe('DashboardSection', () => {
     )
 
     expect(await screen.findByText('Production Output')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('S-04 reported an explicit physical fault.')
-    expect(screen.getByRole('alert')).not.toHaveTextContent('machine downtime confirmed')
+    const banner = screen.getByRole('alert')
+    expect(banner).toHaveTextContent('S-04 reported an explicit physical fault.')
+    expect(banner).not.toHaveTextContent('machine downtime confirmed')
+    expect(banner).toHaveClass('notice-error')
+  })
+
+  it('keeps the red notice-error banner when multiple unresolved connectivity or fault alerts are present', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    renderWithAuth(
+      <Routes>
+        <Route
+          element={(
+            <Outlet
+              context={{
+                hasTrustedAlertList: true,
+                unresolvedAlerts: [
+                  {
+                    id: 'connectivity-1',
+                    severity: 'Warning',
+                    status: 'Acknowledged',
+                    sourceType: 'sensor_connectivity',
+                    message: 'S-03 heartbeat is stale.',
+                    metadata: { sensorCode: 'S-03', machineCode: 'M-01' },
+                  },
+                  {
+                    id: 'connectivity-2',
+                    severity: 'Warning',
+                    status: 'Acknowledged',
+                    sourceType: 'sensor_connectivity',
+                    message: 'S-05 heartbeat is stale.',
+                    metadata: { sensorCode: 'S-05', machineCode: 'M-01' },
+                  },
+                  {
+                    id: 'connectivity-3',
+                    severity: 'Warning',
+                    status: 'Acknowledged',
+                    sourceType: 'sensor_connectivity',
+                    message: 'S-02 heartbeat is stale.',
+                    metadata: { sensorCode: 'S-02', machineCode: 'M-01' },
+                  },
+                ],
+              }}
+            />
+          )}
+        >
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('S-03 heartbeat is stale.')
+    expect(banner).toHaveTextContent('+2 more unresolved alerts')
+    expect(banner).toHaveClass('notice-error')
   })
 
   it('keeps an acknowledged unresolved fault banner visible and red after reload', async () => {
@@ -256,7 +311,7 @@ describe('DashboardSection', () => {
     expect(screen.getByRole('link', { name: 'View downtime records' })).toHaveAttribute('href', '/dashboard/downtime')
   })
 
-  it('renders a fault live sensor with fault styling and icon', async () => {
+  it('renders a fault live sensor with a danger status', async () => {
     const live = livePayload()
     live.sensors[0].status = 'Fault'
     getDashboardOverview.mockResolvedValue(overviewPayload())
@@ -267,9 +322,9 @@ describe('DashboardSection', () => {
 
     const badge = await screen.findByText('Fault')
     const card = badge.closest('article')
-    expect(badge).toHaveClass('status-downtime')
+    expect(badge).toHaveClass('status-danger')
     expect(card).toHaveClass('status-downtime')
-    expect(card.querySelector('svg.lucide-wrench')).not.toBeNull()
+    expect(badge.firstChild).toHaveClass('status-dot-danger')
   })
 
   it('refreshes production bucket states while the page remains open', async () => {

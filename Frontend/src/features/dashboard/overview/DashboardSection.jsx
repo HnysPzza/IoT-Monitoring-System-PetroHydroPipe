@@ -1,8 +1,9 @@
 import './overview.css'
+import Status from '../../../shared/components/Status.jsx'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useOutletContext } from 'react-router'
-import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp, Wrench } from 'lucide-react'
+import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
@@ -102,22 +103,24 @@ function isRecoveryPendingAlert(alert) {
   return alert?.status === 'Active' && alert.metadata?.recoveryPending === true
 }
 
+function isDangerOverviewAlert(alert) {
+  return alert?.type === 'danger'
+    || alert?.severity === 'Critical'
+    || getAlertKind(alert) !== null
+}
+
 function orderOverviewAlerts(alerts) {
-  return [...alerts].sort(
-    (left, right) => Number(isRecoveryPendingAlert(left)) - Number(isRecoveryPendingAlert(right)),
-  )
+  return [...alerts].sort((left, right) => (
+    Number(isRecoveryPendingAlert(left)) - Number(isRecoveryPendingAlert(right))
+    || Number(left?.status === 'Acknowledged') - Number(right?.status === 'Acknowledged')
+    || Number(!isDangerOverviewAlert(left)) - Number(!isDangerOverviewAlert(right))
+  ))
 }
 
 function getOverviewAlertMessage(alert) {
   return isRecoveryPendingAlert(alert)
     ? 'This alert recovered. Acknowledgement required.'
     : alert.message
-}
-
-function isDangerOverviewAlert(alert) {
-  return alert?.type === 'danger'
-    || alert?.severity === 'Critical'
-    || getAlertKind(alert) !== null
 }
 
 export default function DashboardSection() {
@@ -409,7 +412,7 @@ export default function DashboardSection() {
               const extraCount = overviewAlerts.length - 1
               return (
                 <div
-                  className={`notice dashboard-alert overview-alert-banner ${isDangerOverviewAlert(primaryAlert) ? 'notice-error' : ''}`}
+                  className="notice dashboard-alert overview-alert-banner notice-error"
                   role="alert"
                 >
                   <div className="overview-alert-lead">
@@ -629,10 +632,9 @@ export default function DashboardSection() {
               <h2 id="machine-health-title">Machine Health · {liveData.machine?.name || 'Spiral Mill 01'}</h2>
             </div>
             <div className="live-refresh">
-              <span className="section-chip">
-                <CircleCheck size={16} aria-hidden="true" />
+              <Status value={reportingSensorCount === 5 ? 'active' : ''}>
                 {reportingSensorCount} / 5 sensors reporting
-              </span>
+              </Status>
             </div>
           </div>
 
@@ -661,7 +663,7 @@ export default function DashboardSection() {
               <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
                 <div className="overview-sensor-heading">
                   <span>{sensor.code}</span>
-                  <span className={`status-badge ${getLiveStatusClass(sensor.status)}`}>{sensor.status === 'Fault' ? <Wrench size={12} aria-hidden="true" /> : null}{sensor.status}</span>
+                  <Status>{sensor.status}</Status>
                 </div>
                 <h3 title={sensor.label}>{sensor.label}</h3>
                 <div className="overview-sensor-footer">
