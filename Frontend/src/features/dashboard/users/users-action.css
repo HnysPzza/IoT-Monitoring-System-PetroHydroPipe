@@ -73,7 +73,7 @@
 
 .users-action-result-success {
   flex: 0 0 auto;
-  color: var(--c-success);
+  color: var(--c-text-2);
 }
 
 .users-action-progress {

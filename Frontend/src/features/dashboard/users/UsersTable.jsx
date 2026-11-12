@@ -1,11 +1,9 @@
+import Status from '../../../shared/components/Status.jsx'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
 import {
-  AlertCircle,
   Archive,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock,
   KeyRound,
   Mail,
   MoreHorizontal,
@@ -99,36 +97,21 @@ export default function UsersTable({
                       </div>
                     </td>
                     <td>
-                      <span className={`status-pill-badge ${account.status === 'Active' ? 'status-pill-active' : 'status-pill-inactive'}`}>
-                        <span className={`status-pill-dot ${account.status === 'Active' ? 'dot-active' : 'dot-inactive'}`} aria-hidden="true" />
-                        <span>{account.status}</span>
-                      </span>
+                      <Status>{account.status}</Status>
                     </td>
                     <td>
                       {account.mustChangePassword ? (
-                        <span className="setup-pill-badge setup-pill-warning">
-                          <KeyRound size={13} aria-hidden="true" />
-                          <span>Password change required</span>
-                        </span>
+                        <Status>Password change required</Status>
                       ) : account.onboarding === 'Invited' ? (
-                        <span className="setup-pill-badge setup-pill-invited">
-                          <Clock size={13} aria-hidden="true" />
-                          <span>Invited</span>
-                        </span>
+                        <Status>Invited</Status>
                       ) : account.onboarding === 'Expired' ? (
-                        <span className="setup-pill-badge setup-pill-expired">
-                          <AlertCircle size={13} aria-hidden="true" />
-                          <span>Expired</span>
-                        </span>
+                        <Status>Expired</Status>
                       ) : (
-                        <span className="setup-pill-badge setup-pill-ready">
-                          <CheckCircle2 size={13} aria-hidden="true" />
-                          <span>{account.onboarding === 'Ready' ? 'Complete' : account.onboarding || 'Complete'}</span>
-                        </span>
+                        <Status>{account.onboarding === 'Ready' ? 'Complete' : account.onboarding || 'Complete'}</Status>
                       )}
                     </td>
-                    <td>{formatDate(account.createdAt)}</td>
-                    <td>{formatDate(account.lastLoginAt)}</td>
+                    <td className={account.createdAt ? 'user-date' : 'user-date user-date-empty'}>{formatDate(account.createdAt)}</td>
+                    <td className={account.lastLoginAt ? 'user-date' : 'user-date user-date-empty'}>{formatDate(account.lastLoginAt)}</td>
                     <td>
                       <PopoverPrimitive.Root>
                         <PopoverPrimitive.Trigger asChild>
