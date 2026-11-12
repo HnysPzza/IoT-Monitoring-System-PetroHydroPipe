@@ -1500,34 +1500,12 @@ button:disabled {
 .notification-button .bell-icon {
   display: block;
   transform-origin: top center;
-  transition: transform 150ms var(--ease-std);
+  transition: transform 220ms ease-in-out;
   color: var(--c-text);
 }
 
 .notification-button:hover:not(.is-alerting) .bell-icon {
-  animation: bell-hover-tilt 250ms ease-in-out forwards;
-}
-
-@keyframes bell-hover-tilt {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  30% {
-    transform: rotate(11deg);
-  }
-
-  65% {
-    transform: rotate(-7deg);
-  }
-
-  85% {
-    transform: rotate(3deg);
-  }
-
-  100% {
-    transform: rotate(0deg);
-  }
+  transform: rotate(10deg);
 }
 
 .notification-button.is-alerting .bell-icon {
@@ -1635,8 +1613,8 @@ button:disabled {
   color: var(--c-text);
   background: #FFFFFF;
   box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
-  animation: popover-reveal 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  transform-origin: top right;
+  animation: popover-reveal 220ms ease-in-out;
+  transform-origin: calc(100% - 20px) top;
   overflow: hidden;
 }
 
@@ -2180,6 +2158,28 @@ button:disabled {
   width: min(100%, 1680px);
   margin-inline: auto;
   padding: 24px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dashboard-route-view {
+    animation: dashboard-route-enter 180ms var(--ease-out);
+  }
+
+  .shadcn-calendar-popover:is(.trend-calendar-popover, .analytics-date-range-popover)[data-state='open'],
+  .production-date-popover {
+    animation: calendar-popover-enter 160ms var(--ease-out);
+    transform-origin: var(--radix-popover-content-transform-origin, top left);
+  }
+}
+
+@keyframes dashboard-route-enter {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
+@keyframes calendar-popover-enter {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .dashboard-error-page {

@@ -90,3 +90,37 @@ test('Production Supervisor cannot see account management navigation', async ({ 
   await expect(page.locator('.sidebar-user-role')).toHaveText('Production Supervisor')
   await expect(page.getByRole('link', { name: 'User Accounts', exact: true })).toHaveCount(0)
 })
+
+for (const reducedMotion of ['no-preference', 'reduce']) {
+  test(`dashboard and calendar motion respect ${reducedMotion}`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion })
+    await login(page, 'admin')
+
+    const motionEnabled = reducedMotion === 'no-preference'
+    const view = page.locator('.dashboard-route-view')
+    const routeAnimation = motionEnabled ? 'dashboard-route-enter' : 'none'
+    await expect(view).toHaveCSS('animation-name', routeAnimation, { timeout: 15000 })
+
+    const trigger = page.locator('.overview-layout .trend-calendar-trigger')
+    await trigger.click()
+    const calendar = page.locator('.trend-calendar-popover')
+    await expect(calendar).toHaveCSS('animation-name', motionEnabled ? 'calendar-popover-enter' : 'none')
+    if (motionEnabled) {
+      const originMatches = await calendar.evaluate((element) => {
+        const computedOrigin = getComputedStyle(element).transformOrigin
+        element.style.transformOrigin = 'var(--radix-popover-content-transform-origin)'
+        const anchoredOrigin = getComputedStyle(element).transformOrigin
+        element.style.removeProperty('transform-origin')
+        return computedOrigin === anchoredOrigin
+      })
+      expect(originMatches).toBe(true)
+    }
+    await page.keyboard.press('Escape')
+    await expect(calendar).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+
+    await page.getByRole('link', { name: 'User Accounts', exact: true }).click()
+    await expect(view.getByRole('region', { name: 'Staff accounts' })).toBeVisible()
+    await expect(view).toHaveCSS('animation-name', routeAnimation)
+  })
+}

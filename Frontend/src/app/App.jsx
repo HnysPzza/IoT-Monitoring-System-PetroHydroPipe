@@ -54,9 +54,12 @@ function DashboardLoadingFallback() {
 }
 
 function LazyDashboardRoute({ children }) {
+  const { pathname } = useLocation()
   return (
     <Suspense fallback={<DashboardLoadingFallback />}>
-      {children}
+      <div key={pathname} className="dashboard-route-view">
+        {children}
+      </div>
     </Suspense>
   )
 }
@@ -81,9 +84,9 @@ export default function App() {
           element={
             <ProtectedRoute>
               <DashboardRouteBoundary>
-                <LazyDashboardRoute>
+                <Suspense fallback={<DashboardLoadingFallback />}>
                   <AdminDashboard />
-                </LazyDashboardRoute>
+                </Suspense>
               </DashboardRouteBoundary>
             </ProtectedRoute>
           }

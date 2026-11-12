@@ -13,7 +13,21 @@
 .sidebar-link,.dashboard-sidebar.is-collapsed .sidebar-link { display:flex; align-items:center; gap:10px; width:100%; height:51px; min-height:51px; padding:0 10px; border:0; border-radius:8px; overflow:visible; color:#94a3b8; }
 .sidebar-link:hover:not(.is-active) { color:#f1f5f9 !important; background:#ffffff0d; }
 .sidebar-link.is-active,.sidebar-link.is-active:hover,.dashboard-sidebar.is-collapsed .sidebar-link.is-active { border:0; color:#60a5fa; background:#3b82f624; }
-.sidebar-link.is-active::before { content:''; position:absolute; left:0; top:50%; width:3px; height:16px; transform:translateY(-50%); border-radius:0 99px 99px 0; background:#60a5fa; }
+.sidebar-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  transform: translateY(-50%);
+  border-radius: 0 99px 99px 0;
+  background: #60a5fa;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms var(--ease-std);
+}
+.sidebar-link.is-active::before { opacity: 1; }
 .sidebar-link-icon { width:20px; height:20px; }
 .sidebar-link-label,.sidebar-link.is-active .sidebar-link-label { font-size:14px; font-weight:500; }
 .dashboard-sidebar.is-collapsed .sidebar-nav { width:60px; padding:12px; }
