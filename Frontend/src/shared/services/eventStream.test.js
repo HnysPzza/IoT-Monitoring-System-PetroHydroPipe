@@ -450,6 +450,8 @@ describe('subscribeToServerEvents', () => {
 
     unsubscribe()
     expect(signal.aborted).toBe(true)
+    expect(signal.reason).toBeDefined()
+    expect(signal.reason.name).toBe('AbortError')
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

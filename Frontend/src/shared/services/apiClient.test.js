@@ -94,11 +94,15 @@ describe('apiRequest', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('cancels a request from an external abort signal', async () => {
+  it('cancels a request from an external abort signal and passes an explicit abort reason', async () => {
     const controller = new AbortController()
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
-      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
-    })))
+    let internalSignal
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, { signal }) => {
+      internalSignal = signal
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      })
+    }))
 
     const request = apiRequest('/api/cancelled', { signal: controller.signal })
     controller.abort()
@@ -108,6 +112,8 @@ describe('apiRequest', () => {
       code: 'REQUEST_ABORTED',
       message: 'The request was cancelled.',
     })
+    expect(internalSignal.aborted).toBe(true)
+    expect(internalSignal.reason).toBeDefined()
   })
 
   it('normalizes malformed JSON responses and clears the timer', async () => {

@@ -433,10 +433,13 @@ export function subscribeToServerEvents(path, token, {
 
   return () => {
     isClosed = true
-    controller.abort()
     clearStabilityTimer()
     clearInactivityTimer()
-    releaseActiveReader({ cancel: true })
+    if (activeReader) {
+      releaseActiveReader({ cancel: true })
+    } else {
+      controller.abort(Object.assign(new Error('Event stream closed.'), { name: 'AbortError' }))
+    }
 
     if (retryTimer !== null) {
       window.clearTimeout(retryTimer)
