@@ -1,3 +1,4 @@
+import Status from '../../../shared/components/Status.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
@@ -12,7 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDashed,
-  CircleSlash,
   Copy,
   Pencil,
   RotateCw,
@@ -1224,38 +1224,9 @@ export default function ProductionSection({
                   if (isFlashing) rowClasses.push('production-row-flash')
                   const rowClass = rowClasses.join(' ')
 
-                  let statusBadge = null
-                  if (!isAccepted) {
-                    statusBadge = (
-                      <span
-                        className="production-status-badge red"
-                        title={record.rejectionReason || 'Rejected pulse'}
-                        aria-label={record.rejectionReason || 'Rejected pulse'}
-                      >
-                        <CircleSlash size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </span>
-                    )
-                  } else if (isSpec) {
-                    statusBadge = (
-                      <span
-                        className="production-status-badge emerald"
-                        title="Accepted · Specified"
-                        aria-label="Accepted · Specified"
-                      >
-                        <CheckCircle2 size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </span>
-                    )
-                  } else {
-                    statusBadge = (
-                      <span
-                        className="production-status-badge amber"
-                        title="Accepted · Needs details"
-                        aria-label="Accepted · Needs details"
-                      >
-                        <CircleDashed size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </span>
-                    )
-                  }
+                  const statusBadge = !isAccepted
+                    ? <Status tone="danger" title={record.rejectionReason || 'Rejected pulse'} aria-label={record.rejectionReason || 'Rejected pulse'}>Rejected</Status>
+                    : <Status title={isSpec ? 'Accepted · Specified' : 'Accepted · Needs details'} aria-label={isSpec ? 'Accepted · Specified' : 'Accepted · Needs details'}>{isSpec ? 'Specified' : 'Needs details'}</Status>
 
                   return (
                     <tr key={rowId} className={rowClass || undefined}>

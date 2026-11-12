@@ -29,4 +29,4 @@
 .reports-detail-grid .reports-table th:last-child, .reports-detail-grid .reports-table td:last-child { text-align: right; }
 .reports-detail-grid .reports-table td[colspan] { text-align: center; }
 .reports-empty-state { display: inline-flex; align-items: center; gap: 8px; padding: 14px; color: var(--c-text-2); }
-.reports-empty-state svg { color: var(--c-success); }
+.reports-empty-state svg { color: var(--c-text-2); }

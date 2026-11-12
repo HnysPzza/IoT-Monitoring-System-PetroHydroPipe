@@ -1,3 +1,4 @@
+import Status from '../../../shared/components/Status.jsx'
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './settings-compact.css'
@@ -349,9 +350,7 @@ export default function SettingsSection() {
               <div className="section-copy">
                 <h2 id="operational-settings-title">{machine.name}</h2>
               </div>
-              <span className={`status-badge ${watchdogMode === 'observe' ? 'status-idle' : watchdogMode === 'enforce' ? 'status-downtime' : 'status-inactive'}`}>
-                Watchdog {watchdogMode}
-              </span>
+              <Status>Watchdog {watchdogMode}</Status>
             </div>
             {watchdogMode === 'observe' ? <p className="settings-mode-note">Observe mode evaluates these values but does not create operational downtime or alerts.</p> : null}
             {watchdogMode === 'enforce' ? <p className="settings-mode-note">Enforcement is active. Saved changes apply immediately to live watchdog evaluation and connected sensors.</p> : null}
@@ -496,17 +495,9 @@ export default function SettingsSection() {
                             </div>
                           </td>
                           <td className="col-status">
-                            {threshold.absenceDetectionEnabled ? (
-                              <span className="settings-status-indicator is-active" title="Absence detection active">
-                                <span className="status-dot" aria-hidden="true" />
-                                <span className="status-label">Active</span>
-                              </span>
-                            ) : (
-                              <span className="settings-status-indicator is-disabled" title="Absence detection disabled">
-                                <span className="status-dot" aria-hidden="true" />
-                                <span className="status-label">Disabled</span>
-                              </span>
-                            )}
+                            <Status title={threshold.absenceDetectionEnabled ? 'Absence detection active' : 'Absence detection disabled'}>
+                              {threshold.absenceDetectionEnabled ? 'Active' : 'Disabled'}
+                            </Status>
                           </td>
                         </tr>
                       )
@@ -657,7 +648,7 @@ export default function SettingsSection() {
                               {durationLabel ? (
                                 <span className="break-duration-pill">{durationLabel}</span>
                               ) : (
-                                <span className="break-duration-pill is-invalid">Invalid</span>
+                                <Status tone="danger">Invalid</Status>
                               )}
                             </td>
                             <td className="col-break-action">

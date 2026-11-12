@@ -1,5 +1,6 @@
 import './downtime.css'
 import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
+import Status from '../../../shared/components/Status.jsx'
 import { fromDateInputValue, toDateInputValue } from '../overview/DowntimeTrendChart.jsx'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,6 @@ import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, TriangleAlert }
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
-import { getDowntimeStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getDowntimeRecords, subscribeToDowntime, updateDowntimeRecord } from './downtimeService.js'
 
 const editableDowntimeCauses = [
@@ -427,7 +427,7 @@ export default function DowntimeSection() {
                       <td data-label="Event">
                         <span className="audit-action-label">{getDisplayLabel(record)}</span>
                         {record.startedAt ? <span className="table-muted downtime-event-date">{formatEventDate(record.startedAt)}</span> : null}
-                        {record.needsCauseReview ? <span className="pending-review-chip">Needs cause review</span> : null}
+                        {record.needsCauseReview ? <Status className="pending-review-status">Needs cause review</Status> : null}
                       </td>
                       <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{getSensorName(record)}</span></td>
                       <td data-label="Cause">
@@ -457,7 +457,7 @@ export default function DowntimeSection() {
                         )}
                       </td>
                       <td data-label="Duration">{record.durationMinutes} min</td>
-                      <td data-label="Status"><span className={`status-badge ${getDowntimeStatusClass(record.status)}`}>{record.status}</span></td>
+                      <td data-label="Status"><Status tone={record.status === 'Open' ? 'danger' : undefined}>{record.status}</Status></td>
                       <td data-label="Details">
                         <button
                           className="btn btn-secondary table-action-button"

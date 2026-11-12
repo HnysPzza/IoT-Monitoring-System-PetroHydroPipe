@@ -118,31 +118,19 @@
 }
 
 /* Accepted Pill */
-.production-kpi-pill.accepted {
-  background: #ECFDF5;
-  border: 1px solid #A7F3D0;
-  color: #047857;
-}
-
-/* Specified Pill */
-.production-kpi-pill.specified {
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
-  color: #1D4ED8;
-}
-
-/* Unspecified Pill */
+.production-kpi-pill.accepted,
+.production-kpi-pill.specified,
 .production-kpi-pill.unspecified {
-  background: #FFFBEB;
-  border: 1px solid #FDE68A;
-  color: #B45309;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--c-text-2);
 }
 
 /* Active Filter State for KPI Pills */
 .production-kpi-pill.production-kpi-active {
-  background: #EFF6FF !important;
-  border-color: #93C5FD !important;
-  color: #0F172A !important;
+  background: var(--c-surface2);
+  border-color: var(--c-text-2);
+  color: var(--c-text);
 }
 
 .production-kpi-pill:focus-visible {
@@ -172,9 +160,9 @@
 }
 
 .production-conflict-notice {
-  background: #FFFBEB;
-  border: 1px solid #FCD34D;
-  color: #0F172A;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--c-text);
 }
 
 /* ==========================================================================
@@ -1186,15 +1174,15 @@ input[type="number"] {
 }
 
 .production-table tbody tr:hover {
-  background: rgba(248, 250, 252, 0.75);
+  background: var(--c-surface2);
 }
 
 .production-table tbody tr.production-row-selected {
-  background: rgba(239, 246, 255, 0.5);
+  background: var(--c-surface2);
 }
 
 .production-table tbody tr.production-row-selected:hover {
-  background: rgba(239, 246, 255, 0.75);
+  background: var(--c-surface2);
 }
 
 /* Checkbox Column */
@@ -1239,30 +1227,6 @@ input[type="number"] {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.production-status-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 4px;
-}
-
-.production-status-badge.emerald {
-  background: #ECFDF5;
-  color: #059669;
-}
-
-.production-status-badge.amber {
-  background: #FFFBEB;
-  color: #B45309;
-}
-
-.production-status-badge.red {
-  background: #FEF2F2;
-  color: #DC2626;
 }
 
 /* Tabular Numerals for Numeric & Timestamp Alignment */
@@ -1523,27 +1487,27 @@ input[type="number"] {
 }
 
 :root[data-theme='dark'] .production-kpi-pill.accepted {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.4);
-  color: #34D399;
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  color: var(--c-text-2);
 }
 
 :root[data-theme='dark'] .production-kpi-pill.specified {
-  background: rgba(37, 99, 235, 0.15);
-  border-color: rgba(59, 130, 246, 0.4);
-  color: #60A5FA;
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  color: var(--c-text-2);
 }
 
 :root[data-theme='dark'] .production-kpi-pill.unspecified {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.4);
-  color: #FBBF24;
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  color: var(--c-text-2);
 }
 
 :root[data-theme='dark'] .production-kpi-pill.production-kpi-active {
-  background: rgba(37, 99, 235, 0.25) !important;
-  border-color: #60A5FA !important;
-  color: #93C5FD !important;
+  background: var(--c-surface2);
+  border-color: var(--c-text-2);
+  color: var(--c-text);
 }
 
 :root[data-theme='dark'] .production-search-input,
@@ -1781,7 +1745,7 @@ input[type="number"] {
 .production-workspace .production-header-strip { justify-content: flex-start; }
 .production-workspace .production-filter-strip { margin-top: 14px; margin-bottom: 14px; }
 .production-workspace .production-kpi-pill { background: var(--prod-surface); border: 1px solid var(--prod-border); color: var(--prod-text-secondary); }
-.production-workspace .production-kpi-pill.production-kpi-active { border-color: var(--prod-accent); color: var(--prod-accent); }
+.production-workspace .production-kpi-pill.production-kpi-active { border-color: var(--c-text-2); color: var(--c-text); background: var(--c-surface2); }
 .production-calendar-day.is-future, .production-calendar-month-btn.is-future { color: var(--prod-text-muted); }
 .production-calendar-day:disabled, .production-calendar-month-btn:disabled { color: var(--prod-text-muted); opacity: 0.6; }
 .production-calendar-day:disabled, .production-calendar-month-btn:disabled { background: transparent; box-shadow: none; }
