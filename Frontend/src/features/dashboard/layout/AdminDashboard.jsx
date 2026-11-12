@@ -1,3 +1,4 @@
+import Status from '../../../shared/components/Status.jsx'
 import {
   BarChart3,
   Bell,
@@ -132,6 +133,7 @@ export default function AdminDashboard() {
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
+  const sidebarRef = useRef(null)
   const desktopSidebarToggleRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
@@ -187,9 +189,19 @@ export default function AdminDashboard() {
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      document.activeElement?.blur?.()
+    }
     setIsDrawerOpen(false)
     setIsAlertsOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (!isMobileViewport || isDrawerOpen) return
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      mobileMenuButtonRef.current?.focus({ preventScroll: true })
+    }
+  }, [isDrawerOpen, isMobileViewport])
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return undefined
@@ -582,6 +594,7 @@ export default function AdminDashboard() {
   return (
     <main className="dashboard-shell">
       <aside
+        ref={sidebarRef}
         className={`dashboard-sidebar ${isDesktopSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
         aria-hidden={isMobileViewport && !isDrawerOpen ? 'true' : undefined}
         inert={isMobileViewport && !isDrawerOpen}
@@ -632,6 +645,9 @@ export default function AdminDashboard() {
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
                       data-label={item.label}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
+                      onClick={(event) => {
+                        if (isMobileViewport) event.currentTarget.blur()
+                      }}
                       className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
                     >
                       <Icon
@@ -701,8 +717,8 @@ export default function AdminDashboard() {
 
           <div className="topbar-trailing">
             {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-controls" /> : null}
-            {cachedAlertsAt && !hasTrustedAlertList ? <span className="status-badge status-inactive">Cached alerts stale</span> : null}
-            <span className={`alert-connection-status is-${online ? alertConnectionStatus : 'degraded'}`} role="status">
+            {cachedAlertsAt && !hasTrustedAlertList ? <Status tone="danger">Cached alerts stale</Status> : null}
+            <Status value={online && alertConnectionStatus === 'live' ? 'active' : ''} tone={!online || alertConnectionStatus === 'degraded' ? 'danger' : undefined} role="status">
               {!online ? 'Offline' : alertConnectionStatus === 'live'
                 ? 'Live'
                 : alertConnectionStatus === 'polling'
@@ -712,7 +728,7 @@ export default function AdminDashboard() {
                     : alertConnectionStatus === 'degraded'
                       ? 'Real-time temporarily unavailable — retrying'
                       : 'Reconnecting'}
-            </span>
+            </Status>
             <div className="topbar-divider" aria-hidden="true" />
             <DashboardClock />
             <div className="topbar-divider" aria-hidden="true" />

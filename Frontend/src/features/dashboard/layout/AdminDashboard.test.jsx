@@ -1180,6 +1180,27 @@ describe('AdminDashboard alerts', () => {
     expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
   })
 
+  it('moves focus out of the sidebar before hiding it when entering mobile viewport', async () => {
+    const viewport = createControllableMatchMedia(false)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const sidebar = screen.getByRole('complementary')
+    const overviewLink = screen.getByRole('link', { name: 'Overview' })
+    overviewLink.focus()
+    expect(overviewLink).toHaveFocus()
+
+    act(() => viewport.setMatches(true))
+
+    await waitFor(() => {
+      expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+    })
+    expect(sidebar.contains(document.activeElement)).toBe(false)
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveFocus()
+  })
+
   it('renders topbar theme toggle and allows switching themes', async () => {
     const setThemeMock = vi.fn()
     const user = userEvent.setup()
