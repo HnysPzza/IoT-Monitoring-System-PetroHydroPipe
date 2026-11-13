@@ -5,10 +5,10 @@
   align-items: center;
   justify-content: center;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
-  min-height: 38px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   border: 1px solid var(--card-border, rgba(175, 192, 206, 0.16));
   border-radius: 10px;
