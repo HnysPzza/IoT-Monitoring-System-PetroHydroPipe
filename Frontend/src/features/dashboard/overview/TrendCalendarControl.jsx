@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 import '../../../shared/components/ui/calendar.css'
@@ -136,16 +136,20 @@ export default function TrendCalendarControl({
   const [isSelectingRange, setIsSelectingRange] = useState(false)
   const [hoveredDay, setHoveredDay] = useState(null)
   const [viewDate, setViewDate] = useState(() => selectedRange?.startDate || selectedDate || new Date())
+  const openModeRef = useRef(mode)
+  const didCommitRef = useRef(false)
 
   // Keep internal mode in sync when caller mode changes
   useEffect(() => {
     setDraftMode(mode)
   }, [mode])
 
-  // Synchronize draft state when popover opens
+  // Synchronize draft state when popover opens and revert previewed mode if abandoned
   function handleOpenChange(nextOpen) {
     setIsOpen(nextOpen)
     if (nextOpen) {
+      openModeRef.current = mode
+      didCommitRef.current = false
       setDraftMode(mode)
       setDraftDate(selectedDate)
       setDraftRange({
@@ -155,6 +159,21 @@ export default function TrendCalendarControl({
       setIsSelectingRange(false)
       setHoveredDay(null)
       setViewDate(selectedRange?.startDate || selectedDate || new Date())
+      return
+    }
+
+    if (!didCommitRef.current) {
+      if (openModeRef.current && openModeRef.current !== draftMode) {
+        onModeChange?.(openModeRef.current)
+      }
+      setDraftMode(openModeRef.current || mode)
+      setDraftDate(selectedDate)
+      setDraftRange({
+        startDate: selectedRange?.startDate || selectedDate || null,
+        endDate: selectedRange?.endDate || selectedDate || null,
+      })
+      setIsSelectingRange(false)
+      setHoveredDay(null)
     }
   }
 
@@ -206,8 +225,6 @@ export default function TrendCalendarControl({
     }
 
     setDraftDate(normalized)
-    onDateChange(normalized)
-    setIsOpen(false)
   }
 
   function handleApply() {
@@ -216,6 +233,7 @@ export default function TrendCalendarControl({
       const startDate = normalizeCalendarSelection('day', draftRange.startDate)
       const endDate = normalizeCalendarSelection('day', draftRange.endDate)
       if (maxDate && (startDate > maxDate || endDate > maxDate)) return
+      didCommitRef.current = true
       if (onRangeChange) {
         onRangeChange({ startDate, endDate })
       } else {
@@ -227,6 +245,7 @@ export default function TrendCalendarControl({
 
     const targetDate = draftDate || selectedDate
     if (!targetDate) {
+      didCommitRef.current = false
       setIsOpen(false)
       return
     }
@@ -234,12 +253,17 @@ export default function TrendCalendarControl({
     const normalized = normalizeCalendarSelection(draftMode, targetDate)
     if (maxDate && normalized > maxDate) return
 
+    didCommitRef.current = true
     onDateChange(normalized)
     setIsOpen(false)
   }
 
   function handleCancel() {
-    setDraftMode(mode)
+    didCommitRef.current = false
+    if (openModeRef.current && openModeRef.current !== draftMode) {
+      onModeChange?.(openModeRef.current)
+    }
+    setDraftMode(openModeRef.current || mode)
     setDraftDate(selectedDate)
     setDraftRange({
       startDate: selectedRange?.startDate || selectedDate || null,
@@ -250,12 +274,28 @@ export default function TrendCalendarControl({
     setIsOpen(false)
   }
 
+  const isNextYearDisabled = Boolean(maxDate && viewDate.getFullYear() >= maxDate.getFullYear())
+  const isNextMonthDisabled = Boolean(
+    maxDate
+    && (
+      viewDate.getFullYear() > maxDate.getFullYear()
+      || (viewDate.getFullYear() === maxDate.getFullYear() && viewDate.getMonth() >= maxDate.getMonth())
+    ),
+  )
+
   function handlePrevYear() {
     setViewDate((prev) => new Date(prev.getFullYear() - 1, prev.getMonth(), 1))
   }
 
   function handleNextYear() {
-    setViewDate((prev) => new Date(prev.getFullYear() + 1, prev.getMonth(), 1))
+    if (isNextYearDisabled) return
+    setViewDate((prev) => {
+      const nextYear = prev.getFullYear() + 1
+      const cappedMonth = maxDate && nextYear === maxDate.getFullYear()
+        ? Math.min(prev.getMonth(), maxDate.getMonth())
+        : prev.getMonth()
+      return new Date(nextYear, cappedMonth, 1)
+    })
   }
 
   function handlePrevMonth() {
@@ -263,6 +303,7 @@ export default function TrendCalendarControl({
   }
 
   function handleNextMonth() {
+    if (isNextMonthDisabled) return
     setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
   }
 
@@ -324,7 +365,7 @@ export default function TrendCalendarControl({
           >
             <CalendarDays size={16} aria-hidden="true" />
             <span className="trend-calendar-copy">
-              <span className="trend-calendar-kicker">{triggerLabel}</span>
+              {triggerLabel ? <span className="trend-calendar-kicker">{triggerLabel}</span> : null}
               {' '}
               <span className="trend-calendar-value">{rangeLabel}</span>
             </span>
@@ -371,6 +412,7 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next year"
+                      disabled={isNextYearDisabled}
                       onClick={handleNextYear}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -415,6 +457,7 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next month"
+                      disabled={isNextMonthDisabled}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -472,6 +515,7 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next month"
+                      disabled={isNextMonthDisabled}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight size={16} aria-hidden="true" />

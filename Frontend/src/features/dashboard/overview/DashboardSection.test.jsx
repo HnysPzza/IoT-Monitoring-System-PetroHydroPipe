@@ -394,7 +394,11 @@ describe('DashboardSection', () => {
 
       await user.click(screen.getByRole('button', { name: /selected period/i }))
       await user.click(screen.getByRole('button', { name: 'Weekly' }))
-      await user.click(await screen.findByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i }))
+      const weekButton = await screen.findByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i })
+      const callsBeforeWeekApply = getDashboardDowntimeImpact.mock.calls.length
+      await user.click(weekButton)
+      expect(getDashboardDowntimeImpact).toHaveBeenCalledTimes(callsBeforeWeekApply)
+      await user.click(screen.getByRole('button', { name: 'Apply' }))
 
       await waitFor(() => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
@@ -406,7 +410,10 @@ describe('DashboardSection', () => {
 
       await user.click(screen.getByRole('button', { name: /selected period/i }))
       await user.click(screen.getByRole('button', { name: 'Monthly' }))
+      const callsBeforeMonthApply = getDashboardDowntimeImpact.mock.calls.length
       await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
+      expect(getDashboardDowntimeImpact).toHaveBeenCalledTimes(callsBeforeMonthApply)
+      await user.click(screen.getByRole('button', { name: 'Apply' }))
 
       await waitFor(() => {
         expect(getDashboardDowntimeImpact).toHaveBeenLastCalledWith(
@@ -547,6 +554,33 @@ describe('DashboardSection', () => {
 
     expect(await screen.findByText('No downtime data is available for this range.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry chart' })).not.toBeInTheDocument()
+  })
+
+  it('renders an Overview heading, mobile machine summary at mobile width, and computed KPI helper subtitles', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query === '(max-width: 900px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+
+    try {
+      renderWithAuth(<DashboardSection />)
+
+      const heading = await screen.findByRole('heading', { level: 1, name: /overview/i })
+      expect(heading).toHaveClass('sr-only')
+      expect(document.querySelector('.overview-mobile-meta')).toHaveTextContent(/Spiral Mill 01.*5 \/ 5 reporting/i)
+
+      const kpiHelpers = document.querySelectorAll('.kpi-grid .stat-card .stat-helper')
+      expect(kpiHelpers).toHaveLength(4)
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
   })
 
   it('keeps a cached null chart visibly empty when its refresh fails', async () => {
@@ -712,7 +746,7 @@ describe('DashboardSection', () => {
 
     expect(await screen.findByText('Production Output')).toBeInTheDocument()
     const idleBannerText = await screen.findByText(
-      'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+      'S-01 Raw Material & Coil Joint is idle.',
     )
     const idleBanner = idleBannerText.closest('.overview-alert-banner')
     expect(idleBanner).toHaveClass('notice-idle')
@@ -723,7 +757,7 @@ describe('DashboardSection', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('S-04 Outside Filler Wire has no pulse.')
     expect(
-      screen.getByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      screen.getByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
   })
 
@@ -758,7 +792,7 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(
-      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
@@ -767,7 +801,7 @@ describe('DashboardSection', () => {
       await screen.findByText('S-01 Raw Material & Coil Joint process issue detected — trigger limit exceeded.'),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle.'),
     ).not.toBeInTheDocument()
   })
 
@@ -802,7 +836,7 @@ describe('DashboardSection', () => {
     )
 
     expect(
-      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
     expect(screen.getByText('This alert recovered. Acknowledgement required.')).toBeInTheDocument()
   })

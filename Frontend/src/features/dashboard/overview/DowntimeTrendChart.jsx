@@ -125,12 +125,12 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
     <div className="trend-chart-panel">
       <div role="img" aria-label="Downtime by non-overlapping period bar chart in minutes">
         <ResponsiveContainer width="100%" height={195} minWidth={0}>
-          <BarChart data={data} margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 26, right: 16, left: -4, bottom: 0 }}>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
-            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" label={{ value: `${thresholdMinutes}m threshold`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
+            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" label={{ value: `${thresholdMinutes}m threshold`, position: 'insideTopRight', dy: -20, fill: 'var(--status-downtime-text)', fontSize: 12, fontWeight: 600 }} />
             <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
               {data.map((item) => (
                 <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />

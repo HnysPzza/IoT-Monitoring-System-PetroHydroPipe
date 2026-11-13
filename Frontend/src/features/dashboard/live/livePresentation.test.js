@@ -54,7 +54,7 @@ describe('live sensor presentation', () => {
       sensors: [{ sensorCode: 'S-01', label: 'Raw Material & Coil Joint' }],
       primary: { sensorCode: 'S-01', label: 'Raw Material & Coil Joint' },
       extraCount: 0,
-      message: 'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+      message: 'S-01 Raw Material & Coil Joint is idle.',
     })
   })
 
@@ -68,13 +68,13 @@ describe('live sensor presentation', () => {
     const banner = getProcessIdleBanner([idleS01, graceS04], 'enforce')
     expect(banner).toMatchObject({
       extraCount: 1,
-      message: 'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+      message: 'S-01 Raw Material & Coil Joint is idle.',
     })
 
     const faultS02 = sensor({ sensorCode: 'S-02', status: 'Fault' })
     expect(getProcessIdleBanner([idleS01, faultS02], 'enforce')).toMatchObject({
       extraCount: 0,
-      message: 'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+      message: 'S-01 Raw Material & Coil Joint is idle.',
     })
     expect(getProcessIdleBanner([faultS02], 'enforce')).toBeNull()
   })

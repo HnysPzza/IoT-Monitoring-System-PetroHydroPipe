@@ -34,7 +34,7 @@ describe('TrendCalendarControl', () => {
     expect(trigger).not.toHaveAttribute('aria-label')
   })
 
-  it('opens the calendar and returns the selected local date', async () => {
+  it('stages a clicked local date and waits for Apply before committing', async () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar()
 
@@ -42,11 +42,17 @@ describe('TrendCalendarControl', () => {
     await user.click(trigger)
     await user.click(await screen.findByRole('button', { name: /july 14th, 2026/i }))
 
+    expect(onDateChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('Jul 14, 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 14))
     expect(trigger).toHaveFocus()
   }, 15000)
 
-  it('offers months only and returns the first local day of the selected month', async () => {
+  it('offers months only and commits the first local day of the selected month on Apply', async () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar({
       mode: 'month',
@@ -58,10 +64,16 @@ describe('TrendCalendarControl', () => {
     expect(screen.queryByRole('button', { name: /july 8th, 2026/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Jun 2026' }))
 
+    expect(onDateChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('June 2026')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 5, 1))
   })
 
-  it('offers whole weeks instead of individual day choices', async () => {
+  it('offers whole weeks instead of individual day choices and commits on Apply', async () => {
     const user = userEvent.setup()
     const { onDateChange } = renderCalendar({
       mode: 'week',
@@ -75,7 +87,33 @@ describe('TrendCalendarControl', () => {
     expect(selectedWeek).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i }))
 
+    expect(onDateChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
     expect(onDateChange).toHaveBeenCalledWith(new Date(2026, 6, 6))
+  })
+
+  it('discards a staged date click when Cancel is clicked', async () => {
+    const user = userEvent.setup()
+    const { onDateChange } = renderCalendar()
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    const day14 = await screen.findByRole('button', { name: /july 14th, 2026/i })
+    await user.click(day14)
+
+    expect(day14).toHaveAttribute('aria-pressed', 'true')
+    expect(onDateChange).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(onDateChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    expect(await screen.findByRole('button', { name: /july 15th, 2026/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /july 14th, 2026/i })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('marks future weeks and returns focus on Escape', async () => {
@@ -256,6 +294,59 @@ describe('TrendCalendarControl', () => {
       startDate: new Date(2026, 6, 10),
       endDate: new Date(2026, 6, 14),
     })
+  })
+
+  it('reverts previewed preset mode back to initial mode when closed via Cancel or Escape without applying', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 6, 20, 12))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const onModeChange = vi.fn()
+    const onRangeChange = vi.fn()
+
+    try {
+      renderCalendar({
+        mode: 'today',
+        onModeChange,
+        onRangeChange,
+      })
+
+      await user.click(screen.getByRole('button', { name: /selected period/i }))
+      await user.click(screen.getByRole('button', { name: 'Weekly' }))
+      expect(onModeChange).toHaveBeenCalledWith('week')
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(onModeChange).toHaveBeenLastCalledWith('today')
+
+      await user.click(screen.getByRole('button', { name: /selected period/i }))
+      await user.click(screen.getByRole('button', { name: 'Monthly' }))
+      expect(onModeChange).toHaveBeenLastCalledWith('month')
+
+      await user.keyboard('{Escape}')
+      expect(onModeChange).toHaveBeenLastCalledWith('today')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('disables forward navigation controls when viewing the maximum allowed month or year', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 6, 20, 12))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    try {
+      renderCalendar({
+        mode: 'today',
+        selectedDate: new Date(2026, 6, 20),
+        maxDate: new Date(2026, 6, 20),
+      })
+
+      await user.click(screen.getByRole('button', { name: /selected period/i }))
+      expect(screen.getByRole('button', { name: /next month/i })).toBeDisabled()
+      await user.click(screen.getByRole('button', { name: 'Monthly' }))
+      expect(screen.getByRole('button', { name: /next year/i })).toBeDisabled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

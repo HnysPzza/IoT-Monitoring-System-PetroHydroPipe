@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Link, useOutletContext } from 'react-router'
 import { AlertTriangle, CircleCheck, Clock3, Factory, MoveRight, PackageCheck, PauseCircle, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useMobileViewport } from '../../../shared/hooks/useMobileViewport.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { onlineManager } from '@tanstack/react-query'
@@ -35,23 +36,29 @@ function SkeletonBlock({ className = '', style }) {
 
 function DowntimeChartSkeleton() {
   return (
-    <div role="status" aria-live="polite">
+    <div className="trend-chart-panel" role="status" aria-live="polite">
       <span className="sr-only">Loading downtime chart...</span>
-      <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
+      <SkeletonBlock className="overview-skeleton-chart-panel is-downtime" />
     </div>
   )
 }
 
 function ProductionAnalyticsSkeleton() {
   return (
-    <section className="section-card production-analytics-card" aria-label="Loading production analytics">
-      <div className="section-heading">
-        <div>
-          <p className="section-eyebrow">Data analytics</p>
-          <SkeletonBlock className="skeleton-heading" />
-        </div>
+    <section
+      className="section-card production-analytics-card industrial-chart-card"
+      aria-label="Loading production analytics"
+    >
+      <div className="section-heading" aria-hidden="true">
+        <SkeletonBlock className="overview-skeleton-chart-title" />
       </div>
-      <div className="skeleton skeleton-chart-panel" aria-hidden="true" />
+      <div className="analytics-chart industrial-recharts-panel" aria-hidden="true">
+        <div className="chart-legend overview-skeleton-legend">
+          <SkeletonBlock className="overview-skeleton-legend-item" />
+          <SkeletonBlock className="overview-skeleton-legend-item" />
+        </div>
+        <SkeletonBlock className="overview-skeleton-chart-panel" />
+      </div>
     </section>
   )
 }
@@ -61,11 +68,16 @@ function OverviewLoadingState() {
     <div className="kpi-grid" role="status" aria-live="polite">
       <span className="sr-only">Loading dashboard overview...</span>
       {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="section-card stat-card">
-          <SkeletonBlock className="skeleton-label" />
-          <SkeletonBlock className="skeleton-value" />
-          <SkeletonBlock className="skeleton-meta" />
-        </div>
+        <article key={index} className="section-card stat-card">
+          <div className="stat-card-heading" aria-hidden="true">
+            <span className="stat-card-icon">
+              <SkeletonBlock className="overview-skeleton-kpi-icon" />
+            </span>
+            <SkeletonBlock className="overview-skeleton-kpi-label" />
+          </div>
+          <SkeletonBlock className="overview-skeleton-kpi-value" />
+          <SkeletonBlock className="overview-skeleton-kpi-helper" />
+        </article>
       ))}
     </div>
   )
@@ -344,25 +356,32 @@ export default function DashboardSection() {
     void chartQuery.refetch()
   }
 
+  const resolvedMachineName = hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'
+  const resolvedReportingCopy = hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : 'Reporting unavailable'
+  const resolvedSyncedCopy = hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Not synced'
+  const isMobileViewport = useMobileViewport()
+
   const controls = (
       <div className="overview-controls-card">
-        <div className="overview-meta-strip">
-          <span className="overview-meta-item">
-            <Factory size={16} aria-hidden="true" />
+        {!isMobileViewport ? (
+          <div className="overview-meta-strip">
+            <span className="overview-meta-item">
+              <Factory size={16} aria-hidden="true" />
 
-            <strong>{hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'}</strong>
-          </span>
-          <span className="overview-meta-item">
-            <CircleCheck size={16} aria-hidden="true" />
+              <strong>{resolvedMachineName}</strong>
+            </span>
+            <span className="overview-meta-item">
+              <CircleCheck size={16} aria-hidden="true" />
 
-            <strong>{hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : 'Reporting unavailable'}</strong>
-          </span>
-          <span className="overview-meta-item">
-            <Clock3 size={16} aria-hidden="true" />
+              <strong>{resolvedReportingCopy}</strong>
+            </span>
+            <span className="overview-meta-item">
+              <Clock3 size={16} aria-hidden="true" />
 
-            <strong>{hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Not synced'}</strong>
-          </span>
-        </div>
+              <strong>{resolvedSyncedCopy}</strong>
+            </span>
+          </div>
+        ) : null}
         <button
           className="icon-button overview-refresh-button"
           type="button"
@@ -385,6 +404,17 @@ export default function DashboardSection() {
   return (
     <div className="overview-layout">
       {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
+
+      <h1 className="sr-only">Overview</h1>
+      {isMobileViewport ? (
+        <p className="overview-mobile-meta">
+          <span>{resolvedMachineName}</span>
+          <span aria-hidden="true">·</span>
+          <span>{resolvedReportingCopy}</span>
+          <span aria-hidden="true">·</span>
+          <span>{resolvedSyncedCopy}</span>
+        </p>
+      ) : null}
 
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
@@ -501,6 +531,7 @@ export default function DashboardSection() {
                 <p className="stat-label">{item.label}</p>
               </div>
               <p className="stat-value">{item.value}</p>
+              {item.helper ? <p className="stat-helper">{item.helper}</p> : null}
             </article>
           )
         })}
@@ -517,14 +548,14 @@ export default function DashboardSection() {
           <div className="section-heading">
             <div>
               {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
-                <SkeletonBlock className="skeleton-heading" />
+                <SkeletonBlock className="overview-skeleton-chart-title" />
               ) : (
                 <h2>Downtime by Period</h2>
               )}
             </div>
             {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
               <div className="trend-controls-skeleton" aria-hidden="true">
-                <SkeletonBlock className="skeleton-control" />
+                <SkeletonBlock className="overview-skeleton-trigger" />
               </div>
             ) : (
               <div className="trend-controls" aria-label="Downtime chart controls">
@@ -595,9 +626,25 @@ export default function DashboardSection() {
           </div>
         </section>
       ) : liveDisplayState === 'loading' && !hasCurrentLive ? (
-        <section className="section-card machine-health-card" aria-label="Loading live machine status">
-          <SkeletonBlock className="skeleton-heading" />
-          <SkeletonBlock className="skeleton-panel" />
+        <section className="machine-health-card" aria-label="Loading live machine status">
+          <div className="section-heading" aria-hidden="true">
+            <SkeletonBlock className="overview-skeleton-health-title" />
+          </div>
+          <div className="overview-sensor-grid" aria-hidden="true">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <article key={index} className="section-card sensor-card overview-sensor-card">
+                <div className="overview-sensor-heading">
+                  <SkeletonBlock className="overview-skeleton-sensor-code" />
+                  <SkeletonBlock className="overview-skeleton-sensor-status" />
+                </div>
+                <SkeletonBlock className="overview-skeleton-sensor-name" />
+                <div className="overview-sensor-footer">
+                  <SkeletonBlock className="overview-skeleton-sensor-meta" />
+                  <SkeletonBlock className="overview-skeleton-sensor-meta is-short" />
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       ) : hasCurrentLive && !liveData.machine ? (
         <section className="section-card section-placeholder" aria-labelledby="live-source-empty-title">

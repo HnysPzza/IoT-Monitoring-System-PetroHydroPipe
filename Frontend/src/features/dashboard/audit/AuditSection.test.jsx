@@ -231,6 +231,8 @@ describe('AuditSection', () => {
       .find((button) => !button.disabled && /^\d+$/.test(button.textContent.trim()))
 
     await user.click(dayButton)
+    expect(screen.queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     const clearButton = await screen.findByRole('button', { name: 'Clear date' })
     expect(clearButton).toHaveClass('reports-icon-button', 'audit-date-clear')
@@ -259,9 +261,10 @@ describe('AuditSection', () => {
     const weekButtons = await screen.findAllByRole('button', { name: /select week/i })
     expect(weekButtons.length).toBeGreaterThan(0)
 
-    // Select the first enabled week button
+    // Select the first enabled week button and commit with Apply
     const enabledWeek = weekButtons.find((btn) => !btn.disabled)
     await user.click(enabledWeek)
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() => {
       expect(getAuditLogs).toHaveBeenCalledWith(
@@ -293,6 +296,7 @@ describe('AuditSection', () => {
     await user.click(screen.getByRole('button', { name: /previous year/i }))
     const enabledMonth = (await screen.findAllByRole('button', { name: /[A-Z][a-z]{2} \d{4}/ })).find((btn) => !btn.disabled)
     await user.click(enabledMonth)
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() => {
       expect(getAuditLogs).toHaveBeenCalledWith(

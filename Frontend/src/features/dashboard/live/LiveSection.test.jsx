@@ -176,7 +176,7 @@ describe('LiveSection polling', () => {
     renderWithAuth(<LiveSection />)
 
     const idleText = await screen.findByText(
-      'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+      'S-01 Raw Material & Coil Joint is idle.',
     )
     expect(idleText.closest('.overview-alert-banner')).toHaveClass('notice-idle')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -185,7 +185,7 @@ describe('LiveSection polling', () => {
 
     expect(await screen.findByText('Fault')).toHaveClass('status', 'status-danger')
     expect(
-      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle.'),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText(/process issue detected/i)).not.toBeInTheDocument()
@@ -213,7 +213,7 @@ describe('LiveSection polling', () => {
 
     expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
     expect(
-      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('S-04 Outside Filler Wire has no pulse.')).not.toBeInTheDocument()
@@ -245,7 +245,7 @@ describe('LiveSection polling', () => {
     )
 
     expect(
-      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -281,7 +281,7 @@ describe('LiveSection polling', () => {
     renderWithAuth(<LiveSection />)
 
     const primaryIdleCode = orderedIdleCodes[0]
-    const expectedMessage = `${primaryIdleCode} ${getSensorLabel(primaryIdleCode)} is idle — within trigger limit for material changeover.`
+    const expectedMessage = `${primaryIdleCode} ${getSensorLabel(primaryIdleCode)} is idle.`
     const idleBannerText = await screen.findByText(expectedMessage)
     const banner = idleBannerText.closest('.overview-alert-banner')
     expect(banner).toHaveClass('notice-idle')

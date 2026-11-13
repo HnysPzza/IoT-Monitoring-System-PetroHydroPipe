@@ -213,6 +213,7 @@ async function selectReportDate(user, dateName) {
     await user.click(await screen.findByRole('button', { name: /previous month/i }))
   }
   await user.click(await screen.findByRole('button', { name: dateName }))
+  await user.click(screen.getByRole('button', { name: 'Apply' }))
 }
 
 async function selectReportCategory(user, categoryLabel) {

@@ -115,6 +115,6 @@ export function getProcessIdleBanner(sensors = [], mode = 'unknown') {
     sensors: idleSensors,
     primary,
     extraCount: idleSensors.length - 1,
-    message: `${primary.sensorCode} ${primary.label} is idle — within trigger limit for material changeover.`,
+    message: `${primary.sensorCode} ${primary.label} is idle.`,
   }
 }
