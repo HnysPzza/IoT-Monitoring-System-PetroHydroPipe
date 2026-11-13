@@ -148,43 +148,96 @@ it.each([
   { mode: 'change', props: { changePassword: true }, title: 'Change password' },
   { mode: 'setup', props: {}, title: 'Create password' },
   { mode: 'reset', props: { resetPassword: true }, title: 'Reset password' },
-])('renders the unified card design without radio checklist and shows inline field warnings in $mode mode', async ({ props, title }) => {
+])('shows upfront 4-rule checklist and validates calmly on blur/submit without keystroke-1 shake in $mode mode', async ({ props, title }) => {
   if (!props.changePassword) {
     window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
   }
   const user = userEvent.setup()
   render(<MemoryRouter><PasswordSetupPage {...props} /></MemoryRouter>)
 
+  if (props.changePassword) {
+    await user.type(screen.getByLabelText('Current password'), 'temporary-password')
+  }
   const newInput = await screen.findByLabelText('New password')
   const confirmInput = screen.getByLabelText('Confirm password')
+  const newShell = newInput.closest('.input-shell')
+  const confirmShell = confirmInput.closest('.input-shell')
 
   expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
   expect(screen.getByText('0 / 72 chars')).toBeInTheDocument()
-  expect(screen.queryByRole('list', { name: /password requirements/i })).not.toBeInTheDocument()
+  expect(screen.getByRole('list', { name: /password requirements/i })).toBeInTheDocument()
+  expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  expect(screen.getByText(/strength:\s*none/i)).toBeInTheDocument()
 
   await user.type(newInput, 'weakpass')
   expect(screen.getByText('8 / 72 chars')).toBeInTheDocument()
+  expect(screen.getByText(/strength:\s*weak/i)).toBeInTheDocument()
+  expect(newShell).not.toHaveClass('has-error')
+  expect(newShell).not.toHaveClass('shake')
+
+  await user.tab()
   expect(screen.getByText(/include at least 12 characters, uppercase, lowercase, a number, and a special character/i)).toBeInTheDocument()
-  expect(newInput.closest('.password-input-shell-compact')).toHaveClass('has-error')
-  expect(newInput.closest('.password-input-shell-compact')).toHaveClass('shake')
+  expect(newShell).toHaveClass('has-error')
+  expect(newShell).not.toHaveClass('shake')
+
+  await user.click(screen.getByRole('button', { name: title === 'Change password' ? 'Change password' : title === 'Reset password' ? 'Reset password' : 'Set password' }))
+  expect(newShell).toHaveClass('shake')
 
   await user.clear(newInput)
   await user.type(newInput, 'Valid-password1!')
   expect(screen.queryByText(/include at least 12 characters, uppercase, lowercase, a number, and a special character/i)).not.toBeInTheDocument()
-  expect(newInput.closest('.password-input-shell-compact')).not.toHaveClass('has-error')
+  expect(newShell).not.toHaveClass('has-error')
+  expect(screen.getByText(/strength:\s*strong/i)).toBeInTheDocument()
 
   await user.type(confirmInput, 'Mismatch-pass1!')
+  expect(screen.getByText(/strength:\s*strong/i)).toBeInTheDocument()
+  expect(confirmShell).not.toHaveClass('has-error')
+  expect(confirmShell).not.toHaveClass('shake')
+
+  await user.tab()
   expect(screen.getByText('Passwords do not match.')).toBeInTheDocument()
-  expect(confirmInput.closest('.password-input-shell-compact')).toHaveClass('has-error')
-  expect(confirmInput.closest('.password-input-shell-compact')).toHaveClass('shake')
+  expect(confirmShell).toHaveClass('has-error')
+  expect(confirmShell).not.toHaveClass('shake')
+
+  await user.click(screen.getByRole('button', { name: title === 'Change password' ? 'Change password' : title === 'Reset password' ? 'Reset password' : 'Set password' }))
+  expect(confirmShell).toHaveClass('shake')
+  expect(screen.getAllByText('Passwords do not match.')).toHaveLength(1)
 
   await user.clear(confirmInput)
   await user.type(confirmInput, 'Valid-password1!')
   expect(screen.queryByText('Passwords do not match.')).not.toBeInTheDocument()
-  expect(confirmInput.closest('.password-input-shell-compact')).not.toHaveClass('has-error')
+  expect(confirmShell).not.toHaveClass('has-error')
+  expect(screen.getByText(/strength:\s*strong/i)).toBeInTheDocument()
 })
 
-it('shows inline error with thick left red border and subtle shake on current password when incorrect', async () => {
+it('shows remaining link lifetime on valid email link views', async () => {
+  window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
+  apiRequest.mockResolvedValueOnce({ validForMs: 3600000 })
+  render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+  await screen.findByLabelText('New password')
+  expect(screen.getByText(/expires in about 60 min/i)).toBeInTheDocument()
+})
+
+it('shows Managing Director recovery guidance when a link is missing or expired', () => {
+  window.history.replaceState(null, '', '/setup-password')
+  render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+  expect(screen.getByRole('alert')).toHaveTextContent(/managing director/i)
+})
+
+it('shows Caps Lock warning when Caps Lock is active on password fields', async () => {
+  window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
+  const user = userEvent.setup()
+  render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+  const newInput = await screen.findByLabelText('New password')
+  await user.click(newInput)
+  await user.keyboard('{CapsLock}')
+  expect(screen.getByText('Caps Lock is active.')).toBeInTheDocument()
+})
+
+it('shows inline error with shake and keeps focus on current password when incorrect', async () => {
   apiRequest.mockRejectedValueOnce({ code: 'PASSWORD_INCORRECT' })
   const user = userEvent.setup()
 
@@ -197,9 +250,65 @@ it('shows inline error with thick left red border and subtle shake on current pa
   await user.click(screen.getByRole('button', { name: 'Change password' }))
 
   expect(await screen.findByText('Password does not match.')).toBeInTheDocument()
-  const currentShell = currentInput.closest('.password-input-shell-compact')
+  const currentShell = currentInput.closest('.input-shell')
   expect(currentShell).toHaveClass('has-error')
   expect(currentShell).toHaveClass('shake')
+  await waitFor(() => expect(currentInput).toHaveFocus())
+})
+
+it('shows clear message and focuses current password when blank on submit', async () => {
+  const user = userEvent.setup()
+  render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+
+  const currentInput = screen.getByLabelText('Current password')
+  await user.type(screen.getByLabelText('New password'), 'Valid-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'Valid-password1!')
+  await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Current password is required.')
+  expect(currentInput).toHaveFocus()
+})
+
+it('keeps valid setup form mounted and typed values intact across window focus switches', async () => {
+  window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
+  const user = userEvent.setup()
+  render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+  const newInput = await screen.findByLabelText('New password')
+  await user.type(newInput, 'PartialPass1!')
+  await user.click(screen.getByRole('button', { name: 'Show new password' }))
+
+  act(() => {
+    window.dispatchEvent(new Event('focus'))
+  })
+
+  expect(screen.queryByText(/checking link/i)).not.toBeInTheDocument()
+  expect(screen.getByLabelText('New password')).toHaveValue('PartialPass1!')
+  expect(screen.getByLabelText('New password')).toHaveAttribute('type', 'text')
+  expect(apiRequest).toHaveBeenCalledTimes(1)
+})
+
+it('shows rate-limit guidance when link validation is rate limited', async () => {
+  window.history.replaceState(null, '', `/setup-password#token=${'a'.repeat(64)}`)
+  apiRequest.mockRejectedValueOnce({ code: 'RATE_LIMITED' })
+  render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i)
+})
+
+it('shows Managing Director recovery guidance for ACCOUNT_OPERATION_INVALID in change mode', async () => {
+  apiRequest.mockRejectedValueOnce({ code: 'ACCOUNT_OPERATION_INVALID' })
+  const user = userEvent.setup()
+  render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+
+  await user.type(screen.getByLabelText('Current password'), 'temporary-password')
+  await user.type(screen.getByLabelText('New password'), 'Replacement-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'Replacement-password1!')
+  await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent(/managing director/i)
+  expect(alert).not.toHaveTextContent(/link expired or used/i)
 })
 
 it('submits the legacy password change and signs out after success', async () => {
@@ -208,7 +317,7 @@ it('submits the legacy password change and signs out after success', async () =>
 
   render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
 
-  expect(document.querySelector('.password-auth-page')).toHaveClass('password-auth-page-legacy')
+  expect(screen.getByRole('heading', { name: 'Change password' })).toBeInTheDocument()
   expect(screen.queryByText(/temporary password must be replaced before dashboard access/i)).not.toBeInTheDocument()
   expect(screen.queryByText('Private by design')).not.toBeInTheDocument()
   expect(screen.queryByText('Fresh sign-in required')).not.toBeInTheDocument()
@@ -227,6 +336,22 @@ it('submits the legacy password change and signs out after success', async () =>
     },
   }))
   expect(authState.logout).toHaveBeenCalledOnce()
+})
+
+it('keeps password-saved confirmation even if logout rejects after change-password succeeds', async () => {
+  apiRequest.mockResolvedValue({ completed: true })
+  authState.logout.mockRejectedValueOnce(new Error('Network down'))
+  const user = userEvent.setup()
+
+  render(<MemoryRouter><PasswordSetupPage changePassword /></MemoryRouter>)
+
+  await user.type(screen.getByLabelText('Current password'), 'temporary-password')
+  await user.type(screen.getByLabelText('New password'), 'Replacement-password1!')
+  await user.type(screen.getByLabelText('Confirm password'), 'Replacement-password1!')
+  await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+  expect(await screen.findByText(/Password saved/)).toBeInTheDocument()
+  expect(screen.queryByText(/Could not save password/i)).not.toBeInTheDocument()
 })
 
 it('explains rate limits without clearing the password form', async () => {
