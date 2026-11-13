@@ -1,15 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
-import {
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  Lock,
-  ShieldCheck,
-  User,
-  Zap,
-} from 'lucide-react'
+import { CheckCircle2, CircleAlert, User } from 'lucide-react'
+import { getRoleDisplayName } from '../../shared/constants/roleLabels.js'
 import { useAuth } from '../../shared/hooks/useAuth.js'
+import { AuthShell, PasswordInput } from './AuthShell.jsx'
 import { getSafeDashboardPath } from './authNavigation.js'
 
 const initialValues = {
@@ -17,9 +11,15 @@ const initialValues = {
   password: '',
 }
 
-function isWrongPasswordError(message) {
+function isWrongPasswordError(error) {
+  if (!error) return false
+  if (typeof error === 'object') {
+    if (error.code === 'INVALID_CREDENTIALS' || error.status === 401) return true
+    if (error.code) return false
+  }
+  const message = typeof error === 'string' ? error : error.message
   if (!message) return false
-  return /password|invalid|credential|incorrect|wrong|unauthorized/i.test(message)
+  return /invalid (username|password|credentials)|incorrect (username|password|credentials)|wrong (username|password|credentials)/i.test(message)
 }
 
 function validate(values) {
@@ -31,49 +31,63 @@ function validate(values) {
 
   if (!values.password) {
     nextErrors.password = 'Password is required.'
-  } else if (values.password.length < 6) {
-    nextErrors.password = 'Password must be at least 6 characters.'
   }
 
   return nextErrors
 }
 
+// Authenticates plant staff and routes each role to its authorized workspace.
 export default function LoginPage() {
+  const location = useLocation()
   const [values, setValues] = useState(initialValues)
   const [errors, setErrors] = useState({})
   const [touched, setTouched] = useState({})
-  const [showPassword, setShowPassword] = useState(false)
-  const [capsLockOn, setCapsLockOn] = useState(false)
   const [serverError, setServerError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
+  const [serverErrorWrongPassword, setServerErrorWrongPassword] = useState(false)
+  const [successMessage, setSuccessMessage] = useState(() => (
+    location.state?.passwordChanged ? 'Password updated. Sign in with your new password.' : ''
+  ))
   const [submitState, setSubmitState] = useState('idle')
   const [shake, setShake] = useState(false)
+  const mountedRef = useRef(true)
   const usernameRef = useRef(null)
   const passwordRef = useRef(null)
+  const redirectTimerRef = useRef(null)
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const nextQueryTarget = new URLSearchParams(location.search).get('next')
   const intendedRoute = getSafeDashboardPath(nextQueryTarget || location.state?.from)
+  const managingDirectorLabel = getRoleDisplayName('Admin')
+  const isBusy = submitState !== 'idle'
 
-  // Focus username first so operators can start typing immediately.
   useEffect(() => {
+    mountedRef.current = true
     usernameRef.current?.focus()
+    return () => {
+      mountedRef.current = false
+      window.clearTimeout(redirectTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
-    // If the user is already logged in, skip the login page.
-    if (isAuthenticated) {
+    if (location.state?.passwordChanged) {
+      setSuccessMessage('Password updated. Sign in with your new password.')
+    }
+  }, [location.state])
+
+  useEffect(() => {
+    // Redirect already-signed-in visitors without preempting active sign-in confirmation.
+    if (isAuthenticated && submitState === 'idle') {
       navigate(intendedRoute, { replace: true })
     }
-  }, [intendedRoute, isAuthenticated, navigate])
-
+  }, [intendedRoute, isAuthenticated, navigate, submitState])
 
   function updateField(event) {
     const { name, value } = event.target
     const nextValues = { ...values, [name]: value }
     setValues(nextValues)
     setServerError('')
+    setServerErrorWrongPassword(false)
     setShake(false)
 
     if (touched[name]) {
@@ -82,19 +96,16 @@ export default function LoginPage() {
   }
 
   function handleBlur(event) {
-    const nextTouched = { ...touched, [event.target.name]: true }
-    setTouched(nextTouched)
+    setTouched((prev) => ({ ...prev, [event.target.name]: true }))
     setErrors(validate(values))
-  }
-
-  function handlePasswordKey(event) {
-    setCapsLockOn(event.getModifierState?.('CapsLock') || false)
   }
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (submitState !== 'idle') return
     setTouched({ username: true, password: true })
     setServerError('')
+    setServerErrorWrongPassword(false)
     setShake(false)
     setSuccessMessage('')
 
@@ -102,8 +113,10 @@ export default function LoginPage() {
     setErrors(nextErrors)
 
     if (Object.keys(nextErrors).length > 0) {
-      if (nextErrors.password) {
-        setShake(true)
+      if (nextErrors.password) setShake(true)
+      if (nextErrors.username) {
+        usernameRef.current?.focus()
+      } else if (nextErrors.password) {
         passwordRef.current?.focus()
       }
       return
@@ -111,21 +124,27 @@ export default function LoginPage() {
 
     try {
       setSubmitState('loading')
-      // Calls AuthContext.login, which stores the returned backend/mock auth payload.
       await login({
         username: values.username.trim(),
         password: values.password,
       })
+      if (!mountedRef.current) return
       setSubmitState('success')
       setSuccessMessage('Access granted. Loading dashboard.')
-      window.setTimeout(() => {
-        navigate(intendedRoute, { replace: true })
-      }, 450)
+      window.clearTimeout(redirectTimerRef.current)
+      redirectTimerRef.current = window.setTimeout(() => {
+        if (mountedRef.current) {
+          navigate(intendedRoute, { replace: true })
+        }
+      }, 300)
     } catch (error) {
+      if (!mountedRef.current) return
       setSubmitState('idle')
       const message = error.message || 'Unable to sign in. Please try again.'
+      const wrongPassword = isWrongPasswordError(error)
       setServerError(message)
-      if (isWrongPasswordError(message)) {
+      setServerErrorWrongPassword(wrongPassword)
+      if (wrongPassword) {
         setShake(true)
         passwordRef.current?.focus()
       }
@@ -133,141 +152,87 @@ export default function LoginPage() {
   }
 
   const usernameError = touched.username ? errors.username : ''
-  const isWrongPassword = isWrongPasswordError(serverError)
+  const isWrongPassword = serverErrorWrongPassword
   const passwordError = touched.password ? errors.password : ''
   const passwordHasError = Boolean(passwordError || isWrongPassword)
   const passwordErrorMessage = passwordError || (isWrongPassword ? serverError : '')
 
   return (
-    <main className="login-page">
-      <section className="brand-panel" aria-label="System information">
-        <div className="brand-content">
-          <div className="brand-logo-row">
-            <img
-              className="brand-logo"
-              src="/assets/logo.png"
-              alt="PetroHydroPipe logo"
-              onError={(event) => {
-                event.currentTarget.style.display = 'none'
-              }}
-            />
-            <div className="logo-fallback" aria-hidden="true">
-              <Zap size={22} />
-              <span>PetroHydroPipe</span>
-            </div>
-          </div>
+    <AuthShell panelLabelledBy="login-title" cardKey="login">
+      <div className="login-heading">
+        <h1 id="login-title">Sign in to PHP-Monitoring</h1>
+        <p>Access monitoring dashboards for your assigned plant role.</p>
+      </div>
 
-          <div>
-            <p className="eyebrow">PetroHydroPipe</p>
-            <p className="system-title">IoT Machine Monitoring System</p>
-            <p className="facility">Dunggoan, Danao City, Cebu</p>
-          </div>
-
+      {!isWrongPassword && serverError ? (
+        <div className="notice notice-error" role="alert">
+          <CircleAlert size={16} aria-hidden="true" />
+          <span>{serverError}</span>
         </div>
-      </section>
+      ) : null}
 
-      <section className="form-panel" aria-labelledby="login-title">
-        <form id="login-form" name="login" className="login-card" onSubmit={handleSubmit} autoComplete="on" noValidate>
-          <span className="security-badge">
-            <ShieldCheck size={16} aria-hidden="true" />
-            SECURED SYSTEM ACCESS
-          </span>
+      {successMessage ? (
+        <div className="notice notice-success" role="status">
+          <CheckCircle2 size={16} aria-hidden="true" />
+          <span>{successMessage}</span>
+        </div>
+      ) : null}
 
-          <div className="login-heading">
-            <h1 id="login-title">Administrator Login</h1>
-            <p>Authorized personnel only. All sessions are logged and audited.</p>
+      <form id="login-form" name="login" className="auth-form" onSubmit={handleSubmit} autoComplete="on" noValidate>
+        <div className="field">
+          <label htmlFor="username">Username</label>
+          <div className={`input-shell ${usernameError ? 'has-error' : ''}`}>
+            <User size={18} aria-hidden="true" />
+            <input
+              ref={usernameRef}
+              id="username"
+              name="username"
+              type="text"
+              placeholder="Enter username"
+              value={values.username}
+              disabled={isBusy}
+              onChange={updateField}
+              onBlur={handleBlur}
+              autoComplete="username"
+              aria-invalid={Boolean(usernameError)}
+              aria-describedby={usernameError ? 'username-error' : undefined}
+            />
           </div>
-
-          {!isWrongPassword && serverError ? (
-            <div className="notice notice-error" role="alert">
-              <span>{serverError}</span>
-            </div>
+          {usernameError ? (
+            <p className="field-error" id="username-error" role="alert">
+              {usernameError}
+            </p>
           ) : null}
+        </div>
 
-          {successMessage ? (
-            <div className="banner banner-success" role="status">
-              <span>{successMessage}</span>
-            </div>
-          ) : null}
+        <PasswordInput
+          id="password"
+          name="password"
+          label="Password"
+          placeholder="Enter password"
+          autoComplete="current-password"
+          inputRef={passwordRef}
+          value={values.password}
+          disabled={isBusy}
+          onChange={updateField}
+          onBlur={handleBlur}
+          hasError={passwordHasError}
+          errorMessage={passwordErrorMessage}
+          errorRole="alert"
+          shake={shake}
+          onAnimationEnd={() => setShake(false)}
+        />
 
-          <div className="field">
-            <label htmlFor="username">Username</label>
-            <div className={`input-shell ${usernameError ? 'has-error' : ''}`}>
-              <User size={18} aria-hidden="true" />
-              <input
-                ref={usernameRef}
-                id="username"
-                name="username"
-                type="text"
-                placeholder="Enter username"
-                value={values.username}
-                onChange={updateField}
-                onBlur={handleBlur}
-                autoComplete="username"
-                aria-invalid={Boolean(usernameError)}
-                aria-describedby={usernameError ? 'username-error' : undefined}
-              />
-            </div>
-            {usernameError ? (
-              <p className="field-error" id="username-error" role="alert">
-                {usernameError}
-              </p>
-            ) : null}
-          </div>
+        <button className="btn btn-primary" type="submit" disabled={isBusy}>
+          {submitState === 'loading' ? <span className="spinner" aria-hidden="true" /> : null}
+          {submitState === 'success' ? <CheckCircle2 size={18} aria-hidden="true" /> : null}
+          {submitState === 'loading' ? 'Verifying Access' : submitState === 'success' ? 'Access Granted' : 'Sign In'}
+        </button>
+      </form>
 
-          <div className="field">
-            <label htmlFor="password">Password</label>
-            <div
-              className={`input-shell ${passwordHasError ? 'has-error' : ''} ${shake ? 'shake' : ''}`}
-              onAnimationEnd={() => setShake(false)}
-            >
-              <Lock size={18} aria-hidden="true" />
-              <input
-                ref={passwordRef}
-                id="password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter password"
-                value={values.password}
-                onChange={updateField}
-                onBlur={(event) => {
-                  setCapsLockOn(false)
-                  handleBlur(event)
-                }}
-                onKeyUp={handlePasswordKey}
-                onKeyDown={handlePasswordKey}
-                autoComplete="current-password"
-                aria-invalid={Boolean(passwordHasError)}
-                aria-describedby={`${passwordHasError ? 'password-error ' : ''}${capsLockOn ? 'caps-lock-warning' : ''}`.trim() || undefined}
-              />
-              <button
-                className="icon-button"
-                type="button"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                onClick={() => setShowPassword((current) => !current)}
-              >
-                {showPassword ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
-              </button>
-            </div>
-            {passwordHasError ? (
-              <p className="field-error" id="password-error" role="alert">
-                {passwordErrorMessage}
-              </p>
-            ) : null}
-            {capsLockOn ? (
-              <p className="caps-warning" id="caps-lock-warning" role="status">
-                Caps Lock is active.
-              </p>
-            ) : null}
-          </div>
-
-          <button className="btn btn-primary" type="submit" disabled={submitState !== 'idle'}>
-            {submitState === 'loading' ? <span className="spinner" aria-hidden="true" /> : null}
-            {submitState === 'success' ? <CheckCircle2 size={20} aria-hidden="true" /> : null}
-            {submitState === 'loading' ? 'Verifying Access' : submitState === 'success' ? 'Access Granted' : 'Sign In'}
-          </button>
-        </form>
-      </section>
-    </main>
+      <p className="auth-help-note">
+        New user or need a password reset? Contact your {managingDirectorLabel} for a single-use setup link.
+      </p>
+    </AuthShell>
   )
 }
