@@ -16,7 +16,7 @@ import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatte
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import { getLiveFeed } from '../live/liveService.js'
-import { connectivityLabel, getProcessIdleBanner, getProcessSensorFaultBanner } from '../live/livePresentation.js'
+import { connectivityLabel, getProcessIdleBanner, getProcessSensorFaultBanner, presentLiveSensors } from '../live/livePresentation.js'
 import DowntimeTrendChart, {
   getTrendRangeLabel,
   fromDateInputValue,
@@ -233,7 +233,11 @@ export default function DashboardSection() {
 
         const nextLiveData = {
           machine: payload.machine || null,
-          sensors: payload.sensors || [],
+          sensors: presentLiveSensors(payload.sensors || [], payload.monitoring?.mode).map((sensor) => ({
+            ...sensor,
+            operationalStatus: sensor.operationalStatus ?? sensor.status,
+            status: sensor.displayStatus || sensor.status,
+          })),
           monitoringMode: payload.monitoring?.mode || 'unknown',
         }
         const updatedAt = new Date()
@@ -347,7 +351,11 @@ export default function DashboardSection() {
       status: sensor?.status || 'Unavailable',
     }
   })
-  const reportingSensorCount = sensorHealth.filter((sensor) => sensor.status !== 'Unavailable').length
+  const reportingSensorCount = sensorHealth.filter((sensor) => (
+    sensor.status !== 'Unavailable'
+    && sensor.monitoring?.connectivityState !== 'offline'
+    && !String(sensor.status).startsWith('Last:')
+  )).length
   const isUnifiedRefreshing = overviewState === 'loading' || liveState === 'loading' || downtimeChartState === 'loading'
 
   const handleUnifiedRefresh = () => {

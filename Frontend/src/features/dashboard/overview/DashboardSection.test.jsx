@@ -311,7 +311,7 @@ describe('DashboardSection', () => {
     expect(screen.getByRole('link', { name: 'View downtime records' })).toHaveAttribute('href', '/dashboard/downtime')
   })
 
-  it('renders a fault live sensor with a danger status', async () => {
+  it('renders a fault live sensor with an amber fault status', async () => {
     const live = livePayload()
     live.sensors[0].status = 'Fault'
     getDashboardOverview.mockResolvedValue(overviewPayload())
@@ -322,9 +322,10 @@ describe('DashboardSection', () => {
 
     const badge = await screen.findByText('Fault')
     const card = badge.closest('article')
-    expect(badge).toHaveClass('status-danger')
-    expect(card).toHaveClass('status-downtime')
-    expect(badge.firstChild).toHaveClass('status-dot-danger')
+    expect(badge).toHaveClass('status-fault')
+    expect(badge).not.toHaveClass('status-danger')
+    expect(card).toHaveClass('status-fault')
+    expect(badge.firstChild).toHaveClass('status-dot-fault')
   })
 
   it('refreshes production bucket states while the page remains open', async () => {
@@ -839,5 +840,28 @@ describe('DashboardSection', () => {
       await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
     expect(screen.getByText('This alert recovered. Acknowledgement required.')).toBeInTheDocument()
+  })
+
+  it('normalizes an offline running sensor to Last: Run and excludes it from reporting counts on overview', async () => {
+    const live = livePayload()
+    live.sensors[0] = {
+      ...live.sensors[0],
+      status: 'Running',
+      monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'suspended' },
+    }
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(live)
+
+    renderWithAuth(<DashboardSection />)
+
+    const offlineBadge = await screen.findByText('Last: Run')
+    const card = offlineBadge.closest('article')
+    expect(offlineBadge).toHaveClass('status', 'status-offline')
+    expect(offlineBadge.firstChild).toHaveClass('status-dot-offline')
+    expect(card).toHaveClass('status-offline')
+    expect(card).not.toHaveClass('status-running')
+    expect(card).toHaveTextContent('Connection: Offline')
+    expect(screen.getByText('4 / 5 sensors reporting')).toBeInTheDocument()
   })
 })
