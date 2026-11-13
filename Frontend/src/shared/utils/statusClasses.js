@@ -1,19 +1,23 @@
 export function getMachineStatusClass(status) {
+  if (typeof status === 'string' && status.startsWith('Last:')) return 'status-offline'
   if (status === 'Running') return 'status-running'
   if (status === 'Downtime') return 'status-downtime'
+  if (status === 'Fault') return 'status-fault'
+  if (status === 'Unavailable') return 'status-unavailable'
   return 'status-idle'
 }
 
 export function getLiveStatusClass(status) {
-  if (status === 'Fault') return 'status-downtime'
   return getMachineStatusClass(status)
 }
 
 export function getSensorStatusClass(status) {
+  if (typeof status === 'string' && status.startsWith('Last:')) return 'status-offline'
   if (status === 'Active' || status === 'Running') return 'status-running'
   if (status === 'Downtime') return 'status-downtime'
   if (status === 'Fault') return 'status-fault'
-  return 'status-idle'
+  if (status === 'Idle') return 'status-idle'
+  return 'status-unavailable'
 }
 
 export function getDowntimeStatusClass(status) {

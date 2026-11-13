@@ -16,9 +16,18 @@
   background: var(--c-text-3);
 }
 
-.status-dot-active { background: #10b981; }
-.status-dot-idle { background: #0ea5e9; }
-.status-dot-danger { background: #ef4444; }
+.status-dot-active { background: #059669; }
+.status-dot-idle { background: #0284c7; }
+.status-dot-danger { background: #dc2626; }
+.status-dot-fault { background: #b45309; }
+.status-dot-offline { background: #b45309; }
 .status-dot-neutral { opacity: 0.4; }
 .status-danger { color: #dc2626; font-weight: 500; }
+.status-fault { color: var(--status-fault-text, #92400e); font-weight: 500; }
+.status-offline { color: var(--status-offline-text, #92400e); font-weight: 500; }
+:root[data-theme='dark'] .status-dot-active { background: #10b981; }
+:root[data-theme='dark'] .status-dot-idle { background: #38bdf8; }
+:root[data-theme='dark'] .status-dot-danger { background: #ef4444; }
+:root[data-theme='dark'] .status-dot-fault { background: #f59e0b; }
+:root[data-theme='dark'] .status-dot-offline { background: #fbbf24; }
 :root[data-theme='dark'] .status-danger { color: #f87171; }
