@@ -1,6 +1,6 @@
 import Status from '../../../shared/components/Status.jsx'
 import './live.css'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import { AlertTriangle, CheckCircle2, PauseCircle, RotateCw, WifiOff } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -9,7 +9,7 @@ import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sens
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
 import { getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
-import { getProcessIdleBanner, presentLiveSensors } from './livePresentation.js'
+import { formatSensorStatusSummary, getProcessIdleBanner, presentLiveSensors, summarizeSensorStatuses } from './livePresentation.js'
 import { useLiveFeedStream } from './useLiveFeedStream.js'
 
 const RELATIVE_TIME_UNITS = [
@@ -38,6 +38,7 @@ export default function LiveSection() {
   const outlet = useOutletContext()
   const fallbackStream = useLiveFeedStream(outlet?.liveFeed ? null : token)
   const liveFeed = outlet?.liveFeed || fallbackStream
+  const [, setAgeTick] = useState(0)
 
   const machine = liveFeed.machine
   const sensors = liveFeed.sensors
@@ -55,17 +56,66 @@ export default function LiveSection() {
     () => presentLiveSensors(sensors, monitoring.mode),
     [sensors, monitoring.mode],
   )
+  const sensorSummary = useMemo(
+    () => summarizeSensorStatuses(presentedSensors),
+    [presentedSensors],
+  )
+  const statusSummaryLabel = formatSensorStatusSummary(sensorSummary)
   const processIdleBanner = useMemo(
     () => getProcessIdleBanner(presentedSensors, monitoring.mode),
     [presentedSensors, monitoring.mode],
   )
 
+  useEffect(() => {
+    if (presentedSensors.length === 0) return undefined
+    const intervalId = window.setInterval(() => {
+      setAgeTick((current) => current + 1)
+    }, 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [presentedSensors.length])
+
   if (isLoading && !machine) {
     return (
-      <div className="live-layout">
-        <section className="section-card">
-          <div className="skeleton skeleton-heading" />
-          <div className="skeleton skeleton-panel" />
+      <div className="live-layout" role="status" aria-live="polite">
+        <h1 className="sr-only">Live Feed</h1>
+        <span className="sr-only">Loading live feed...</span>
+        <section className="section-card live-hero-card" aria-hidden="true">
+          <div className="section-heading">
+            <div className="skeleton live-skeleton-title" />
+            <div className="live-heading-badges">
+              <div className="skeleton live-skeleton-badge" />
+              <div className="skeleton live-skeleton-badge" />
+            </div>
+          </div>
+          <div className="live-machine-grid">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="live-skeleton-metric">
+                <div className="skeleton live-skeleton-label" />
+                <div className="skeleton live-skeleton-value" />
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="live-sensor-grid" aria-hidden="true">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <article key={index} className="machine-card live-sensor-card">
+              <div className="skeleton live-skeleton-label" />
+              <div className="skeleton live-skeleton-value" />
+              <div className="skeleton live-skeleton-meta" />
+              <div className="skeleton live-skeleton-purpose" />
+            </article>
+          ))}
+        </section>
+        <section className="section-card live-activity-card" aria-hidden="true">
+          <div className="skeleton live-skeleton-title" />
+          <div className="live-activity-grid">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="live-activity-item">
+                <div className="skeleton live-skeleton-value" />
+                <div className="skeleton live-skeleton-label" />
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     )
@@ -73,10 +123,19 @@ export default function LiveSection() {
 
   return (
     <div className="live-layout">
+      <h1 className="sr-only">Live Feed</h1>
       {notice ? (
-        <div className="notice notice-error dashboard-alert" role="alert">
+        <div className="notice notice-error dashboard-alert live-alert-banner" role="alert">
           <AlertTriangle size={16} aria-hidden="true" />
           <span>{notice.message}</span>
+          <button
+            className="btn btn-secondary table-action-button"
+            type="button"
+            disabled={isRefreshing}
+            onClick={() => liveFeed.reload()}
+          >
+            Retry live feed
+          </button>
         </div>
       ) : null}
       {processIdleBanner ? (
@@ -115,7 +174,13 @@ export default function LiveSection() {
             <div><span className="live-metric-label">Machine</span><strong>{machine.machineCode}</strong></div>
             <div><span className="live-metric-label">Location</span><strong>{machine.location || 'Not set'}</strong></div>
             <div><span className="live-metric-label">Status snapshot</span><strong>{formatLiveDateTime(monitoring.capturedAt, 'Not available')}</strong></div>
-            <div><span className="live-metric-label">Running sensors</span><strong>{machine.activeSensors}</strong></div>
+            <div>
+              <span className="live-metric-label">Running sensors</span>
+              <div className="live-running-summary">
+                <strong>{presentedSensors.length > 0 ? statusSummaryLabel : (machine.activeSensors || '0 running')}</strong>
+                <span className="live-configured-tag">{presentedSensors.length} configured</span>
+              </div>
+            </div>
           </div>
         </section>
       ) : (
@@ -124,6 +189,14 @@ export default function LiveSection() {
             <p className="section-eyebrow">No live source</p>
             <h2 id="live-empty-title">Live feed is unavailable</h2>
             <p>Check the machine connection and refresh the live feed.</p>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={isRefreshing}
+              onClick={() => liveFeed.reload()}
+            >
+              Retry live feed
+            </button>
           </div>
         </section>
       )}
@@ -135,6 +208,14 @@ export default function LiveSection() {
               <p className="section-eyebrow">No live sensors</p>
               <h2 id="live-sensors-empty-title">Sensor data is unavailable</h2>
               <p>Refresh the live feed to try again.</p>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={isRefreshing}
+                onClick={() => liveFeed.reload()}
+              >
+                Retry live feed
+              </button>
             </div>
           </section>
         ) : presentedSensors.map((sensor) => (
@@ -172,7 +253,6 @@ export default function LiveSection() {
         <section className="section-card live-activity-card" aria-labelledby="live-activity-title">
           <div className="live-activity-heading">
             <div><h2 id="live-activity-title">Latest event by sensor</h2></div>
-
           </div>
           <ol className="live-activity-grid" aria-label="Latest event reported by each sensor">
             {presentedSensors.map((sensor) => (
