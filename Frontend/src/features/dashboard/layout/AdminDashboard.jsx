@@ -1,4 +1,7 @@
 import Status from '../../../shared/components/Status.jsx'
+import { useExitPresence } from '../../../shared/hooks/useExitPresence.js'
+
+const LONG_ALERT_THRESHOLD = 110
 import {
   BarChart3,
   Bell,
@@ -21,8 +24,9 @@ import {
 } from 'lucide-react'
 import './sidebar-compact.css'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useMobileViewport } from '../../../shared/hooks/useMobileViewport.js'
 import { onlineManager, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
@@ -112,10 +116,6 @@ function getAlertStatusLabel(alert) {
   return alert.status
 }
 
-function matchesMobileDashboard() {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 900px)').matches
-}
-
 export default function AdminDashboard() {
   const queryClient = useQueryClient()
   const online = useNetworkOnline()
@@ -129,7 +129,7 @@ export default function AdminDashboard() {
   const [cachedAlertsAt, setCachedAlertsAt] = useState(null)
   const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
-  const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
+  const isMobileViewport = useMobileViewport()
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
@@ -166,6 +166,16 @@ export default function AdminDashboard() {
   const unresolvedAlerts = alerts.filter((alert) => (
     alert.status === 'Active' || alert.status === 'Acknowledged'
   ))
+  const [bellSwingState, setBellSwingState] = useState({ count: 0, isSwinging: false })
+  const [expandedAlertIds, setExpandedAlertIds] = useState(() => new Set())
+  const previousActiveCountRef = useRef(null)
+  const bellSwingTimerRef = useRef(null)
+  const pendingFocusRestoreRef = useRef(null)
+  const {
+    isPresent: isAlertsPopoverPresent,
+    isExiting: isAlertsPopoverExiting,
+    handleAnimationEnd: handleAlertsPopoverAnimationEnd,
+  } = useExitPresence(isAlertsOpen, alertsPopoverRef, 140)
   const alertDestinations = Array.from(new Map(alerts.map((alert) => {
     const destination = getAlertDestination(alert)
     return [destination.to, destination]
@@ -204,20 +214,6 @@ export default function AdminDashboard() {
   }, [isDrawerOpen, isMobileViewport])
 
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined
-
-    const mediaQuery = window.matchMedia('(max-width: 900px)')
-    const updateViewport = () => setIsMobileViewport(mediaQuery.matches)
-
-    updateViewport()
-    mediaQuery.addEventListener('change', updateViewport)
-
-    return () => {
-      mediaQuery.removeEventListener('change', updateViewport)
-    }
-  }, [])
-
-  useEffect(() => {
     if (isMobileViewport || !isDrawerOpen) return
 
     setIsDrawerOpen(false)
@@ -249,6 +245,81 @@ export default function AdminDashboard() {
       document.removeEventListener('pointerdown', handlePointerDown)
     }
   }, [isAlertsOpen])
+
+  useEffect(() => {
+    if (!hasTrustedAlertList) {
+      previousActiveCountRef.current = null
+      return undefined
+    }
+
+    const prevCount = previousActiveCountRef.current
+    previousActiveCountRef.current = activeAlertCount
+
+    const shouldSwing = activeAlertCount > 0 && !isAlertsOpen && (
+      prevCount === null || activeAlertCount > prevCount
+    )
+
+    if (shouldSwing) {
+      if (bellSwingTimerRef.current !== null) {
+        clearTimeout(bellSwingTimerRef.current)
+      }
+      setBellSwingState((prev) => ({ count: prev.count + 1, isSwinging: true }))
+      bellSwingTimerRef.current = setTimeout(() => {
+        bellSwingTimerRef.current = null
+        setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))
+      }, 1150)
+    } else if (activeAlertCount === 0 || isAlertsOpen) {
+      if (bellSwingTimerRef.current !== null) {
+        clearTimeout(bellSwingTimerRef.current)
+        bellSwingTimerRef.current = null
+      }
+      setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))
+    }
+
+    return undefined
+  }, [activeAlertCount, hasTrustedAlertList, isAlertsOpen])
+
+  useEffect(() => () => {
+    if (bellSwingTimerRef.current !== null) {
+      clearTimeout(bellSwingTimerRef.current)
+      bellSwingTimerRef.current = null
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const pending = pendingFocusRestoreRef.current
+    if (!pending || !isAlertsOpen) return
+
+    const stillActiveButton = alertsPopoverRef.current?.querySelector(`[data-alert-ack-id="${pending.alertId}"]`)
+    if (stillActiveButton) return
+
+    pendingFocusRestoreRef.current = null
+    if (!pending.shouldRestoreFocus) return
+
+    const container = alertsPopoverRef.current
+    if (!container) return
+
+    const buttons = Array.from(container.querySelectorAll('[data-alert-ack-id]'))
+    if (buttons.length > 0) {
+      const startIndex = pending.snapshotOrder.indexOf(pending.alertId)
+      const nextId = startIndex >= 0
+        ? pending.snapshotOrder
+          .slice(startIndex + 1)
+          .find((candidateId) => buttons.some((btn) => btn.getAttribute('data-alert-ack-id') === String(candidateId)))
+        : null
+      const targetButton = buttons.find((btn) => btn.getAttribute('data-alert-ack-id') === String(nextId))
+        || buttons[buttons.length - 1]
+      targetButton.focus({ preventScroll: true })
+      return
+    }
+
+    const footerLink = container.querySelector('.alerts-popover-footer a')
+    if (footerLink) {
+      footerLink.focus({ preventScroll: true })
+      return
+    }
+    container.focus({ preventScroll: true })
+  }, [isAlertsOpen, unresolvedAlerts])
 
   useEffect(() => {
     if (!isDrawerOpen && !isAlertsOpen) return undefined
@@ -537,6 +608,12 @@ export default function AdminDashboard() {
   async function handleAcknowledgeAlert(alertId) {
     if (!token || acknowledgementOperationsRef.current.has(alertId)) return
 
+    const wasFocused = typeof document !== 'undefined' && (
+      document.activeElement?.getAttribute?.('data-alert-ack-id') === String(alertId)
+      || (isAlertsOpen && document.activeElement === document.body)
+    )
+    const snapshotOrder = unresolvedAlerts.map((item) => item.id)
+
     const operationId = acknowledgementIdRef.current + 1
     acknowledgementIdRef.current = operationId
     acknowledgementOperationsRef.current.set(alertId, operationId)
@@ -548,6 +625,9 @@ export default function AdminDashboard() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       if (sessionTokenRef.current !== token || acknowledgementOperationsRef.current.get(alertId) !== operationId) return
+      if (wasFocused || (typeof document !== 'undefined' && isAlertsOpen && document.activeElement === document.body)) {
+        pendingFocusRestoreRef.current = { alertId, snapshotOrder, shouldRestoreFocus: true }
+      }
       applyAlertDeltaRef.current(payload.alert, { fromAcknowledgement: true })
     } catch (error) {
       if (sessionTokenRef.current === token && acknowledgementOperationsRef.current.get(alertId) === operationId) {
@@ -750,6 +830,7 @@ export default function AdminDashboard() {
               ref={alertsButtonRef}
               className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
               type="button"
+              data-bell-swing={bellSwingState.isSwinging && !isAlertsOpen ? 'true' : 'false'}
               aria-label={
                 !hasTrustedAlertList
                   ? 'Open alerts, status unavailable'
@@ -763,9 +844,15 @@ export default function AdminDashboard() {
                 setIsAlertsOpen((value) => !value)
               }}
             >
-              <Bell className="bell-icon" size={20} aria-hidden="true" />
+              <Bell
+                key={`bell-${bellSwingState.count}`}
+                className={`bell-icon ${bellSwingState.isSwinging && !isAlertsOpen ? 'is-swinging' : ''}`.trim()}
+                size={20}
+                aria-hidden="true"
+                onAnimationEnd={() => setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))}
+              />
               {hasTrustedAlertList && activeAlertCount > 0 ? (
-                <span key={activeAlertCount} className="notification-badge" aria-hidden="true">
+                <span key={`badge-${activeAlertCount}`} className="notification-badge" aria-hidden="true">
                   {activeAlertCount > 99 ? '99+' : activeAlertCount}
                 </span>
               ) : null}
@@ -777,8 +864,17 @@ export default function AdminDashboard() {
                     : 'No active alerts'}
               </span>
             </button>
-            {isAlertsOpen ? (
-              <div ref={alertsPopoverRef} className="alerts-popover" role="dialog" aria-label="Active alerts" tabIndex="-1">
+            {isAlertsPopoverPresent ? (
+              <div
+                ref={alertsPopoverRef}
+                data-state={isAlertsOpen ? 'open' : 'closed'}
+                inert={isAlertsPopoverExiting || undefined}
+                onAnimationEnd={handleAlertsPopoverAnimationEnd}
+                className="alerts-popover"
+                role="dialog"
+                aria-label="Active alerts"
+                tabIndex="-1"
+              >
                 <div className="alerts-popover-header">
                   <div className="alerts-header-title-wrap">
                     <strong>Notifications</strong>
@@ -789,6 +885,11 @@ export default function AdminDashboard() {
                       {hasTrustedAlertList ? (activeAlertCount > 99 ? '99+' : activeAlertCount) : '—'}
                     </span>
                   </div>
+                  {hasTrustedAlertList && acknowledgedAlerts.length > 0 ? (
+                    <span className="alerts-header-acknowledged">
+                      {acknowledgedAlerts.length} acknowledged
+                    </span>
+                  ) : null}
                 </div>
                 {cachedAlertsAt && !hasTrustedAlertList ? (
                   <div className="alert-load-error" role="status">Cached alerts are stale. Updated <UpdatedAgo updatedAt={cachedAlertsAt} />.</div>
@@ -813,6 +914,13 @@ export default function AdminDashboard() {
                         : isAcked
                           ? 'is-acknowledged'
                           : 'is-active'
+                      const primaryText = alert.title || alert.message || ''
+                      const secondaryMessage = alert.title && alert.message && alert.title !== alert.message
+                        ? alert.message
+                        : ''
+                      const hasExpandableCopy = secondaryMessage.length > LONG_ALERT_THRESHOLD
+                        || (!secondaryMessage && primaryText.length > LONG_ALERT_THRESHOLD)
+                      const isExpanded = expandedAlertIds.has(alert.id)
                       return (
                         <li key={alert.id} className={`alert-row ${rowStateClass} ${alertKind?.className || ''}`}>
                           <div className="alert-row-indicator">
@@ -826,15 +934,35 @@ export default function AdminDashboard() {
                           </div>
                           <div className="alert-row-body">
                             <div className="alert-row-heading">
-                              <p className="alert-row-primary">
-                                {alert.title || alert.message}
+                              <p className={`alert-row-primary ${!secondaryMessage && hasExpandableCopy && !isExpanded ? 'is-clamped' : ''}`.trim()}>
+                                {primaryText}
                               </p>
                               {alertKind ? (
                                 <span className={`alert-kind-tag ${alertKind.className}`}>{alertKind.label}</span>
                               ) : null}
                             </div>
-                            {alert.title && alert.message && alert.title !== alert.message ? (
-                              <p className="alert-row-message">{alert.message}</p>
+                            {secondaryMessage ? (
+                              <p className={`alert-row-message ${hasExpandableCopy && !isExpanded ? 'is-clamped' : ''}`.trim()}>
+                                {secondaryMessage}
+                              </p>
+                            ) : null}
+                            {hasExpandableCopy ? (
+                              <button
+                                type="button"
+                                className="alert-expand-btn"
+                                aria-expanded={isExpanded}
+                                onClick={() => setExpandedAlertIds((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(alert.id)) {
+                                    next.delete(alert.id)
+                                  } else {
+                                    next.add(alert.id)
+                                  }
+                                  return next
+                                })}
+                              >
+                                {isExpanded ? 'Show less' : 'Show more'}
+                              </button>
                             ) : null}
                             <div className="alert-row-meta">
                               <span>{alert.machineName || 'Spiral Mill 01'}</span>
@@ -851,6 +979,7 @@ export default function AdminDashboard() {
                             <button
                               className="alert-acknowledge-ghost-btn"
                               type="button"
+                              data-alert-ack-id={alert.id}
                               disabled={!hasTrustedAlertList || acknowledgingAlertIds.includes(alert.id)}
                               onClick={() => handleAcknowledgeAlert(alert.id)}
                             >
@@ -858,7 +987,7 @@ export default function AdminDashboard() {
                             </button>
                           ) : (
                             <span className="alert-acked-tag">
-                              <UserRoundCheck size={12} aria-hidden="true" /> Acked
+                              <UserRoundCheck size={12} aria-hidden="true" /> Confirmed
                             </span>
                           )}
                         </li>
