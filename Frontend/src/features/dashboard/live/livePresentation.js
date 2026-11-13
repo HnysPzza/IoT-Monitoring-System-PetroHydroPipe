@@ -2,6 +2,71 @@ import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
 
+function formatOfflineDisplayStatus(status) {
+  if (typeof status === 'string' && status.startsWith('Last:')) {
+    return status
+  }
+
+  if (status === 'Running') {
+    return 'Last: Run'
+  }
+
+  return `Last: ${status || 'Run'}`
+}
+
+export function summarizeSensorStatuses(sensors = []) {
+  const summary = {
+    total: 0,
+    running: 0,
+    idle: 0,
+    fault: 0,
+    downtime: 0,
+    offline: 0,
+    unavailable: 0,
+  }
+
+  if (!Array.isArray(sensors)) {
+    return summary
+  }
+
+  summary.total = sensors.length
+  for (const sensor of sensors) {
+    const status = sensor.displayStatus || sensor.operationalStatus || sensor.status
+    const isOffline = sensor.monitoring?.connectivityState === 'offline'
+      || (typeof status === 'string' && status.startsWith('Last:'))
+
+    if (isOffline) {
+      summary.offline += 1
+    } else if (status === 'Running' || status === 'Active') {
+      summary.running += 1
+    } else if (status === 'Idle') {
+      summary.idle += 1
+    } else if (status === 'Fault') {
+      summary.fault += 1
+    } else if (status === 'Downtime') {
+      summary.downtime += 1
+    } else {
+      summary.unavailable += 1
+    }
+  }
+
+  return summary
+}
+
+export function formatSensorStatusSummary(sensorsOrSummary) {
+  const summary = Array.isArray(sensorsOrSummary)
+    ? summarizeSensorStatuses(sensorsOrSummary)
+    : (sensorsOrSummary || summarizeSensorStatuses([]))
+
+  const parts = [`${summary.running || 0} running`]
+  if (summary.idle > 0) parts.push(`${summary.idle} idle`)
+  if (summary.fault > 0) parts.push(`${summary.fault} fault`)
+  if (summary.downtime > 0) parts.push(`${summary.downtime} downtime`)
+  if (summary.offline > 0) parts.push(`${summary.offline} offline`)
+  if (summary.unavailable > 0) parts.push(`${summary.unavailable} unavailable`)
+  return parts.join(' · ')
+}
+
 export function connectivityLabel(sensor) {
   if (sensor.monitoring?.connectivityState === 'online') return 'Connected'
   if (sensor.monitoring?.connectivityState === 'offline') return 'Offline'
@@ -9,20 +74,29 @@ export function connectivityLabel(sensor) {
 }
 
 export function presentLiveSensor(sensor, mode) {
-  const operationalStatus = sensor.status
+  const operationalStatus = sensor.operationalStatus ?? sensor.status
   const monitoring = sensor.monitoring || {}
+  const effectiveStatus = sensor.sensorCode === 'S-05' && (operationalStatus === 'Fault' || operationalStatus === 'Downtime')
+    ? 'Running'
+    : operationalStatus
   const result = {
     ...sensor,
-    displayStatus: operationalStatus,
+    operationalStatus,
+    displayStatus: effectiveStatus,
     stateLabel: 'Operational state',
     connectivityLabel: connectivityLabel(sensor),
   }
 
+  if (monitoring.connectivityState === 'offline') {
+    return {
+      ...result,
+      displayStatus: formatOfflineDisplayStatus(effectiveStatus),
+      stateLabel: 'Last run telemetry before disconnect',
+    }
+  }
+
   if (sensor.sensorCode === 'S-05') {
-    const safeStatus = operationalStatus === 'Fault' || operationalStatus === 'Downtime'
-      ? 'Running'
-      : operationalStatus
-    return { ...result, displayStatus: safeStatus, stateLabel: 'Production output sensing' }
+    return { ...result, displayStatus: effectiveStatus, stateLabel: 'Production output sensing' }
   }
   if (operationalStatus === 'Downtime') {
     return { ...result, stateLabel: 'Confirmed operational downtime' }
@@ -70,10 +144,12 @@ export function getProcessSensorFaultBanner(sensors = [], mode = 'unknown') {
   ))
 
   const downtimeSensors = presented.filter((sensor) => (
-    sensor.displayStatus === 'Downtime' || sensor.status === 'Downtime'
+    sensor.sensorCode !== 'S-05'
+    && (sensor.displayStatus === 'Downtime' || sensor.operationalStatus === 'Downtime' || sensor.status === 'Downtime')
   ))
   const faultSensors = presented.filter((sensor) => (
-    sensor.displayStatus === 'Fault' || sensor.status === 'Fault'
+    sensor.sensorCode !== 'S-05'
+    && (sensor.displayStatus === 'Fault' || sensor.operationalStatus === 'Fault' || sensor.status === 'Fault')
   ))
 
   const issueSensors = [...downtimeSensors, ...faultSensors]
@@ -81,7 +157,9 @@ export function getProcessSensorFaultBanner(sensors = [], mode = 'unknown') {
 
   const primary = issueSensors[0]
   const label = getSensorLabel(primary.sensorCode, primary.label)
-  const isDowntime = primary.displayStatus === 'Downtime' || primary.status === 'Downtime'
+  const isDowntime = primary.displayStatus === 'Downtime'
+    || primary.operationalStatus === 'Downtime'
+    || primary.status === 'Downtime'
 
   return {
     sensorCode: primary.sensorCode,

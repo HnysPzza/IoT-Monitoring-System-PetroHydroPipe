@@ -7,7 +7,7 @@ export async function getLiveFeed(token) {
     ...payload,
     sensors: presentLiveSensors(payload.sensors || [], payload.monitoring?.mode).map((sensor) => ({
       ...sensor,
-      operationalStatus: sensor.status,
+      operationalStatus: sensor.operationalStatus ?? sensor.status,
       status: sensor.displayStatus,
     })),
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getProcessIdleBanner, getProcessSensorFaultBanner, presentLiveSensor } from './livePresentation.js'
+import { formatSensorStatusSummary, getProcessIdleBanner, getProcessSensorFaultBanner, presentLiveSensor, summarizeSensorStatuses } from './livePresentation.js'
 
 function sensor(overrides = {}) {
   return {
@@ -17,7 +17,7 @@ function sensor(overrides = {}) {
 describe('live sensor presentation', () => {
   it('maps grace, observe threshold, and offline connectivity separately', () => {
     expect(presentLiveSensor(sensor({ monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'grace' } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Idle — grace period' })
-    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'downtime' } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Idle — threshold observed', connectivityLabel: 'Offline' })
+    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'downtime' } }), 'observe')).toMatchObject({ displayStatus: 'Last: Idle', stateLabel: 'Last run telemetry before disconnect', connectivityLabel: 'Offline' })
   })
 
   it('keeps enforced threshold and recovery as monitoring phases for every process sensor', () => {
@@ -42,8 +42,39 @@ describe('live sensor presentation', () => {
 
   it('labels disabled and stale monitoring without inventing downtime while preserving heartbeat connectivity', () => {
     expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: 'online', detectionState: null } }), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled', connectivityLabel: 'Connected' })
-    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: 'offline', detectionState: null } }), 'disabled')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring disabled', connectivityLabel: 'Offline' })
+    expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: 'offline', detectionState: null } }), 'disabled')).toMatchObject({ displayStatus: 'Last: Idle', stateLabel: 'Last run telemetry before disconnect', connectivityLabel: 'Offline' })
     expect(presentLiveSensor(sensor({ monitoring: { stateFresh: false, connectivityState: null, detectionState: null } }), 'observe')).toMatchObject({ displayStatus: 'Idle', stateLabel: 'Monitoring data unavailable', connectivityLabel: 'Unavailable' })
+  })
+
+  it('formats offline sensors idempotently, clamps S-05 before offline, and excludes offline sensors from running counts', () => {
+    expect(presentLiveSensor(sensor({ status: 'Running', monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'suspended' } }), 'enforce')).toMatchObject({
+      displayStatus: 'Last: Run',
+      stateLabel: 'Last run telemetry before disconnect',
+      operationalStatus: 'Running',
+    })
+    expect(presentLiveSensor(sensor({ operationalStatus: 'Fault', status: 'Last: Fault', monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'suspended' } }), 'enforce')).toMatchObject({
+      displayStatus: 'Last: Fault',
+      stateLabel: 'Last run telemetry before disconnect',
+    })
+    expect(presentLiveSensor(sensor({ sensorCode: 'S-05', status: 'Fault', monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'disabled' } }), 'enforce')).toMatchObject({
+      displayStatus: 'Last: Run',
+      stateLabel: 'Last run telemetry before disconnect',
+    })
+
+    const summary = summarizeSensorStatuses([
+      presentLiveSensor(sensor({ sensorCode: 'S-01', status: 'Running' }), 'enforce'),
+      presentLiveSensor(sensor({ sensorCode: 'S-02', status: 'Idle' }), 'enforce'),
+      presentLiveSensor(sensor({ sensorCode: 'S-03', status: 'Fault' }), 'enforce'),
+      presentLiveSensor(sensor({ sensorCode: 'S-04', status: 'Running', monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'suspended' } }), 'enforce'),
+      presentLiveSensor(sensor({ sensorCode: 'S-05', status: 'Running' }), 'enforce'),
+    ])
+    expect(summary).toMatchObject({ running: 2, idle: 1, fault: 1, offline: 1, total: 5 })
+    expect(formatSensorStatusSummary(summary)).toBe('2 running · 1 idle · 1 fault · 1 offline')
+
+    expect(getProcessSensorFaultBanner([sensor({ sensorCode: 'S-05', operationalStatus: 'Fault', status: 'Running' })], 'enforce')).toBeNull()
+    expect(getProcessSensorFaultBanner([sensor({ sensorCode: 'S-01', operationalStatus: 'Fault', status: 'Last: Fault', monitoring: { stateFresh: true, connectivityState: 'offline' } })], 'enforce')).toMatchObject({
+      sensorCode: 'S-01',
+    })
   })
 
   it('builds a material changeover banner when S-01, S-02, or S-04 is idle and no sensor is faulted', () => {
