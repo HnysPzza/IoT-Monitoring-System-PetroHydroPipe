@@ -244,4 +244,37 @@ describe('ProductionAnalytics', () => {
     expect(screen.getByText('Yesterday at same time: —')).toBeInTheDocument()
     expect(container.textContent).not.toMatch(/undefined|NaN/)
   })
+
+  it('places the chart legend outside role="img" and provides an accessible table fallback and empty state', () => {
+    const { rerender } = render(<ProductionAnalytics analytics={buildAnalytics()} />)
+
+    const chartImg = screen.getByRole('img', {
+      name: 'Today so far vs Yesterday at same time production output comparison chart',
+    })
+    const legend = document.querySelector('.chart-legend')
+    expect(legend).not.toBeNull()
+    expect(chartImg.contains(legend)).toBe(false)
+
+    const fallbackTable = screen.getByRole('table', {
+      name: /production output comparison data/i,
+    })
+    expect(fallbackTable).toBeInTheDocument()
+    expect(fallbackTable.querySelectorAll('tbody tr').length).toBeGreaterThan(0)
+
+    rerender(
+      <ProductionAnalytics
+        analytics={{
+          day: {
+            label: 'Today vs Yesterday',
+            currentTotal: 0,
+            previousTotal: 0,
+            unit: 'pcs',
+            points: [],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('No production output data is available for today yet.')).toBeInTheDocument()
+  })
 })

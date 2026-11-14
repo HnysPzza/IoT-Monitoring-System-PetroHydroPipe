@@ -48,31 +48,58 @@ export default function ProductionAnalytics({ analytics }) {
         <span className="overview-chart-scope">Production Output · Today</span>
       </div>
 
-      <div className="analytics-chart industrial-recharts-panel" role="img" aria-label={`${chartLabel} production output comparison chart`}>
-        <div className="chart-legend" aria-label="Production chart legend">
-          <span><i className="legend-line legend-current" aria-hidden="true" />Today ({formatMetricTotal(selected.currentTotal, unitLabel)})</span>
-          <span><i className="legend-line legend-previous" aria-hidden="true" />Yesterday ({formatMetricTotal(selected.previousTotal, unitLabel)})</span>
-        </div>
-        <ResponsiveContainer width="100%" height={195} minWidth={0}>
-          {/* ComposedChart layers cumulative output for today and yesterday in one view. */}
-          <ComposedChart data={visiblePoints} margin={{ top: 24, right: 24, left: 0, bottom: 0 }}>
-            <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="2 8" vertical={false} />
-            {currentPoint && visiblePoints.length > 1 ? (
-              <ReferenceLine
-                x={currentPoint.label}
-                stroke="var(--c-text-3)"
-                strokeDasharray="4 4"
-                label={{ value: 'Now', position: 'top', dy: -4, fill: 'var(--c-text-2)', fontSize: 12, fontWeight: 600 }}
-              />
-            ) : null}
-            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={14} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
-            <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={formatNumber} width={58} />
-            <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.24 }} />
-            <Area type="monotone" dataKey="current" name={selected.currentLabel || 'Today'} fill="transparent" stroke="var(--chart-current)" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} isAnimationActive={false} />
-            <Line type="monotone" dataKey="previous" name={selected.previousLabel || 'Yesterday'} stroke="var(--chart-previous)" strokeWidth={2.5} strokeDasharray="7 7" dot={false} isAnimationActive={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
+      <div className="chart-legend" aria-label="Production chart legend">
+        <span><i className="legend-line legend-current" aria-hidden="true" />Today ({formatMetricTotal(selected.currentTotal, unitLabel)})</span>
+        <span><i className="legend-line legend-previous" aria-hidden="true" />Yesterday ({formatMetricTotal(selected.previousTotal, unitLabel)})</span>
       </div>
+
+      {visiblePoints.length === 0 ? (
+        <div className="section-placeholder production-analytics-empty" role="status">
+          <p>No production output data is available for today yet.</p>
+        </div>
+      ) : (
+        <>
+          <div className="analytics-chart industrial-recharts-panel" role="img" aria-label={`${chartLabel} production output comparison chart`}>
+            <ResponsiveContainer width="100%" height={195} minWidth={0}>
+              {/* ComposedChart layers cumulative output for today and yesterday in one view. */}
+              <ComposedChart data={visiblePoints} margin={{ top: 24, right: 24, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="2 8" vertical={false} />
+                {currentPoint && visiblePoints.length > 1 ? (
+                  <ReferenceLine
+                    x={currentPoint.label}
+                    stroke="var(--c-text-3)"
+                    strokeDasharray="4 4"
+                    label={{ value: 'Now', position: 'top', dy: -4, fill: 'var(--c-text-2)', fontSize: 12, fontWeight: 600 }}
+                  />
+                ) : null}
+                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={14} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={formatNumber} width={58} />
+                <Tooltip content={<ChartTooltip unit={selected.unit} />} cursor={{ stroke: 'var(--chart-current)', strokeOpacity: 0.24 }} />
+                <Area type="monotone" dataKey="current" name={selected.currentLabel || 'Today'} fill="transparent" stroke="var(--chart-current)" strokeWidth={3.5} dot={{ r: 4, strokeWidth: 2, fill: 'var(--c-surface)' }} activeDot={{ r: 7, strokeWidth: 3 }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="previous" name={selected.previousLabel || 'Yesterday'} stroke="var(--chart-previous)" strokeWidth={2.5} strokeDasharray="7 7" dot={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <table className="sr-only" aria-label={`${chartLabel} production output comparison data`}>
+            <thead>
+              <tr>
+                <th scope="col">Period</th>
+                <th scope="col">{selected.currentLabel || 'Today'}</th>
+                <th scope="col">{selected.previousLabel || 'Yesterday'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visiblePoints.map((point, index) => (
+                <tr key={`${point.label || 'period'}-${index}`}>
+                  <th scope="row">{point.label}</th>
+                  <td>{formatMetricTotal(point.current, unitLabel)}</td>
+                  <td>{formatMetricTotal(point.previous, unitLabel)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
     </section>
   )
