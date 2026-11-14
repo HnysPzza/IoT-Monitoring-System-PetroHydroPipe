@@ -41,4 +41,29 @@ describe('DowntimeTrendChart', () => {
     expect(screen.getByTestId('downtime-xaxis')).toHaveAttribute('data-interval', 'default')
     expect(screen.getByTestId('downtime-xaxis')).toHaveAttribute('data-min-tick-gap', '12')
   })
+
+  it('includes all observed periods in the summary list, renders a fallback table, and guards non-finite values', () => {
+    const { container } = render(
+      <DowntimeTrendChart
+        lossEstimateBasis={{ source: 'configured-fallback', ratePiecesPerMinute: 0.05 }}
+        data={[
+          { label: 'P1', minutes: 2, periodState: 'completed' },
+          { label: 'P2', minutes: 4, periodState: 'completed' },
+          { label: 'P3', minutes: 6, periodState: 'completed' },
+          { label: 'P4', minutes: 8, periodState: 'completed' },
+          { label: 'P5', minutes: 10, periodState: 'completed' },
+          { label: 'P6', minutes: null, periodState: 'completed' },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('P1: 2m')).toBeInTheDocument()
+    expect(screen.getByText('P5: 10m')).toBeInTheDocument()
+    expect(screen.getByText('P6: —')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/nullm|NaNm|undefined/)
+
+    const fallbackTable = screen.getByRole('table', { name: /downtime trend data/i })
+    expect(fallbackTable).toBeInTheDocument()
+    expect(fallbackTable.querySelectorAll('tbody tr')).toHaveLength(6)
+  })
 })

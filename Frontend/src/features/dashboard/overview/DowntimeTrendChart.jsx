@@ -67,6 +67,10 @@ function formatDowntimeDuration(minutes, periodState) {
     return 'Period not reached yet'
   }
 
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes)) {
+    return 'No downtime data'
+  }
+
   if (minutes < 60) {
     return `${minutes} min down${periodState === 'current' ? ' so far' : ''}`
   }
@@ -103,7 +107,9 @@ function ChartTooltip({ active, payload, label }) {
       <span>{formatDowntimeDuration(payload[0].value, point.periodState)}</span>
       {point.periodState !== 'future' ? (
         <>
-          <span>Estimated loss: {point.estimatedLoss} pcs</span>
+          <span>
+            Estimated loss: {typeof point.estimatedLoss === 'number' && Number.isFinite(point.estimatedLoss) ? `${point.estimatedLoss} pcs` : '—'}
+          </span>
           <span>
             {point.cause
               ? `Likely cause: ${point.cause}`
@@ -149,15 +155,36 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
         <span>Red bars indicate periods at or above {thresholdMinutes} minutes.</span>
       </div>
       <div className="sr-only" role="list" aria-label="Observed downtime period summary">
-        {observedPeriods.slice(-4).map((item) => (
-          <span key={item.label} role="listitem">
-            {item.label}: {item.minutes}m{item.periodState === 'current' ? ' so far' : ''}
-          </span>
-        ))}
+        {observedPeriods.map((item) => {
+          const isFiniteMinutes = typeof item.minutes === 'number' && Number.isFinite(item.minutes)
+          return (
+            <span key={item.label} role="listitem">
+              {item.label}: {isFiniteMinutes ? `${item.minutes}m${item.periodState === 'current' ? ' so far' : ''}` : '—'}
+            </span>
+          )
+        })}
         {futurePeriodCount > 0 ? (
           <span role="listitem">{futurePeriodCount} future {futurePeriodCount === 1 ? 'period' : 'periods'} not reached</span>
         ) : null}
       </div>
+      <table className="sr-only" aria-label="Downtime trend data">
+        <thead>
+          <tr>
+            <th scope="col">Period</th>
+            <th scope="col">Downtime</th>
+            <th scope="col">Estimated loss</th>
+          </tr>
+        </thead>
+        <tbody>
+          {observedPeriods.map((item, index) => (
+            <tr key={`${item.label || 'period'}-${index}`}>
+              <th scope="row">{item.label}</th>
+              <td>{formatDowntimeDuration(item.minutes, item.periodState)}</td>
+              <td>{typeof item.estimatedLoss === 'number' && Number.isFinite(item.estimatedLoss) ? `${item.estimatedLoss} pcs` : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {lossEstimateBasis ? (
         <div className="sr-only">
           <span>
