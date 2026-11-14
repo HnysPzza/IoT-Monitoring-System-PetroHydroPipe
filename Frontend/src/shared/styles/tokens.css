@@ -65,9 +65,9 @@
   --status-fault-text: #FCD34D;
   --status-fault-bg: rgba(245, 158, 11, 0.14);
   --status-fault-border: rgba(245, 158, 11, 0.34);
-  --status-offline-text: #FCD34D;
-  --status-offline-bg: rgba(245, 158, 11, 0.12);
-  --status-offline-border: rgba(245, 158, 11, 0.42);
+  --status-offline-text: #CBD5E1;
+  --status-offline-bg: rgba(148, 163, 184, 0.14);
+  --status-offline-border: rgba(148, 163, 184, 0.45);
   --status-active-text: #CFFAE6;
   --status-active-bg: rgba(16, 185, 129, 0.14);
   --status-active-border: rgba(16, 185, 129, 0.28);
@@ -139,9 +139,9 @@
   --status-fault-text: #92400E;
   --status-fault-bg: #FEF3C7;
   --status-fault-border: #FCD34D;
-  --status-offline-text: #92400E;
-  --status-offline-bg: #FFFBEB;
-  --status-offline-border: #F59E0B;
+  --status-offline-text: #334155;
+  --status-offline-bg: #F1F5F9;
+  --status-offline-border: #94A3B8;
   --status-active-text: #065F46;
   --status-active-bg: rgba(16, 185, 129, 0.12);
   --status-active-border: rgba(5, 150, 105, 0.28);
