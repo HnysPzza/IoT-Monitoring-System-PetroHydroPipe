@@ -1362,4 +1362,69 @@ describe('AdminDashboard alerts', () => {
       })
     })
   })
+
+  it('positions collapsed sidebar tooltip dynamically on hover/focus and clears on scroll or expand', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const collapseBtn = await screen.findByRole('button', { name: 'Collapse sidebar' })
+    await user.click(collapseBtn)
+
+    const settingsLink = screen.getByRole('link', { name: 'Settings' })
+    settingsLink.getBoundingClientRect = () => ({ top: 453, height: 44, bottom: 497, left: 10, right: 54, width: 44, x: 10, y: 453, toJSON: () => ({}) })
+
+    fireEvent.mouseEnter(settingsLink)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Settings')
+    expect(tooltip).toHaveStyle({ top: '475px' })
+
+    fireEvent.scroll(screen.getByRole('navigation', { name: 'Dashboard sections' }))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.blur(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.pointerDown(settingsLink)
+    fireEvent.focus(settingsLink)
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.pointerDown(settingsLink)
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('applies overview-topbar class only on the /dashboard overview route', () => {
+    getAlerts.mockReturnValue(new Promise(() => {}))
+
+    const { unmount } = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    expect(document.querySelector('header.dashboard-topbar')).toHaveClass('overview-topbar')
+    unmount()
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard/reports' })
+    expect(document.querySelector('header.dashboard-topbar')).not.toHaveClass('overview-topbar')
+  })
 })

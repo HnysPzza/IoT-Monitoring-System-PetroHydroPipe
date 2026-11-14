@@ -131,6 +131,10 @@ export default function AdminDashboard() {
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const isMobileViewport = useMobileViewport()
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
+  const [hoveredTooltip, setHoveredTooltip] = useState(null)
+  const [focusedTooltip, setFocusedTooltip] = useState(null)
+  const pointerFocusedToRef = useRef(null)
+  const collapsedTooltip = hoveredTooltip || focusedTooltip
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
   const sidebarRef = useRef(null)
@@ -182,6 +186,14 @@ export default function AdminDashboard() {
   })).values())
   const activeAlertCount = activeAlerts.length
   const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
+
+  useEffect(() => {
+    if (!isDesktopSidebarCollapsed) {
+      setHoveredTooltip(null)
+      setFocusedTooltip(null)
+      pointerFocusedToRef.current = null
+    }
+  }, [isDesktopSidebarCollapsed])
   const matchedNavItem = navItems.find((item) => item.to === normalizedPathname)
   const isRouteForbidden = Boolean(matchedNavItem && !matchedNavItem.roles.includes(user?.role))
   const liveFeed = useLiveFeedStream(isRouteForbidden ? null : token, {
@@ -652,6 +664,9 @@ export default function AdminDashboard() {
 
   function handleSidebarScroll() {
     setIsSidebarScrolling(true)
+    setHoveredTooltip(null)
+    setFocusedTooltip(null)
+    pointerFocusedToRef.current = null
 
     if (sidebarScrollTimerRef.current !== null) {
       window.clearTimeout(sidebarScrollTimerRef.current)
@@ -725,6 +740,32 @@ export default function AdminDashboard() {
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
                       data-label={item.label}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
+                      onPointerDown={() => {
+                        pointerFocusedToRef.current = item.to
+                        setFocusedTooltip((current) => (current?.to === item.to ? null : current))
+                      }}
+                      onMouseEnter={(event) => {
+                        if (!isDesktopSidebarCollapsed) return
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setHoveredTooltip({ to: item.to, label: item.label, top: rect.top + rect.height / 2 })
+                      }}
+                      onMouseLeave={() => {
+                        if (pointerFocusedToRef.current === item.to) {
+                          pointerFocusedToRef.current = null
+                        }
+                        setHoveredTooltip((current) => (current?.to === item.to ? null : current))
+                      }}
+                      onFocus={(event) => {
+                        const isPointerFocus = pointerFocusedToRef.current === item.to
+                        pointerFocusedToRef.current = null
+                        if (!isDesktopSidebarCollapsed || isPointerFocus) return
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setFocusedTooltip({ to: item.to, label: item.label, top: rect.top + rect.height / 2 })
+                      }}
+                      onBlur={() => {
+                        pointerFocusedToRef.current = null
+                        setFocusedTooltip((current) => (current?.to === item.to ? null : current))
+                      }}
                       onClick={(event) => {
                         if (isMobileViewport) event.currentTarget.blur()
                       }}
@@ -763,6 +804,16 @@ export default function AdminDashboard() {
         </div>
       </aside>
 
+      {isDesktopSidebarCollapsed && collapsedTooltip ? (
+        <div
+          className="sidebar-collapsed-tooltip"
+          role="tooltip"
+          style={{ top: `${collapsedTooltip.top}px` }}
+        >
+          {collapsedTooltip.label}
+        </div>
+      ) : null}
+
       {isDrawerOpen ? (
         <button
           className="sidebar-backdrop mobile-only"
@@ -776,7 +827,7 @@ export default function AdminDashboard() {
       ) : null}
 
       <div className="dashboard-main">
-        <header className="dashboard-topbar overview-topbar">
+        <header className={`dashboard-topbar ${normalizedPathname === '/dashboard' ? 'overview-topbar' : ''}`.trim()}>
           <div className="topbar-leading">
             <PanelToggle
               ref={mobileMenuButtonRef}
