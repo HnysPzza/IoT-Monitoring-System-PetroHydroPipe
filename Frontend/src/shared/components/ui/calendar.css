@@ -231,6 +231,11 @@
   gap: 2px;
 }
 
+.trend-calendar-day-row,
+.trend-calendar-day-cell {
+  display: contents;
+}
+
 .trend-calendar-day-btn {
   width: 100%;
   min-height: 32px;

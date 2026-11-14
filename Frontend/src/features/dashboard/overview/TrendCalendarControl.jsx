@@ -102,7 +102,15 @@ function normalizeMode(m) {
   return 'today'
 }
 
-const WEEKDAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const WEEKDAY_HEADERS = [
+  { short: 'Mo', full: 'Monday' },
+  { short: 'Tu', full: 'Tuesday' },
+  { short: 'We', full: 'Wednesday' },
+  { short: 'Th', full: 'Thursday' },
+  { short: 'Fr', full: 'Friday' },
+  { short: 'Sa', full: 'Saturday' },
+  { short: 'Su', full: 'Sunday' },
+]
 
 const DEFAULT_PRESETS = [
   { id: 'today', label: 'Daily' },
@@ -465,7 +473,7 @@ export default function TrendCalendarControl({
                   </div>
                   <div className="trend-calendar-weekdays" aria-hidden="true">
                     {WEEKDAY_HEADERS.map((w) => (
-                      <span key={w} className="trend-calendar-weekday">{w}</span>
+                      <span key={w.short} className="trend-calendar-weekday">{w.short}</span>
                     ))}
                   </div>
                   <div className="trend-calendar-week-grid">
@@ -521,51 +529,84 @@ export default function TrendCalendarControl({
                       <ChevronRight size={16} aria-hidden="true" />
                     </button>
                   </div>
-                  <div className="trend-calendar-weekdays" aria-hidden="true">
-                    {WEEKDAY_HEADERS.map((w) => (
-                      <span key={w} className="trend-calendar-weekday">{w}</span>
-                    ))}
-                  </div>
                   <div
-                    className="trend-calendar-day-grid"
+                    className="trend-calendar-grid-container"
                     role="grid"
+                    aria-label={monthHeading}
                     onMouseLeave={() => {
                       if (normDraftMode === 'custom') setHoveredDay(null)
                     }}
                   >
-                    {monthDays.map((day) => {
-                      const isSelected = normDraftMode === 'custom'
-                        ? Boolean(
-                          (customPreviewStart && isSameDay(day, customPreviewStart)) ||
-                          (customPreviewEnd && isSameDay(day, customPreviewEnd))
+                    <div className="trend-calendar-weekdays" role="row">
+                      {WEEKDAY_HEADERS.map((w) => (
+                        <span key={w.short} className="trend-calendar-weekday" role="columnheader" aria-label={w.full}>
+                          {w.short}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="trend-calendar-day-grid">
+                      {Array.from({ length: Math.ceil(monthDays.length / 7) }, (_, weekIndex) => {
+                        const weekSlice = monthDays.slice(weekIndex * 7, weekIndex * 7 + 7)
+                        return (
+                          <div key={weekSlice[0]?.toISOString() ?? weekIndex} className="trend-calendar-day-row" role="row">
+                            {weekSlice.map((day, dayOffset) => {
+                              const dayIndex = weekIndex * 7 + dayOffset
+                              const isSelected = normDraftMode === 'custom'
+                                ? Boolean(
+                                  (customPreviewStart && isSameDay(day, customPreviewStart)) ||
+                                  (customPreviewEnd && isSameDay(day, customPreviewEnd))
+                                )
+                                : Boolean(activeDate && isSameDay(day, activeDate))
+                              const isInRange = normDraftMode === 'custom' && Boolean(
+                                customPreviewStart &&
+                                customPreviewEnd &&
+                                day > customPreviewStart &&
+                                day < customPreviewEnd &&
+                                !isSelected
+                              )
+                              const isDisabled = Boolean(maxDate && day > maxDate)
+                              const isOutside = day.getMonth() !== viewDate.getMonth()
+                              return (
+                                <div key={day.toISOString()} className="trend-calendar-day-cell" role="gridcell">
+                                  <button
+                                    type="button"
+                                    data-day-index={dayIndex}
+                                    className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isInRange ? 'is-in-range' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
+                                    aria-label={getDayAriaLabel(day)}
+                                    aria-pressed={isSelected}
+                                    disabled={isDisabled}
+                                    onKeyDown={(event) => {
+                                      const deltas = {
+                                        ArrowLeft: -1,
+                                        ArrowRight: 1,
+                                        ArrowUp: -7,
+                                        ArrowDown: 7,
+                                        Home: -(dayIndex % 7),
+                                        End: 6 - (dayIndex % 7),
+                                      }
+                                      if (!(event.key in deltas)) return
+                                      const nextIndex = dayIndex + deltas[event.key]
+                                      const gridEl = event.currentTarget.closest('[role="grid"]')
+                                      const targetBtn = gridEl?.querySelector(`button[data-day-index="${nextIndex}"]:not(:disabled)`)
+                                      if (targetBtn) {
+                                        event.preventDefault()
+                                        targetBtn.focus()
+                                      }
+                                    }}
+                                    onMouseEnter={() => {
+                                      if (normDraftMode === 'custom' && !isDisabled) setHoveredDay(day)
+                                    }}
+                                    onClick={() => handleSelect(day, normDraftMode === 'custom' ? 'custom' : 'day')}
+                                  >
+                                    {day.getDate()}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
                         )
-                        : Boolean(activeDate && isSameDay(day, activeDate))
-                      const isInRange = normDraftMode === 'custom' && Boolean(
-                        customPreviewStart &&
-                        customPreviewEnd &&
-                        day > customPreviewStart &&
-                        day < customPreviewEnd &&
-                        !isSelected
-                      )
-                      const isDisabled = Boolean(maxDate && day > maxDate)
-                      const isOutside = day.getMonth() !== viewDate.getMonth()
-                      return (
-                        <button
-                          key={day.toISOString()}
-                          type="button"
-                          className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isInRange ? 'is-in-range' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
-                          aria-label={getDayAriaLabel(day)}
-                          aria-pressed={isSelected}
-                          disabled={isDisabled}
-                          onMouseEnter={() => {
-                            if (normDraftMode === 'custom' && !isDisabled) setHoveredDay(day)
-                          }}
-                          onClick={() => handleSelect(day, normDraftMode === 'custom' ? 'custom' : 'day')}
-                        >
-                          {day.getDate()}
-                        </button>
-                      )
-                    })}
+                      })}
+                    </div>
                   </div>
                 </div>
               )}

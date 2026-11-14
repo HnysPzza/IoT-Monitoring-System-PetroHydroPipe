@@ -348,5 +348,38 @@ describe('TrendCalendarControl', () => {
       vi.useRealTimers()
     }
   })
+
+  it('structures the daily calendar with ARIA rows, columnheaders, gridcells, and supports arrow-key navigation', async () => {
+    const user = userEvent.setup()
+    renderCalendar()
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+
+    const grid = await screen.findByRole('grid')
+    const columnHeaders = grid.querySelectorAll('[role="columnheader"]')
+    expect(columnHeaders.length).toBe(7)
+    expect(columnHeaders[0].closest('[aria-hidden="true"]')).toBeNull()
+    expect(grid.querySelectorAll('[role="row"]').length).toBeGreaterThanOrEqual(5)
+    expect(grid.querySelectorAll('[role="gridcell"]').length).toBe(35)
+
+    const day14 = await screen.findByRole('button', { name: /july 14th, 2026/i })
+    const day15 = await screen.findByRole('button', { name: /july 15th, 2026/i })
+    const day8 = await screen.findByRole('button', { name: /july 8th, 2026/i })
+
+    day15.focus()
+    expect(day15).toHaveFocus()
+
+    await user.keyboard('{ArrowLeft}')
+    expect(day14).toHaveFocus()
+
+    await user.keyboard('{ArrowRight}')
+    expect(day15).toHaveFocus()
+
+    await user.keyboard('{ArrowUp}')
+    expect(day8).toHaveFocus()
+
+    await user.keyboard('{ArrowDown}')
+    expect(day15).toHaveFocus()
+  })
 })
 
