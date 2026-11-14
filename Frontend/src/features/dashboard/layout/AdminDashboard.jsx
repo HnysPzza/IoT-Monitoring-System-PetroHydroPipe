@@ -383,7 +383,7 @@ export default function AdminDashboard() {
   }, [isAlertsOpen, unresolvedAlerts])
 
   useEffect(() => {
-    if (!isDrawerOpen && !isAlertsOpen) return undefined
+    if (!isDrawerOpen && !isAlertsOpen && !collapsedTooltip) return undefined
 
     function handleEscape(event) {
       if (event.key !== 'Escape') return
@@ -394,8 +394,14 @@ export default function AdminDashboard() {
         return
       }
 
-      setIsDrawerOpen(false)
-      mobileMenuButtonRef.current?.focus({ preventScroll: true })
+      if (isDrawerOpen) {
+        setIsDrawerOpen(false)
+        mobileMenuButtonRef.current?.focus({ preventScroll: true })
+        return
+      }
+
+      setHoveredTooltip(null)
+      setFocusedTooltip(null)
     }
 
     document.addEventListener('keydown', handleEscape)
@@ -403,7 +409,7 @@ export default function AdminDashboard() {
     return () => {
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [isAlertsOpen, isDrawerOpen])
+  }, [collapsedTooltip, isAlertsOpen, isDrawerOpen])
 
   useEffect(() => () => {
     if (sidebarScrollTimerRef.current !== null) {
@@ -790,6 +796,7 @@ export default function AdminDashboard() {
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
                       data-label={item.label}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
+                      aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === item.to ? 'sidebar-collapsed-tooltip' : undefined}
                       onPointerDown={() => {
                         pointerFocusedToRef.current = item.to
                         setFocusedTooltip((current) => (current?.to === item.to ? null : current))
@@ -841,14 +848,47 @@ export default function AdminDashboard() {
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="sidebar-avatar" aria-hidden="true">
-              <UserRound size={18} />
+              <UserRound size={16} strokeWidth={1.85} />
             </span>
             <div className="sidebar-user-copy">
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
               <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
             </div>
-            <button className="sidebar-logout" type="button" aria-label="Logout" title="Log out" onClick={handleLogout}>
-              <LogOut size={14} aria-hidden="true" />
+            <button
+              className="sidebar-logout"
+              type="button"
+              aria-label="Logout"
+              title={isDesktopSidebarCollapsed ? undefined : 'Log out'}
+              aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === '__logout__' ? 'sidebar-collapsed-tooltip' : undefined}
+              onPointerDown={() => {
+                pointerFocusedToRef.current = '__logout__'
+                setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
+              }}
+              onMouseEnter={(event) => {
+                if (!isDesktopSidebarCollapsed) return
+                const rect = event.currentTarget.getBoundingClientRect()
+                setHoveredTooltip({ to: '__logout__', label: 'Log out', top: rect.top + rect.height / 2 })
+              }}
+              onMouseLeave={() => {
+                if (pointerFocusedToRef.current === '__logout__') {
+                  pointerFocusedToRef.current = null
+                }
+                setHoveredTooltip((current) => (current?.to === '__logout__' ? null : current))
+              }}
+              onFocus={(event) => {
+                const isPointerFocus = pointerFocusedToRef.current === '__logout__'
+                pointerFocusedToRef.current = null
+                if (!isDesktopSidebarCollapsed || isPointerFocus) return
+                const rect = event.currentTarget.getBoundingClientRect()
+                setFocusedTooltip({ to: '__logout__', label: 'Log out', top: rect.top + rect.height / 2 })
+              }}
+              onBlur={() => {
+                pointerFocusedToRef.current = null
+                setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
+              }}
+              onClick={handleLogout}
+            >
+              <LogOut className="sidebar-logout-icon" size={16} strokeWidth={1.85} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -856,6 +896,7 @@ export default function AdminDashboard() {
 
       {isDesktopSidebarCollapsed && collapsedTooltip ? (
         <div
+          id="sidebar-collapsed-tooltip"
           className="sidebar-collapsed-tooltip"
           role="tooltip"
           style={{ top: `${collapsedTooltip.top}px` }}

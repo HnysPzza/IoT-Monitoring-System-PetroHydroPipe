@@ -1467,4 +1467,30 @@ describe('AdminDashboard alerts', () => {
     expect(bell).toHaveFocus()
   })
 
+  it('links collapsed sidebar tooltip via aria-describedby and dismisses it on Escape', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    await user.click(await screen.findByRole('button', { name: 'Collapse sidebar' }))
+    const settingsLink = screen.getByRole('link', { name: 'Settings' })
+    fireEvent.focus(settingsLink)
+
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveAttribute('id', 'sidebar-collapsed-tooltip')
+    expect(settingsLink).toHaveAttribute('aria-describedby', 'sidebar-collapsed-tooltip')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    const logoutBtn = screen.getByRole('button', { name: 'Logout' })
+    logoutBtn.getBoundingClientRect = () => ({ top: 620, height: 44, bottom: 664, left: 10, right: 54, width: 44, x: 10, y: 620, toJSON: () => ({}) })
+    fireEvent.focus(logoutBtn)
+
+    const logoutTooltip = screen.getByRole('tooltip')
+    expect(logoutTooltip).toHaveTextContent('Log out')
+    expect(logoutTooltip).toHaveStyle({ top: '642px' })
+    expect(logoutBtn).toHaveAttribute('aria-describedby', 'sidebar-collapsed-tooltip')
+  })
 })

@@ -1399,11 +1399,12 @@ button:disabled {
 }
 
 .sidebar-logout .sidebar-logout-icon {
-  transition: transform 200ms ease;
+  transition: transform 200ms var(--ease-out);
 }
 
-.sidebar-logout:hover .sidebar-logout-icon {
-  transform: translateX(3px);
+.sidebar-logout:hover .sidebar-logout-icon,
+.sidebar-logout:focus-visible .sidebar-logout-icon {
+  transform: translateX(2px);
 }
 
 .sidebar-footer {
@@ -7424,7 +7425,10 @@ button:disabled {
   .skeleton-toggle,
   .skeleton-control,
   .overview-sensor-card,
+  .sidebar-link::before,
   .sidebar-link .sidebar-link-icon,
+  .sidebar-logout,
+  .sidebar-logout .sidebar-logout-icon,
   .animated-gauge-icon .gauge-needle,
   .animated-analytics-icon .analytics-bar,
   .animated-analytics-icon .analytics-trendline,
