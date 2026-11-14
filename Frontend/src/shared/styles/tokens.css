@@ -7390,6 +7390,10 @@ button:disabled {
   .animated-analytics-icon .analytics-bar,
   .animated-analytics-icon .analytics-trendline,
   .dashboard-route-view,
+  .analytics-kpi-card,
+  .analytics-downtime-cause-bar,
+  .analytics-downtime-cause-tooltip,
+  .analytics-cause-legend-item,
   .login-card,
   .login-page .notice,
   .login-page .input-shell,
@@ -7403,6 +7407,9 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 
+  .analytics-cause-legend-item:hover,
+  .analytics-cause-legend-item:focus-visible,
+  .analytics-cause-legend-item.is-hovered,
   .login-page .btn:hover:not(:disabled),
   .login-page .btn:active:not(:disabled),
   .login-page .icon-button:active:not(:disabled) {
