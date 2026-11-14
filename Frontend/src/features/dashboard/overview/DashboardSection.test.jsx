@@ -1225,4 +1225,44 @@ describe('DashboardSection', () => {
     const idleBanner = (await screen.findByText('S-01 Raw Material & Coil Joint is idle.')).closest('[role="status"]')
     expect(idleBanner).toHaveAttribute('aria-live', 'off')
   })
+
+  it('clears stale live feed state when the auth token is removed', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed
+      .mockResolvedValueOnce(livePayload())
+      .mockRejectedValueOnce(new Error('Live refresh failed'))
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <AuthContext.Provider value={{ token: 'token-a', user: { id: '1', role: 'Admin' } }}>
+            <DashboardSection />
+          </AuthContext.Provider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Refresh overview data' }))
+    expect(await screen.findByText(/Live machine status is stale/i)).toBeInTheDocument()
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <AuthContext.Provider value={{ token: null, user: null }}>
+            <DashboardSection />
+          </AuthContext.Provider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Live machine status is stale/i)).not.toBeInTheDocument()
+    })
+  })
 })

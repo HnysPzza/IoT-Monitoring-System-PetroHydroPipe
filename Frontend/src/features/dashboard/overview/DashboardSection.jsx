@@ -244,6 +244,24 @@ export default function DashboardSection() {
     liveRequestIdRef.current = requestId
     let isCancelled = false
 
+    if (!token) {
+      successfulLiveRef.current = null
+      setLiveData({ machine: null, sensors: [], monitoringMode: 'unknown' })
+      setLiveRequestKey('')
+      setLiveLastUpdated(null)
+      setLiveError('')
+      setLiveErrorKey('')
+      setLiveState('loading')
+      return () => {
+        isCancelled = true
+      }
+    }
+
+    if (successfulLiveRef.current && successfulLiveRef.current.requestKey !== liveKey) {
+      successfulLiveRef.current = null
+      setLiveState('loading')
+    }
+
     async function loadLiveStatus() {
       setLiveState((current) => current === 'stale' ? 'stale' : 'loading')
       setLiveError('')
