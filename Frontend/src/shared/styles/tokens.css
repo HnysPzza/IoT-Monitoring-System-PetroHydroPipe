@@ -3308,7 +3308,7 @@ button:disabled {
   grid-template-columns: 130px minmax(0, 1fr) 40px;
   align-items: center;
   gap: 16px;
-  min-height: 18px;
+  min-height: 36px;
 }
 
 .analytics-downtime-cause-label {
@@ -3328,7 +3328,7 @@ button:disabled {
   display: flex;
   min-width: 0;
   align-items: center;
-  height: 18px;
+  height: 24px;
 }
 
 .analytics-downtime-cause-bar {
@@ -3339,6 +3339,7 @@ button:disabled {
   border-radius: 8px;
   cursor: help;
   outline: none;
+  transition: width 320ms var(--ease-out);
 }
 
 .analytics-downtime-cause-bar.is-zero {
@@ -5007,6 +5008,8 @@ button:disabled {
   visibility: hidden;
 }
 
+.analytics-downtime-cause-row:hover .analytics-downtime-cause-tooltip,
+.analytics-downtime-cause-row:focus-within .analytics-downtime-cause-tooltip,
 .analytics-downtime-cause-bar:hover + .analytics-downtime-cause-tooltip,
 .analytics-downtime-cause-bar:focus-visible + .analytics-downtime-cause-tooltip {
   opacity: 1;
