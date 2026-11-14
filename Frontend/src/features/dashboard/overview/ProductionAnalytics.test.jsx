@@ -1,18 +1,41 @@
+import { cloneElement, isValidElement } from 'react'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProductionAnalytics from './ProductionAnalytics.jsx'
 
+const mockTooltipState = vi.hoisted(() => ({ props: null }))
+
 vi.mock('recharts', () => ({
-  Area: () => null,
+  Area: ({ isAnimationActive, name }) => (
+    <span data-testid="area-series" data-animation={String(isAnimationActive)} data-name={name} />
+  ),
   CartesianGrid: () => null,
   ComposedChart: ({ children, data }) => <div data-testid="production-chart" data-points={data.map((point) => point.label).join(',')}>{children}</div>,
-  Line: () => null,
-  ReferenceLine: ({ label }) => <span>{label?.value}</span>,
+  Line: ({ isAnimationActive, name }) => (
+    <span data-testid="line-series" data-animation={String(isAnimationActive)} data-name={name} />
+  ),
+  ReferenceLine: ({ label }) => (
+    <span
+      data-testid="now-reference-line"
+      data-position={label?.position}
+      data-fontsize={String(label?.fontSize)}
+    >
+      {label?.value}
+    </span>
+  ),
   ResponsiveContainer: ({ children }) => <div>{children}</div>,
-  Tooltip: () => null,
-  XAxis: () => null,
+  Tooltip: ({ content }) => (
+    mockTooltipState.props && isValidElement(content)
+      ? cloneElement(content, mockTooltipState.props)
+      : null
+  ),
+  XAxis: ({ minTickGap }) => <span data-testid="production-xaxis" data-min-tick-gap={String(minTickGap)} />,
   YAxis: () => null,
 }))
+
+afterEach(() => {
+  mockTooltipState.props = null
+})
 
 function buildAnalytics(overrides = {}) {
   return {
@@ -82,5 +105,143 @@ describe('ProductionAnalytics', () => {
 
     expect(screen.queryByText('Now')).not.toBeInTheDocument()
     expect(screen.getByTestId('production-chart')).toHaveAttribute('data-points', '6AM')
+  })
+
+  it('renders clear Production Output Today scope, disables chart entrance animation, and lifts Now label out of plot area', () => {
+    render(<ProductionAnalytics analytics={buildAnalytics()} />)
+
+    expect(screen.getByText('Production Output · Today')).toBeInTheDocument()
+    expect(screen.getByTestId('area-series')).toHaveAttribute('data-animation', 'false')
+    expect(screen.getByTestId('line-series')).toHaveAttribute('data-animation', 'false')
+    expect(screen.getByTestId('now-reference-line')).toHaveAttribute('data-position', 'top')
+    expect(screen.getByTestId('now-reference-line')).toHaveAttribute('data-fontsize', '12')
+    expect(screen.getByTestId('production-xaxis')).toHaveAttribute('data-min-tick-gap', '14')
+  })
+
+  it('renders safely when analytics or day points are missing', () => {
+    const { container, rerender } = render(<ProductionAnalytics analytics={null} />)
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<ProductionAnalytics analytics={{}} />)
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<ProductionAnalytics analytics={{ day: { label: 'Today vs Yesterday' } }} />)
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(
+      <ProductionAnalytics
+        analytics={{
+          day: {
+            points: [{ label: '6AM', current: 1, previous: 0 }],
+            currentTotal: 1,
+            previousTotal: 0,
+          },
+        }}
+      />,
+    )
+    expect(screen.getByRole('heading', { level: 2, name: 'Production Output' })).toBeInTheDocument()
+    expect(screen.getByText('Today (1)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (0)')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('undefined')
+
+    rerender(
+      <ProductionAnalytics
+        analytics={{
+          day: {
+            points: [{ label: '6AM', current: 1, previous: 0 }],
+          },
+        }}
+      />,
+    )
+    expect(screen.getByText('Today (—)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (—)')).toBeInTheDocument()
+    expect(screen.getByTestId('area-series')).toHaveAttribute('data-name', 'Today')
+    expect(screen.getByTestId('line-series')).toHaveAttribute('data-name', 'Yesterday')
+    expect(container.textContent).not.toMatch(/undefined|NaN/)
+  })
+
+  it('formats non-finite legend totals and chart tooltip values without undefined or NaN', () => {
+    mockTooltipState.props = {
+      active: true,
+      label: '6AM',
+      payload: [
+        { dataKey: 'current', name: 'Today', value: 1, color: '#111', payload: { label: '6AM' } },
+        { dataKey: 'previous', name: 'Yesterday', value: Number.NaN, color: '#666', payload: { label: '6AM' } },
+      ],
+    }
+
+    const { container, rerender } = render(
+      <ProductionAnalytics
+        analytics={{
+          day: {
+            currentTotal: Number.NaN,
+            previousTotal: Number.POSITIVE_INFINITY,
+            unit: 'pcs',
+            points: [{ label: '6AM', current: 1, previous: 0 }],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Today (—)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (—)')).toBeInTheDocument()
+    expect(screen.getByText('Today: 1 pcs')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday: —')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/undefined|NaN/)
+
+    mockTooltipState.props = {
+      active: true,
+      label: '9AM',
+      payload: [
+        { dataKey: 'current', name: 'Today', value: 12, color: '#111', payload: { label: '9AM' } },
+        { dataKey: 'previous', name: 'Yesterday', value: null, color: '#666', payload: { label: '9AM' } },
+      ],
+    }
+
+    rerender(
+      <ProductionAnalytics
+        analytics={{
+          day: {
+            points: [{ label: '9AM', current: 12, previous: null }],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Today: 12')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday: —')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/undefined|NaN/)
+
+    mockTooltipState.props = {
+      active: true,
+      label: '6AM',
+      payload: [
+        { dataKey: 'current', name: 'Today so far', value: 0, color: '#111', payload: { label: '6AM' } },
+        { dataKey: 'previous', name: 'Yesterday at same time', value: null, color: '#666', payload: { label: '6AM' } },
+      ],
+    }
+
+    rerender(
+      <ProductionAnalytics
+        analytics={{
+          day: {
+            currentLabel: 'Today so far',
+            previousLabel: 'Yesterday at same time',
+            currentTotal: 0,
+            previousTotal: null,
+            unit: 'pcs',
+            points: [{ label: '6AM', current: 0, previous: null }],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Today (0 pcs)')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday (—)')).toBeInTheDocument()
+    expect(screen.getByTestId('area-series')).toHaveAttribute('data-name', 'Today so far')
+    expect(screen.getByTestId('line-series')).toHaveAttribute('data-name', 'Yesterday at same time')
+    expect(screen.getByText('Today so far: 0 pcs')).toBeInTheDocument()
+    expect(screen.getByText('Yesterday at same time: —')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/undefined|NaN/)
   })
 })

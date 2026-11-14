@@ -4479,6 +4479,22 @@ button:disabled {
   border-top-style: dashed;
 }
 
+.legend-threshold {
+  border-color: var(--chart-danger);
+  border-top-style: dashed;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.legend-downtime-under {
+  background: var(--chart-warning);
+}
+
 .section-card {
   padding: 22px;
 }

@@ -123,15 +123,20 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
 
   return (
     <div className="trend-chart-panel">
+      <div className="chart-legend" aria-label="Downtime chart legend">
+        <span><i className="legend-swatch legend-downtime-under" aria-hidden="true" />Under {thresholdMinutes}m</span>
+        <span><i className="legend-swatch legend-downtime-over" aria-hidden="true" />{thresholdMinutes}m+</span>
+        <span><i className="legend-line legend-threshold" aria-hidden="true" />{thresholdMinutes}m threshold</span>
+      </div>
       <div role="img" aria-label="Downtime by non-overlapping period bar chart in minutes">
         <ResponsiveContainer width="100%" height={195} minWidth={0}>
-          <BarChart data={data} margin={{ top: 26, right: 16, left: -4, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 14, right: 16, left: -4, bottom: 0 }}>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={12} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
-            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" label={{ value: `${thresholdMinutes}m threshold`, position: 'insideTopRight', dy: -20, fill: 'var(--status-downtime-text)', fontSize: 12, fontWeight: 600 }} />
-            <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
+            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" />
+            <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44} isAnimationActive={false}>
               {data.map((item) => (
                 <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />
               ))}
