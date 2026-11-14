@@ -70,6 +70,7 @@ function CauseTooltip({ cause }) {
 
 export default function AnalyticsOperationsDetails({ snapshot }) {
   const [activeSensorIndex, setActiveSensorIndex] = useState(null)
+  const prefersReducedMotion = typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
   const downtimeCauses = useMemo(() => getDowntimeCauseBreakdown(snapshot), [snapshot])
   const sensors = useMemo(() => getProcessSensorBreakdown(snapshot), [snapshot])
 
@@ -287,8 +288,8 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
                   <Bar
                     dataKey="eventCount"
                     radius={[6, 6, 0, 0]}
-                    animationDuration={500}
-                    isAnimationActive={true}
+                    animationDuration={320}
+                    isAnimationActive={!prefersReducedMotion}
                     onMouseEnter={(_, index) => setActiveSensorIndex(index)}
                     onMouseLeave={() => setActiveSensorIndex(null)}
                     rootTabIndex={-1}

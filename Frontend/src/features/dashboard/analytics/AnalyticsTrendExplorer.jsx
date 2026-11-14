@@ -28,6 +28,7 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
 }
 
 export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricChange }) {
+  const prefersReducedMotion = typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
   const trend = buildAnalyticsTrend(snapshot, metricId)
   const { metric, points, bucket, isCalendarSegmentComparison } = trend
   const summary = getAnalyticsTrendSummary(trend)
@@ -133,8 +134,8 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
               fill="url(#analyticsTrendAreaGradient)"
               dot={{ r: 3.5, strokeWidth: 2, fill: 'var(--c-surface)', stroke: strokeColor }}
               activeDot={{ r: 6, strokeWidth: 2, fill: strokeColor, stroke: 'var(--c-surface)' }}
-              isAnimationActive={true}
-              animationDuration={600}
+              isAnimationActive={!prefersReducedMotion}
+              animationDuration={320}
               animationEasing="ease-out"
               connectNulls={false}
             />
