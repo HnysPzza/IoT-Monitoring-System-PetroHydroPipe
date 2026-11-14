@@ -21,13 +21,19 @@
 .status-dot-danger { background: #dc2626; }
 .status-dot-fault { background: #b45309; }
 .status-dot-offline { background: #64748b; }
-.status-dot-neutral { opacity: 0.4; }
-.status-danger { color: #dc2626; font-weight: 500; }
+.status-dot-neutral { background: var(--c-text-2); opacity: 0.75; }
+.status-danger { color: #b91c1c; font-weight: 500; }
 .status-fault { color: var(--status-fault-text, #92400e); font-weight: 500; }
 .status-offline { color: var(--status-offline-text, #334155); font-weight: 500; }
+:root:not([data-theme='light']) .status-dot-active,
 :root[data-theme='dark'] .status-dot-active { background: #10b981; }
+:root:not([data-theme='light']) .status-dot-idle,
 :root[data-theme='dark'] .status-dot-idle { background: #38bdf8; }
+:root:not([data-theme='light']) .status-dot-danger,
 :root[data-theme='dark'] .status-dot-danger { background: #ef4444; }
+:root:not([data-theme='light']) .status-dot-fault,
 :root[data-theme='dark'] .status-dot-fault { background: #f59e0b; }
+:root:not([data-theme='light']) .status-dot-offline,
 :root[data-theme='dark'] .status-dot-offline { background: #94a3b8; }
+:root:not([data-theme='light']) .status-danger,
 :root[data-theme='dark'] .status-danger { color: #f87171; }

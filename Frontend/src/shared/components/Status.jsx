@@ -5,15 +5,17 @@ export default function Status({ children, value = children, tone, className = '
   const danger = tone === 'danger' || ['expired', 'error', 'downtime', 'overdue', 'rejected'].includes(status)
   const offline = !danger && (tone === 'offline' || status.startsWith('last:') || status === 'offline')
   const fault = !danger && !offline && (tone === 'fault' || status === 'fault')
+  const active = !danger && !offline && !fault && (tone === 'active' || ['active', 'running', 'ok', 'connected', 'resolved'].includes(status))
   const dot = danger ? 'danger'
     : offline ? 'offline'
       : fault ? 'fault'
-        : ['active', 'running', 'ok', 'connected'].includes(status) ? 'active'
+        : active ? 'active'
           : status === 'idle' ? 'idle' : 'neutral'
   const statusToneClass = danger ? 'status-danger'
     : offline ? 'status-offline'
       : fault ? 'status-fault'
-        : ''
+        : active ? 'status-active'
+          : ''
 
   return (
     <span className={`status ${statusToneClass} ${className}`.trim()} {...props}>
