@@ -1,8 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
 /* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
   color-scheme: dark;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --c-bg: #0B1322;
   /* Layer 1: Main Canvas */
   --c-surface: #111C2E;
@@ -181,7 +180,7 @@ body {
   margin: 0;
   color: var(--c-text);
   background: var(--c-bg);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 
 button,
@@ -336,7 +335,7 @@ button:disabled {
   align-items: center;
   gap: 10px;
   color: var(--c-text);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
 }
 
@@ -356,7 +355,7 @@ button:disabled {
 .machine-meta dd,
 .trend-bar-value,
 .availability-copy span {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 
 .system-title {
@@ -591,7 +590,7 @@ button:disabled {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.4;
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 
 .input-shell input:disabled {
@@ -1173,7 +1172,7 @@ button:disabled {
 }
 
 .sidebar-link-label {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.86rem;
   font-weight: 500;
   line-height: 1.25;
@@ -2106,7 +2105,7 @@ button:disabled {
   padding: 2px 6px;
   border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 0.62rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   line-height: 1.2;
@@ -2258,8 +2257,8 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 10px;
+  min-height: 44px;
+  padding: 0 12px;
   font-size: 0.75rem;
   font-weight: 600;
   color: #2563EB;
@@ -2367,7 +2366,8 @@ button:disabled {
   justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 12px;
+  min-height: 44px;
+  padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid transparent;
   color: #475569;
@@ -2876,7 +2876,7 @@ button:disabled {
 
 .analytics-kpi-card .stat-value {
   color: var(--c-text);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 1.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -3086,7 +3086,7 @@ button:disabled {
 }
 
 .account-table.analytics-chart-table td:nth-child(2) {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
 }
 
@@ -3169,7 +3169,7 @@ button:disabled {
 
 .analytics-cause-meta {
   color: var(--c-text-3);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
   line-height: 1.45;
 }
@@ -3191,7 +3191,7 @@ button:disabled {
 
 .analytics-cause-empty span {
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
 }
 
@@ -3238,7 +3238,7 @@ button:disabled {
   display: grid;
   place-items: center;
   color: var(--c-text-3);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -3319,7 +3319,7 @@ button:disabled {
 .analytics-downtime-cause-subtitle {
   margin: 0;
   color: var(--c-text-3);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.75rem;
   line-height: 1.3;
 }
@@ -3392,7 +3392,7 @@ button:disabled {
 
 .analytics-downtime-cause-share {
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -3401,7 +3401,7 @@ button:disabled {
 .analytics-downtime-cause-hint {
   margin: 0;
   color: var(--c-text-3);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.64rem;
   line-height: 1.3;
 }
@@ -3426,12 +3426,12 @@ button:disabled {
 }
 
 .analytics-sensor-tooltip strong {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 
 .analytics-sensor-tooltip span {
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.74rem;
 }
 
@@ -3477,7 +3477,7 @@ button:disabled {
 .settings-profile-card p {
   margin: 0;
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.74rem;
   text-transform: uppercase;
 }
@@ -3560,7 +3560,7 @@ button:disabled {
   position: relative;
   align-content: center;
   justify-items: start;
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 700;
 }
 
@@ -3678,7 +3678,7 @@ button:disabled {
   border-radius: 6px;
   color: var(--c-text);
   background: var(--c-surface);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.84rem;
   line-height: 1.4;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -3733,7 +3733,7 @@ button:disabled {
   border: 1px solid var(--subtle-border);
   border-radius: 8px;
   background: var(--panel-bg);
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   line-height: 1.45;
 }
@@ -3763,7 +3763,7 @@ button:disabled {
 .live-metric-label {
   display: block;
   margin: 0;
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.74rem;
   text-transform: uppercase;
 }
@@ -4126,7 +4126,7 @@ button:disabled {
 .reports-stat-value {
   margin: 0;
   color: var(--c-text);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 1.72rem;
   font-weight: 750;
   letter-spacing: -0.04em;
@@ -4357,7 +4357,7 @@ button:disabled {
   justify-content: flex-end;
   gap: 12px;
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
 }
 
@@ -4422,7 +4422,7 @@ button:disabled {
   margin: 0;
   padding: 0;
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
   line-height: 1.35;
 }
@@ -4588,7 +4588,7 @@ button:disabled {
 .live-network-card {
   min-height: 52px;
   padding: 14px 16px;
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.78rem;
 }
 
@@ -5058,7 +5058,7 @@ button:disabled {
 
 .recharts-tooltip-card strong,
 .recharts-tooltip-card span {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 
 .recharts-tooltip-card strong {
@@ -5098,7 +5098,7 @@ button:disabled {
   border-radius: 8px;
   color: var(--status-downtime-text);
   background: var(--status-downtime-bg);
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
 }
 
@@ -5108,7 +5108,7 @@ button:disabled {
   border-radius: 999px;
   color: var(--c-text-2);
   background: var(--panel-bg);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
 }
 
@@ -6085,7 +6085,7 @@ button:disabled {
 
 .filter-field span {
   color: var(--c-text-2);
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.74rem;
   text-transform: uppercase;
 }
@@ -6403,7 +6403,7 @@ button:disabled {
 .audit-entity-label {
   margin-top: 4px;
   color: var(--c-text-2);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
 }
 
@@ -6782,7 +6782,7 @@ button:disabled {
 
 .placeholder-card strong {
   color: var(--c-text);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 
 @keyframes enter {
