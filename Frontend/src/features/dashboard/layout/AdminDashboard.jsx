@@ -814,17 +814,18 @@ export default function AdminDashboard() {
         </div>
       ) : null}
 
-      {isDrawerOpen ? (
-        <button
-          className="sidebar-backdrop mobile-only"
-          type="button"
-          aria-label="Close navigation overlay"
-          onClick={() => {
-            setIsDrawerOpen(false)
-            mobileMenuButtonRef.current?.focus({ preventScroll: true })
-          }}
-        />
-      ) : null}
+      <button
+        className={`sidebar-backdrop mobile-only ${isDrawerOpen ? 'is-open' : ''}`}
+        type="button"
+        aria-label="Close navigation overlay"
+        aria-hidden={!isDrawerOpen || undefined}
+        tabIndex={isDrawerOpen ? 0 : -1}
+        disabled={!isDrawerOpen}
+        onClick={() => {
+          setIsDrawerOpen(false)
+          mobileMenuButtonRef.current?.focus({ preventScroll: true })
+        }}
+      />
 
       <div className="dashboard-main">
         <header className={`dashboard-topbar ${normalizedPathname === '/dashboard' ? 'overview-topbar' : ''}`.trim()}>
