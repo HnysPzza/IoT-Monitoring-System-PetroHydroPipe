@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router'
 import { CheckCircle2, CircleAlert, User } from 'lucide-react'
 import { getRoleDisplayName } from '../../shared/constants/roleLabels.js'
@@ -52,8 +53,9 @@ export default function LoginPage() {
   const mountedRef = useRef(true)
   const usernameRef = useRef(null)
   const passwordRef = useRef(null)
+  const pendingFocusRef = useRef(null)
   const redirectTimerRef = useRef(null)
-  const { login, isAuthenticated } = useAuth()
+  const { login, isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
   const nextQueryTarget = new URLSearchParams(location.search).get('next')
   const intendedRoute = getSafeDashboardPath(nextQueryTarget || location.state?.from)
@@ -70,6 +72,13 @@ export default function LoginPage() {
   }, [])
 
   useEffect(() => {
+    if (isBusy || !pendingFocusRef.current) return
+    const target = pendingFocusRef.current
+    pendingFocusRef.current = null
+    target.current?.focus()
+  }, [isBusy])
+
+  useEffect(() => {
     if (location.state?.passwordChanged) {
       setSuccessMessage('Password updated. Sign in with your new password.')
     }
@@ -78,9 +87,31 @@ export default function LoginPage() {
   useEffect(() => {
     // Redirect already-signed-in visitors without preempting active sign-in confirmation.
     if (isAuthenticated && submitState === 'idle') {
-      navigate(intendedRoute, { replace: true })
+      navigate(user?.mustChangePassword ? '/change-password' : intendedRoute, { replace: true })
     }
-  }, [intendedRoute, isAuthenticated, navigate, submitState])
+  }, [intendedRoute, isAuthenticated, navigate, submitState, user?.mustChangePassword])
+
+  function navigateWithTransition(targetRoute) {
+    if (!mountedRef.current) return
+
+    const commitNavigation = () => {
+      if (mountedRef.current) {
+        navigate(targetRoute, { replace: true })
+      }
+    }
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+
+    if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function' && !prefersReducedMotion) {
+      document.startViewTransition(() => {
+        if (mountedRef.current) {
+          flushSync(commitNavigation)
+        }
+      })
+      return
+    }
+
+    commitNavigation()
+  }
 
   function updateField(event) {
     const { name, value } = event.target
@@ -124,18 +155,21 @@ export default function LoginPage() {
 
     try {
       setSubmitState('loading')
-      await login({
+      const nextAuth = await login({
         username: values.username.trim(),
         password: values.password,
       })
       if (!mountedRef.current) return
+      const requiresPasswordChange = Boolean(nextAuth?.user?.mustChangePassword)
       setSubmitState('success')
-      setSuccessMessage('Access granted. Loading dashboard.')
+      setSuccessMessage(
+        requiresPasswordChange
+          ? 'Password update required. Opening setup.'
+          : 'Access granted. Loading dashboard.',
+      )
       window.clearTimeout(redirectTimerRef.current)
       redirectTimerRef.current = window.setTimeout(() => {
-        if (mountedRef.current) {
-          navigate(intendedRoute, { replace: true })
-        }
+        navigateWithTransition(requiresPasswordChange ? '/change-password' : intendedRoute)
       }, 300)
     } catch (error) {
       if (!mountedRef.current) return
@@ -146,7 +180,7 @@ export default function LoginPage() {
       setServerErrorWrongPassword(wrongPassword)
       if (wrongPassword) {
         setShake(true)
-        passwordRef.current?.focus()
+        pendingFocusRef.current = passwordRef
       }
     }
   }
@@ -161,7 +195,7 @@ export default function LoginPage() {
     <AuthShell panelLabelledBy="login-title" cardKey="login">
       <div className="login-heading">
         <h1 id="login-title">Sign in to PHP-Monitoring</h1>
-        <p>Access monitoring dashboards for your assigned plant role.</p>
+        <p>Access dashboards for your plant role.</p>
       </div>
 
       {!isWrongPassword && serverError ? (
