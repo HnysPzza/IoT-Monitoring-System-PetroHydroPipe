@@ -21,6 +21,7 @@ import {
   UserRound,
   UserRoundCheck,
   Users,
+  X,
 } from 'lucide-react'
 import './sidebar-compact.css'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
@@ -133,8 +134,10 @@ export default function AdminDashboard() {
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
   const [hoveredTooltip, setHoveredTooltip] = useState(null)
   const [focusedTooltip, setFocusedTooltip] = useState(null)
+  const [ackStatusMessage, setAckStatusMessage] = useState('')
   const pointerFocusedToRef = useRef(null)
   const collapsedTooltip = hoveredTooltip || focusedTooltip
+  const topbarRef = useRef(null)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
   const sidebarRef = useRef(null)
@@ -238,6 +241,27 @@ export default function AdminDashboard() {
     mobileCloseButtonRef.current?.focus({ preventScroll: true })
   }, [isDrawerOpen, isMobileViewport])
 
+  useLayoutEffect(() => {
+    const headerEl = topbarRef.current
+    if (!headerEl) return undefined
+
+    function syncTopbarOffset() {
+      const bottom = headerEl.getBoundingClientRect().bottom
+      if (Number.isFinite(bottom) && bottom > 0) {
+        headerEl.style.setProperty('--topbar-offset', `${Math.ceil(bottom + 8)}px`)
+      }
+    }
+
+    syncTopbarOffset()
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(syncTopbarOffset)
+      observer.observe(headerEl)
+      return () => observer.disconnect()
+    }
+    window.addEventListener('resize', syncTopbarOffset)
+    return () => window.removeEventListener('resize', syncTopbarOffset)
+  }, [isAlertsOpen, isMobileViewport, normalizedPathname])
+
   useEffect(() => {
     if (!isAlertsOpen) return
 
@@ -251,10 +275,35 @@ export default function AdminDashboard() {
       setIsAlertsOpen(false)
     }
 
+    function handleFocusTrap(event) {
+      if (event.key !== 'Tab' || !alertsPopoverRef.current) return
+      const focusable = Array.from(
+        alertsPopoverRef.current.querySelectorAll(
+          'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      if (focusable.length === 0) {
+        event.preventDefault()
+        alertsPopoverRef.current.focus({ preventScroll: true })
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === alertsPopoverRef.current)) {
+        event.preventDefault()
+        last.focus({ preventScroll: true })
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus({ preventScroll: true })
+      }
+    }
+
     document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleFocusTrap)
 
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleFocusTrap)
     }
   }, [isAlertsOpen])
 
@@ -640,6 +689,7 @@ export default function AdminDashboard() {
       if (wasFocused || (typeof document !== 'undefined' && isAlertsOpen && document.activeElement === document.body)) {
         pendingFocusRestoreRef.current = { alertId, snapshotOrder, shouldRestoreFocus: true }
       }
+      setAckStatusMessage(`Alert acknowledged: ${payload.alert?.title || payload.alert?.message || alertId}`)
       applyAlertDeltaRef.current(payload.alert, { fromAcknowledgement: true })
     } catch (error) {
       if (sessionTokenRef.current === token && acknowledgementOperationsRef.current.get(alertId) === operationId) {
@@ -828,7 +878,7 @@ export default function AdminDashboard() {
       />
 
       <div className="dashboard-main">
-        <header className={`dashboard-topbar ${normalizedPathname === '/dashboard' ? 'overview-topbar' : ''}`.trim()}>
+        <header ref={topbarRef} className={`dashboard-topbar ${normalizedPathname === '/dashboard' ? 'overview-topbar' : ''}`.trim()}>
           <div className="topbar-leading">
             <PanelToggle
               ref={mobileMenuButtonRef}
@@ -937,12 +987,30 @@ export default function AdminDashboard() {
                       {hasTrustedAlertList ? (activeAlertCount > 99 ? '99+' : activeAlertCount) : '—'}
                     </span>
                   </div>
-                  {hasTrustedAlertList && acknowledgedAlerts.length > 0 ? (
-                    <span className="alerts-header-acknowledged">
-                      {acknowledgedAlerts.length} acknowledged
-                    </span>
-                  ) : null}
+                  <div className="alerts-header-actions">
+                    {hasTrustedAlertList && acknowledgedAlerts.length > 0 ? (
+                      <span className="alerts-header-acknowledged">
+                        {acknowledgedAlerts.length} acknowledged
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="alerts-popover-close-btn"
+                      aria-label="Close alerts"
+                      onClick={() => {
+                        setIsAlertsOpen(false)
+                        alertsButtonRef.current?.focus({ preventScroll: true })
+                      }}
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
+                {ackStatusMessage ? (
+                  <div className="sr-only" aria-live="polite" aria-atomic="true">
+                    {ackStatusMessage}
+                  </div>
+                ) : null}
                 {cachedAlertsAt && !hasTrustedAlertList ? (
                   <div className="alert-load-error" role="status">Cached alerts are stale. Updated <UpdatedAgo updatedAt={cachedAlertsAt} />.</div>
                 ) : null}

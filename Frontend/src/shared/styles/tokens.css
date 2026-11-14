@@ -1873,10 +1873,43 @@ button:disabled {
   font-weight: 700;
 }
 
+.alerts-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .alerts-header-acknowledged {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--c-text-2);
+}
+
+.alerts-popover-close-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  margin-right: -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.alerts-popover-close-btn:hover {
+  color: var(--c-text);
+  background: var(--hover-bg, rgba(148, 163, 184, 0.14));
+}
+
+.alerts-popover-close-btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
 }
 
 .alert-load-error {
@@ -1900,9 +1933,9 @@ button:disabled {
 }
 
 .alert-load-error .btn {
-  min-height: 30px;
-  padding: 3px 8px;
-  font-size: 0.74rem;
+  min-height: 44px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
 }
 
 .alerts-popover-list {
@@ -1967,7 +2000,7 @@ button:disabled {
 }
 
 .alert-row.is-recovered:hover {
-  background: #F0FDF4;
+  background: #FFFBEB;
 }
 
 :root[data-theme='dark'] .alert-row {
@@ -1980,7 +2013,7 @@ button:disabled {
 }
 
 :root[data-theme='dark'] .alert-row.is-recovered:hover {
-  background: rgba(16, 185, 129, 0.08);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .alert-row-indicator {
@@ -2005,29 +2038,29 @@ button:disabled {
 }
 
 .alert-icon-recovered {
-  color: #10B981;
+  color: #B45309;
   flex-shrink: 0;
 }
 
 .alert-icon-acked {
-  color: #EF4444;
+  color: #059669;
   flex-shrink: 0;
 }
 
 :root[data-theme='dark'] .alert-icon-recovered {
-  color: #34D399;
+  color: #FBBF24;
 }
 
 :root[data-theme='dark'] .alert-icon-acked {
-  color: #F87171;
+  color: #34D399;
 }
 
 .alert-row.is-sensor-fault .alert-icon-acked {
-  color: #EF4444;
+  color: #059669;
 }
 
 :root[data-theme='dark'] .alert-row.is-sensor-fault .alert-icon-acked {
-  color: #F87171;
+  color: #34D399;
 }
 
 .alert-row-body {
@@ -2087,9 +2120,9 @@ button:disabled {
 }
 
 .alert-row.is-downtime.is-recovered .alert-kind-tag {
-  color: #047857;
-  background: #D1FAE5;
-  border-color: #A7F3D0;
+  color: #92400E;
+  background: #FEF3C7;
+  border-color: #FDE68A;
 }
 
 .alert-row.is-sensor-fault .alert-kind-tag {
@@ -2105,9 +2138,9 @@ button:disabled {
 }
 
 :root[data-theme='dark'] .alert-row.is-downtime.is-recovered .alert-kind-tag {
-  color: #6EE7B7;
-  background: rgba(16, 185, 129, 0.16);
-  border-color: rgba(52, 211, 153, 0.35);
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(251, 191, 36, 0.35);
 }
 
 :root[data-theme='dark'] .alert-row.is-sensor-fault .alert-kind-tag {
@@ -2130,10 +2163,15 @@ button:disabled {
 }
 
 .alert-expand-btn {
+  display: inline-flex;
+  align-items: center;
   justify-self: start;
-  padding: 2px 0;
-  min-height: 28px;
+  padding: 6px 8px;
+  margin-left: -8px;
+  min-height: 44px;
+  min-width: 44px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: #2563EB;
   font-size: 0.75rem;
@@ -2186,11 +2224,11 @@ button:disabled {
 }
 
 .alert-row.is-acknowledged .alert-status-text {
-  color: #DC2626;
+  color: #475569;
 }
 
 .alert-row.is-recovered .alert-status-text {
-  color: #059669;
+  color: #B45309;
 }
 
 :root[data-theme='dark'] .alert-row.is-active .alert-status-text {
@@ -2202,11 +2240,11 @@ button:disabled {
 }
 
 :root[data-theme='dark'] .alert-row.is-acknowledged .alert-status-text {
-  color: #F87171;
+  color: #94A3B8;
 }
 
 :root[data-theme='dark'] .alert-row.is-recovered .alert-status-text {
-  color: #34D399;
+  color: #FBBF24;
 }
 
 .alert-acknowledgement-error {
@@ -2268,32 +2306,32 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 600;
-  color: #DC2626;
-  padding: 2px 6px;
+  color: #047857;
+  padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
   white-space: nowrap;
 }
 
 :root[data-theme='dark'] .alert-acked-tag {
-  color: #F87171;
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
+  color: #6EE7B7;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(52, 211, 153, 0.3);
 }
 
 .alert-row.is-sensor-fault .alert-acked-tag {
-  color: #DC2626;
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.2);
+  color: #047857;
+  background: #ECFDF5;
+  border-color: #A7F3D0;
 }
 
 :root[data-theme='dark'] .alert-row.is-sensor-fault .alert-acked-tag {
-  color: #F87171;
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
+  color: #6EE7B7;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(52, 211, 153, 0.3);
 }
 
 .alerts-empty-state {
@@ -7112,18 +7150,18 @@ button:disabled {
 
   .alerts-popover {
     position: fixed;
-    top: 76px;
+    top: var(--topbar-offset, 84px);
     left: 16px;
     right: 16px;
     display: flex;
     flex-direction: column;
     width: auto;
-    max-height: calc(100dvh - 92px);
+    max-height: calc(100dvh - var(--topbar-offset, 84px) - 16px);
   }
 
   .dashboard-topbar:has(#overview-header-controls) .alerts-popover {
-    top: 112px;
-    max-height: calc(100dvh - 128px);
+    top: var(--topbar-offset, 124px);
+    max-height: calc(100dvh - var(--topbar-offset, 124px) - 16px);
   }
 
   .alerts-popover-header,

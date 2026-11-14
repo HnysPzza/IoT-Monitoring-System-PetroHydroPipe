@@ -1427,4 +1427,44 @@ describe('AdminDashboard alerts', () => {
     renderWithAuth(<AdminDashboard />, { route: '/dashboard/reports' })
     expect(document.querySelector('header.dashboard-topbar')).not.toHaveClass('overview-topbar')
   })
+
+  it('traps Tab focus inside the alerts popover, provides a Close alerts button, and announces acknowledgement', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
+    acknowledgeAlert.mockResolvedValue({
+      alert: {
+        ...activeAlert(),
+        acknowledgedAt: '2026-10-31T15:05:00.000Z',
+        acknowledgedBy: 'admin-1',
+        acknowledgedByName: 'Karl Admin',
+      },
+      revision: '2',
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
+    await user.click(bell)
+
+    const closeBtn = screen.getByRole('button', { name: 'Close alerts' })
+    const footerLink = screen.getByRole('link', { name: /view live sensor status/i })
+
+    footerLink.focus()
+    expect(footerLink).toHaveFocus()
+
+    await user.tab()
+    expect(closeBtn).toHaveFocus()
+
+    await user.tab({ shift: true })
+    expect(footerLink).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Acknowledge' }))
+    const liveAnnouncement = await screen.findByText(/alert acknowledged/i)
+    expect(liveAnnouncement).toHaveAttribute('aria-live', 'polite')
+
+    await user.click(closeBtn)
+    expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
+    expect(bell).toHaveFocus()
+  })
+
 })
