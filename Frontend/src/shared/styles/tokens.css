@@ -2864,11 +2864,11 @@ button:disabled {
 }
 
 .analytics-kpi-delta.is-positive {
-  color: var(--c-text-2);
+  color: var(--status-active-text);
 }
 
 .analytics-kpi-delta.is-negative {
-  color: var(--c-text-2);
+  color: var(--status-downtime-text);
 }
 
 .analytics-kpi-delta.is-neutral {
@@ -2980,11 +2980,15 @@ button:disabled {
 }
 
 .analytics-trend-badge.is-positive {
-  color: var(--c-text-2);
+  color: var(--status-active-text);
+  background: var(--status-active-bg);
+  border: 1px solid var(--status-active-border);
 }
 
 .analytics-trend-badge.is-negative {
-  color: var(--c-text-2);
+  color: var(--status-downtime-text);
+  background: var(--status-downtime-bg);
+  border: 1px solid var(--status-downtime-border);
 }
 
 .analytics-trend-badge.is-neutral-up,
