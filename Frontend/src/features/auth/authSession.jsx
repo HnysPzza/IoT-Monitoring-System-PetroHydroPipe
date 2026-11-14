@@ -15,6 +15,7 @@ export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(null)
   const [sessionError, setSessionError] = useState(null)
   const [isRestoring, setIsRestoring] = useState(true)
+  const [sessionEpoch, setSessionEpoch] = useState(0)
   const removeUnauthorizedHandlerRef = useRef(() => {})
   const explicitlyLoggedOutRef = useRef(false)
   const identityRef = useRef(null)
@@ -22,15 +23,12 @@ export function AuthProvider({ children }) {
   function applySession(payload) {
     const identity = `${payload?.user?.id || ''}:${payload?.user?.role || ''}`
     if (identityRef.current !== identity) queryClient.clear()
+    if (identityRef.current !== null && identityRef.current !== identity) {
+      setSessionEpoch((epoch) => epoch + 1)
+    }
     identityRef.current = identity
     removeUnauthorizedHandlerRef.current()
-    removeUnauthorizedHandlerRef.current = setUnauthorizedHandler(payload.token, () => {
-      removeUnauthorizedHandlerRef.current()
-      queryClient.clear()
-      identityRef.current = null
-      syncRoleHint(null)
-      setAuth(null)
-    })
+    removeUnauthorizedHandlerRef.current = setUnauthorizedHandler(payload.token, () => clearSession())
     syncRoleHint(payload?.user?.role)
     setSessionError(null)
     setAuth(payload)
@@ -38,6 +36,9 @@ export function AuthProvider({ children }) {
 
   function clearSession() {
     queryClient.clear()
+    if (identityRef.current !== null) {
+      setSessionEpoch((epoch) => epoch + 1)
+    }
     identityRef.current = null
     removeUnauthorizedHandlerRef.current()
     syncRoleHint(null)
@@ -153,6 +154,5 @@ export function AuthProvider({ children }) {
     [auth, isRestoring, sessionError],
   )
 
-  const identityKey = auth?.user?.id ? `${auth.user.id}:${auth.user.role || ''}` : 'signed-out'
-  return <AuthContext.Provider value={value}><Fragment key={identityKey}>{children}</Fragment></AuthContext.Provider>
+  return <AuthContext.Provider value={value}><Fragment key={sessionEpoch}>{children}</Fragment></AuthContext.Provider>
 }
