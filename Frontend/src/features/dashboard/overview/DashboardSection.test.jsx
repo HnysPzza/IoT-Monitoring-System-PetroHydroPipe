@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { AuthContext } from '../../auth/authSession.jsx'
 import DashboardSection from './DashboardSection.jsx'
+import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardService.js'
 import { getLiveFeed } from '../live/liveService.js'
 import '../../../shared/components/ui/Calendar.jsx'
@@ -37,7 +38,7 @@ vi.mock('./DowntimeTrendChart.jsx', async () => {
   }
 })
 
-function overviewPayload() {
+function overviewPayload(overrides = {}) {
   return {
     alerts: [],
     summary: [{ id: 'pipes', label: 'Production Output', value: '5 pcs', helper: 'Today' }],
@@ -51,13 +52,17 @@ function overviewPayload() {
         currentLabel: 'Today',
         previousLabel: 'Yesterday',
         label: 'Today vs Yesterday',
+        points: [
+          { label: '6AM', current: 5, previous: 3, periodState: 'current' },
+        ],
       },
     },
     availability: [{ machineId: 'Spiral Mill 01', percent: 98 }],
+    ...overrides,
   }
 }
 
-function livePayload() {
+function livePayload(overrides = {}) {
   return {
     machine: {
       id: 'machine-1',
@@ -72,6 +77,7 @@ function livePayload() {
       { id: 'sensor-4', sensorCode: 'S-04', status: 'Running', lastEventAt: '2026-07-23T02:03:00.000Z' },
       { id: 'sensor-5', sensorCode: 'S-05', status: 'Running', lastEventAt: '2026-07-23T02:04:00.000Z' },
     ],
+    ...overrides,
   }
 }
 
@@ -863,5 +869,360 @@ describe('DashboardSection', () => {
     expect(card).not.toHaveClass('status-running')
     expect(card).toHaveTextContent('Connection: Offline')
     expect(screen.getByText('4 / 5 sensors reporting')).toBeInTheDocument()
+  })
+
+  it('keeps canonical sensorIdentity labels even when live sensor payload sends an alias label', async () => {
+    const live = livePayload()
+    live.sensors = live.sensors.map((sensor) => (
+      sensor.sensorCode === 'S-05'
+        ? { ...sensor, label: 'Finished Pipe Output' }
+        : sensor
+    ))
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(live)
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByRole('heading', { level: 3, name: 'Production Output Cutting' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Finished Pipe Output' })).not.toBeInTheDocument()
+  })
+
+  it('shows Machine Online as 0 / 1 when machine status is Downtime or all sensors are offline, and keeps 0 min downtime neutral', async () => {
+    const downtimeLive = livePayload()
+    downtimeLive.machine.status = 'Downtime'
+    const zeroDowntimeOverview = overviewPayload()
+    zeroDowntimeOverview.summary = [
+      ...zeroDowntimeOverview.summary,
+      { id: 'minutes', label: 'Downtime', value: '0 min', helper: '0 unplanned min' },
+    ]
+    getDashboardOverview.mockResolvedValue(zeroDowntimeOverview)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(downtimeLive)
+
+    const { unmount } = renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Spiral Mill 01 · Downtime')).toBeInTheDocument()
+    const machineCard = screen.getByText('Machine Online').closest('article')
+    expect(machineCard).toHaveTextContent('0 / 1')
+    expect(machineCard).toHaveClass('stat-card-warning')
+
+    expect(await screen.findByText('0 unplanned min')).toBeInTheDocument()
+    const downtimeCard = screen.getByText('Downtime').closest('article')
+    expect(downtimeCard).toHaveTextContent('0 min')
+    expect(downtimeCard).toHaveClass('stat-card-neutral')
+    expect(downtimeCard).not.toHaveClass('stat-card-warning')
+
+    unmount()
+
+    const offlineSensorsLive = livePayload()
+    offlineSensorsLive.machine.status = 'Running'
+    offlineSensorsLive.sensors = offlineSensorsLive.sensors.map((sensor) => ({
+      ...sensor,
+      status: 'Offline',
+      monitoring: { connectivityState: 'offline' },
+    }))
+    const nonZeroOverview = overviewPayload()
+    nonZeroOverview.summary = [
+      ...nonZeroOverview.summary,
+      { id: 'minutes', label: 'Downtime', value: '18 min', helper: '18 unplanned min' },
+    ]
+    getDashboardOverview.mockResolvedValue(nonZeroOverview)
+    getLiveFeed.mockResolvedValue(offlineSensorsLive)
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Spiral Mill 01 · Sensors offline')).toBeInTheDocument()
+    const offlineMachineCard = screen.getByText('Machine Online').closest('article')
+    expect(offlineMachineCard).toHaveTextContent('0 / 1')
+    expect(offlineMachineCard).toHaveClass('stat-card-warning')
+
+    expect(await screen.findByText('18 min')).toBeInTheDocument()
+    const nonZeroDowntimeCard = screen.getByText('Downtime').closest('article')
+    expect(nonZeroDowntimeCard).toHaveClass('stat-card-warning')
+  })
+
+  it('links each sensor card to Live Feed and shows relative event age when timestamp exists', async () => {
+    const live = livePayload()
+    live.sensors = live.sensors.map((sensor) => (
+      sensor.sensorCode === 'S-05'
+        ? { ...sensor, lastEventAt: null }
+        : { ...sensor, lastEventAt: new Date(Date.now() - 120_000).toISOString() }
+    ))
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(live)
+
+    renderWithAuth(<DashboardSection />)
+
+    const s05Heading = await screen.findByRole('heading', { level: 3, name: 'Production Output Cutting' })
+    const s05Link = s05Heading.querySelector('a')
+    expect(s05Link).toHaveAttribute('href', '/dashboard/live')
+    expect(s05Heading.closest('article')).toHaveTextContent('No recent event')
+
+    const s01Card = screen.getByRole('heading', { level: 3, name: sensorIdentities[0].label }).closest('article')
+    expect(s01Card).toHaveTextContent(/ago/i)
+    expect(s01Card.querySelector('a')).toHaveAttribute('href', '/dashboard/live')
+  })
+
+  it('reports partial sync and coordinates live-region politeness when overview or chart sources degrade', async () => {
+    getDashboardOverview.mockRejectedValue(new Error('Overview outage'))
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Unable to load dashboard overview')).toBeInTheDocument()
+    const syncBadge = screen.getByText(/Partial sync/i).closest('.overview-meta-item')
+    expect(syncBadge).toHaveClass('is-partial')
+    expect(syncBadge).toHaveAttribute('title', expect.stringContaining('Overview: Unavailable'))
+    expect(syncBadge).toHaveAttribute('title', expect.stringContaining('Live feed:'))
+  })
+
+  it('suppresses competing live announcements when primary fault and multiple stale panels coexist', async () => {
+    const user = userEvent.setup()
+    const idleAndFaultLive = livePayload()
+    idleAndFaultLive.sensors[0].status = 'Idle'
+    getDashboardOverview.mockResolvedValueOnce(overviewPayload()).mockRejectedValue(new Error('Overview refresh failed'))
+    getDashboardDowntimeImpact.mockResolvedValueOnce(emptyDowntimePayload()).mockRejectedValue(new Error('Chart refresh failed'))
+    getLiveFeed.mockResolvedValueOnce(idleAndFaultLive).mockRejectedValue(new Error('Live refresh failed'))
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<RealtimeAlertHarness />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    const idleBannerText = await screen.findByText('S-01 Raw Material & Coil Joint is idle.')
+    const idleBanner = idleBannerText.closest('[role="status"]')
+
+    await user.click(screen.getByRole('button', { name: 'Emit alert' }))
+
+    expect(idleBanner).toHaveAttribute('aria-live', 'off')
+
+    await user.click(screen.getByRole('button', { name: 'Refresh overview data' }))
+
+    const overviewStale = (await screen.findByText(/Overview data is stale/i)).closest('[role="status"]')
+    const chartStale = screen.getByText(/Downtime chart data is stale/i).closest('[role="status"]')
+    const liveStale = screen.getByText(/Live machine status is stale/i).closest('[role="status"]')
+
+    expect(overviewStale).toHaveAttribute('aria-live', 'polite')
+    expect(chartStale).toHaveAttribute('aria-live', 'off')
+    expect(liveStale).toHaveAttribute('aria-live', 'off')
+  })
+
+  it('opens an accessible sync breakdown popover via keyboard/click and suppresses concurrent chart refresh aria-live while overview is stale', async () => {
+    const user = userEvent.setup()
+    let rejectOverviewRefresh
+    let holdChartRefresh = true
+    let resolveChartRefresh
+    getDashboardOverview
+      .mockResolvedValueOnce(overviewPayload({ alerts: [] }))
+      .mockImplementationOnce(() => new Promise((_, reject) => {
+        rejectOverviewRefresh = reject
+      }))
+    getDashboardDowntimeImpact
+      .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Mon', minutes: 10 }] } })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        if (!holdChartRefresh) resolve({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Mon', minutes: 10 }] } })
+        else resolveChartRefresh = resolve
+      }))
+    getLiveFeed.mockResolvedValue(livePayload({
+      sensors: [
+        { id: 'S-01', sensorCode: 'S-01', label: 'Raw Material & Coil Joint', status: 'Running', lastEventAt: new Date(Date.now() + 5000).toISOString() },
+        { id: 'S-02', sensorCode: 'S-02', label: 'Inside Filler Wire', status: 'Offline', lastEventAt: new Date(Date.now() - 120_000).toISOString() },
+      ],
+    }))
+
+    renderWithAuth(<DashboardSection />)
+
+    const syncTrigger = await screen.findByRole('button', { name: /sync status:/i })
+    expect(syncTrigger).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(syncTrigger)
+    expect(syncTrigger).toHaveAttribute('aria-expanded', 'true')
+    const breakdown = screen.getByRole('region', { name: 'Sync source breakdown' })
+    expect(breakdown).toHaveTextContent(/Overview:/i)
+    expect(breakdown).toHaveTextContent(/Downtime chart:/i)
+    expect(breakdown).toHaveTextContent(/Live feed:/i)
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('region', { name: 'Sync source breakdown' })).not.toBeInTheDocument()
+    expect(syncTrigger).toHaveAttribute('aria-expanded', 'false')
+
+    const s01Card = screen.getByRole('heading', { level: 3, name: 'Raw Material & Coil Joint' }).closest('article')
+    expect(s01Card).toHaveTextContent(/·\s*now/i)
+    expect(screen.queryByText(/in \d+ seconds/i)).not.toBeInTheDocument()
+
+    const offlineStatus = screen.getByText('Offline', { selector: '.status' })
+    expect(offlineStatus).toHaveClass('status-offline')
+    expect(offlineStatus.closest('article')).toHaveClass('status-offline')
+
+    await user.click(screen.getByRole('button', { name: 'Refresh overview data' }))
+    rejectOverviewRefresh(new Error('Overview refresh failed'))
+
+    const overviewStale = (await screen.findByText(/Overview data is stale/i)).closest('[role="status"]')
+    const retryOverviewButton = screen.getByRole('button', { name: /retry overview/i })
+    expect(retryOverviewButton).toHaveClass('btn', 'btn-secondary', 'overview-retry-button')
+
+    const chartRefreshing = screen.getByText('Refreshing downtime chart...').closest('[role="status"]')
+    expect(overviewStale).toHaveAttribute('aria-live', 'polite')
+    expect(chartRefreshing).toHaveAttribute('aria-live', 'off')
+
+    holdChartRefresh = false
+    resolveChartRefresh({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Mon', minutes: 10 }] } })
+  })
+
+  it('guards missing productionAnalytics points without crashing and removes shadowed h3 title attribute', async () => {
+    const partialAnalytics = overviewPayload({
+      productionAnalytics: {
+        day: {
+          currentTotal: 5,
+          previousTotal: 3,
+          difference: 2,
+          differencePercent: 66.67,
+          unit: 'pcs',
+          currentLabel: 'Today',
+          previousLabel: 'Yesterday',
+          label: 'Today vs Yesterday',
+        },
+      },
+    })
+    getDashboardOverview.mockResolvedValue(partialAnalytics)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Production analytics')).not.toBeInTheDocument()
+    const sensorHeading = screen.getByRole('heading', { level: 3, name: 'Raw Material & Coil Joint' })
+    expect(sensorHeading).not.toHaveAttribute('title')
+  })
+
+  it('falls back cleanly when productionAnalytics.day lacks summary totals and unit', async () => {
+    const partialAnalytics = overviewPayload({
+      productionAnalytics: {
+        day: {
+          label: 'Today vs Yesterday',
+        },
+      },
+    })
+    getDashboardOverview.mockResolvedValue(partialAnalytics)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Comparison unavailable')).toBeInTheDocument()
+    const productionCard = screen.getByText('Production Output').closest('article')
+    expect(productionCard).toHaveTextContent('5 pcs')
+    const comparisonCard = screen.getByText('Difference from Yesterday').closest('article')
+    expect(comparisonCard).toHaveTextContent('—')
+    expect(document.body.textContent).not.toMatch(/undefined|NaN/)
+  })
+
+  it('marks Machine Online as 0 / 1 Sensors offline when live machine has an empty sensors array', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(livePayload({ sensors: [] }))
+
+    renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('0 / 5 reporting')).toBeInTheDocument()
+    expect(screen.getByText('Spiral Mill 01 · Sensors offline')).toBeInTheDocument()
+    const machineCard = screen.getByText('Machine Online').closest('article')
+    expect(machineCard).toHaveTextContent('0 / 1')
+    expect(machineCard).toHaveClass('stat-card-warning')
+  })
+
+  it('does not flash Partial sync while initial staggered sources are still loading and closes sync popover across 900px viewport changes', async () => {
+    let matches = false
+    const listeners = new Set()
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      get matches() {
+        return query === '(max-width: 900px)' ? matches : false
+      },
+      media: query,
+      addEventListener: vi.fn((type, listener) => {
+        if (type === 'change') listeners.add(listener)
+      }),
+      removeEventListener: vi.fn((type, listener) => {
+        if (type === 'change') listeners.delete(listener)
+      }),
+    }))
+
+    const user = userEvent.setup()
+    const pendingLive = deferred()
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockReturnValue(pendingLive.promise)
+
+    try {
+      renderWithAuth(<DashboardSection />)
+
+      const syncTrigger = await screen.findByRole('button', { name: /sync status:/i })
+      await waitFor(() => {
+        expect(syncTrigger).not.toHaveTextContent(/Not synced/i)
+      })
+      expect(syncTrigger).not.toHaveTextContent(/Partial sync/i)
+      expect(syncTrigger).not.toHaveClass('is-partial')
+
+      await user.click(syncTrigger)
+      expect(screen.getByRole('region', { name: 'Sync source breakdown' })).toBeInTheDocument()
+
+      act(() => {
+        matches = true
+        listeners.forEach((listener) => listener({ matches: true, media: '(max-width: 900px)' }))
+      })
+      expect(screen.queryByRole('region', { name: 'Sync source breakdown' })).not.toBeInTheDocument()
+
+      await act(async () => {
+        pendingLive.reject(new Error('Live initial outage'))
+        try {
+          await pendingLive.promise
+        } catch {
+          // Expected failure to verify transition to partial sync after settling.
+        }
+      })
+
+      const mobileTrigger = await screen.findByRole('button', { name: /sync status: partial sync/i })
+      expect(mobileTrigger).toHaveClass('is-partial')
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
+  })
+
+  it('coordinates live regions when overview, chart, and live fail together or while overview loading/stale suppresses secondary notices', async () => {
+    getDashboardOverview.mockRejectedValue(new Error('Overview outage'))
+    getDashboardDowntimeImpact.mockRejectedValue(new Error('Chart outage'))
+    getLiveFeed.mockRejectedValue(new Error('Live outage'))
+
+    const { unmount } = renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Overview outage')).toHaveAttribute('role', 'alert')
+    const chartErrorNotice = (await screen.findByText('Chart outage')).closest('[role]')
+    const liveErrorMessage = await screen.findByText('Live outage')
+    expect(chartErrorNotice).toHaveAttribute('role', 'status')
+    expect(chartErrorNotice).toHaveAttribute('aria-live', 'off')
+    expect(liveErrorMessage).toHaveAttribute('role', 'status')
+    expect(liveErrorMessage).toHaveAttribute('aria-live', 'off')
+
+    unmount()
+
+    const pendingOverview = deferred()
+    const idleLive = livePayload()
+    idleLive.sensors[0].status = 'Idle'
+    getDashboardOverview.mockReturnValue(pendingOverview.promise)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(idleLive)
+
+    renderWithAuth(<DashboardSection />)
+
+    const idleBanner = (await screen.findByText('S-01 Raw Material & Coil Joint is idle.')).closest('[role="status"]')
+    expect(idleBanner).toHaveAttribute('aria-live', 'off')
   })
 })

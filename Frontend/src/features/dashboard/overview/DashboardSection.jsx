@@ -11,7 +11,7 @@ import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { onlineManager } from '@tanstack/react-query'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { queryKeys } from '../../../shared/services/queryClient.js'
-import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
+import { getSensorLabel, sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
@@ -29,6 +29,26 @@ import { getDashboardDowntimeImpact, getDashboardOverview } from './dashboardSer
 import { getManilaDateInputValue } from '../analytics/analyticsService.js'
 
 const AUTO_REFRESH_MS = 60 * 1000
+const RELATIVE_AGE_UNITS = [
+  ['year', 31_536_000_000],
+  ['month', 2_592_000_000],
+  ['week', 604_800_000],
+  ['day', 86_400_000],
+  ['hour', 3_600_000],
+  ['minute', 60_000],
+  ['second', 1000],
+]
+const RELATIVE_AGE_FORMATTER = new Intl.RelativeTimeFormat('en-PH', { numeric: 'auto' })
+
+function formatRelativeEventAge(value) {
+  const timestamp = Date.parse(value)
+  if (!value || !Number.isFinite(timestamp)) return ''
+  const difference = Math.min(0, timestamp - Date.now())
+  const [unit, duration] =
+    RELATIVE_AGE_UNITS.find(([, unitDuration]) => Math.abs(difference) >= unitDuration) ||
+    RELATIVE_AGE_UNITS[RELATIVE_AGE_UNITS.length - 1]
+  return RELATIVE_AGE_FORMATTER.format(Math.round(difference / duration), unit)
+}
 
 function SkeletonBlock({ className = '', style }) {
   return <div className={`skeleton ${className}`.trim()} style={style} aria-hidden="true" />
@@ -145,6 +165,8 @@ export default function DashboardSection() {
   const [liveErrorKey, setLiveErrorKey] = useState('')
   const [liveLastUpdated, setLiveLastUpdated] = useState(null)
   const [liveRefresh, setLiveRefresh] = useState(0)
+  const [isSyncDetailsOpen, setIsSyncDetailsOpen] = useState(false)
+  const syncAnchorRef = useRef(null)
   const liveRequestIdRef = useRef(0)
   const successfulLiveRef = useRef(null)
   const wasOfflineRef = useRef(false)
@@ -277,18 +299,61 @@ export default function DashboardSection() {
   })
   const overviewIsReady = hasCurrentOverview
     && (overviewDisplayState === 'success' || overviewDisplayState === 'loading' || overviewDisplayState === 'stale')
-  const selectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
-  const productionDifference = selectedAnalytics?.difference ?? 0
-  const summaryById = overviewIsReady
-    ? Object.fromEntries(overviewData.summary.map((item) => [item.id, item]))
-    : {}
-  const productionSummary = overviewIsReady ? summaryById.pipes || overviewData.summary[0] : null
-  const downtimeSummary = overviewIsReady
-    ? summaryById.minutes || overviewData.summary.find((item) => item.label.toLowerCase().includes('downtime'))
+  const rawSelectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
+  const selectedAnalytics = rawSelectedAnalytics
+    && rawSelectedAnalytics.unit
+    && typeof rawSelectedAnalytics.currentTotal === 'number'
+    && Number.isFinite(rawSelectedAnalytics.currentTotal)
+    ? rawSelectedAnalytics
     : null
+  const hasComparisonDifference = Boolean(
+    selectedAnalytics
+    && typeof selectedAnalytics.difference === 'number'
+    && Number.isFinite(selectedAnalytics.difference),
+  )
+  const productionDifference = hasComparisonDifference ? selectedAnalytics.difference : 0
+  const summaryById = overviewIsReady
+    ? Object.fromEntries((overviewData.summary || []).map((item) => [item.id, item]))
+    : {}
+  const productionSummary = overviewIsReady ? summaryById.pipes || overviewData.summary?.[0] : null
+  const downtimeSummary = overviewIsReady
+    ? summaryById.minutes || overviewData.summary?.find((item) => item.label?.toLowerCase().includes('downtime'))
+    : null
+  const downtimeValue = downtimeSummary?.value || '0 min'
+  const hasDowntime = (String(downtimeValue).match(/\d+(?:\.\d+)?/g) || []).some((part) => Number(part) > 0)
+  const sensorHealth = sensorIdentities.map((identity) => {
+    const sensor = liveData.sensors.find((entry) => entry.sensorCode === identity.code)
+    return {
+      ...sensor,
+      ...identity,
+      label: getSensorLabel(identity.code, identity.label),
+      status: sensor?.status || 'Unavailable',
+    }
+  })
+  const reportingSensorCount = sensorHealth.filter((sensor) => (
+    sensor.status !== 'Unavailable'
+    && sensor.status !== 'Offline'
+    && sensor.monitoring?.connectivityState !== 'offline'
+    && !String(sensor.status).startsWith('Last:')
+  )).length
   const machineKpi = (() => {
     if (liveDisplayState === 'success' && hasCurrentLive && liveData.machine) {
-      return { value: '1 / 1', helper: liveData.machine.name || 'Spiral Mill 01', tone: 'success' }
+      const machineName = liveData.machine.name || 'Spiral Mill 01'
+      const machineStatus = liveData.machine.status
+
+      if (machineStatus === 'Downtime' || machineStatus === 'Offline') {
+        return { value: '0 / 1', helper: `${machineName} · ${machineStatus}`, tone: 'warning' }
+      }
+
+      if (reportingSensorCount === 0) {
+        return { value: '0 / 1', helper: `${machineName} · Sensors offline`, tone: 'warning' }
+      }
+
+      if (machineStatus === 'Idle') {
+        return { value: '1 / 1', helper: `${machineName} · Idle`, tone: 'neutral' }
+      }
+
+      return { value: '1 / 1', helper: machineName, tone: 'success' }
     }
 
     if (liveDisplayState === 'stale') {
@@ -325,37 +390,26 @@ export default function DashboardSection() {
     {
       id: 'downtime',
       label: 'Downtime',
-      value: downtimeSummary?.value || '0 min',
+      value: downtimeValue,
       helper: downtimeSummary?.helper || 'Current period',
       icon: Clock3,
-      tone: 'warning',
+      tone: hasDowntime ? 'warning' : 'neutral',
     },
     {
       id: 'comparison',
       label: 'Difference from Yesterday',
-      value: selectedAnalytics ? `${productionDifference > 0 ? '+' : ''}${formatNumber(productionDifference)} ${selectedAnalytics.unit}` : '—',
-      helper: !selectedAnalytics
+      value: hasComparisonDifference ? `${productionDifference > 0 ? '+' : ''}${formatNumber(productionDifference)} ${selectedAnalytics.unit}` : '—',
+      helper: !hasComparisonDifference
         ? 'Comparison unavailable'
         : selectedAnalytics.differencePercent === null
           ? 'No output baseline yesterday'
-          : `${Math.abs(selectedAnalytics.differencePercent).toFixed(1)}% ${productionDifference > 0 ? 'higher' : productionDifference < 0 ? 'lower' : 'change'}`,
+          : typeof selectedAnalytics.differencePercent === 'number' && Number.isFinite(selectedAnalytics.differencePercent)
+            ? `${Math.abs(selectedAnalytics.differencePercent).toFixed(1)}% ${productionDifference > 0 ? 'higher' : productionDifference < 0 ? 'lower' : 'change'}`
+            : 'Comparison unavailable',
       icon: productionDifference < 0 ? TrendingDown : TrendingUp,
       tone: productionDifference > 0 ? 'success' : productionDifference < 0 ? 'warning' : 'neutral',
     },
   ]
-  const sensorHealth = sensorIdentities.map((identity) => {
-    const sensor = liveData.sensors.find((entry) => entry.sensorCode === identity.code)
-    return {
-      ...identity,
-      ...sensor,
-      status: sensor?.status || 'Unavailable',
-    }
-  })
-  const reportingSensorCount = sensorHealth.filter((sensor) => (
-    sensor.status !== 'Unavailable'
-    && sensor.monitoring?.connectivityState !== 'offline'
-    && !String(sensor.status).startsWith('Last:')
-  )).length
   const isUnifiedRefreshing = overviewState === 'loading' || liveState === 'loading' || downtimeChartState === 'loading'
 
   const handleUnifiedRefresh = () => {
@@ -366,8 +420,122 @@ export default function DashboardSection() {
 
   const resolvedMachineName = hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'
   const resolvedReportingCopy = hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : 'Reporting unavailable'
-  const resolvedSyncedCopy = hasCurrentLive && liveLastUpdated ? formatSuccessfulUpdate(liveLastUpdated) : 'Not synced'
+  const overviewLastUpdated = hasCurrentOverview && overviewQuery.dataUpdatedAt
+    ? new Date(overviewQuery.dataUpdatedAt)
+    : null
+  const chartLastUpdated = hasCurrentDowntimeChart ? downtimeChartLastUpdated : null
+  const liveUpdated = hasCurrentLive ? liveLastUpdated : null
+  const syncSources = [
+    {
+      label: 'Overview',
+      updatedAt: overviewLastUpdated,
+      loading: overviewDisplayState === 'loading',
+      stale: overviewDisplayState === 'stale',
+      failed: overviewDisplayState === 'error',
+    },
+    {
+      label: 'Downtime chart',
+      updatedAt: chartLastUpdated,
+      loading: downtimeChartState === 'loading',
+      stale: downtimeChartState === 'stale',
+      failed: downtimeChartState === 'error',
+    },
+    {
+      label: 'Live feed',
+      updatedAt: liveUpdated,
+      loading: liveDisplayState === 'loading',
+      stale: liveDisplayState === 'stale',
+      failed: liveDisplayState === 'error',
+    },
+  ]
+  const validSyncDates = syncSources
+    .map((source) => source.updatedAt)
+    .filter((date) => date instanceof Date && Number.isFinite(date.getTime()))
+  const hasDegradedSyncSource = syncSources.some((source) => source.stale || source.failed)
+  const hasMissingSyncSource = validSyncDates.length > 0 && syncSources.some((source) => !source.updatedAt && !source.loading)
+  const newestSyncDate = validSyncDates.length > 0
+    ? new Date(Math.max(...validSyncDates.map((date) => date.getTime())))
+    : null
+  const oldestSyncDate = validSyncDates.length > 0
+    ? new Date(Math.min(...validSyncDates.map((date) => date.getTime())))
+    : null
+  const isPartialSync = hasDegradedSyncSource || hasMissingSyncSource
+  const resolvedSyncedCopy = !newestSyncDate
+    ? 'Not synced'
+    : isPartialSync
+      ? `Partial sync · ${formatSuccessfulUpdate(oldestSyncDate)}`
+      : formatSuccessfulUpdate(
+          newestSyncDate.getTime() - oldestSyncDate.getTime() >= 60_000
+            ? oldestSyncDate
+            : newestSyncDate,
+        )
+  const syncSourceLines = syncSources.map((source) => {
+    const stateText = source.failed
+      ? 'Unavailable'
+      : source.stale && source.updatedAt
+        ? `Stale (${formatSuccessfulUpdate(source.updatedAt)})`
+        : source.updatedAt
+          ? formatSuccessfulUpdate(source.updatedAt)
+          : 'Pending'
+    return `${source.label}: ${stateText}`
+  })
+  const resolvedSyncedDetails = syncSourceLines.join(' | ')
+  const hasPrimaryAlertBanner = overviewAlerts.length > 0 || Boolean(fallbackSensorFaultBanner)
+  const isOverviewAnnouncing = (overviewDisplayState === 'loading' && !hasCurrentOverview) || overviewDisplayState === 'stale'
+  const isChartAnnouncing = chartDisplayState === 'loading' || downtimeChartState === 'stale'
+  const hasPoliteStatusAbove = isOverviewAnnouncing || isChartAnnouncing
   const isMobileViewport = useMobileViewport()
+
+  useEffect(() => {
+    setIsSyncDetailsOpen(false)
+  }, [isMobileViewport])
+
+  useEffect(() => {
+    if (!isSyncDetailsOpen) return
+
+    function handlePointerDown(event) {
+      if (syncAnchorRef.current?.contains(event.target)) return
+      setIsSyncDetailsOpen(false)
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setIsSyncDetailsOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isSyncDetailsOpen])
+
+  function renderSyncTrigger({ compact = false } = {}) {
+    return (
+      <span className="overview-sync-anchor" ref={syncAnchorRef}>
+        <button
+          type="button"
+          className={`overview-meta-item overview-meta-sync-trigger${isPartialSync ? ' is-partial' : ''}`}
+          title={resolvedSyncedDetails}
+          aria-label={`Sync status: ${resolvedSyncedCopy}. ${resolvedSyncedDetails}`}
+          aria-expanded={isSyncDetailsOpen}
+          onClick={() => setIsSyncDetailsOpen((open) => !open)}
+        >
+          {!compact ? <Clock3 size={16} aria-hidden="true" /> : null}
+          <strong>{resolvedSyncedCopy}</strong>
+        </button>
+        {isSyncDetailsOpen ? (
+          <div className="overview-sync-popover" role="region" aria-label="Sync source breakdown">
+            <ul className="overview-sync-popover-list">
+              {syncSourceLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </span>
+    )
+  }
 
   const controls = (
       <div className="overview-controls-card">
@@ -383,11 +551,7 @@ export default function DashboardSection() {
 
               <strong>{resolvedReportingCopy}</strong>
             </span>
-            <span className="overview-meta-item">
-              <Clock3 size={16} aria-hidden="true" />
-
-              <strong>{resolvedSyncedCopy}</strong>
-            </span>
+            {renderSyncTrigger()}
           </div>
         ) : null}
         <button
@@ -415,18 +579,18 @@ export default function DashboardSection() {
 
       <h1 className="sr-only">Overview</h1>
       {isMobileViewport ? (
-        <p className="overview-mobile-meta">
+        <div className="overview-mobile-meta">
           <span>{resolvedMachineName}</span>
           <span aria-hidden="true">·</span>
           <span>{resolvedReportingCopy}</span>
           <span aria-hidden="true">·</span>
-          <span>{resolvedSyncedCopy}</span>
-        </p>
+          {renderSyncTrigger({ compact: true })}
+        </div>
       ) : null}
 
       {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
 
-      {overviewDisplayState === 'stale' ? <div className="notice notice-error" role="alert">Overview data is stale. {overviewQuery.dataUpdatedAt ? `Last updated ${formatSuccessfulUpdate(new Date(overviewQuery.dataUpdatedAt))}. ` : ''}{overviewError} <button type="button" onClick={() => overviewQuery.refetch()}>Retry overview</button></div> : null}
+      {overviewDisplayState === 'stale' ? <div className="notice notice-error" role="status" aria-live="polite">Overview data is stale. {overviewQuery.dataUpdatedAt ? `Last updated ${formatSuccessfulUpdate(new Date(overviewQuery.dataUpdatedAt))}. ` : ''}{overviewError} <button className="btn btn-secondary overview-retry-button" type="button" onClick={() => overviewQuery.refetch()}>Retry overview</button></div> : null}
       {overviewDisplayState === 'error' ? (
         <section className="section-card section-placeholder" aria-labelledby="overview-error-title">
           <div className="section-copy">
@@ -500,7 +664,7 @@ export default function DashboardSection() {
             <div
               className="notice dashboard-alert overview-alert-banner notice-idle"
               role="status"
-              aria-live="polite"
+              aria-live={hasPrimaryAlertBanner || hasPoliteStatusAbove ? 'off' : 'polite'}
             >
               <div className="overview-alert-lead">
                 <PauseCircle size={16} aria-hidden="true" className="overview-alert-icon" />
@@ -546,7 +710,7 @@ export default function DashboardSection() {
       </div> : null}
 
       <div className="overview-charts-grid">
-        {overviewIsReady ? (
+        {overviewIsReady && Array.isArray(overviewData.productionAnalytics?.day?.points) ? (
           <ProductionAnalytics analytics={overviewData.productionAnalytics} />
         ) : overviewDisplayState === 'loading' && !hasCurrentOverview ? (
           <ProductionAnalyticsSkeleton />
@@ -581,7 +745,7 @@ export default function DashboardSection() {
             )}
           </div>
           {downtimeChartState === 'stale' && hasCurrentDowntimeChart ? (
-            <div className="notice notice-error dashboard-alert" role="alert">
+            <div className="notice notice-error dashboard-alert" role="status" aria-live={isOverviewAnnouncing ? 'off' : 'polite'}>
               <AlertTriangle size={16} aria-hidden="true" />
               <span>
                 Downtime chart data is stale. Showing the last successful result from{' '}
@@ -596,12 +760,16 @@ export default function DashboardSection() {
             </div>
           ) : null}
           {chartDisplayState === 'loading' && hasCurrentDowntimeChart ? (
-            <div className="notice dashboard-alert" role="status" aria-live="polite">
+            <div className="notice dashboard-alert" role="status" aria-live={isOverviewAnnouncing ? 'off' : 'polite'}>
               Refreshing downtime chart...
             </div>
           ) : null}
           {chartDisplayState === 'error' ? (
-            <div className="notice notice-error dashboard-alert" role="alert">
+            <div
+              className="notice notice-error dashboard-alert"
+              role={overviewDisplayState === 'error' ? 'status' : 'alert'}
+              aria-live={overviewDisplayState === 'error' ? 'off' : undefined}
+            >
               <AlertTriangle size={16} aria-hidden="true" />
               <span>{downtimeChartError}</span>
               <button className="btn btn-secondary table-action-button" type="button" onClick={() => chartQuery.refetch()}>
@@ -627,7 +795,12 @@ export default function DashboardSection() {
           <div className="section-copy">
             <p className="section-eyebrow">Live source unavailable</p>
             <h2 id="live-source-error-title">Unable to load live machine status</h2>
-            <p role="alert">{liveError}</p>
+            <p
+              role={overviewDisplayState === 'error' ? 'status' : 'alert'}
+              aria-live={overviewDisplayState === 'error' ? 'off' : undefined}
+            >
+              {liveError}
+            </p>
             <button className="btn btn-secondary" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
               Retry live status
             </button>
@@ -661,10 +834,10 @@ export default function DashboardSection() {
             <h2 id="live-source-empty-title">No live machine is available</h2>
             <p>No monitored machine was returned by the last successful live-status request.</p>
             {liveState === 'loading' ? (
-              <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing live status...</div>
+              <div className="notice dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>Refreshing live status...</div>
             ) : null}
             {liveState === 'stale' ? (
-              <div className="notice notice-error dashboard-alert" role="alert">
+              <div className="notice notice-error dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>
                 <AlertTriangle size={16} aria-hidden="true" />
                 <span>
                   Live machine status is stale. The last successful empty result was received at{' '}
@@ -694,11 +867,11 @@ export default function DashboardSection() {
           </div>
 
           {liveState === 'loading' ? (
-            <div className="notice dashboard-alert" role="status" aria-live="polite">Refreshing live status...</div>
+            <div className="notice dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>Refreshing live status...</div>
           ) : null}
 
           {liveState === 'stale' ? (
-            <div className="notice notice-error dashboard-alert" role="alert">
+            <div className="notice notice-error dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>
               <AlertTriangle size={16} aria-hidden="true" />
               <span>
                 Live machine status is stale. Showing the last successful result from{' '}
@@ -714,19 +887,30 @@ export default function DashboardSection() {
           ) : null}
 
           <div className="overview-sensor-grid" aria-label="Five inductive proximity sensor statuses">
-            {sensorHealth.map((sensor) => (
-              <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
-                <div className="overview-sensor-heading">
-                  <span>{sensor.code}</span>
-                  <Status>{sensor.status}</Status>
-                </div>
-                <h3 title={sensor.label}>{sensor.label}</h3>
-                <div className="overview-sensor-footer">
-                  <span>{sensor.lastEventAt ? formatLiveDateTime(sensor.lastEventAt) : 'No recent event'}</span>
-                  <span>Connection: {connectivityLabel(sensor)}</span>
-                </div>
-              </article>
-            ))}
+            {sensorHealth.map((sensor) => {
+              const eventAge = formatRelativeEventAge(sensor.lastEventAt)
+              return (
+                <article key={sensor.code} className={`overview-sensor-card ${getLiveStatusClass(sensor.status)}`}>
+                  <div className="overview-sensor-heading">
+                    <span>{sensor.code}</span>
+                    <Status>{sensor.status}</Status>
+                  </div>
+                  <h3>
+                    <Link className="overview-sensor-link" to="/dashboard/live" title={`Inspect ${sensor.label} in Live Feed`}>
+                      {sensor.label}
+                    </Link>
+                  </h3>
+                  <div className="overview-sensor-footer">
+                    <span>
+                      {sensor.lastEventAt
+                        ? `${formatLiveDateTime(sensor.lastEventAt)}${eventAge ? ` · ${eventAge}` : ''}`
+                        : 'No recent event'}
+                    </span>
+                    <span>Connection: {connectivityLabel(sensor)}</span>
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </section>
       ) : null}
