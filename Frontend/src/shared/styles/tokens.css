@@ -3085,7 +3085,7 @@ button:disabled {
   border: 1px solid var(--subtle-border);
   border-radius: 6px;
   background: var(--panel-bg);
-  cursor: pointer;
+  cursor: default;
   transition:
     border-color 0.15s var(--ease-std),
     background-color 0.15s var(--ease-std),
@@ -3094,6 +3094,7 @@ button:disabled {
 }
 
 .analytics-cause-legend-item:hover,
+.analytics-cause-legend-item:focus-visible,
 .analytics-cause-legend-item.is-hovered {
   border-color: color-mix(in srgb, var(--c-accent) 55%, var(--card-border));
   background: color-mix(in srgb, var(--c-accent) 10%, var(--panel-bg));

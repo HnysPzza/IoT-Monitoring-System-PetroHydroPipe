@@ -314,9 +314,12 @@ export default function AnalyticsOperationsDetails({ snapshot }) {
               {sensorDistribution.map((sensor, index) => (
                 <li
                   key={sensor.sensorCode}
+                  tabIndex={0}
                   className={`analytics-cause-legend-item ${activeSensorIndex === index ? 'is-hovered' : ''}`}
                   onMouseEnter={() => setActiveSensorIndex(index)}
                   onMouseLeave={() => setActiveSensorIndex(null)}
+                  onFocus={() => setActiveSensorIndex(index)}
+                  onBlur={() => setActiveSensorIndex((current) => (current === index ? null : current))}
                 >
                   <span
                     className="analytics-cause-swatch"
