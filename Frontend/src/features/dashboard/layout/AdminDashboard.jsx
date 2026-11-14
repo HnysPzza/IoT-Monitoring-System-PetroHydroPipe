@@ -900,7 +900,11 @@ export default function AdminDashboard() {
           <div className="topbar-trailing">
             {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-controls" /> : null}
             {cachedAlertsAt && !hasTrustedAlertList ? <Status tone="danger">Cached alerts stale</Status> : null}
-            <Status value={online && alertConnectionStatus === 'live' ? 'active' : ''} tone={!online || alertConnectionStatus === 'degraded' ? 'danger' : undefined} role="status">
+            <Status
+              value={online && alertConnectionStatus === 'live' ? 'active' : ''}
+              tone={!online || alertConnectionStatus === 'degraded' ? 'danger' : alertConnectionStatus === 'polling' || alertConnectionStatus === 'reconnecting' ? 'fault' : undefined}
+              role="status"
+            >
               {!online ? 'Offline' : alertConnectionStatus === 'live'
                 ? 'Live'
                 : alertConnectionStatus === 'polling'
