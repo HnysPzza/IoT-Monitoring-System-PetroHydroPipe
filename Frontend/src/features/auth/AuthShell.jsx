@@ -62,6 +62,7 @@ export function PasswordInput({
   id,
   inputRef,
   label,
+  labelTrailing = null,
   maxLength,
   minLength,
   name,
@@ -71,16 +72,19 @@ export function PasswordInput({
   placeholder,
   required = true,
   shake = false,
+  statusMessage = '',
   value,
 }) {
   const [visible, setVisible] = useState(false)
   const [capsLockOn, setCapsLockOn] = useState(false)
   const fieldName = name || id
   const errorId = `${id}-error`
+  const statusId = `${id}-status`
   const capsId = `${id}-caps-warning`
   const visibilityLabel = `${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`
   const describedBy = [
     hasError && errorMessage ? errorId : '',
+    !hasError && statusMessage ? statusId : '',
     capsLockOn ? capsId : '',
   ].filter(Boolean).join(' ') || undefined
 
@@ -90,7 +94,14 @@ export function PasswordInput({
 
   return (
     <div className="field">
-      <label htmlFor={id}>{label}</label>
+      {labelTrailing ? (
+        <div className="field-label-row">
+          <label htmlFor={id}>{label}</label>
+          {labelTrailing}
+        </div>
+      ) : (
+        <label htmlFor={id}>{label}</label>
+      )}
       <div
         className={`input-shell has-toggle${hasError ? ' has-error' : ''}${shake ? ' shake' : ''}`}
         onAnimationEnd={onAnimationEnd}
@@ -133,8 +144,13 @@ export function PasswordInput({
         </button>
       </div>
       {hasError && errorMessage ? (
-        <p className="field-error" id={errorId} role={errorRole}>
+        <p className="field-error" id={errorId} role={errorRole || undefined}>
           {errorMessage}
+        </p>
+      ) : null}
+      {!hasError && statusMessage ? (
+        <p className="field-status" id={statusId}>
+          {statusMessage}
         </p>
       ) : null}
       {capsLockOn ? (

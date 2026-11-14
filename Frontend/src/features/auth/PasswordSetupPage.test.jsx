@@ -27,7 +27,7 @@ it.each([false, true])('rejects matching weak passwords in change mode %s', asyn
   await user.type(await screen.findByLabelText('New password'), 'aaaaaaaaaaaa')
   await user.type(screen.getByLabelText('Confirm password'), 'aaaaaaaaaaaa')
   await user.click(screen.getByRole('button', { name: changePassword ? 'Change password' : 'Set password' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent(/uppercase.*lowercase.*number.*special/i)
+  expect(await screen.findByRole('alert')).toHaveTextContent(/still needed:.*uppercase.*number.*symbol/i)
   expect(apiRequest).not.toHaveBeenCalledWith(`/api/auth/${changePassword ? 'change-password' : 'setup-password'}`, expect.anything())
 })
 
@@ -164,9 +164,12 @@ it.each([
   const confirmShell = confirmInput.closest('.input-shell')
 
   expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
-  expect(screen.getByText('0 / 72 chars')).toBeInTheDocument()
+  const charCounter = screen.getByText('0 / 72 chars')
+  expect(charCounter).toBeInTheDocument()
+  expect(charCounter).not.toHaveAttribute('aria-live')
   expect(screen.getByRole('list', { name: /password requirements/i })).toBeInTheDocument()
   expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  expect(screen.queryByRole('listitem', { name: /passwords match/i })).not.toBeInTheDocument()
   expect(screen.getByText(/strength:\s*none/i)).toBeInTheDocument()
 
   await user.type(newInput, 'weakpass')
@@ -176,7 +179,7 @@ it.each([
   expect(newShell).not.toHaveClass('shake')
 
   await user.tab()
-  expect(screen.getByText(/include at least 12 characters, uppercase, lowercase, a number, and a special character/i)).toBeInTheDocument()
+  expect(screen.getByText(/still needed: at least 12 characters, uppercase letter, number, and symbol or punctuation/i)).toBeInTheDocument()
   expect(newShell).toHaveClass('has-error')
   expect(newShell).not.toHaveClass('shake')
 
@@ -185,7 +188,7 @@ it.each([
 
   await user.clear(newInput)
   await user.type(newInput, 'Valid-password1!')
-  expect(screen.queryByText(/include at least 12 characters, uppercase, lowercase, a number, and a special character/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/still needed:/i)).not.toBeInTheDocument()
   expect(newShell).not.toHaveClass('has-error')
   expect(screen.getByText(/strength:\s*strong/i)).toBeInTheDocument()
 
@@ -206,6 +209,7 @@ it.each([
   await user.clear(confirmInput)
   await user.type(confirmInput, 'Valid-password1!')
   expect(screen.queryByText('Passwords do not match.')).not.toBeInTheDocument()
+  expect(screen.getByText('Passwords match.')).toBeInTheDocument()
   expect(confirmShell).not.toHaveClass('has-error')
   expect(screen.getByText(/strength:\s*strong/i)).toBeInTheDocument()
 })
@@ -376,3 +380,37 @@ it('counts Unicode characters instead of UTF-16 units for the minimum length', a
   expect(await screen.findByRole('alert')).toHaveTextContent(/at least 12 characters/i)
   expect(apiRequest).not.toHaveBeenCalledWith('/api/auth/change-password', expect.anything())
 })
+
+it.each(['Abcdefghij1£', 'Abcdefghij1€', 'Abcdefghij1§', 'Abcdefghij1—'])(
+  'accepts Unicode punctuation and symbol password %s',
+  async (unicodePassword) => {
+    const token = 'd'.repeat(64)
+    window.history.replaceState(null, '', `/setup-password#token=${token}`)
+    apiRequest.mockResolvedValue({ validForMs: 3600000, completed: true })
+    render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('New password'), unicodePassword)
+    await user.type(screen.getByLabelText('Confirm password'), unicodePassword)
+    expect(screen.getByText(/strength:\s*strong/i)).toBeInTheDocument()
+    expect(screen.getByText('Passwords match.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Set password' }))
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(
+      '/api/auth/setup-password',
+      expect.objectContaining({ body: { token, password: unicodePassword } }),
+    ))
+  },
+)
+
+it('uses a single polite live region for strength status and keeps recovery guidance in the card footer', async () => {
+  window.history.replaceState(null, '', `/setup-password#token=${'e'.repeat(64)}`)
+  const { container } = render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+
+  await screen.findByLabelText('New password')
+  const politeRegions = container.querySelectorAll('[aria-live="polite"]')
+  expect(politeRegions).toHaveLength(1)
+  expect(screen.getByText(/encrypted before storage/i)).toBeInTheDocument()
+  expect(screen.getByText(/contact your managing director/i)).toBeInTheDocument()
+})
+

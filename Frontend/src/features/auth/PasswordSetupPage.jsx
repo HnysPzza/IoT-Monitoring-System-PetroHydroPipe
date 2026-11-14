@@ -39,6 +39,36 @@ function formatLinkExpiry(validForMs) {
   return `Single-use link · expires in about ${minutes} min.`
 }
 
+function formatMissingList(items) {
+  if (items.length === 0) return ''
+  if (items.length === 1) return items[0]
+  if (items.length === 2) return `${items[0]} and ${items[1]}`
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
+function buildPasswordRequirementWarning({
+  passwordCharacters,
+  passwordBytes,
+  hasUpper,
+  hasLower,
+  hasNumber,
+  hasSymbol,
+}) {
+  if (passwordBytes > 72) {
+    return 'Password exceeds the 72-byte limit; shorten it or use fewer multi-byte symbols.'
+  }
+
+  const missing = []
+  if (passwordCharacters < 12) missing.push('at least 12 characters')
+  if (!hasUpper && !hasLower) missing.push('uppercase and lowercase letters')
+  else if (!hasUpper) missing.push('uppercase letter')
+  else if (!hasLower) missing.push('lowercase letter')
+  if (!hasNumber) missing.push('number')
+  if (!hasSymbol) missing.push('symbol or punctuation')
+
+  return missing.length > 0 ? `Still needed: ${formatMissingList(missing)}.` : ''
+}
+
 function getModeConfig(changePassword, resetPassword) {
   if (changePassword) {
     return {
@@ -93,22 +123,25 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   const firstFieldRef = useRef(null)
   const newPasswordRef = useRef(null)
   const confirmPasswordRef = useRef(null)
+  const stateHeadingRef = useRef(null)
+  const prevCardStateRef = useRef(null)
 
   const validLink = /^[0-9a-f]{64}$/.test(linkToken)
   const passwordBytes = new TextEncoder().encode(password).length
   const passwordCharacters = Array.from(password).length
   const hasLength = passwordCharacters >= 12 && passwordBytes <= 72
-  const hasUpperAndLower = /[a-z]/.test(password) && /[A-Z]/.test(password)
+  const hasLower = /[a-z]/.test(password)
+  const hasUpper = /[A-Z]/.test(password)
+  const hasUpperAndLower = hasLower && hasUpper
   const hasNumber = /[0-9]/.test(password)
-  const hasSymbol = /[!-/:-@\[-`{-~]/.test(password)
-  const hasNumberAndSymbol = hasNumber && hasSymbol
-  const hasRequiredCharacters = hasUpperAndLower && hasNumberAndSymbol
+  const hasSymbol = /[\p{P}\p{S}]/u.test(password)
+  const hasRequiredCharacters = hasUpperAndLower && hasNumber && hasSymbol
   const confirmationMatches = password.length > 0 && password === confirmation
   const ruleItems = [
-    { key: 'length', label: '12+ characters', met: hasLength },
+    { key: 'length', label: '12–72 characters', met: hasLength },
     { key: 'case', label: 'Uppercase & lowercase', met: hasUpperAndLower },
-    { key: 'symbol', label: 'Number & symbol', met: hasNumberAndSymbol },
-    { key: 'match', label: 'Passwords match', met: confirmationMatches },
+    { key: 'number', label: 'At least one number', met: hasNumber },
+    { key: 'symbol', label: 'Symbol or punctuation', met: hasSymbol },
   ]
   const strengthScore = [hasLength, hasUpperAndLower, hasNumber, hasSymbol].filter(Boolean).length
   const strengthLevel = password.length === 0 ? 0 : Math.max(1, strengthScore)
@@ -117,13 +150,19 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   const newPasswordInvalid = !hasLength || !hasRequiredCharacters
   const showNewPasswordError = touched.password && newPasswordInvalid
   const newPasswordWarning = showNewPasswordError
-    ? (passwordBytes > 72
-        ? 'Password is too long; shorten it or use simpler characters.'
-        : 'Include at least 12 characters, uppercase, lowercase, a number, and a special character.')
+    ? buildPasswordRequirementWarning({
+        passwordCharacters,
+        passwordBytes,
+        hasUpper,
+        hasLower,
+        hasNumber,
+        hasSymbol,
+      })
     : ''
 
   const showConfirmError = touched.confirmation && password !== confirmation
   const confirmPasswordWarning = showConfirmError ? 'Passwords do not match.' : ''
+  const confirmPasswordStatus = !showConfirmError && confirmationMatches ? 'Passwords match.' : ''
 
   useEffect(() => {
     if (prevModeKeyRef.current === modeKey) return
@@ -295,6 +334,14 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
         ? linkState
         : 'form'
 
+  useEffect(() => {
+    const previous = prevCardStateRef.current
+    prevCardStateRef.current = cardStateKey
+    if (previous === 'form' && (cardStateKey === 'completed' || cardStateKey === 'invalid' || cardStateKey === 'error')) {
+      stateHeadingRef.current?.focus()
+    }
+  }, [cardStateKey])
+
   const brandPoints = !changePassword ? (
     <div className="password-security-points" aria-label="Password policy details">
       <div>
@@ -327,7 +374,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
             <CheckCircle2 size={24} />
           </span>
           <div className="password-state-copy">
-            <h1 id="password-setup-title">{mode.completedHeading}</h1>
+            <h1 ref={stateHeadingRef} id="password-setup-title" tabIndex={-1}>{mode.completedHeading}</h1>
             <p>Sign in with your new password.</p>
           </div>
           <Link className="btn btn-primary password-state-action" to="/login">
@@ -341,7 +388,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
             <CircleAlert size={24} />
           </span>
           <div className="password-state-copy">
-            <h1 id="password-setup-title">{validLink ? 'Link expired or used' : 'Link unavailable'}</h1>
+            <h1 ref={stateHeadingRef} id="password-setup-title" tabIndex={-1}>{validLink ? 'Link expired or used' : 'Link unavailable'}</h1>
             <p>
               Password links work once for 1 hour and cannot be reused after reload. Contact your {managingDirectorLabel} to issue a new link.
             </p>
@@ -358,7 +405,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
                 <CircleAlert size={24} />
               </span>
               <div className="password-state-copy">
-                <h1 id="password-setup-title">Link check failed</h1>
+                <h1 ref={stateHeadingRef} id="password-setup-title" tabIndex={-1}>Link check failed</h1>
                 <p>{error} Try again or ask your {managingDirectorLabel} for a new link.</p>
               </div>
               <button
@@ -388,9 +435,6 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
               <h1 id="password-setup-title">{mode.title}</h1>
               <p>{mode.description}</p>
             </div>
-            <span className="password-char-counter" aria-live="polite">
-              {passwordCharacters} / 72 chars
-            </span>
           </div>
 
           {!changePassword && expiryText ? (
@@ -434,6 +478,11 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
             <PasswordInput
               id="new-password"
               label="New password"
+              labelTrailing={(
+                <span className="password-char-counter">
+                  {passwordCharacters} / 72 chars
+                </span>
+              )}
               placeholder="Create a strong password"
               autoComplete="new-password"
               icon={Lock}
@@ -451,7 +500,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
               inputRef={changePassword ? newPasswordRef : firstFieldRef}
               hasError={Boolean(newPasswordWarning)}
               errorMessage={newPasswordWarning}
-              errorRole={submitErrorField === 'password' ? 'alert' : 'status'}
+              errorRole={submitErrorField === 'password' ? 'alert' : ''}
               shake={shakeField === 'password'}
               onAnimationEnd={() => setShakeField('')}
             />
@@ -474,7 +523,8 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
               inputRef={confirmPasswordRef}
               hasError={Boolean(confirmPasswordWarning)}
               errorMessage={confirmPasswordWarning}
-              errorRole={submitErrorField === 'confirmation' ? 'alert' : 'status'}
+              errorRole={submitErrorField === 'confirmation' ? 'alert' : ''}
+              statusMessage={confirmPasswordStatus}
               shake={shakeField === 'confirmation'}
               onAnimationEnd={() => setShakeField('')}
             />
@@ -482,7 +532,12 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
             <div className="password-guidance">
               <div className="password-strength-header">
                 <span className="password-strength-title">Password strength</span>
-                <span className="password-strength-label" data-level={strengthLevel} aria-live="polite">
+                <span
+                  className="password-strength-label"
+                  data-level={strengthLevel}
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
                   Strength: {STRENGTH_LABELS[strengthLevel]}
                 </span>
               </div>

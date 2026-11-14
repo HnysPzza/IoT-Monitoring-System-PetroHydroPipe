@@ -481,6 +481,13 @@ button:disabled {
   gap: 6px;
 }
 
+.field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .field label {
   color: var(--c-text-2);
   font-size: 0.875rem;
@@ -688,6 +695,13 @@ button:disabled {
 .field-error {
   margin: 0;
   color: var(--c-danger);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.field-status {
+  margin: 0;
+  color: var(--notice-success-text);
   font-size: 0.8rem;
   line-height: 1.4;
 }

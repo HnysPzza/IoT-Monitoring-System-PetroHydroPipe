@@ -11,7 +11,7 @@
 
 ## Password and login protection
 
-- Setup and password changes require 12 or more characters, at most 72 UTF-8 bytes, uppercase, lowercase, a digit, and ASCII punctuation. Whitespace alone does not satisfy the punctuation requirement.
+- Setup and password changes require 12 or more characters, at most 72 UTF-8 bytes, uppercase, lowercase, a digit, and punctuation or a symbol (Unicode supported). Whitespace alone does not satisfy the punctuation requirement.
 - Existing passwords remain valid for login; the new policy is enforced on replacement.
 - Session creation rechecks the verified credential under the account lock. Password rotation cannot be followed by a session created from stale credentials.
 - Session issuance, last-login timestamp, and successful-login audit commit together.
