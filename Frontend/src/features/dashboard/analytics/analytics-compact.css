@@ -18,7 +18,6 @@
 .analytics-layout .analytics-trend-chart { min-height: 210px; background: transparent; }
 .analytics-layout .analytics-trend-context { gap: 12px; }
 .analytics-layout .analytics-trend-context .section-chip { padding: 0; border: 0; background: transparent; }
-.analytics-layout .analytics-trend-summary-row { display: none; }
 .analytics-layout .analytics-cause-legend-item { border: 0; background: transparent; box-shadow: none; padding: 6px 0; }
 .analytics-layout .analytics-trend-summary-row { display: flex; justify-content: flex-end; margin: 0; }
 .analytics-layout .analytics-trend-summary { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
