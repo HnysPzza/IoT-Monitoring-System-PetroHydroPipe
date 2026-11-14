@@ -276,7 +276,8 @@ describe('AnalyticsDateRangePicker component', () => {
     const startBtn = screen.getByRole('button', { name: 'Select date Oct 5, 2026' })
     await user.click(startBtn)
     expect(startBtn).toHaveClass('is-start')
-    expect(screen.getByText('Select end date')).toBeInTheDocument()
+    expect(startBtn).toHaveClass('is-selecting-start')
+    expect(screen.getByText('Select end date')).toHaveAttribute('aria-live', 'polite')
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
 
     // Hover intermediate day: Oct 15, 2026
