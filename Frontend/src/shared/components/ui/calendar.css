@@ -128,7 +128,7 @@
   width: 100%;
   border: 1px solid transparent;
   background: transparent;
-  color: #475569;
+  color: var(--c-text-2, #475569);
   font-weight: 500;
   cursor: pointer;
   box-sizing: border-box;
@@ -186,10 +186,10 @@
   height: 36px;
   min-width: 36px;
   min-height: 36px;
-  border: 1px solid #E2E8F0;
+  border: 1px solid var(--card-border, #E2E8F0);
   border-radius: 6px;
-  background: #FFFFFF;
-  color: #64748B;
+  background: var(--card-bg, #FFFFFF);
+  color: var(--c-text-2, #64748B);
   cursor: pointer;
   padding: 0;
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
@@ -246,7 +246,7 @@
   line-height: 1;
   border: none;
   background: transparent;
-  color: #0F172A;
+  color: var(--c-text, #0F172A);
   font-family: inherit;
   display: flex;
   align-items: center;
@@ -415,7 +415,7 @@
 .trend-popover-cancel-btn {
   min-height: 36px;
   font-size: 12px;
-  color: #64748B;
+  color: var(--c-text-2, #64748B);
   background: transparent;
   border: none;
   padding: 6px 12px;
@@ -426,7 +426,7 @@
 }
 
 .trend-popover-cancel-btn:hover {
-  color: #0F172A;
+  color: var(--c-text, #0F172A);
   background: #F1F5F9;
 }
 
@@ -434,7 +434,7 @@
   min-height: 36px;
   font-size: 12px;
   font-weight: 600;
-  background: #2563EB;
+  background: var(--c-primary, #2563EB);
   color: #FFFFFF;
   border: none;
   border-radius: 6px;
