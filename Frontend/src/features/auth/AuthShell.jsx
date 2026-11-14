@@ -21,6 +21,8 @@ export function AuthShell({
               className="brand-logo"
               src="/assets/logo.png"
               alt="PetroHydroPipe logo"
+              width="315"
+              height="172"
               onError={(event) => {
                 event.currentTarget.style.display = 'none'
               }}
