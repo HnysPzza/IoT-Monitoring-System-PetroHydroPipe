@@ -165,8 +165,6 @@ export default function DashboardSection() {
   const [liveErrorKey, setLiveErrorKey] = useState('')
   const [liveLastUpdated, setLiveLastUpdated] = useState(null)
   const [liveRefresh, setLiveRefresh] = useState(0)
-  const [isSyncDetailsOpen, setIsSyncDetailsOpen] = useState(false)
-  const syncAnchorRef = useRef(null)
   const liveRequestIdRef = useRef(0)
   const successfulLiveRef = useRef(null)
   const wasOfflineRef = useRef(false)
@@ -438,122 +436,11 @@ export default function DashboardSection() {
 
   const resolvedMachineName = hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'
   const resolvedReportingCopy = hasCurrentLive ? `${reportingSensorCount} / 5 reporting` : 'Reporting unavailable'
-  const overviewLastUpdated = hasCurrentOverview && overviewQuery.dataUpdatedAt
-    ? new Date(overviewQuery.dataUpdatedAt)
-    : null
-  const chartLastUpdated = hasCurrentDowntimeChart ? downtimeChartLastUpdated : null
-  const liveUpdated = hasCurrentLive ? liveLastUpdated : null
-  const syncSources = [
-    {
-      label: 'Overview',
-      updatedAt: overviewLastUpdated,
-      loading: overviewDisplayState === 'loading',
-      stale: overviewDisplayState === 'stale',
-      failed: overviewDisplayState === 'error',
-    },
-    {
-      label: 'Downtime chart',
-      updatedAt: chartLastUpdated,
-      loading: downtimeChartState === 'loading',
-      stale: downtimeChartState === 'stale',
-      failed: downtimeChartState === 'error',
-    },
-    {
-      label: 'Live feed',
-      updatedAt: liveUpdated,
-      loading: liveDisplayState === 'loading',
-      stale: liveDisplayState === 'stale',
-      failed: liveDisplayState === 'error',
-    },
-  ]
-  const validSyncDates = syncSources
-    .map((source) => source.updatedAt)
-    .filter((date) => date instanceof Date && Number.isFinite(date.getTime()))
-  const hasDegradedSyncSource = syncSources.some((source) => source.stale || source.failed)
-  const hasMissingSyncSource = validSyncDates.length > 0 && syncSources.some((source) => !source.updatedAt && !source.loading)
-  const newestSyncDate = validSyncDates.length > 0
-    ? new Date(Math.max(...validSyncDates.map((date) => date.getTime())))
-    : null
-  const oldestSyncDate = validSyncDates.length > 0
-    ? new Date(Math.min(...validSyncDates.map((date) => date.getTime())))
-    : null
-  const isPartialSync = hasDegradedSyncSource || hasMissingSyncSource
-  const resolvedSyncedCopy = !newestSyncDate
-    ? 'Not synced'
-    : isPartialSync
-      ? `Partial sync · ${formatSuccessfulUpdate(oldestSyncDate)}`
-      : formatSuccessfulUpdate(
-          newestSyncDate.getTime() - oldestSyncDate.getTime() >= 60_000
-            ? oldestSyncDate
-            : newestSyncDate,
-        )
-  const syncSourceLines = syncSources.map((source) => {
-    const stateText = source.failed
-      ? 'Unavailable'
-      : source.stale && source.updatedAt
-        ? `Stale (${formatSuccessfulUpdate(source.updatedAt)})`
-        : source.updatedAt
-          ? formatSuccessfulUpdate(source.updatedAt)
-          : 'Pending'
-    return `${source.label}: ${stateText}`
-  })
-  const resolvedSyncedDetails = syncSourceLines.join(' | ')
   const hasPrimaryAlertBanner = overviewAlerts.length > 0 || Boolean(fallbackSensorFaultBanner)
   const isOverviewAnnouncing = (overviewDisplayState === 'loading' && !hasCurrentOverview) || overviewDisplayState === 'stale'
   const isChartAnnouncing = chartDisplayState === 'loading' || downtimeChartState === 'stale'
   const hasPoliteStatusAbove = isOverviewAnnouncing || isChartAnnouncing
   const isMobileViewport = useMobileViewport()
-
-  useEffect(() => {
-    setIsSyncDetailsOpen(false)
-  }, [isMobileViewport])
-
-  useEffect(() => {
-    if (!isSyncDetailsOpen) return
-
-    function handlePointerDown(event) {
-      if (syncAnchorRef.current?.contains(event.target)) return
-      setIsSyncDetailsOpen(false)
-    }
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') setIsSyncDetailsOpen(false)
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isSyncDetailsOpen])
-
-  function renderSyncTrigger({ compact = false } = {}) {
-    return (
-      <span className="overview-sync-anchor" ref={syncAnchorRef}>
-        <button
-          type="button"
-          className={`overview-meta-item overview-meta-sync-trigger${isPartialSync ? ' is-partial' : ''}`}
-          title={resolvedSyncedDetails}
-          aria-label={`Sync status: ${resolvedSyncedCopy}. ${resolvedSyncedDetails}`}
-          aria-expanded={isSyncDetailsOpen}
-          onClick={() => setIsSyncDetailsOpen((open) => !open)}
-        >
-          {!compact ? <Clock3 size={16} aria-hidden="true" /> : null}
-          <strong>{resolvedSyncedCopy}</strong>
-        </button>
-        {isSyncDetailsOpen ? (
-          <div className="overview-sync-popover" role="region" aria-label="Sync source breakdown">
-            <ul className="overview-sync-popover-list">
-              {syncSourceLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </span>
-    )
-  }
 
   const controls = (
       <div className="overview-controls-card">
@@ -569,7 +456,6 @@ export default function DashboardSection() {
 
               <strong>{resolvedReportingCopy}</strong>
             </span>
-            {renderSyncTrigger()}
           </div>
         ) : null}
         <button
@@ -601,8 +487,6 @@ export default function DashboardSection() {
           <span>{resolvedMachineName}</span>
           <span aria-hidden="true">·</span>
           <span>{resolvedReportingCopy}</span>
-          <span aria-hidden="true">·</span>
-          {renderSyncTrigger({ compact: true })}
         </div>
       ) : null}
 
@@ -878,7 +762,10 @@ export default function DashboardSection() {
               <h2 id="machine-health-title">Machine Health · {liveData.machine?.name || 'Spiral Mill 01'}</h2>
             </div>
             <div className="live-refresh">
-              <Status value={reportingSensorCount === 5 ? 'active' : ''}>
+              <Status
+                value={reportingSensorCount === 5 ? 'active' : ''}
+                tone={reportingSensorCount === 5 ? undefined : reportingSensorCount === 0 ? 'danger' : 'fault'}
+              >
                 {reportingSensorCount} / 5 sensors reporting
               </Status>
             </div>
@@ -914,7 +801,11 @@ export default function DashboardSection() {
                     <Status>{sensor.status}</Status>
                   </div>
                   <h3>
-                    <Link className="overview-sensor-link" to="/dashboard/live" title={`Inspect ${sensor.label} in Live Feed`}>
+                    <Link
+                      className="overview-sensor-link"
+                      to={`/dashboard/live?sensor=${encodeURIComponent(sensor.code)}`}
+                      title={`Inspect ${sensor.label} in Live Feed`}
+                    >
                       {sensor.label}
                     </Link>
                   </h3>

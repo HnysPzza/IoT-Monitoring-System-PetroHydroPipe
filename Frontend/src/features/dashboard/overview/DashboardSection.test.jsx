@@ -957,26 +957,12 @@ describe('DashboardSection', () => {
 
     const s05Heading = await screen.findByRole('heading', { level: 3, name: 'Production Output Cutting' })
     const s05Link = s05Heading.querySelector('a')
-    expect(s05Link).toHaveAttribute('href', '/dashboard/live')
+    expect(s05Link).toHaveAttribute('href', '/dashboard/live?sensor=S-05')
     expect(s05Heading.closest('article')).toHaveTextContent('No recent event')
 
     const s01Card = screen.getByRole('heading', { level: 3, name: sensorIdentities[0].label }).closest('article')
     expect(s01Card).toHaveTextContent(/ago/i)
-    expect(s01Card.querySelector('a')).toHaveAttribute('href', '/dashboard/live')
-  })
-
-  it('reports partial sync and coordinates live-region politeness when overview or chart sources degrade', async () => {
-    getDashboardOverview.mockRejectedValue(new Error('Overview outage'))
-    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
-    getLiveFeed.mockResolvedValue(livePayload())
-
-    renderWithAuth(<DashboardSection />)
-
-    expect(await screen.findByText('Unable to load dashboard overview')).toBeInTheDocument()
-    const syncBadge = screen.getByText(/Partial sync/i).closest('.overview-meta-item')
-    expect(syncBadge).toHaveClass('is-partial')
-    expect(syncBadge).toHaveAttribute('title', expect.stringContaining('Overview: Unavailable'))
-    expect(syncBadge).toHaveAttribute('title', expect.stringContaining('Live feed:'))
+    expect(s01Card.querySelector('a')).toHaveAttribute('href', '/dashboard/live?sensor=S-01')
   })
 
   it('suppresses competing live announcements when primary fault and multiple stale panels coexist', async () => {
@@ -1013,7 +999,7 @@ describe('DashboardSection', () => {
     expect(liveStale).toHaveAttribute('aria-live', 'off')
   })
 
-  it('opens an accessible sync breakdown popover via keyboard/click and suppresses concurrent chart refresh aria-live while overview is stale', async () => {
+  it('clamps future sensor event timestamps, styles offline cards, and suppresses concurrent chart refresh aria-live while overview is stale', async () => {
     const user = userEvent.setup()
     let rejectOverviewRefresh
     let holdChartRefresh = true
@@ -1038,21 +1024,7 @@ describe('DashboardSection', () => {
 
     renderWithAuth(<DashboardSection />)
 
-    const syncTrigger = await screen.findByRole('button', { name: /sync status:/i })
-    expect(syncTrigger).toHaveAttribute('aria-expanded', 'false')
-
-    await user.click(syncTrigger)
-    expect(syncTrigger).toHaveAttribute('aria-expanded', 'true')
-    const breakdown = screen.getByRole('region', { name: 'Sync source breakdown' })
-    expect(breakdown).toHaveTextContent(/Overview:/i)
-    expect(breakdown).toHaveTextContent(/Downtime chart:/i)
-    expect(breakdown).toHaveTextContent(/Live feed:/i)
-
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('region', { name: 'Sync source breakdown' })).not.toBeInTheDocument()
-    expect(syncTrigger).toHaveAttribute('aria-expanded', 'false')
-
-    const s01Card = screen.getByRole('heading', { level: 3, name: 'Raw Material & Coil Joint' }).closest('article')
+    const s01Card = (await screen.findByRole('heading', { level: 3, name: 'Raw Material & Coil Joint' })).closest('article')
     expect(s01Card).toHaveTextContent(/·\s*now/i)
     expect(screen.queryByText(/in \d+ seconds/i)).not.toBeInTheDocument()
 
@@ -1136,64 +1108,6 @@ describe('DashboardSection', () => {
     const machineCard = screen.getByText('Machine Online').closest('article')
     expect(machineCard).toHaveTextContent('0 / 1')
     expect(machineCard).toHaveClass('stat-card-warning')
-  })
-
-  it('does not flash Partial sync while initial staggered sources are still loading and closes sync popover across 900px viewport changes', async () => {
-    let matches = false
-    const listeners = new Set()
-    const originalMatchMedia = window.matchMedia
-    window.matchMedia = vi.fn().mockImplementation((query) => ({
-      get matches() {
-        return query === '(max-width: 900px)' ? matches : false
-      },
-      media: query,
-      addEventListener: vi.fn((type, listener) => {
-        if (type === 'change') listeners.add(listener)
-      }),
-      removeEventListener: vi.fn((type, listener) => {
-        if (type === 'change') listeners.delete(listener)
-      }),
-    }))
-
-    const user = userEvent.setup()
-    const pendingLive = deferred()
-    getDashboardOverview.mockResolvedValue(overviewPayload())
-    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
-    getLiveFeed.mockReturnValue(pendingLive.promise)
-
-    try {
-      renderWithAuth(<DashboardSection />)
-
-      const syncTrigger = await screen.findByRole('button', { name: /sync status:/i })
-      await waitFor(() => {
-        expect(syncTrigger).not.toHaveTextContent(/Not synced/i)
-      })
-      expect(syncTrigger).not.toHaveTextContent(/Partial sync/i)
-      expect(syncTrigger).not.toHaveClass('is-partial')
-
-      await user.click(syncTrigger)
-      expect(screen.getByRole('region', { name: 'Sync source breakdown' })).toBeInTheDocument()
-
-      act(() => {
-        matches = true
-        listeners.forEach((listener) => listener({ matches: true, media: '(max-width: 900px)' }))
-      })
-      expect(screen.queryByRole('region', { name: 'Sync source breakdown' })).not.toBeInTheDocument()
-
-      await act(async () => {
-        pendingLive.reject(new Error('Live initial outage'))
-        try {
-          await pendingLive.promise
-        } catch {
-          // Expected failure to verify transition to partial sync after settling.
-        }
-      })
-
-      const mobileTrigger = await screen.findByRole('button', { name: /sync status: partial sync/i })
-      expect(mobileTrigger).toHaveClass('is-partial')
-    } finally {
-      window.matchMedia = originalMatchMedia
-    }
   })
 
   it('coordinates live regions when overview, chart, and live fail together or while overview loading/stale suppresses secondary notices', async () => {
