@@ -2,8 +2,8 @@ import './machines.css'
 import Status from '../../../shared/components/Status.jsx'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useOutletContext } from 'react-router'
-import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw, WifiOff } from 'lucide-react'
+import { Link, useOutletContext } from 'react-router'
+import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw, SlidersHorizontal, WifiOff } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
@@ -19,7 +19,7 @@ function formatTriggerLimit(sensorCode, settingsPayload) {
   const threshold = settingsPayload?.settings?.sensorThresholds?.[sensorCode]
   if (!threshold) return 'Unavailable'
   const outputSensorCode = settingsPayload?.constraints?.outputSensorCode || 'S-05'
-  if (sensorCode === outputSensorCode) return 'Not applicable'
+  if (sensorCode === outputSensorCode) return 'N/A'
   if (!threshold.absenceDetectionEnabled) return 'Disabled'
   const triggerSeconds = Number(threshold.triggerSeconds)
   if (!Number.isFinite(triggerSeconds) || triggerSeconds <= 0) return 'Unavailable'
@@ -74,7 +74,8 @@ function formatSuccessfulUpdate(date) {
 export default function MachinesSection() {
   const [sensorView, setSensorView] = useState('grid')
   const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('machines-header-controls'))
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const isAdmin = user?.role === 'Admin'
   const outlet = useOutletContext()
   const fallbackStream = useLiveFeedStream(outlet?.liveFeed ? null : token)
   const liveFeed = outlet?.liveFeed || fallbackStream
@@ -180,7 +181,7 @@ export default function MachinesSection() {
   const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('machines-header-controls')
   const headerControls = (
     <div className="machines-header-controls">
-      <h2 id="machine-admin-title">{machine.name}</h2><span className="machines-header-code machines-mono">{machine.machineCode}</span>
+      <h2 id="machine-admin-title">{machine.name}</h2>
       <Status>{machine.status}</Status>
       <button
         className="icon-button machines-refresh"
@@ -227,9 +228,17 @@ export default function MachinesSection() {
       <section className="machines-sensors-section" aria-labelledby="sensor-admin-title">
         <div className="machines-section-heading">
           <h2 id="sensor-admin-title">Inductive proximity sensors <span className="machines-count">{sensors.length} configured</span></h2>
-          <div className="machines-view-toggle" role="group" aria-label="Sensor view">
-            <button type="button" aria-label="Grid view" aria-pressed={sensorView === 'grid'} onClick={() => setSensorView('grid')}><LayoutGrid size={16} aria-hidden="true" /></button>
-            <button type="button" aria-label="Table view" aria-pressed={sensorView === 'table'} onClick={() => setSensorView('table')}><List size={16} aria-hidden="true" /></button>
+          <div className="machines-section-actions">
+            {isAdmin ? (
+              <Link className="btn btn-secondary machines-settings-link" to="/dashboard/settings">
+                <SlidersHorizontal size={15} aria-hidden="true" />
+                <span>Configure thresholds</span>
+              </Link>
+            ) : null}
+            <div className="machines-view-toggle" role="group" aria-label="Sensor view">
+              <button type="button" aria-label="Grid view" aria-pressed={sensorView === 'grid'} onClick={() => setSensorView('grid')}><LayoutGrid size={16} aria-hidden="true" /></button>
+              <button type="button" aria-label="Table view" aria-pressed={sensorView === 'table'} onClick={() => setSensorView('table')}><List size={16} aria-hidden="true" /></button>
+            </div>
           </div>
         </div>
 
@@ -251,17 +260,17 @@ export default function MachinesSection() {
                   const connection = connectivityLabel(sensor)
                   return (
                     <tr key={sensor.id}>
-                      <td>
+                      <td data-label="Sensor">
                         <div className="machines-table-sensor">
                           <span className="machines-table-sensor-name">{sensor.sensorCode} · {getSensorLabel(sensor.sensorCode, sensor.label)}</span>
                           <span className="machines-table-sensor-purpose">{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</span>
                         </div>
                       </td>
-                      <td><Status>{sensor.status}</Status></td>
-                      <td>{formatTriggerLimit(sensor.sensorCode, settingsQuery.data)}</td>
-                      <td><span className="machines-hardware-code machines-mono">{sensor.esp32DeviceId || 'Unavailable'}</span></td>
-                      <td><span className={`machines-connection ${getConnectionClass(connection)}`}><ConnectionValue label={connection} /></span></td>
-                      <td>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</td>
+                      <td data-label="Status"><Status>{sensor.status}</Status></td>
+                      <td data-label="Trigger limit">{formatTriggerLimit(sensor.sensorCode, settingsQuery.data)}</td>
+                      <td data-label="Hardware"><span className="machines-hardware-code machines-mono">{sensor.esp32DeviceId || 'Unavailable'}</span></td>
+                      <td data-label="Connection"><span className={`machines-connection ${getConnectionClass(connection)}`}><ConnectionValue label={connection} /></span></td>
+                      <td data-label="Last event">{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</td>
                     </tr>
                   )
                 })}
@@ -288,7 +297,7 @@ export default function MachinesSection() {
                     <div><dt>Trigger limit</dt><dd>{formatTriggerLimit(sensor.sensorCode, settingsQuery.data)}</dd></div>
                   </dl>
                   <dl className="machines-sensor-footer">
-                    <div><dt>Hardware</dt><dd className="machines-mono">{sensor.esp32DeviceId || 'Unavailable'}</dd></div>
+                    <div><dt>Hardware</dt><dd className="machines-hardware-code machines-mono">{sensor.esp32DeviceId || 'Unavailable'}</dd></div>
                     <div><dt>Last event</dt><dd>{formatShortDateTime(sensor.lastEventAt, 'No event yet')}</dd></div>
                   </dl>
                 </article>

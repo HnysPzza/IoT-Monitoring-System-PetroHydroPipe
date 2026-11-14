@@ -111,8 +111,38 @@ describe('MachinesSection live snapshot', () => {
 
     expect(await within(s03Card).findByText('5 min')).toBeInTheDocument()
     expect(within(s01Card).getByText('Disabled')).toBeInTheDocument()
-    expect(within(s05Card).getByText('Not applicable')).toBeInTheDocument()
+    expect(within(s05Card).getByText('N/A')).toBeInTheDocument()
     expect(getOperationalSettings).toHaveBeenCalledWith('test-token', 'machine-1', expect.anything())
+  })
+
+  it('shows a Settings threshold link for Admin and hides it for Engineering Supervisor', async () => {
+    getLiveFeed.mockResolvedValue(livePayload())
+    const adminView = renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-1', role: 'Admin' } } })
+    const settingsLink = await screen.findByRole('link', { name: /Configure thresholds/i })
+    expect(settingsLink).toHaveAttribute('href', '/dashboard/settings')
+    adminView.unmount()
+
+    renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-2', role: 'Engineering Supervisor' } } })
+    await screen.findByRole('heading', { name: 'Spiral Mill 01' })
+    expect(screen.queryByRole('link', { name: /Configure thresholds/i })).not.toBeInTheDocument()
+  })
+
+  it('adds data-label attributes on sensor table cells for mobile stacked cards', async () => {
+    const user = userEvent.setup()
+    getLiveFeed.mockResolvedValue(livePayload())
+    renderWithAuth(<MachinesSection />)
+    await screen.findByText('ESP32-03')
+    await user.click(screen.getByRole('button', { name: 'Table view' }))
+    const table = screen.getByRole('table')
+    const cells = within(table).getAllByRole('cell')
+    expect(cells.map((cell) => cell.getAttribute('data-label'))).toEqual([
+      'Sensor',
+      'Status',
+      'Trigger limit',
+      'Hardware',
+      'Connection',
+      'Last event',
+    ])
   })
 
   it('F03 does not replace an in-flight snapshot on a polling tick', async () => {
