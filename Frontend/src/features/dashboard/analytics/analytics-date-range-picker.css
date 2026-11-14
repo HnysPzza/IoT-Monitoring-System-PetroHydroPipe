@@ -410,14 +410,21 @@
   color: #F8FAFC;
 }
 
-:root[data-theme='dark'] .analytics-date-trigger:hover {
+:root[data-theme='dark'] .analytics-date-trigger:hover,
+:root[data-theme='dark'] .analytics-date-trigger[data-state='open'],
+:root[data-theme='dark'] .analytics-date-trigger.is-open {
   border-color: #334155;
   background: #132033;
 }
 
+:root[data-theme='dark'] .analytics-date-trigger-eyebrow,
 :root[data-theme='dark'] .analytics-date-trigger-icon,
 :root[data-theme='dark'] .analytics-date-trigger-chevron {
   color: #94A3B8;
+}
+
+:root[data-theme='dark'] .analytics-date-trigger-value {
+  color: #F8FAFC;
 }
 
 :root[data-theme='dark'] .shadcn-calendar-popover.analytics-date-range-popover,
@@ -446,6 +453,7 @@
   color: #93C5FD;
 }
 
+:root[data-theme='dark'] .analytics-calendar-month-title,
 :root[data-theme='dark'] .analytics-calendar-header-label {
   color: #F8FAFC;
 }
