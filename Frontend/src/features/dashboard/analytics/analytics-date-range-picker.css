@@ -514,6 +514,24 @@
   background: #1E293B;
 }
 
+@media (pointer: coarse) {
+  .analytics-date-trigger,
+  .analytics-preset-btn,
+  .analytics-calendar-nav-btn,
+  .analytics-calendar-day-btn,
+  .analytics-popover-cancel-btn,
+  .analytics-popover-apply-btn {
+    min-height: 44px;
+    height: auto;
+  }
+
+  .analytics-calendar-nav-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   .analytics-date-trigger,
