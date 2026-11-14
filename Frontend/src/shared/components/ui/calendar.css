@@ -5,14 +5,15 @@
 }
 
 .trend-calendar-trigger {
-  height: 38px;
+  min-width: 44px;
+  min-height: 44px;
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   background: #FFFFFF;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 6px 12px;
   cursor: pointer;
   box-sizing: border-box;
   text-align: left;
@@ -47,12 +48,13 @@
   flex: 1;
 }
 
+.trend-calendar-trigger .trend-calendar-kicker,
 .trend-calendar-kicker {
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   color: #64748B;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.1;
   letter-spacing: 0.04em;
 }
 
@@ -213,7 +215,7 @@
 }
 
 .trend-calendar-weekday {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #64748B;
   height: 24px;
@@ -636,8 +638,8 @@
   }
 
   .trend-calendar-day-btn {
-    min-height: 42px;
-    height: 42px;
+    min-height: 44px;
+    height: 44px;
   }
 
   .trend-popover-calendar {
@@ -697,5 +699,7 @@
 :root[data-theme='dark'] .trend-calendar-month-btn:disabled,
 :root[data-theme='dark'] .trend-calendar-week-row:disabled {
   color: #64748b;
+  background: transparent;
+  box-shadow: none;
   opacity: 0.78;
 }
