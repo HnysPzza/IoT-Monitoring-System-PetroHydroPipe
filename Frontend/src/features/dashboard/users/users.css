@@ -550,26 +550,6 @@
   opacity: 0.85;
 }
 
-.users-select-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.users-select-wrap select {
-  width: 100%;
-  padding-right: 2.15rem !important;
-}
-
-.account-select-wrap select,
-.users-select-wrap select {
-  -webkit-appearance: none;
-  appearance: none;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
-}
-
 .account-select-wrap select {
   padding-right: 2.45rem !important;
 }
@@ -578,98 +558,11 @@
   color: var(--c-text-2);
 }
 
-.account-select-wrap select:hover:not(:disabled),
-.users-select-wrap select:hover:not(:disabled) {
-  border-color: var(--c-text-3);
-}
-
-.account-select-wrap .select-chevron-icon,
-.users-select-wrap .select-chevron-icon {
-  position: absolute;
+.account-select-wrap .select-chevron-icon {
   right: 0.85rem;
-  color: var(--c-text-2);
-  pointer-events: none;
-  z-index: 1;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease;
-}
-
-.users-select-wrap .select-chevron-icon {
-  right: 0.65rem;
-}
-
-.account-select-wrap:focus-within .select-chevron-icon,
-.users-select-wrap:focus-within .select-chevron-icon {
-  color: var(--c-primary);
 }
 
 @supports (appearance: base-select) {
-  .account-select-wrap select,
-  .account-select-wrap select::picker(select),
-  .users-select-wrap select,
-  .users-select-wrap select::picker(select) {
-    appearance: base-select;
-  }
-
-  .account-select-wrap select,
-  .users-select-wrap select {
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .account-select-wrap select::picker-icon,
-  .users-select-wrap select::picker-icon {
-    display: none;
-  }
-
-  .account-select-wrap select:open ~ .select-chevron-icon,
-  .users-select-wrap select:open ~ .select-chevron-icon {
-    transform: rotate(180deg);
-    color: var(--c-primary);
-  }
-
-  .account-select-wrap select::picker(select),
-  .users-select-wrap select::picker(select) {
-    margin-block: 6px;
-    padding: 0.35rem;
-    border: 1px solid var(--c-border);
-    border-radius: 10px;
-    background: var(--c-surface);
-    color: var(--c-text);
-    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.24), 0 1px 3px rgba(2, 6, 23, 0.14);
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), display 0.15s allow-discrete, overlay 0.15s allow-discrete;
-  }
-
-  :root[data-theme='light'] .account-select-wrap select::picker(select),
-  :root[data-theme='light'] .users-select-wrap select::picker(select) {
-    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
-  }
-
-  @starting-style {
-    .account-select-wrap select:open::picker(select),
-    .users-select-wrap select:open::picker(select) {
-      opacity: 0;
-      transform: translateY(-4px) scale(0.98);
-    }
-  }
-
-  .account-select-wrap select option,
-  .users-select-wrap select option {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-height: 36px;
-    padding: 0.4rem 0.65rem;
-    border-radius: 7px;
-    font-size: 0.82rem;
-    font-weight: 500;
-    color: var(--c-text);
-    background: transparent;
-    cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
-  }
-
   .account-select-wrap select option[value=''] {
     color: var(--c-text-2);
     font-weight: 500;
@@ -679,37 +572,21 @@
     margin-bottom: 0.2rem;
   }
 
-  .account-select-wrap select option::checkmark,
-  .users-select-wrap select option::checkmark {
-    order: 2;
-    margin-left: auto;
-    color: var(--c-primary);
-    font-weight: 700;
-  }
-
   .account-select-wrap select option[value='']::checkmark {
     display: none;
   }
 
-  .account-select-wrap select option:not([value='']):hover,
-  .account-select-wrap select option:not([value='']):focus-visible,
-  .users-select-wrap select option:hover,
-  .users-select-wrap select option:focus-visible {
-    background: var(--hover-bg);
-    color: var(--c-accent);
-    outline: none;
-  }
-
+  .account-select-wrap select option[value='']:hover,
   .account-select-wrap select option[value='']:focus-visible {
     outline: none;
     background: var(--panel-bg);
+    color: var(--c-text-2);
   }
 
-  .account-select-wrap select option:not([value='']):checked,
-  .users-select-wrap select option:checked {
-    background: color-mix(in srgb, var(--c-primary) 12%, transparent);
-    color: var(--c-primary);
-    font-weight: 600;
+  .account-select-wrap select option[value='']:checked {
+    background: transparent;
+    color: var(--c-text-2);
+    font-weight: 500;
   }
 }
 
@@ -814,11 +691,6 @@
   .account-submit:focus-visible:not(:disabled) .send-plane-icon {
     animation: none;
     transform: none;
-  }
-
-  .account-select-wrap .select-chevron-icon,
-  .users-select-wrap .select-chevron-icon {
-    transition: none;
   }
 }
 
