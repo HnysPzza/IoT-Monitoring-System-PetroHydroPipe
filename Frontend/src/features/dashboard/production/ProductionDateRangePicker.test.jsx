@@ -504,5 +504,37 @@ describe('ProductionDateRangePicker Unit & Integration Suite', () => {
       await user.click(nextBtn)
       expect(within(dialog).getByText(/November 2026/i)).toBeInTheDocument()
     })
+
+    it('exposes aria-haspopup="dialog", aria-pressed presets/days, single trigger button, and manages initial dialog focus', async () => {
+      const user = userEvent.setup()
+      render(
+        <ProductionDateRangePicker
+          value={{ type: 'day', startDate: '2026-11-01', endDate: '2026-11-01' }}
+          onChange={vi.fn()}
+          maxDate="2027-12-31"
+        />,
+      )
+
+      const trigger = screen.getByRole('button', { name: 'Filter by date' })
+      expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+      // Only trigger button and clear button exist inside trigger container (no hidden chevron button).
+      const triggerContainer = trigger.closest('.production-date-trigger-container')
+      expect(within(triggerContainer).getAllByRole('button')).toHaveLength(2)
+
+      await user.click(trigger)
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog.contains(document.activeElement)).toBe(true)
+
+      expect(within(dialog).getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'false')
+      expect(within(dialog).getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'false')
+
+      const selectedDay = within(dialog).getByRole('button', { name: /Nov 1, 2026/i })
+      expect(selectedDay).toHaveAttribute('aria-pressed', 'true')
+
+      await user.click(within(dialog).getByRole('button', { name: 'Weekly' }))
+      expect(within(dialog).getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
+    })
   })
 })

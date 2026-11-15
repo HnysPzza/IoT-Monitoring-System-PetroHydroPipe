@@ -152,6 +152,8 @@ export default function ProductionDateRangePicker({
   const maxDateObj = parseDate(maxDate)
   const containerRef = useRef(null)
   const triggerRef = useRef(null)
+  const dialogRef = useRef(null)
+  const todayRef = new Date()
 
   const normalizedValue = normalizeFilter(value)
   const activeLabels = getDisplayLabels(normalizedValue)
@@ -192,9 +194,18 @@ export default function ProductionDateRangePicker({
     setHoverWeek(null)
   }, [isOpen, value])
 
-  // Handle outside click & escape key
+  // Handle outside click, initial dialog focus, Tab containment, & Escape key
   useEffect(() => {
     if (!isOpen) return
+
+    const dialogEl = dialogRef.current
+    if (dialogEl) {
+      const initialTarget =
+        dialogEl.querySelector('.production-preset-btn.is-active') ||
+        dialogEl.querySelector('button:not(:disabled)') ||
+        dialogEl
+      initialTarget.focus()
+    }
 
     function handlePointerDown(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
@@ -207,6 +218,22 @@ export default function ProductionDateRangePicker({
         e.preventDefault()
         setIsOpen(false)
         triggerRef.current?.focus()
+        return
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll('button:not(:disabled), [tabindex]:not([tabindex="-1"])'),
+        )
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
       }
     }
 
@@ -398,6 +425,7 @@ export default function ProductionDateRangePicker({
           type="button"
           className="trend-calendar-trigger production-date-trigger-btn"
           aria-label={triggerAriaLabel}
+          aria-haspopup="dialog"
           aria-expanded={isOpen}
           onClick={handleTriggerClick}
         >
@@ -406,6 +434,7 @@ export default function ProductionDateRangePicker({
             <span className="production-date-eyebrow">{activeLabels.eyebrow}</span>
             <span className="production-date-value">{activeLabels.value}</span>
           </span>
+          <ChevronDown className={`production-date-chevron ${isOpen ? 'is-open' : ''}`} size={14} aria-hidden="true" />
         </button>
 
         {hasActiveFilter ? (
@@ -419,20 +448,12 @@ export default function ProductionDateRangePicker({
             <X size={13} strokeWidth={2} aria-hidden="true" />
           </button>
         ) : null}
-
-        <button
-          type="button"
-          className="production-date-chevron-btn"
-          aria-hidden="true"
-          tabIndex={-1}
-          onClick={handleTriggerClick}
-        >
-          <ChevronDown className={`production-date-chevron ${isOpen ? 'is-open' : ''}`} size={14} />
-        </button>
       </div>
 
       {isOpen ? (
         <div
+          ref={dialogRef}
+          tabIndex={-1}
           role="dialog"
           aria-label={accessibleLabel}
           className="production-date-popover"
@@ -446,6 +467,7 @@ export default function ProductionDateRangePicker({
                   <button
                     key={p.id}
                     type="button"
+                    aria-pressed={isActive}
                     className={`production-preset-btn ${isActive ? 'is-active' : ''}`}
                     onClick={() => handlePresetClick(p.id)}
                   >
@@ -496,6 +518,7 @@ export default function ProductionDateRangePicker({
                           key={mName}
                           type="button"
                           disabled={isMonthDisabled}
+                          aria-pressed={isMonthSelected}
                           className={`production-calendar-month-btn ${isMonthSelected ? 'is-selected' : ''} ${isMonthDisabled && !isMonthSelected ? 'is-future' : ''}`}
                           onClick={() => handleMonthSelect(mIdx)}
                         >
@@ -583,14 +606,18 @@ export default function ProductionDateRangePicker({
                         }
                       }
 
+                      const isSelectedDay = isStart || isEnd || isWeekSelected
+                      const isToday = isSameDay(cellDate, todayRef)
+
                       const classNames = [
                         'production-calendar-day',
-                        (isStart || isEnd || isWeekSelected) ? 'is-selected' : '',
+                        isSelectedDay ? 'is-selected' : '',
                         isWeekSelected ? 'is-week-selected' : '',
                         (isWeekSelected && isStart) ? 'is-week-start' : '',
                         (isWeekSelected && isEnd) ? 'is-week-end' : '',
                         isInRange ? 'is-in-range' : '',
                         isHoverRange ? 'is-hover-range' : '',
+                        isToday ? 'is-today' : '',
                         isDisabled && !isStart && !isEnd ? 'is-future' : '',
                       ]
                         .filter(Boolean)
@@ -602,6 +629,8 @@ export default function ProductionDateRangePicker({
                           type="button"
                           className={classNames}
                           disabled={isDisabled}
+                          aria-pressed={isSelectedDay}
+                          aria-current={isToday ? 'date' : undefined}
                           onClick={() => handleDayClick(cellDate)}
                           onMouseEnter={() => {
                             if (draftPreset === 'week') {

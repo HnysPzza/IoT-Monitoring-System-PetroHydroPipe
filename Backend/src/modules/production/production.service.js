@@ -203,13 +203,13 @@ async function listProductionLogs(filters = {}, options = {}) {
       },
       records: [],
       pagination: {
-        page,
+        page: 1,
         pageSize,
         limit: pageSize,
         total: 0,
         totalPages: 1,
         hasNextPage: false,
-        hasPreviousPage: page > 1,
+        hasPreviousPage: false,
       },
     }
   }
@@ -343,17 +343,18 @@ async function listProductionLogs(filters = {}, options = {}) {
 
   const total = filteredRecords.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const offset = (page - 1) * pageSize
+  const clampedPage = Math.min(page, totalPages)
+  const offset = (clampedPage - 1) * pageSize
   const records = filteredRecords.slice(offset, offset + pageSize)
 
   const pagination = {
-    page,
+    page: clampedPage,
     pageSize,
     limit: pageSize,
     total,
     totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1,
+    hasNextPage: clampedPage < totalPages,
+    hasPreviousPage: clampedPage > 1,
   }
 
   return {
