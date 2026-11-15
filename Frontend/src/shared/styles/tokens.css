@@ -6139,7 +6139,8 @@ button:disabled {
   box-shadow: var(--input-focus-shadow);
 }
 
-.account-field input[aria-invalid='true'] {
+.account-field input[aria-invalid='true'],
+.account-field select[aria-invalid='true'] {
   border-color: var(--c-danger);
 }
 
@@ -6148,6 +6149,10 @@ button:disabled {
   font-size: 0.76rem;
   font-weight: 500;
   line-height: 1.4;
+}
+
+:root[data-theme='light'] .account-field small {
+  color: #B91C1C;
 }
 
 .account-submit {
