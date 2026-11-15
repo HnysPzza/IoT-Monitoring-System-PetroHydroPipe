@@ -81,6 +81,10 @@ export const navItems = [
   },
 ]
 
+export function canAccessDashboardRoute(role, path) {
+  return Boolean(navItems.find((item) => item.to === path)?.roles.includes(role))
+}
+
 export const navGroups = [
   { id: 'monitor', label: 'Monitor' },
   { id: 'analyze', label: 'Analytics' },

@@ -965,6 +965,18 @@ describe('DashboardSection', () => {
     expect(s01Card.querySelector('a')).toHaveAttribute('href', '/dashboard/live?sensor=S-01')
   })
 
+  it('shows sensor cards without Live Feed links for roles that cannot open Live Feed', async () => {
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(livePayload())
+
+    renderWithAuth(<DashboardSection />, { authValue: { user: { id: 'qc-1', role: 'Quality Control' } } })
+
+    const sensorGrid = await screen.findByLabelText('Five inductive proximity sensor statuses')
+    expect(screen.getByRole('heading', { level: 3, name: sensorIdentities[0].label })).toBeInTheDocument()
+    expect(sensorGrid.querySelectorAll('a')).toHaveLength(0)
+  })
+
   it('suppresses competing live announcements when primary fault and multiple stale panels coexist', async () => {
     const user = userEvent.setup()
     const idleAndFaultLive = livePayload()

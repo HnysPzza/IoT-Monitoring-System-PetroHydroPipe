@@ -12,6 +12,7 @@ import { onlineManager } from '@tanstack/react-query'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getSensorLabel, sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
+import { canAccessDashboardRoute } from '../../../shared/constants/dashboardMeta.js'
 import { formatLiveDateTime, formatNumber } from '../../../shared/utils/formatters.js'
 import { getLiveStatusClass } from '../../../shared/utils/statusClasses.js'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
@@ -156,7 +157,8 @@ function getOverviewAlertMessage(alert) {
 }
 
 export default function DashboardSection() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const canOpenLiveFeed = canAccessDashboardRoute(user?.role, '/dashboard/live')
   const alertContext = useOutletContext()
   const [liveState, setLiveState] = useState('loading')
   const [liveData, setLiveData] = useState({ machine: null, sensors: [], monitoringMode: 'unknown' })
@@ -801,13 +803,15 @@ export default function DashboardSection() {
                     <Status>{sensor.status}</Status>
                   </div>
                   <h3>
-                    <Link
-                      className="overview-sensor-link"
-                      to={`/dashboard/live?sensor=${encodeURIComponent(sensor.code)}`}
-                      title={`Inspect ${sensor.label} in Live Feed`}
-                    >
-                      {sensor.label}
-                    </Link>
+                    {canOpenLiveFeed ? (
+                      <Link
+                        className="overview-sensor-link"
+                        to={`/dashboard/live?sensor=${encodeURIComponent(sensor.code)}`}
+                        title={`Inspect ${sensor.label} in Live Feed`}
+                      >
+                        {sensor.label}
+                      </Link>
+                    ) : sensor.label}
                   </h3>
                   <div className="overview-sensor-footer">
                     <span>

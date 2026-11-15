@@ -33,7 +33,7 @@
 .overview-layout .machine-health-card .section-heading { margin-bottom: 10px; }
 .overview-layout .overview-sensor-grid { gap: 10px; }
 .overview-layout .overview-sensor-card { position: relative; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px; border: 1px solid var(--card-border); background: var(--card-bg); box-shadow: none; transition: border-color 150ms ease, box-shadow 150ms ease; }
-.overview-layout .overview-sensor-card:hover { border-color: var(--c-primary); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06); }
+.overview-layout .overview-sensor-card:has(.overview-sensor-link):hover { border-color: var(--c-primary); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06); }
 .overview-layout .overview-sensor-card.status-fault:hover { border-color: var(--status-fault-border); }
 .overview-layout .overview-sensor-card.status-offline:hover { border-color: var(--status-offline-border); }
 .overview-layout .overview-sensor-card:has(.overview-sensor-link:focus-visible) { outline: 2px solid var(--c-primary); outline-offset: 2px; }
