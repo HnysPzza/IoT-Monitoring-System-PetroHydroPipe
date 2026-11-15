@@ -6051,6 +6051,173 @@ button:disabled {
   min-width: 180px;
 }
 
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+:is(.custom-select-wrap, .users-select-wrap) select {
+  padding-right: 2.15rem !important;
+}
+
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:hover:not(:disabled):not(:focus):not([aria-invalid='true']) {
+  border-color: var(--c-text-3);
+}
+
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) .select-chevron-icon {
+  position: absolute;
+  right: 0.65rem;
+  color: var(--c-text-2);
+  pointer-events: none;
+  z-index: 1;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease, opacity 0.15s ease;
+}
+
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap):focus-within .select-chevron-icon {
+  color: var(--c-accent);
+}
+
+:root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap):focus-within .select-chevron-icon {
+  color: var(--chart-current);
+}
+
+:is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:disabled ~ .select-chevron-icon {
+  opacity: 0.45;
+}
+
+@supports (appearance: base-select) {
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select,
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select::picker(select) {
+    appearance: base-select;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select::picker-icon {
+    display: none;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:open:not([aria-invalid='true']) {
+    border-color: var(--c-primary);
+    box-shadow: var(--input-focus-shadow);
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:open ~ .select-chevron-icon {
+    transform: rotate(180deg);
+    color: var(--c-accent);
+  }
+
+  :root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:open ~ .select-chevron-icon {
+    color: var(--chart-current);
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select::picker(select) {
+    margin-block: 6px;
+    padding: 0.35rem;
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    background: var(--c-surface);
+    color: var(--c-text);
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.24), 0 1px 3px rgba(2, 6, 23, 0.14);
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), display 0.15s allow-discrete, overlay 0.15s allow-discrete;
+  }
+
+  :root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select::picker(select) {
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+
+  @starting-style {
+    :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select:open::picker(select) {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 36px;
+    padding: 0.4rem 0.65rem;
+    border-radius: 7px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--c-text);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option::checkmark {
+    order: 2;
+    margin-left: auto;
+    color: var(--c-accent);
+    font-weight: 700;
+  }
+
+  :root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option::checkmark {
+    color: var(--chart-current);
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:disabled {
+    color: var(--c-text-3);
+    font-size: 0.78rem;
+    cursor: not-allowed;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:disabled:first-child {
+    border-bottom: 1px solid var(--subtle-border);
+    border-radius: 7px 7px 0 0;
+    margin-bottom: 0.2rem;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:disabled::checkmark {
+    display: none;
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:not(:disabled):hover,
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:not(:disabled):focus-visible {
+    background: var(--hover-bg);
+    color: var(--c-accent);
+    outline: none;
+  }
+
+  :root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:not(:disabled):hover,
+  :root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:not(:disabled):focus-visible {
+    color: var(--chart-current);
+  }
+
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:not(:disabled):checked {
+    background: color-mix(in srgb, var(--c-primary) 12%, transparent);
+    color: var(--c-accent);
+    font-weight: 600;
+  }
+
+  :root[data-theme='light'] :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option:not(:disabled):checked {
+    color: var(--chart-current);
+  }
+}
+
 .account-field input:focus,
 .account-field select:focus {
   border-color: var(--c-primary);
@@ -7373,10 +7540,19 @@ button:disabled {
   .input-shell.shake,
   .login-page .btn,
   .login-page .btn-primary .spinner,
-  .login-page .icon-button {
+  .login-page .icon-button,
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select,
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) .select-chevron-icon,
+  :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  @supports (appearance: base-select) {
+    :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select::picker(select) {
+      transition-duration: 0.01ms !important;
+    }
   }
 
   .analytics-cause-legend-item:hover,
