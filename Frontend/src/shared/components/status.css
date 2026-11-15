@@ -25,6 +25,7 @@
 .status-danger { color: #b91c1c; font-weight: 500; }
 .status-fault { color: var(--status-fault-text, #92400e); font-weight: 500; }
 .status-offline { color: var(--status-offline-text, #334155); font-weight: 500; }
+.status-active { color: var(--status-active-text, #065f46); font-weight: 500; }
 :root:not([data-theme='light']) .status-dot-active,
 :root[data-theme='dark'] .status-dot-active { background: #10b981; }
 :root:not([data-theme='light']) .status-dot-idle,

@@ -1,11 +1,12 @@
 import './status.css'
 
 export default function Status({ children, value = children, tone, className = '', ...props }) {
-  const status = typeof value === 'string' ? value.toLowerCase() : ''
-  const danger = tone === 'danger' || ['expired', 'error', 'downtime', 'overdue', 'rejected'].includes(status)
-  const offline = !danger && (tone === 'offline' || status.startsWith('last:') || status === 'offline')
-  const fault = !danger && !offline && (tone === 'fault' || status === 'fault')
-  const active = !danger && !offline && !fault && (tone === 'active' || ['active', 'running', 'ok', 'connected', 'resolved'].includes(status))
+  const rawValue = Array.isArray(value) ? value.join('') : value
+  const status = typeof rawValue === 'string' ? rawValue.trim().toLowerCase() : ''
+  const danger = tone === 'danger' || ['expired', 'error', 'downtime', 'overdue', 'rejected', 'invalid'].includes(status)
+  const offline = !danger && (tone === 'offline' || status.startsWith('last:') || ['offline', 'disabled', 'inactive', 'watchdog unknown'].includes(status))
+  const fault = !danger && !offline && (tone === 'fault' || ['fault', 'watchdog observe'].includes(status))
+  const active = !danger && !offline && !fault && (tone === 'active' || ['active', 'running', 'ok', 'connected', 'resolved', 'watchdog enforce'].includes(status))
   const dot = danger ? 'danger'
     : offline ? 'offline'
       : fault ? 'fault'
