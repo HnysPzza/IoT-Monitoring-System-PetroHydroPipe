@@ -496,4 +496,49 @@ describe('DowntimeSection', () => {
     await user.click(screen.getByRole('button', { name: 'View details' }))
     expect(screen.getByText(/Read-only for Quality Control/i)).toBeInTheDocument()
   })
+
+  it('renders custom select wrappers and chevrons on downtime filters and editable cause dropdowns', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [
+        downtimeRecord({ id: 'editable-1', displayLabel: 'S-03 08:42 AM', isCauseEditable: true }),
+        downtimeRecord({
+          id: 'locked-2',
+          displayLabel: 'S-04 09:00 AM',
+          sensor: 'S-04',
+          sensorLabel: 'Outside Filler Wire',
+          cause: 'Consumable Shortage',
+          isCauseEditable: false,
+          needsCauseReview: false,
+        }),
+      ],
+      summary: { open: 2, resolved: 0, minutes: 24, loss: 56 },
+    })
+    updateDowntimeRecord.mockResolvedValue({
+      record: downtimeRecord({ id: 'editable-1', displayLabel: 'S-03 08:42 AM', cause: 'Misalignment', needsCauseReview: false }),
+    })
+
+    renderWithAuth(<DowntimeSection />)
+    await screen.findByText('S-03 08:42 AM')
+
+    const causeFilter = screen.getByLabelText('Cause')
+    const statusFilter = screen.getByLabelText('Status')
+    const inlineCauseSelect = screen.getByLabelText('Cause for S-03 08:42 AM')
+
+    for (const selectElement of [causeFilter, statusFilter, inlineCauseSelect]) {
+      const wrapper = selectElement.closest('.custom-select-wrap.downtime-select-wrap')
+      expect(wrapper).not.toBeNull()
+      const chevron = wrapper.querySelector('.select-chevron-icon')
+      expect(chevron).toBeInTheDocument()
+      expect(chevron).toHaveAttribute('aria-hidden', 'true')
+    }
+
+    expect(inlineCauseSelect.closest('.downtime-inline-select-wrap')).not.toBeNull()
+    expect(screen.queryByLabelText('Cause for S-04 09:00 AM')).not.toBeInTheDocument()
+
+    await user.selectOptions(inlineCauseSelect, 'Misalignment')
+    await waitFor(() => {
+      expect(updateDowntimeRecord).toHaveBeenCalledWith('test-token', 'editable-1', { cause: 'Misalignment' })
+    })
+  })
 })

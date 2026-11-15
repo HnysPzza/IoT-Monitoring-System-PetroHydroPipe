@@ -426,40 +426,46 @@ export default function DowntimeSection() {
       <section className="section-card downtime-controls-card" aria-label="Downtime filters">
         <label className="filter-field" htmlFor="downtime-cause-filter">
           <span className="downtime-filter-label">Cause</span>
-          <select
-            id="downtime-cause-filter"
-            name="downtimeCause"
-            value={causeFilter}
-            onChange={(event) => {
-              setCauseFilter(event.target.value)
-              setExpandedRecordId('')
-              setPage(1)
-            }}
-            autoComplete="off"
-          >
-            <option value="All">All causes</option>
-            {historicalDowntimeCauses.map((cause) => (
-              <option key={cause} value={cause}>{cause}</option>
-            ))}
-          </select>
+          <div className="custom-select-wrap downtime-select-wrap">
+            <select
+              id="downtime-cause-filter"
+              name="downtimeCause"
+              value={causeFilter}
+              onChange={(event) => {
+                setCauseFilter(event.target.value)
+                setExpandedRecordId('')
+                setPage(1)
+              }}
+              autoComplete="off"
+            >
+              <option value="All">All causes</option>
+              {historicalDowntimeCauses.map((cause) => (
+                <option key={cause} value={cause}>{cause}</option>
+              ))}
+            </select>
+            <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
+          </div>
         </label>
         <label className="filter-field" htmlFor="downtime-status-filter">
           <span className="downtime-filter-label">Status</span>
-          <select
-            id="downtime-status-filter"
-            name="downtimeStatus"
-            value={statusFilter}
-            onChange={(event) => {
-              setStatusFilter(event.target.value)
-              setExpandedRecordId('')
-              setPage(1)
-            }}
-            autoComplete="off"
-          >
-            <option value="All">All statuses</option>
-            <option value="Open">Open</option>
-            <option value="Resolved">Resolved</option>
-          </select>
+          <div className="custom-select-wrap downtime-select-wrap">
+            <select
+              id="downtime-status-filter"
+              name="downtimeStatus"
+              value={statusFilter}
+              onChange={(event) => {
+                setStatusFilter(event.target.value)
+                setExpandedRecordId('')
+                setPage(1)
+              }}
+              autoComplete="off"
+            >
+              <option value="All">All statuses</option>
+              <option value="Open">Open</option>
+              <option value="Resolved">Resolved</option>
+            </select>
+            <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
+          </div>
         </label>
         <div className="downtime-date-control">
           <TrendCalendarControl
@@ -563,23 +569,26 @@ export default function DowntimeSection() {
                             {record.isCauseEditable ? (
                               <div className="downtime-cause-cell">
                                 <label className="sr-only" htmlFor={`downtime-cause-${record.id}`}>Cause for {getDisplayLabel(record)}</label>
-                                <select
-                                  id={`downtime-cause-${record.id}`}
-                                  name={`downtimeCause-${record.id}`}
-                                  className="inline-select"
-                                  value={record.cause}
-                                  disabled={!canEditDowntime || updatingRecordId === record.id}
-                                  onChange={(event) => updateCause(record.id, event.target.value)}
-                                  autoComplete="off"
-                                  title={!hasEditRole ? 'Supervisor or Admin role required to edit downtime causes' : undefined}
-                                >
-                                  {!editableDowntimeCauses.includes(record.cause) ? (
-                                    <option value={record.cause} disabled>{record.cause}</option>
-                                  ) : null}
-                                  {editableDowntimeCauses.map((cause) => (
-                                    <option key={cause} value={cause}>{cause}</option>
-                                  ))}
-                                </select>
+                                <div className="custom-select-wrap downtime-select-wrap downtime-inline-select-wrap">
+                                  <select
+                                    id={`downtime-cause-${record.id}`}
+                                    name={`downtimeCause-${record.id}`}
+                                    className="inline-select"
+                                    value={record.cause}
+                                    disabled={!canEditDowntime || updatingRecordId === record.id}
+                                    onChange={(event) => updateCause(record.id, event.target.value)}
+                                    autoComplete="off"
+                                    title={!hasEditRole ? 'Supervisor or Admin role required to edit downtime causes' : undefined}
+                                  >
+                                    {!editableDowntimeCauses.includes(record.cause) ? (
+                                      <option value={record.cause} disabled>{record.cause}</option>
+                                    ) : null}
+                                    {editableDowntimeCauses.map((cause) => (
+                                      <option key={cause} value={cause}>{cause}</option>
+                                    ))}
+                                  </select>
+                                  <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
+                                </div>
                                 {updatingRecordId === record.id ? <RotateCw className="spin-icon downtime-inline-spinner" size={14} aria-hidden="true" /> : null}
                               </div>
                             ) : (
