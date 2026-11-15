@@ -1191,4 +1191,46 @@ describe('DashboardSection', () => {
       expect(screen.queryByText(/Live machine status is stale/i)).not.toBeInTheDocument()
     })
   })
+
+  it('renders alert and idle banners above the KPI skeleton in the same position as the loaded KPI grid', async () => {
+    const pendingOverview = deferred()
+    const idleLive = livePayload()
+    idleLive.sensors[0].status = 'Idle'
+    getDashboardOverview.mockReturnValue(pendingOverview.promise)
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    getLiveFeed.mockResolvedValue(idleLive)
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<AlertDestinationHarness activeAlerts={[{
+          id: 'alert-banner-position',
+          severity: 'Critical',
+          status: 'Active',
+          message: 'S-04 Outside Filler Wire has no pulse.',
+        }]} />}>
+          <Route index element={<DashboardSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    const alertBanner = await screen.findByRole('alert')
+    const idleBanner = (await screen.findByText('S-01 Raw Material & Coil Joint is idle.')).closest('.overview-alert-banner')
+    const alertsStack = alertBanner.closest('.alerts-stack')
+    const skeletonKpiGrid = document.querySelector('.overview-layout .kpi-grid')
+
+    expect(alertsStack).toContainElement(idleBanner)
+    expect(skeletonKpiGrid).not.toBeNull()
+    expect(Array.from(skeletonKpiGrid.children).map((el) => el.tagName)).toEqual(['ARTICLE', 'ARTICLE', 'ARTICLE', 'ARTICLE'])
+    expect(alertsStack.compareDocumentPosition(skeletonKpiGrid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await act(async () => {
+      pendingOverview.resolve(overviewPayload())
+      await pendingOverview.promise
+    })
+
+    expect(await screen.findByText('Production Output')).toBeInTheDocument()
+    const loadedKpiGrid = document.querySelector('.overview-layout .kpi-grid')
+    expect(loadedKpiGrid).not.toBeNull()
+    expect(alertsStack.compareDocumentPosition(loadedKpiGrid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })

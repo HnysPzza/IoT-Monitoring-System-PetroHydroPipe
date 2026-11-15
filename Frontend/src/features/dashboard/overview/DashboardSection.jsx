@@ -86,20 +86,22 @@ function ProductionAnalyticsSkeleton() {
 
 function OverviewLoadingState() {
   return (
-    <div className="kpi-grid" role="status" aria-live="polite">
+    <div role="status" aria-live="polite">
       <span className="sr-only">Loading dashboard overview...</span>
-      {Array.from({ length: 4 }).map((_, index) => (
-        <article key={index} className="section-card stat-card">
-          <div className="stat-card-heading" aria-hidden="true">
-            <span className="stat-card-icon">
-              <SkeletonBlock className="overview-skeleton-kpi-icon" />
-            </span>
-            <SkeletonBlock className="overview-skeleton-kpi-label" />
-          </div>
-          <SkeletonBlock className="overview-skeleton-kpi-value" />
-          <SkeletonBlock className="overview-skeleton-kpi-helper" />
-        </article>
-      ))}
+      <div className="kpi-grid" aria-hidden="true">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <article key={index} className="section-card stat-card">
+            <div className="stat-card-heading">
+              <span className="stat-card-icon">
+                <SkeletonBlock className="overview-skeleton-kpi-icon" />
+              </span>
+              <SkeletonBlock className="overview-skeleton-kpi-label" />
+            </div>
+            <SkeletonBlock className="overview-skeleton-kpi-value" />
+            <SkeletonBlock className="overview-skeleton-kpi-helper" />
+          </article>
+        ))}
+      </div>
     </div>
   )
 }
@@ -492,8 +494,6 @@ export default function DashboardSection() {
         </div>
       ) : null}
 
-      {overviewDisplayState === 'loading' && !hasCurrentOverview ? <OverviewLoadingState /> : null}
-
       {overviewDisplayState === 'stale' ? <div className="notice notice-error" role="status" aria-live="polite">Overview data is stale. {overviewQuery.dataUpdatedAt ? `Last updated ${formatSuccessfulUpdate(new Date(overviewQuery.dataUpdatedAt))}. ` : ''}{overviewError} <button className="btn btn-secondary overview-retry-button" type="button" onClick={() => overviewQuery.refetch()}>Retry overview</button></div> : null}
       {overviewDisplayState === 'error' ? (
         <section className="section-card section-placeholder" aria-labelledby="overview-error-title">
@@ -595,23 +595,27 @@ export default function DashboardSection() {
         </div>
       ) : null}
 
-      {overviewIsReady ? <div className="kpi-grid">
-        {kpiItems.map((item) => {
-          const Icon = item.icon
-          return (
-            <article key={item.id} className={`section-card stat-card stat-card-${item.tone}`}>
-              <div className="stat-card-heading">
-                <span className="stat-card-icon" aria-hidden="true">
-                  <Icon size={15} />
-                </span>
-                <p className="stat-label">{item.label}</p>
-              </div>
-              <p className="stat-value">{item.value}</p>
-              {item.helper ? <p className="stat-helper">{item.helper}</p> : null}
-            </article>
-          )
-        })}
-      </div> : null}
+      {overviewIsReady ? (
+        <div className="kpi-grid">
+          {kpiItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <article key={item.id} className={`section-card stat-card stat-card-${item.tone}`}>
+                <div className="stat-card-heading">
+                  <span className="stat-card-icon" aria-hidden="true">
+                    <Icon size={15} />
+                  </span>
+                  <p className="stat-label">{item.label}</p>
+                </div>
+                <p className="stat-value">{item.value}</p>
+                {item.helper ? <p className="stat-helper">{item.helper}</p> : null}
+              </article>
+            )
+          })}
+        </div>
+      ) : overviewDisplayState === 'loading' && !hasCurrentOverview ? (
+        <OverviewLoadingState />
+      ) : null}
 
       <div className="overview-charts-grid">
         {overviewIsReady && Array.isArray(overviewData.productionAnalytics?.day?.points) ? (
