@@ -106,16 +106,22 @@
   text-transform: uppercase;
 }
 
-.downtime-layout .filter-field select {
+.downtime-layout .filter-field .downtime-select-wrap {
   width: 220px;
   max-width: 100%;
+}
+
+.downtime-layout .filter-field select {
+  width: 100%;
+  max-width: 100%;
   min-height: 44px;
-  padding: 8px 32px 8px 12px;
-  border: 1px solid var(--card-border);
-  border-radius: 8px;
-  background-color: var(--card-bg);
+  padding: 8px 2.15rem 8px 12px;
   color: var(--c-text);
   font-size: 0.875rem;
+}
+
+.downtime-layout .filter-field select:not(:focus) {
+  background-color: var(--card-bg);
 }
 
 .downtime-date-control {
@@ -183,9 +189,8 @@
   background: color-mix(in srgb, var(--c-surface2) 88%, #f59e0b 12%);
 }
 
-.downtime-table tbody tr.needs-cause-review .inline-select {
+.downtime-table tbody tr.needs-cause-review .inline-select:not(:focus) {
   background-color: var(--c-surface);
-  border-color: var(--c-border);
 }
 
 .downtime-event-date {
@@ -199,7 +204,19 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   max-width: 100%;
+}
+
+.downtime-inline-select-wrap {
+  flex: 1 1 auto;
+  min-width: 205px;
+  max-width: 260px;
+}
+
+.downtime-inline-select-wrap .inline-select {
+  min-width: 0;
+  padding: 8px 2.15rem 8px 12px;
 }
 
 .downtime-inline-spinner {
@@ -321,8 +338,12 @@
     width: 100%;
   }
 
-  .downtime-layout .filter-field select {
+  .downtime-layout .filter-field .downtime-select-wrap,
+  .downtime-layout .filter-field select,
+  .downtime-inline-select-wrap {
     width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 
   .downtime-date-control {
