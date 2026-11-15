@@ -1,5 +1,6 @@
 import {
   AtSign,
+  ChevronDown,
   Clock,
   LoaderCircle,
   Mail,
@@ -9,6 +10,7 @@ import {
   User,
   X,
 } from 'lucide-react'
+import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 
 export default function UserAccountForm({
   errors,
@@ -21,7 +23,7 @@ export default function UserAccountForm({
   roles,
 }) {
   return (
-    <div className="users-create-modal" aria-labelledby="create-account-title">
+    <div className="users-create-modal">
       <div className="modal-header-row">
         <div className="modal-title-wrap">
           <h2 id="create-account-title" className="modal-title">Add user</h2>
@@ -43,12 +45,12 @@ export default function UserAccountForm({
         )}
       </div>
 
-      <div className="account-invite-banner" role="status">
+      <div id="account-invite-note" className="account-invite-banner">
         <Clock size={16} className="banner-icon" aria-hidden="true" />
         <span>An invite link will be sent to the user's email to set their password. The link expires in 1 hour.</span>
       </div>
 
-      <form id="user-account-form" name="userAccount" className="account-form" onSubmit={onSubmit} autoComplete="on" noValidate>
+      <form id="user-account-form" name="userAccount" className="account-form" aria-describedby="account-invite-note" onSubmit={onSubmit} autoComplete="on" noValidate>
         {/* Form state lives in UsersSection so validation and API submit stay in one flow. */}
         <div className="account-field">
           <label htmlFor="account-name">Full name</label>
@@ -117,12 +119,13 @@ export default function UserAccountForm({
           <div className="account-label-row">
             <label htmlFor="account-role">Role</label>
           </div>
-          <div className="account-input-wrap">
+          <div className="account-input-wrap account-select-wrap">
             <Shield size={16} className="input-inset-icon" aria-hidden="true" />
             <select
               id="account-role"
               name="role"
               value={form.role}
+              data-placeholder={String(!form.role)}
               onChange={(event) => onFieldChange('role', event.target.value)}
               autoComplete="off"
               aria-invalid={Boolean(errors.role)}
@@ -132,10 +135,11 @@ export default function UserAccountForm({
               <option value="">Select a role</option>
               {roles.map((role) => (
                 <option key={role.id} value={role.name}>
-                  {role.name}
+                  {getRoleDisplayName(role.name)}
                 </option>
               ))}
             </select>
+            <ChevronDown size={16} className="select-chevron-icon" aria-hidden="true" />
           </div>
           {errors.role ? <small id="account-role-error" role="alert">{errors.role}</small> : null}
         </div>
@@ -156,7 +160,13 @@ export default function UserAccountForm({
             type="submit"
             disabled={isLoading || isSubmitting}
           >
-            {isSubmitting ? <LoaderCircle className="spin-icon" size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+            {isSubmitting ? (
+              <LoaderCircle className="spin-icon" size={16} aria-hidden="true" />
+            ) : (
+              <span className="send-plane-stage" aria-hidden="true">
+                <Send className="send-plane-icon" size={16} aria-hidden="true" />
+              </span>
+            )}
             <span>{isSubmitting ? 'Sending...' : 'Add user'}</span>
           </button>
         </div>
