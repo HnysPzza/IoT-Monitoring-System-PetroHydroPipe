@@ -329,4 +329,42 @@ describe('SettingsSection operational settings', () => {
     expect(s03Trigger.closest('.col-trigger')).toContainElement(triggerError)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
+
+  it('renders recovery validation errors in the recovery column with aria-invalid and aria-describedby', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const s01Trigger = await screen.findByLabelText('S-01 trigger minutes')
+    const s01Recovery = screen.getByLabelText('S-01 recovery minutes')
+
+    await user.clear(s01Trigger)
+    await user.type(s01Trigger, '0')
+    await user.clear(s01Recovery)
+    await user.type(s01Recovery, '9')
+
+    const triggerError = screen.getByText('Trigger must be 1-60 minutes.')
+    const recoveryError = screen.getByText('Recovery must be 1-5 minutes.')
+
+    expect(s01Trigger.closest('.col-trigger')).toContainElement(triggerError)
+    expect(s01Recovery.closest('.col-recovery')).toContainElement(recoveryError)
+    expect(s01Trigger).toHaveAttribute('aria-invalid', 'true')
+    expect(s01Recovery).toHaveAttribute('aria-invalid', 'true')
+    expect(s01Recovery).toHaveAttribute('aria-describedby', 'S-01-recovery-error')
+  })
+
+  it('adds a non-overlapping break slot and supports Ctrl+S keyboard save', async () => {
+    const user = userEvent.setup()
+    updateOperationalSettings.mockResolvedValue({ settings: settingsFixture({ version: '2' }) })
+    renderWithAuth(<SettingsSection />)
+
+    const addBreakBtn = await screen.findByRole('button', { name: /Add break/i })
+    await user.click(addBreakBtn)
+
+    expect(screen.queryByText(/no overlap/i)).not.toBeInTheDocument()
+    const saveBtn = screen.getByRole('button', { name: 'Save' })
+    expect(saveBtn).toBeEnabled()
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+  })
 })
