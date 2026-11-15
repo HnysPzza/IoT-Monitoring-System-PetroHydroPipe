@@ -186,7 +186,8 @@
 
 .production-kpi-pill.accepted,
 .production-kpi-pill.specified,
-.production-kpi-pill.unspecified {
+.production-kpi-pill.unspecified,
+.production-kpi-pill.rejected {
   background: var(--card-bg, var(--prod-surface));
   border: 1px solid var(--card-border, var(--prod-border));
   color: var(--c-text-2, var(--prod-text-secondary));
@@ -840,9 +841,14 @@
   user-select: none;
 }
 
-.production-dropdown-trigger:hover {
+.production-dropdown-trigger:hover:not(:disabled) {
   background: var(--prod-hover);
   border-color: var(--prod-border-strong);
+}
+
+.production-dropdown-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .production-dropdown-trigger:focus-visible {
@@ -968,12 +974,6 @@
 .production-square-btn:focus-visible {
   outline: 2px solid var(--prod-accent);
   outline-offset: 2px;
-}
-
-.production-square-btn.production-filter-btn-active {
-  background: var(--prod-active-bg);
-  border: 1px solid var(--prod-active-border);
-  color: var(--prod-active-text);
 }
 
 .spin-icon {

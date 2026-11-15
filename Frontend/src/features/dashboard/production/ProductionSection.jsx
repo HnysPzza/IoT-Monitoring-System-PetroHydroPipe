@@ -7,6 +7,7 @@ import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getSessionGeneration } from '../../../shared/services/sessionRefresh.js'
 import {
   AlertTriangle,
+  Ban,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -142,6 +143,8 @@ function CustomDropdown({
   options,
   onChange,
   isActive = false,
+  disabled = false,
+  title,
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(() =>
@@ -155,10 +158,17 @@ function CustomDropdown({
   const highlightedOption = options[highlightedIndex] || selectedOption
 
   const openMenu = () => {
+    if (disabled) return
     const activeIndex = options.findIndex((opt) => opt.value === value)
     setHighlightedIndex(activeIndex >= 0 ? activeIndex : 0)
     setIsOpen(true)
   }
+
+  useEffect(() => {
+    if (disabled && isOpen) {
+      setIsOpen(false)
+    }
+  }, [disabled, isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -188,6 +198,7 @@ function CustomDropdown({
   }, [isOpen])
 
   const handleTriggerKeyDown = (e) => {
+    if (disabled) return
     if (e.key === 'Escape') {
       if (isOpen) {
         e.preventDefault()
@@ -232,19 +243,25 @@ function CustomDropdown({
         id={id}
         className={`production-dropdown-trigger ${isActive ? 'production-filter-btn-active' : ''}`}
         aria-haspopup="listbox"
-        aria-expanded={isOpen}
+        aria-expanded={!disabled && isOpen}
         aria-activedescendant={
-          isOpen && highlightedOption ? `${dropdownId}-opt-${highlightedOption.value}` : undefined
+          !disabled && isOpen && highlightedOption ? `${dropdownId}-opt-${highlightedOption.value}` : undefined
         }
         aria-label={label}
-        onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
+        disabled={disabled}
+        title={title}
+        onClick={() => {
+          if (disabled) return
+          if (isOpen) setIsOpen(false)
+          else openMenu()
+        }}
         onKeyDown={handleTriggerKeyDown}
       >
         <span className="production-dropdown-trigger-label">{selectedOption.label}</span>
-        <ChevronDown size={14} strokeWidth={2} className={`production-dropdown-chevron ${isOpen ? 'open' : ''}`} aria-hidden="true" />
+        <ChevronDown size={14} strokeWidth={2} className={`production-dropdown-chevron ${!disabled && isOpen ? 'open' : ''}`} aria-hidden="true" />
       </button>
 
-      {isOpen && (
+      {!disabled && isOpen && (
         <ul
           className="production-dropdown-popover"
           role="listbox"
@@ -676,9 +693,29 @@ export default function ProductionSection({
     }
   }
 
-  const handleToggleUnspecified = () => {
-    setSpecStatusFilter((prev) => (prev === 'unspecified' ? 'all' : 'unspecified'))
+  const isRejectedStatus = statusFilter === 'rejected'
+
+  const handleStatusFilterChange = (nextStatus) => {
+    setStatusFilter(nextStatus)
+    // Spec filters apply only to accepted cuts, so reset to avoid guaranteed empty tables.
+    if (nextStatus === 'rejected') {
+      setSpecStatusFilter('all')
+    }
     setPage(1)
+  }
+
+  const handleSpecStatusToggle = (targetSpecStatus) => {
+    if (statusFilter === 'rejected') {
+      setStatusFilter('accepted')
+      setSpecStatusFilter(targetSpecStatus)
+    } else {
+      setSpecStatusFilter((prev) => (prev === targetSpecStatus ? 'all' : targetSpecStatus))
+    }
+    setPage(1)
+  }
+
+  const handleToggleRejected = () => {
+    handleStatusFilterChange(isRejectedStatus ? 'accepted' : 'rejected')
   }
 
   // Debounce search input changes without resetting page on initial mount.
@@ -986,14 +1023,11 @@ export default function ProductionSection({
 
           <button
             type="button"
-            className={`production-kpi-pill specified ${specStatusFilter === 'specified' ? 'production-kpi-active' : ''}`}
+            className={`production-kpi-pill specified ${!isRejectedStatus && specStatusFilter === 'specified' ? 'production-kpi-active' : ''}`}
             title="Specified Cuts"
             aria-label="Filter specified cuts"
-            aria-pressed={specStatusFilter === 'specified'}
-            onClick={() => {
-              setSpecStatusFilter((prev) => (prev === 'specified' ? 'all' : 'specified'))
-              setPage(1)
-            }}
+            aria-pressed={!isRejectedStatus && specStatusFilter === 'specified'}
+            onClick={() => handleSpecStatusToggle('specified')}
           >
             <Tag size={14} strokeWidth={2} aria-hidden="true" />
             <strong className="production-kpi-value tabular-data">{summary.specifiedCount ?? 0}</strong>
@@ -1002,16 +1036,31 @@ export default function ProductionSection({
 
           <button
             type="button"
-            className={`production-kpi-pill unspecified ${specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
-            title={specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
+            className={`production-kpi-pill unspecified ${!isRejectedStatus && specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
+            title={!isRejectedStatus && specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
             aria-label="Filter unspecified cuts"
-            aria-pressed={specStatusFilter === 'unspecified'}
-            onClick={handleToggleUnspecified}
+            aria-pressed={!isRejectedStatus && specStatusFilter === 'unspecified'}
+            onClick={() => handleSpecStatusToggle('unspecified')}
           >
             <CircleDashed size={14} strokeWidth={2} aria-hidden="true" />
             <strong className="production-kpi-value tabular-data">{summary.unspecifiedCount ?? 0}</strong>
             <span className="production-kpi-label">Unspecified</span>
           </button>
+
+          {(Number(summary.rejectedCount ?? 0) > 0 || isRejectedStatus) && (
+            <button
+              type="button"
+              className={`production-kpi-pill rejected ${isRejectedStatus ? 'production-kpi-active' : ''}`}
+              title={isRejectedStatus ? 'Show accepted cuts' : 'Filter rejected cuts'}
+              aria-label="Filter rejected cuts"
+              aria-pressed={isRejectedStatus}
+              onClick={handleToggleRejected}
+            >
+              <Ban size={14} strokeWidth={2} aria-hidden="true" />
+              <strong className="production-kpi-value tabular-data">{summary.rejectedCount ?? 0}</strong>
+              <span className="production-kpi-label">Rejected</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -1059,10 +1108,7 @@ export default function ProductionSection({
           label="Filter by cut status"
           value={statusFilter}
           options={CUT_STATUS_OPTIONS}
-          onChange={(newVal) => {
-            setStatusFilter(newVal)
-            setPage(1)
-          }}
+          onChange={handleStatusFilterChange}
           isActive={statusFilter !== 'accepted'}
         />
 
@@ -1075,19 +1121,10 @@ export default function ProductionSection({
             setSpecStatusFilter(newVal)
             setPage(1)
           }}
-          isActive={specStatusFilter !== 'all'}
+          isActive={!isRejectedStatus && specStatusFilter !== 'all'}
+          disabled={isRejectedStatus}
+          title={isRejectedStatus ? 'Specification filter applies to accepted cuts only' : undefined}
         />
-
-        <button
-          type="button"
-          className={`production-square-btn ${specStatusFilter === 'unspecified' ? 'production-filter-btn-active' : ''}`}
-          aria-label="Toggle unspecified cuts filter"
-          aria-pressed={specStatusFilter === 'unspecified'}
-          title={specStatusFilter === 'unspecified' ? 'Show all specifications' : 'Show unspecified cuts only'}
-          onClick={handleToggleUnspecified}
-        >
-          <CircleDashed size={16} strokeWidth={1.75} aria-hidden="true" />
-        </button>
 
         <button
           type="button"

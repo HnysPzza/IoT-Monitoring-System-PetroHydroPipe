@@ -1311,7 +1311,7 @@ describe('ProductionSection component', () => {
       expect(prodNav?.subtitle).toBeUndefined()
     })
 
-    it('supports quick Unspecified cuts filter toggle button and KPI metric button', async () => {
+    it('toggles Unspecified cuts filter cleanly via KPI pill without duplicate square toolbar button', async () => {
       const user = userEvent.setup()
       const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
@@ -1319,19 +1319,24 @@ describe('ProductionSection component', () => {
 
       await screen.findByText('Maynilad Water')
 
-      const toggleBtn = screen.getByRole('button', { name: 'Toggle unspecified cuts filter' })
-      await user.click(toggleBtn)
+      expect(screen.queryByRole('button', { name: 'Toggle unspecified cuts filter' })).not.toBeInTheDocument()
+
+      const kpiBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+      expect(kpiBtn).toHaveAttribute('aria-pressed', 'false')
+
+      await user.click(kpiBtn)
 
       await waitFor(() => {
         expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
           specStatus: 'unspecified',
         }))
       })
+      expect(kpiBtn).toHaveAttribute('aria-pressed', 'true')
 
-      const kpiBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
       await user.click(kpiBtn)
 
       expect(kpiBtn).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByRole('button', { name: 'Filter by specification status' })).toHaveTextContent('All Specifications')
       expect(mockLoad).toHaveBeenCalledTimes(2)
     })
 
@@ -1414,7 +1419,7 @@ describe('ProductionSection component', () => {
       // Open status dropdown, select option, and verify focus returns to trigger
       await user.click(statusTrigger)
       expect(screen.getByRole('listbox', { name: 'Filter by cut status' })).toBeInTheDocument()
-      await user.click(screen.getByRole('option', { name: 'Rejected' }))
+      await user.click(screen.getByRole('option', { name: 'All Statuses' }))
       expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
       expect(statusTrigger).toHaveFocus()
 
@@ -1803,7 +1808,7 @@ describe('UX & Accessibility Audit Regression Contracts', () => {
     await user.click(screen.getByRole('button', { name: 'Apply to 1 cut' }))
     expect(screen.getByText(/Apply specifications to 1 cut\?/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Toggle unspecified cuts filter' }))
+    await user.click(screen.getByRole('button', { name: 'Filter unspecified cuts' }))
     expect(screen.queryByRole('region', { name: 'Bulk specification editor' })).not.toBeInTheDocument()
   })
 
@@ -1990,7 +1995,7 @@ describe('UX & Accessibility Audit Regression Contracts', () => {
     expect(rejectedBadge).toHaveClass('status-danger')
     expect(specifiedBadge).not.toHaveAttribute('aria-label')
 
-    const quickFilterBtn = screen.getByRole('button', { name: 'Toggle unspecified cuts filter' })
+    const quickFilterBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
     expect(quickFilterBtn).toHaveAttribute('aria-pressed', 'false')
     await user.click(quickFilterBtn)
     expect(quickFilterBtn).toHaveAttribute('aria-pressed', 'true')
@@ -2104,5 +2109,100 @@ describe('UX & Accessibility Audit Regression Contracts', () => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 1 }))
     })
     expect(screen.getByText('Page 1 of 1 · 1 records')).toBeInTheDocument()
+  })
+
+  it('resets and disables specification filter when Rejected status is selected', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+
+    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+    await user.click(specTrigger)
+    await user.click(screen.getByRole('option', { name: 'Unspecified' }))
+    expect(specTrigger).not.toBeDisabled()
+
+    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+    await user.click(statusTrigger)
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
+
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'rejected',
+        specStatus: 'all',
+        page: 1,
+      }))
+    })
+    expect(specTrigger).toBeDisabled()
+    expect(specTrigger).toHaveAttribute('title', 'Specification filter applies to accepted cuts only')
+  })
+
+  it('switches back to Accepted cuts when clicking Specified or Unspecified KPI while viewing Rejected', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+
+    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+    const unspecifiedKpi = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+    const specifiedKpi = screen.getByRole('button', { name: 'Filter specified cuts' })
+
+    await user.click(statusTrigger)
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
+    expect(specTrigger).toBeDisabled()
+
+    await user.click(unspecifiedKpi)
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'accepted',
+        specStatus: 'unspecified',
+        page: 1,
+      }))
+    })
+    expect(specTrigger).not.toBeDisabled()
+    expect(unspecifiedKpi).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Filter rejected cuts' }))
+    await user.click(specifiedKpi)
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'accepted',
+        specStatus: 'specified',
+        page: 1,
+      }))
+    })
+    expect(specifiedKpi).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('discloses Rejected KPI pill when rejectedCount > 0 or status is rejected, and hides it at zero on default view', async () => {
+    const user = userEvent.setup()
+    const zeroRejectedPayload = {
+      ...mockProductionPayload,
+      summary: { totalAccepted: 3, specifiedCount: 2, unspecifiedCount: 1, rejectedCount: 0 },
+    }
+    const mockLoadZero = vi.fn().mockResolvedValue(zeroRejectedPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoadZero} />)
+
+    await screen.findByText('Maynilad Water')
+    expect(screen.queryByRole('button', { name: 'Filter rejected cuts' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Filter by cut status' }))
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
+
+    const disclosedRejectedBtn = await screen.findByRole('button', { name: 'Filter rejected cuts' })
+    expect(disclosedRejectedBtn).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(disclosedRejectedBtn)
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Filter rejected cuts' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Filter by cut status' })).toHaveTextContent('Accepted')
+    expect(screen.getByRole('button', { name: 'Filter by specification status' })).not.toBeDisabled()
   })
 })
