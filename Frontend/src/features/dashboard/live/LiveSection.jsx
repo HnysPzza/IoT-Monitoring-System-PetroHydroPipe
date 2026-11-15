@@ -47,7 +47,7 @@ export default function LiveSection() {
   const isRefreshing = liveFeed.isRefreshing
   const notice = liveFeed.state === 'stale' || liveFeed.error ? {
     type: 'error',
-    message: Boolean(liveFeed.machine)
+    message: liveFeed.machine
       ? <>Live data is stale. Updated <UpdatedAgo updatedAt={liveFeed.lastUpdated} />. {liveFeed.error || 'Waiting for a fresh update.'}</>
       : liveFeed.error,
   } : null

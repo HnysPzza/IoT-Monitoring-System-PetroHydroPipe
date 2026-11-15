@@ -1,14 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
-import { getReportSummary, exportReport } from './reportsService.js'
+import { getReportSummary } from './reportsService.js'
 import {
   formatDimension,
   formatTonnage,
   formatPercentage,
-  getReportCards,
-  getReportDelta,
 } from './reportsPresentation.js'
 import ReportsSection from './ReportsSection.jsx'
 

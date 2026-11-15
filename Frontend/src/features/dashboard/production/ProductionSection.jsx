@@ -614,16 +614,6 @@ export default function ProductionSection({
     setPage(1)
   }
 
-  const handleStatusChange = (e) => {
-    setStatusFilter(e.target.value)
-    setPage(1)
-  }
-
-  const handleSpecStatusChange = (e) => {
-    setSpecStatusFilter(e.target.value)
-    setPage(1)
-  }
-
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault()

@@ -335,7 +335,7 @@ export default function TrendCalendarControl({
     : null
   const isApplyDisabled = normDraftMode === 'custom' && (!draftRange.startDate || !draftRange.endDate)
 
-  let footerSelectionLabel = ''
+  let footerSelectionLabel
   if (normDraftMode === 'custom') {
     if (!draftRange.startDate) {
       footerSelectionLabel = 'Select start date'

@@ -5,9 +5,6 @@ const LONG_ALERT_THRESHOLD = 110
 import {
   BarChart3,
   Bell,
-  ChartNoAxesCombined,
-  Check,
-  Gauge,
   History,
   LogOut,
   Logs,
