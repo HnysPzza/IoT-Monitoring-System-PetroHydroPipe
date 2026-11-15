@@ -37,6 +37,26 @@ export default function UsersTable({
 }) {
   const handleArchive = onRequestArchive || onArchiveAccount
   const handleDeactivate = onRequestDeactivate || onStatusChange
+  const handleMenuKeyDown = (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const items = Array.from(event.currentTarget.querySelectorAll('.user-actions-item:not(:disabled)'))
+    if (!items.length) return
+    event.preventDefault()
+    const currentIndex = items.indexOf(document.activeElement)
+    if (event.key === 'Home') {
+      items[0].focus()
+      return
+    }
+    if (event.key === 'End') {
+      items[items.length - 1].focus()
+      return
+    }
+    const delta = event.key === 'ArrowDown' ? 1 : -1
+    const nextIndex = currentIndex === -1
+      ? (delta > 0 ? 0 : items.length - 1)
+      : (currentIndex + delta + items.length) % items.length
+    items[nextIndex].focus()
+  }
   const columnHeader = (key, label) => (
     <th scope="col" aria-sort={sort === key ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
       {label}
@@ -74,7 +94,7 @@ export default function UsersTable({
 
                 return (
                   <tr key={account.id}>
-                    <td>
+                    <td data-label="User">
                       <div className="user-identity-cell">
                         <div className="user-avatar" aria-hidden="true">
                           {getInitials(account.name, account.username)}
@@ -85,7 +105,7 @@ export default function UsersTable({
                         </div>
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Role">
                       <div className="user-role-wrap">
                         <span className="user-role-text">{getRoleDisplayName(account.role)}</span>
                         {account.role === 'Admin' ? (
@@ -96,30 +116,31 @@ export default function UsersTable({
                         ) : null}
                       </div>
                     </td>
-                    <td>
-                      <Status>{account.status}</Status>
+                    <td data-label="Status">
+                      <Status tone={account.status === 'Active' ? 'active' : 'offline'}>{account.status}</Status>
                     </td>
-                    <td>
+                    <td data-label="Onboarding">
                       {account.mustChangePassword ? (
-                        <Status>Password change required</Status>
+                        <Status tone="fault">Password change required</Status>
                       ) : account.onboarding === 'Invited' ? (
-                        <Status>Invited</Status>
+                        <Status tone="fault">Invited</Status>
                       ) : account.onboarding === 'Expired' ? (
-                        <Status>Expired</Status>
+                        <Status tone="danger">Expired</Status>
                       ) : (
                         <Status>{account.onboarding === 'Ready' ? 'Complete' : account.onboarding || 'Complete'}</Status>
                       )}
                     </td>
-                    <td className={account.createdAt ? 'user-date' : 'user-date user-date-empty'}>{formatDate(account.createdAt)}</td>
-                    <td className={account.lastLoginAt ? 'user-date' : 'user-date user-date-empty'}>{formatDate(account.lastLoginAt)}</td>
-                    <td>
+                    <td data-label="Created" className={account.createdAt ? 'user-date' : 'user-date user-date-empty'}>{formatDate(account.createdAt)}</td>
+                    <td data-label="Last login" className={account.lastLoginAt ? 'user-date' : 'user-date user-date-empty'}>{formatDate(account.lastLoginAt)}</td>
+                    <td data-label="Actions">
                       <PopoverPrimitive.Root>
                         <PopoverPrimitive.Trigger asChild>
                           <button
                             className="user-action-trigger"
                             type="button"
                             aria-label={`Actions for ${account.name || account.username}`}
-                            disabled={isActionBusy}
+                            title={isCurrentUser ? 'Protected account actions are disabled' : undefined}
+                            disabled={isActionBusy || isCurrentUser}
                           >
                             <MoreHorizontal size={18} aria-hidden="true" />
                           </button>
@@ -129,7 +150,8 @@ export default function UsersTable({
                             className="user-actions-menu"
                             align="end"
                             sideOffset={6}
-                            role="menu"
+                            aria-label={`Actions menu for ${account.name || account.username}`}
+                            onKeyDown={handleMenuKeyDown}
                           >
                             {['Invited', 'Expired'].includes(account.onboarding) && account.status === 'Active' ? (
                               <PopoverPrimitive.Close asChild>

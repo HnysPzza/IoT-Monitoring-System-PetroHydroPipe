@@ -20,16 +20,12 @@ describe('UsersTable', () => {
     expect(screen.getByText('Showing 11–11 of 11 accounts')).toBeInTheDocument()
   })
 
-  it('protects any Admin account even when it is not the current row', async () => {
-    const user = userEvent.setup()
+  it('protects any Admin account even when it is not the current row', () => {
     render(<UsersTable accounts={[{ ...account, role: 'Admin' }]} currentUserId="another-user" />)
     const row = screen.getByRole('row', { name: /operator one/i })
     expect(within(row).getByText('Managing Director')).toBeInTheDocument()
     expect(within(row).getByText('Protected')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /actions for/i }))
-    expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /deactivate account/i })).toBeDisabled()
+    expect(within(row).getByRole('button', { name: /actions for/i })).toBeDisabled()
   })
 
   it('calls archive handler for non-current user archive action', async () => {
@@ -71,8 +67,7 @@ describe('UsersTable', () => {
     expect(onResetPassword).toHaveBeenCalledWith({ ...account, onboarding: 'Ready' })
   })
 
-  it('disables archive for the current user', async () => {
-    const user = userEvent.setup()
+  it('disables actions trigger for the current user', () => {
     render(
       <UsersTable
         accounts={[account]}
@@ -85,8 +80,25 @@ describe('UsersTable', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /actions for/i }))
-    expect(screen.getByRole('button', { name: /archive account/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /actions for/i })).toBeDisabled()
+  })
+
+  it('applies distinct semantic status tones for Invited, Password change required, Expired, and Inactive accounts', () => {
+    render(
+      <UsersTable
+        accounts={[
+          { ...account, id: 'u-inv', name: 'Invited User', onboarding: 'Invited', status: 'Active' },
+          { ...account, id: 'u-pw', name: 'Must Change', mustChangePassword: true, status: 'Active' },
+          { ...account, id: 'u-inact', name: 'Inactive User', onboarding: 'Ready', status: 'Inactive' },
+        ]}
+        currentUserId="user-1"
+      />,
+    )
+
+    expect(screen.getByText('Invited')).toHaveClass('status-fault')
+    expect(screen.getByText('Password change required')).toHaveClass('status-fault')
+    expect(screen.getByText('Inactive')).toHaveClass('status-offline')
+    expect(screen.getAllByRole('cell')[0]).toHaveAttribute('data-label', 'User')
   })
 
   it('keeps table column headings static when sorting is controlled above the directory', () => {
