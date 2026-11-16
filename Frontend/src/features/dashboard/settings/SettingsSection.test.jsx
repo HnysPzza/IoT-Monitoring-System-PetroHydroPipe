@@ -1,8 +1,9 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
+import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import SettingsSection from './SettingsSection.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
@@ -77,6 +78,12 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByLabelText('S-01 recovery minutes')).toHaveValue(1)
     expect(screen.getByText(/S-05 counts output/i)).toBeInTheDocument()
     expect(screen.getByLabelText('S-05 trigger minutes')).toBeDisabled()
+
+    const matrix = screen.getByRole('table', { name: 'Sensor absence tolerance matrix' })
+    for (const identity of sensorIdentities) {
+      expect(within(matrix).getByText(identity.label)).toBeInTheDocument()
+      expect(within(matrix).queryByText(identity.purpose)).not.toBeInTheDocument()
+    }
   })
 
   it('keeps an unsaved draft when the window loses and regains focus', async () => {

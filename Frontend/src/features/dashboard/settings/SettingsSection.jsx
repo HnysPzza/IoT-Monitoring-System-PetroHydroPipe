@@ -12,7 +12,7 @@ import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashBut
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
 import { cloneSettings, getMinuteBounds, getNextBreakSlot, getRotationStallSecondsBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
-import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
+import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 
 function getBreakDurationLabel(start, end) {
   if (!start || !end) return null
@@ -435,7 +435,6 @@ export default function SettingsSection() {
                       const isOutput = sensorCode === constraints.outputSensorCode
                       const isSpindle = sensorCode === spindleSensorCode
                       const sensorLabel = getSensorLabel(sensorCode, 'Plant Sensor')
-                      const sensorPurpose = getSensorPurpose(sensorCode)
                       const stallError = isSpindle ? errors[`${sensorCode}.rotationStallMs`] : null
                       const recoveryError = errors[`${sensorCode}.recoverySeconds`] || null
                       const triggerError = errors[`${sensorCode}.triggerSeconds`]
@@ -451,7 +450,6 @@ export default function SettingsSection() {
                                 <span className="settings-sensor-badge is-locked">{sensorCode}</span>
                                 <div className="settings-sensor-meta">
                                   <strong className="settings-sensor-title">{sensorLabel}</strong>
-                                  {sensorPurpose ? <span className="settings-sensor-purpose">{sensorPurpose}</span> : null}
                                 </div>
                               </div>
                             </td>
@@ -491,7 +489,6 @@ export default function SettingsSection() {
                                   <strong className="settings-sensor-title">{sensorLabel}</strong>
                                   {isRowDirty ? <span className="settings-dirty-pill">Edited</span> : null}
                                 </div>
-                                {sensorPurpose ? <span className="settings-sensor-purpose">{sensorPurpose}</span> : null}
                                 {isSpindle && stallSecondsBounds ? (
                                   <div className="settings-spindle-stall">
                                     <span className="settings-spindle-stall-label" id="s03-stall-range">
