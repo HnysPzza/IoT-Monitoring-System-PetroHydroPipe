@@ -863,6 +863,96 @@ describe('AdminDashboard alerts', () => {
     expect(screen.getByText('Acknowledged')).toBeInTheDocument()
   })
 
+  it('triggers bell swing once on active alert arrival and stills immediately when alerts open', async () => {
+    vi.useFakeTimers()
+    try {
+      getAlerts.mockResolvedValue(alertSnapshot([
+        alertAtRevision('10', { status: 'Active', title: 'S-01 speed fault' }),
+      ], '10'))
+
+      renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      const bellButton = screen.getByRole('button', { name: /open alerts, 1 active/i })
+      expect(bellButton).toHaveAttribute('data-bell-swing', 'true')
+
+      fireEvent.click(bellButton)
+      expect(bellButton).toHaveAttribute('data-bell-swing', 'false')
+
+      fireEvent.click(bellButton)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500)
+      })
+      expect(bellButton).toHaveAttribute('data-bell-swing', 'false')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('preserves keyboard focus inside the notifications popover after acknowledging and clarifies acknowledged count', async () => {
+    vi.useFakeTimers()
+    try {
+      const firstAlert = alertAtRevision('10', { id: 'alert-1', status: 'Active', title: 'First fault alert' })
+      const secondAlert = alertAtRevision('11', { id: 'alert-2', status: 'Active', title: 'Second fault alert' })
+      getAlerts.mockResolvedValue(alertSnapshot([firstAlert, secondAlert], '11'))
+      acknowledgeAlert
+        .mockResolvedValueOnce({ alert: alertAtRevision('12', { id: 'alert-1', status: 'Acknowledged', title: 'First fault alert' }) })
+        .mockResolvedValueOnce({ alert: alertAtRevision('13', { id: 'alert-2', status: 'Acknowledged', title: 'Second fault alert' }) })
+
+      renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: /open alerts, 2 active/i }))
+      const initialButtons = screen.getAllByRole('button', { name: /^acknowledge$/i })
+      initialButtons[0].focus()
+      expect(initialButtons[0]).toHaveFocus()
+
+      fireEvent.click(initialButtons[0])
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      const remainingButtons = screen.getAllByRole('button', { name: /^acknowledge$/i })
+      expect(remainingButtons).toHaveLength(1)
+      expect(remainingButtons[0]).toHaveFocus()
+      expect(screen.getByText('Confirmed')).toBeInTheDocument()
+
+      fireEvent.click(remainingButtons[0])
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(screen.getByText('2 acknowledged')).toBeInTheDocument()
+      const footerLink = document.querySelector('.alerts-popover-footer a')
+      expect(footerLink).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('supports expanding and collapsing long notification diagnostics without losing action layout', async () => {
+    const user = userEvent.setup()
+    const longDiagnostic = 'Over-current fault detected on main induction drive stage B3 during sustained billet feed cycle across feeder rollers with thermal trip threshold exceeded on phase L2.'
+    getAlerts.mockResolvedValue(alertSnapshot([
+      alertAtRevision('10', { status: 'Active', title: 'Motor drive fault', message: longDiagnostic }),
+    ], '10'))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const bellButton = await screen.findByRole('button', { name: /open alerts, 1 active/i })
+    await user.click(bellButton)
+
+    const toggleBtn = screen.getByRole('button', { name: /show more/i })
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(toggleBtn)
+    expect(screen.getByRole('button', { name: /show less/i })).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('clears queued reloads on unmount and ignores an old token snapshot completion', async () => {
     vi.useFakeTimers()
     const oldRequest = deferred()
@@ -1180,6 +1270,27 @@ describe('AdminDashboard alerts', () => {
     expect(liveFeedLink).toHaveAttribute('aria-label', 'Live Feed')
   })
 
+  it('moves focus out of the sidebar before hiding it when entering mobile viewport', async () => {
+    const viewport = createControllableMatchMedia(false)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const sidebar = screen.getByRole('complementary')
+    const overviewLink = screen.getByRole('link', { name: 'Overview' })
+    overviewLink.focus()
+    expect(overviewLink).toHaveFocus()
+
+    act(() => viewport.setMatches(true))
+
+    await waitFor(() => {
+      expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+    })
+    expect(sidebar.contains(document.activeElement)).toBe(false)
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveFocus()
+  })
+
   it('renders topbar theme toggle and allows switching themes', async () => {
     const setThemeMock = vi.fn()
     const user = userEvent.setup()
@@ -1250,5 +1361,136 @@ describe('AdminDashboard alerts', () => {
         payload: { live: incomingLive },
       })
     })
+  })
+
+  it('positions collapsed sidebar tooltip dynamically on hover/focus and clears on scroll or expand', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const collapseBtn = await screen.findByRole('button', { name: 'Collapse sidebar' })
+    await user.click(collapseBtn)
+
+    const settingsLink = screen.getByRole('link', { name: 'Settings' })
+    settingsLink.getBoundingClientRect = () => ({ top: 453, height: 44, bottom: 497, left: 10, right: 54, width: 44, x: 10, y: 453, toJSON: () => ({}) })
+
+    fireEvent.mouseEnter(settingsLink)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Settings')
+    expect(tooltip).toHaveStyle({ top: '475px' })
+
+    fireEvent.scroll(screen.getByRole('navigation', { name: 'Dashboard sections' }))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.blur(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.pointerDown(settingsLink)
+    fireEvent.focus(settingsLink)
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+    fireEvent.mouseEnter(settingsLink)
+    fireEvent.pointerDown(settingsLink)
+    fireEvent.mouseLeave(settingsLink)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(settingsLink)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings')
+
+    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('applies overview-topbar class only on the /dashboard overview route', () => {
+    getAlerts.mockReturnValue(new Promise(() => {}))
+
+    const { unmount } = renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+    expect(document.querySelector('header.dashboard-topbar')).toHaveClass('overview-topbar')
+    unmount()
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard/reports' })
+    expect(document.querySelector('header.dashboard-topbar')).not.toHaveClass('overview-topbar')
+  })
+
+  it('traps Tab focus inside the alerts popover, provides a Close alerts button, and announces acknowledgement', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockResolvedValue(alertSnapshot([activeAlert()]))
+    acknowledgeAlert.mockResolvedValue({
+      alert: {
+        ...activeAlert(),
+        acknowledgedAt: '2026-10-31T15:05:00.000Z',
+        acknowledgedBy: 'admin-1',
+        acknowledgedByName: 'Karl Admin',
+      },
+      revision: '2',
+    })
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    const bell = await screen.findByRole('button', { name: /open alerts, 1 active/i })
+    await user.click(bell)
+
+    const closeBtn = screen.getByRole('button', { name: 'Close alerts' })
+    const footerLink = screen.getByRole('link', { name: /view live sensor status/i })
+
+    footerLink.focus()
+    expect(footerLink).toHaveFocus()
+
+    await user.tab()
+    expect(closeBtn).toHaveFocus()
+
+    await user.tab({ shift: true })
+    expect(footerLink).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Acknowledge' }))
+    const liveAnnouncement = await screen.findByText(/alert acknowledged/i)
+    expect(liveAnnouncement).toHaveAttribute('aria-live', 'polite')
+
+    await user.click(closeBtn)
+    expect(screen.queryByRole('dialog', { name: /active alerts/i })).not.toBeInTheDocument()
+    expect(bell).toHaveFocus()
+  })
+
+  it('links collapsed sidebar tooltip via aria-describedby and dismisses it on Escape', async () => {
+    const user = userEvent.setup()
+    getAlerts.mockResolvedValue(alertSnapshot([]))
+
+    renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+    await user.click(await screen.findByRole('button', { name: 'Collapse sidebar' }))
+    const settingsLink = screen.getByRole('link', { name: 'Settings' })
+    fireEvent.focus(settingsLink)
+
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveAttribute('id', 'sidebar-collapsed-tooltip')
+    expect(settingsLink).toHaveAttribute('aria-describedby', 'sidebar-collapsed-tooltip')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    const logoutBtn = screen.getByRole('button', { name: 'Logout' })
+    logoutBtn.getBoundingClientRect = () => ({ top: 620, height: 44, bottom: 664, left: 10, right: 54, width: 44, x: 10, y: 620, toJSON: () => ({}) })
+    fireEvent.focus(logoutBtn)
+
+    const logoutTooltip = screen.getByRole('tooltip')
+    expect(logoutTooltip).toHaveTextContent('Log out')
+    expect(logoutTooltip).toHaveStyle({ top: '642px' })
+    expect(logoutBtn).toHaveAttribute('aria-describedby', 'sidebar-collapsed-tooltip')
   })
 })

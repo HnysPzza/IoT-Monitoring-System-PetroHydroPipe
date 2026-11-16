@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
@@ -162,5 +162,17 @@ describe('AnalyticsOperationsDetails', () => {
     expect(screen.getByRole('status', { name: 'Process events not observed' })).toHaveTextContent('Not observed')
     expect(screen.queryByText('0 min recorded')).not.toBeInTheDocument()
     expect(screen.queryByText('0 events recorded')).not.toBeInTheDocument()
+  })
+
+  it('highlights process sensor legend item on keyboard focus and clears on blur', () => {
+    renderWithAuth(<AnalyticsOperationsDetails snapshot={analyticsTestFixture} />)
+    const legend = screen.getByRole('list', { name: 'Process event distribution' })
+    const firstItem = within(legend).getAllByRole('listitem')[0]
+
+    expect(firstItem).toHaveAttribute('tabindex', '0')
+    fireEvent.focus(firstItem)
+    expect(firstItem).toHaveClass('is-hovered')
+    fireEvent.blur(firstItem)
+    expect(firstItem).not.toHaveClass('is-hovered')
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 import '../../../shared/components/ui/calendar.css'
@@ -102,7 +102,34 @@ function normalizeMode(m) {
   return 'today'
 }
 
-const WEEKDAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const WEEKDAY_HEADERS = [
+  { short: 'Mo', full: 'Monday' },
+  { short: 'Tu', full: 'Tuesday' },
+  { short: 'We', full: 'Wednesday' },
+  { short: 'Th', full: 'Thursday' },
+  { short: 'Fr', full: 'Friday' },
+  { short: 'Sa', full: 'Saturday' },
+  { short: 'Su', full: 'Sunday' },
+]
+
+function handleGridArrowNavigation(event, index, attrName, deltas) {
+  if (!(event.key in deltas)) return
+  const container = event.currentTarget.closest('[data-calendar-grid]')
+  if (!container) return
+  let nextIndex = index + deltas[event.key]
+  const step = Math.sign(deltas[event.key])
+  while (nextIndex >= 0) {
+    const candidate = container.querySelector(`button[${attrName}="${nextIndex}"]`)
+    if (!candidate) break
+    if (!candidate.disabled) {
+      event.preventDefault()
+      candidate.focus()
+      return
+    }
+    if (!step) break
+    nextIndex += step
+  }
+}
 
 const DEFAULT_PRESETS = [
   { id: 'today', label: 'Daily' },
@@ -123,9 +150,15 @@ export default function TrendCalendarControl({
   triggerAriaLabel,
   triggerLabel = 'SELECTED PERIOD',
   popoverClassName,
-  presets = DEFAULT_PRESETS,
+  presets: presetsProp,
+  enableCustomRange = false,
   showPresets = true,
+  canClear = false,
+  onClear,
 }) {
+  const presets = presetsProp ?? (enableCustomRange
+    ? [...DEFAULT_PRESETS, { id: 'custom', label: 'Custom range' }]
+    : DEFAULT_PRESETS)
   const [isOpen, setIsOpen] = useState(false)
   const [draftMode, setDraftMode] = useState(mode)
   const [draftDate, setDraftDate] = useState(selectedDate)
@@ -136,16 +169,20 @@ export default function TrendCalendarControl({
   const [isSelectingRange, setIsSelectingRange] = useState(false)
   const [hoveredDay, setHoveredDay] = useState(null)
   const [viewDate, setViewDate] = useState(() => selectedRange?.startDate || selectedDate || new Date())
+  const openModeRef = useRef(mode)
+  const didCommitRef = useRef(false)
 
   // Keep internal mode in sync when caller mode changes
   useEffect(() => {
     setDraftMode(mode)
   }, [mode])
 
-  // Synchronize draft state when popover opens
+  // Synchronize draft state when popover opens and revert previewed mode if abandoned
   function handleOpenChange(nextOpen) {
     setIsOpen(nextOpen)
     if (nextOpen) {
+      openModeRef.current = mode
+      didCommitRef.current = false
       setDraftMode(mode)
       setDraftDate(selectedDate)
       setDraftRange({
@@ -155,6 +192,21 @@ export default function TrendCalendarControl({
       setIsSelectingRange(false)
       setHoveredDay(null)
       setViewDate(selectedRange?.startDate || selectedDate || new Date())
+      return
+    }
+
+    if (!didCommitRef.current) {
+      if (openModeRef.current && openModeRef.current !== draftMode) {
+        onModeChange?.(openModeRef.current)
+      }
+      setDraftMode(openModeRef.current || mode)
+      setDraftDate(selectedDate)
+      setDraftRange({
+        startDate: selectedRange?.startDate || selectedDate || null,
+        endDate: selectedRange?.endDate || selectedDate || null,
+      })
+      setIsSelectingRange(false)
+      setHoveredDay(null)
     }
   }
 
@@ -206,8 +258,6 @@ export default function TrendCalendarControl({
     }
 
     setDraftDate(normalized)
-    onDateChange(normalized)
-    setIsOpen(false)
   }
 
   function handleApply() {
@@ -216,6 +266,7 @@ export default function TrendCalendarControl({
       const startDate = normalizeCalendarSelection('day', draftRange.startDate)
       const endDate = normalizeCalendarSelection('day', draftRange.endDate)
       if (maxDate && (startDate > maxDate || endDate > maxDate)) return
+      didCommitRef.current = true
       if (onRangeChange) {
         onRangeChange({ startDate, endDate })
       } else {
@@ -227,6 +278,7 @@ export default function TrendCalendarControl({
 
     const targetDate = draftDate || selectedDate
     if (!targetDate) {
+      didCommitRef.current = false
       setIsOpen(false)
       return
     }
@@ -234,12 +286,17 @@ export default function TrendCalendarControl({
     const normalized = normalizeCalendarSelection(draftMode, targetDate)
     if (maxDate && normalized > maxDate) return
 
+    didCommitRef.current = true
     onDateChange(normalized)
     setIsOpen(false)
   }
 
   function handleCancel() {
-    setDraftMode(mode)
+    didCommitRef.current = false
+    if (openModeRef.current && openModeRef.current !== draftMode) {
+      onModeChange?.(openModeRef.current)
+    }
+    setDraftMode(openModeRef.current || mode)
     setDraftDate(selectedDate)
     setDraftRange({
       startDate: selectedRange?.startDate || selectedDate || null,
@@ -250,12 +307,38 @@ export default function TrendCalendarControl({
     setIsOpen(false)
   }
 
+  function handleClearClick() {
+    didCommitRef.current = true
+    setDraftDate(undefined)
+    setDraftRange({ startDate: null, endDate: null })
+    setIsSelectingRange(false)
+    setHoveredDay(null)
+    setIsOpen(false)
+    onClear?.()
+  }
+
+  const isNextYearDisabled = Boolean(maxDate && viewDate.getFullYear() >= maxDate.getFullYear())
+  const isNextMonthDisabled = Boolean(
+    maxDate
+    && (
+      viewDate.getFullYear() > maxDate.getFullYear()
+      || (viewDate.getFullYear() === maxDate.getFullYear() && viewDate.getMonth() >= maxDate.getMonth())
+    ),
+  )
+
   function handlePrevYear() {
     setViewDate((prev) => new Date(prev.getFullYear() - 1, prev.getMonth(), 1))
   }
 
   function handleNextYear() {
-    setViewDate((prev) => new Date(prev.getFullYear() + 1, prev.getMonth(), 1))
+    if (isNextYearDisabled) return
+    setViewDate((prev) => {
+      const nextYear = prev.getFullYear() + 1
+      const cappedMonth = maxDate && nextYear === maxDate.getFullYear()
+        ? Math.min(prev.getMonth(), maxDate.getMonth())
+        : prev.getMonth()
+      return new Date(nextYear, cappedMonth, 1)
+    })
   }
 
   function handlePrevMonth() {
@@ -263,6 +346,7 @@ export default function TrendCalendarControl({
   }
 
   function handleNextMonth() {
+    if (isNextMonthDisabled) return
     setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
   }
 
@@ -286,7 +370,7 @@ export default function TrendCalendarControl({
     : null
   const isApplyDisabled = normDraftMode === 'custom' && (!draftRange.startDate || !draftRange.endDate)
 
-  let footerSelectionLabel = ''
+  let footerSelectionLabel
   if (normDraftMode === 'custom') {
     if (!draftRange.startDate) {
       footerSelectionLabel = 'Select start date'
@@ -324,7 +408,7 @@ export default function TrendCalendarControl({
           >
             <CalendarDays size={16} aria-hidden="true" />
             <span className="trend-calendar-copy">
-              <span className="trend-calendar-kicker">{triggerLabel}</span>
+              {triggerLabel ? <span className="trend-calendar-kicker">{triggerLabel}</span> : null}
               {' '}
               <span className="trend-calendar-value">{rangeLabel}</span>
             </span>
@@ -371,13 +455,14 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next year"
+                      disabled={isNextYearDisabled}
                       onClick={handleNextYear}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
                     </button>
                   </div>
-                  <div className="trend-calendar-months-grid">
-                    {monthsOfYear.map((m) => {
+                  <div className="trend-calendar-months-grid" data-calendar-grid="month">
+                    {monthsOfYear.map((m, monthIndex) => {
                       const isSelected = Boolean(activeDate &&
                         m.getFullYear() === activeDate.getFullYear() &&
                         m.getMonth() === activeDate.getMonth())
@@ -387,10 +472,19 @@ export default function TrendCalendarControl({
                         <button
                           key={m.getMonth()}
                           type="button"
+                          data-month-index={monthIndex}
                           className={`trend-calendar-month-btn ${isSelected ? 'is-selected' : ''} ${isMonthDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={monthLabel}
                           aria-pressed={isSelected}
                           disabled={isMonthDisabled}
+                          onKeyDown={(event) => handleGridArrowNavigation(event, monthIndex, 'data-month-index', {
+                            ArrowLeft: -1,
+                            ArrowRight: 1,
+                            ArrowUp: -3,
+                            ArrowDown: 3,
+                            Home: -(monthIndex % 3),
+                            End: 2 - (monthIndex % 3),
+                          })}
                           onClick={() => handleSelect(m, 'month')}
                         >
                           {m.toLocaleDateString('en-PH', { month: 'short' })}
@@ -415,6 +509,7 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next month"
+                      disabled={isNextMonthDisabled}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
@@ -422,11 +517,11 @@ export default function TrendCalendarControl({
                   </div>
                   <div className="trend-calendar-weekdays" aria-hidden="true">
                     {WEEKDAY_HEADERS.map((w) => (
-                      <span key={w} className="trend-calendar-weekday">{w}</span>
+                      <span key={w.short} className="trend-calendar-weekday">{w.short}</span>
                     ))}
                   </div>
-                  <div className="trend-calendar-week-grid">
-                    {monthWeeks.map((weekStart) => {
+                  <div className="trend-calendar-week-grid" data-calendar-grid="week">
+                    {monthWeeks.map((weekStart, weekIndex) => {
                       const isSelected = Boolean(activeDate && startOfWeek(activeDate).getTime() === weekStart.getTime())
                       const isWeekDisabled = Boolean(maxDate && weekStart > maxDate)
                       const weekLabel = formatWeekLabel(weekStart)
@@ -435,10 +530,17 @@ export default function TrendCalendarControl({
                         <button
                           key={weekStart.toISOString()}
                           type="button"
+                          data-week-index={weekIndex}
                           className={`trend-calendar-week-row ${isSelected ? 'is-selected' : ''} ${isWeekDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={`Select week ${weekLabel}`}
                           aria-pressed={isSelected}
                           disabled={isWeekDisabled}
+                          onKeyDown={(event) => handleGridArrowNavigation(event, weekIndex, 'data-week-index', {
+                            ArrowUp: -1,
+                            ArrowDown: 1,
+                            Home: -weekIndex,
+                            End: monthWeeks.length - 1 - weekIndex,
+                          })}
                           onClick={() => handleSelect(weekStart, 'week')}
                         >
                           <div className="trend-calendar-week-days" aria-hidden="true">
@@ -472,56 +574,81 @@ export default function TrendCalendarControl({
                       type="button"
                       className="trend-calendar-nav-btn"
                       aria-label="Next month"
+                      disabled={isNextMonthDisabled}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight size={16} aria-hidden="true" />
                     </button>
                   </div>
-                  <div className="trend-calendar-weekdays" aria-hidden="true">
-                    {WEEKDAY_HEADERS.map((w) => (
-                      <span key={w} className="trend-calendar-weekday">{w}</span>
-                    ))}
-                  </div>
                   <div
-                    className="trend-calendar-day-grid"
+                    className="trend-calendar-grid-container"
+                    data-calendar-grid="day"
                     role="grid"
+                    aria-label={monthHeading}
                     onMouseLeave={() => {
                       if (normDraftMode === 'custom') setHoveredDay(null)
                     }}
                   >
-                    {monthDays.map((day) => {
-                      const isSelected = normDraftMode === 'custom'
-                        ? Boolean(
-                          (customPreviewStart && isSameDay(day, customPreviewStart)) ||
-                          (customPreviewEnd && isSameDay(day, customPreviewEnd))
+                    <div className="trend-calendar-weekdays" role="row">
+                      {WEEKDAY_HEADERS.map((w) => (
+                        <span key={w.short} className="trend-calendar-weekday" role="columnheader" aria-label={w.full}>
+                          {w.short}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="trend-calendar-day-grid">
+                      {Array.from({ length: Math.ceil(monthDays.length / 7) }, (_, weekIndex) => {
+                        const weekSlice = monthDays.slice(weekIndex * 7, weekIndex * 7 + 7)
+                        return (
+                          <div key={weekSlice[0]?.toISOString() ?? weekIndex} className="trend-calendar-day-row" role="row">
+                            {weekSlice.map((day, dayOffset) => {
+                              const dayIndex = weekIndex * 7 + dayOffset
+                              const isSelected = normDraftMode === 'custom'
+                                ? Boolean(
+                                  (customPreviewStart && isSameDay(day, customPreviewStart)) ||
+                                  (customPreviewEnd && isSameDay(day, customPreviewEnd))
+                                )
+                                : Boolean(activeDate && isSameDay(day, activeDate))
+                              const isInRange = normDraftMode === 'custom' && Boolean(
+                                customPreviewStart &&
+                                customPreviewEnd &&
+                                day > customPreviewStart &&
+                                day < customPreviewEnd &&
+                                !isSelected
+                              )
+                              const isDisabled = Boolean(maxDate && day > maxDate)
+                              const isOutside = day.getMonth() !== viewDate.getMonth()
+                              return (
+                                <div key={day.toISOString()} className="trend-calendar-day-cell" role="gridcell">
+                                  <button
+                                    type="button"
+                                    data-day-index={dayIndex}
+                                    className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isInRange ? 'is-in-range' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
+                                    aria-label={getDayAriaLabel(day)}
+                                    aria-pressed={isSelected}
+                                    disabled={isDisabled}
+                                    onKeyDown={(event) => handleGridArrowNavigation(event, dayIndex, 'data-day-index', {
+                                      ArrowLeft: -1,
+                                      ArrowRight: 1,
+                                      ArrowUp: -7,
+                                      ArrowDown: 7,
+                                      Home: -(dayIndex % 7),
+                                      End: 6 - (dayIndex % 7),
+                                    })}
+                                    onMouseEnter={() => {
+                                      if (normDraftMode === 'custom' && !isDisabled) setHoveredDay(day)
+                                    }}
+                                    onClick={() => handleSelect(day, normDraftMode === 'custom' ? 'custom' : 'day')}
+                                  >
+                                    {day.getDate()}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
                         )
-                        : Boolean(activeDate && isSameDay(day, activeDate))
-                      const isInRange = normDraftMode === 'custom' && Boolean(
-                        customPreviewStart &&
-                        customPreviewEnd &&
-                        day > customPreviewStart &&
-                        day < customPreviewEnd &&
-                        !isSelected
-                      )
-                      const isDisabled = Boolean(maxDate && day > maxDate)
-                      const isOutside = day.getMonth() !== viewDate.getMonth()
-                      return (
-                        <button
-                          key={day.toISOString()}
-                          type="button"
-                          className={`trend-calendar-day-btn ${isSelected ? 'is-selected' : ''} ${isInRange ? 'is-in-range' : ''} ${isOutside ? 'is-outside' : ''} ${isDisabled && !isSelected ? 'is-future' : ''}`}
-                          aria-label={getDayAriaLabel(day)}
-                          aria-pressed={isSelected}
-                          disabled={isDisabled}
-                          onMouseEnter={() => {
-                            if (normDraftMode === 'custom' && !isDisabled) setHoveredDay(day)
-                          }}
-                          onClick={() => handleSelect(day, normDraftMode === 'custom' ? 'custom' : 'day')}
-                        >
-                          {day.getDate()}
-                        </button>
-                      )
-                    })}
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -533,6 +660,15 @@ export default function TrendCalendarControl({
               {footerSelectionLabel}
             </span>
             <div className="trend-popover-footer-actions">
+              {onClear && canClear ? (
+                <button
+                  type="button"
+                  className="trend-popover-cancel-btn"
+                  onClick={handleClearClick}
+                >
+                  Clear
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="trend-popover-cancel-btn"

@@ -4,7 +4,13 @@ import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 import { analyticsTestFixture } from './analyticsTestFixtures.js'
 
 vi.mock('recharts', () => ({
-  Area: () => null,
+  Area: ({ isAnimationActive, animationDuration }) => (
+    <div
+      data-testid="analytics-trend-area"
+      data-animation-active={String(isAnimationActive)}
+      data-animation-duration={String(animationDuration)}
+    />
+  ),
   AreaChart: ({ children, data }) => <div data-testid="analytics-trend-chart" data-points={data.length}>{children}</div>,
   CartesianGrid: () => null,
   ReferenceLine: ({ label }) => <span>{label?.value}</span>,
@@ -45,5 +51,24 @@ describe('AnalyticsTrendExplorer current marker', () => {
     )
 
     expect(screen.getByText('Now')).toBeInTheDocument()
+  })
+
+  it('disables Recharts area animation when prefers-reduced-motion is active and uses snappy duration otherwise', () => {
+    const originalMatchMedia = window.matchMedia
+    try {
+      window.matchMedia = vi.fn().mockImplementation((query) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+
+      render(<AnalyticsTrendExplorer snapshot={analyticsTestFixture} metricId="downtime" />)
+      const areas = screen.getAllByTestId('analytics-trend-area')
+      expect(areas[0]).toHaveAttribute('data-animation-active', 'false')
+      expect(areas[0]).toHaveAttribute('data-animation-duration', '320')
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
   })
 })

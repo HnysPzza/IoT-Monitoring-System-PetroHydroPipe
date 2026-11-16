@@ -57,13 +57,13 @@ export async function apiRequest(path, {
   }
 
   const controller = new AbortController()
-  const abortRequest = () => controller.abort()
+  const abortRequest = () => controller.abort(signal?.reason ?? Object.assign(new Error('The request was cancelled.'), { name: 'AbortError' }))
   if (signal?.aborted) abortRequest()
   else signal?.addEventListener('abort', abortRequest, { once: true })
   let timedOut = false
   const timeoutId = globalThis.setTimeout(() => {
     timedOut = true
-    controller.abort()
+    controller.abort(Object.assign(new Error('The request timed out.'), { name: 'AbortError' }))
   }, timeoutMs)
 
   try {

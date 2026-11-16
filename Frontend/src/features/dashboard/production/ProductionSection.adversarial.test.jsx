@@ -5,7 +5,6 @@ import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { apiRequest } from '../../../shared/services/apiClient.js'
 import {
   batchUpdateProductionSpecs,
-  getProductionLogs,
   updateProductionLogSpec,
   normalizeProductionRecord,
 } from './productionService.js'

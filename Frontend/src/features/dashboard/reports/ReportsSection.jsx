@@ -1,4 +1,5 @@
 import './reports-compact.css'
+import Status from '../../../shared/components/Status.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Download, Info, Minus, RotateCw, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -610,9 +611,7 @@ export default function ReportsSection() {
                             {renderTonnage(log.tonnage ?? log.singleTonnage)}
                           </td>
                           <td data-label="Status">
-                            <span className={`production-status-badge ${log.isSpecified ? 'green' : 'amber'}`}>
-                              {log.isSpecified ? 'Specified' : 'Pending Tag'}
-                            </span>
+                            <Status>{log.isSpecified ? 'Specified' : 'Pending Tag'}</Status>
                           </td>
                         </tr>
                       ))

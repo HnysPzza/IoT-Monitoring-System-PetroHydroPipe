@@ -401,4 +401,144 @@ describe('DowntimeSection', () => {
       )
     })
   })
+
+  it('renders page heading, semantic status tones, and only attaches aria-controls when details are expanded', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [
+        downtimeRecord({ id: 'open-1', status: 'Open', needsCauseReview: true }),
+        downtimeRecord({
+          id: 'resolved-2',
+          displayLabel: 'S-04 09:10 AM',
+          sensor: 'S-04',
+          sensorLabel: 'Outside Filler Wire',
+          cause: 'Consumable Shortage',
+          status: 'Resolved',
+          isOpen: false,
+          isCauseEditable: false,
+          needsCauseReview: false,
+        }),
+      ],
+      summary: { open: 1, resolved: 1, minutes: 24, loss: 56 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Downtime' })).toBeInTheDocument()
+    const needsReviewBadge = (await screen.findByText('Needs cause review')).closest('.status')
+    expect(needsReviewBadge).toHaveClass('status-fault')
+
+    const resolvedBadge = screen.getByText('Resolved', { selector: '.status' })
+    expect(resolvedBadge.querySelector('.status-dot-active')).not.toBeNull()
+
+    const [firstDetailsButton] = screen.getAllByRole('button', { name: 'View details' })
+    expect(firstDetailsButton).not.toHaveAttribute('aria-controls')
+
+    await user.click(firstDetailsButton)
+    const hideDetailsButton = screen.getByRole('button', { name: 'Hide details' })
+    expect(hideDetailsButton).toHaveAttribute('aria-controls', 'downtime-details-open-1')
+  })
+
+  it('filters downtime records by status and keeps committed period label until calendar preset is applied', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [downtimeRecord()],
+      summary: { open: 2, resolved: 3, minutes: 18, loss: 42 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+    await screen.findByText('S-03 08:42 AM')
+
+    expect(screen.getByText('Resolved Today')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Select downtime date' }))
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+    expect(screen.getByText('Resolved Today')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Status'), 'Open')
+    await waitFor(() => {
+      expect(getDowntimeRecords).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ status: 'Open' }))
+    })
+  })
+
+  it('shows note character count, allows discarding unsaved note drafts, and explains read-only role restrictions', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [downtimeRecord({ notes: 'Initial note' })],
+      summary: { open: 1, resolved: 0, minutes: 12, loss: 28 },
+    })
+
+    const supervisorView = renderWithAuth(<DowntimeSection />)
+    await screen.findByText('S-03 08:42 AM')
+
+    await user.click(screen.getByRole('button', { name: 'View details' }))
+    expect(screen.getByText('12 / 1000')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Review notes'), ' updated')
+    expect(screen.getByText('20 / 1000')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }))
+    expect(screen.getByLabelText('Review notes')).toHaveValue('Initial note')
+    supervisorView.unmount()
+
+    renderWithAuth(<DowntimeSection />, {
+      authValue: {
+        user: {
+          id: 'user-2',
+          name: 'QC Inspector',
+          username: 'qcinspector',
+          role: 'Quality Control',
+        },
+      },
+    })
+    await screen.findByText('S-03 08:42 AM')
+    await user.click(screen.getByRole('button', { name: 'View details' }))
+    expect(screen.getByText(/Read-only for Quality Control/i)).toBeInTheDocument()
+  })
+
+  it('renders custom select wrappers and chevrons on downtime filters and editable cause dropdowns', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [
+        downtimeRecord({ id: 'editable-1', displayLabel: 'S-03 08:42 AM', isCauseEditable: true }),
+        downtimeRecord({
+          id: 'locked-2',
+          displayLabel: 'S-04 09:00 AM',
+          sensor: 'S-04',
+          sensorLabel: 'Outside Filler Wire',
+          cause: 'Consumable Shortage',
+          isCauseEditable: false,
+          needsCauseReview: false,
+        }),
+      ],
+      summary: { open: 2, resolved: 0, minutes: 24, loss: 56 },
+    })
+    updateDowntimeRecord.mockResolvedValue({
+      record: downtimeRecord({ id: 'editable-1', displayLabel: 'S-03 08:42 AM', cause: 'Misalignment', needsCauseReview: false }),
+    })
+
+    renderWithAuth(<DowntimeSection />)
+    await screen.findByText('S-03 08:42 AM')
+
+    const causeFilter = screen.getByLabelText('Cause')
+    const statusFilter = screen.getByLabelText('Status')
+    const inlineCauseSelect = screen.getByLabelText('Cause for S-03 08:42 AM')
+
+    for (const selectElement of [causeFilter, statusFilter, inlineCauseSelect]) {
+      const wrapper = selectElement.closest('.custom-select-wrap.downtime-select-wrap')
+      expect(wrapper).not.toBeNull()
+      const chevron = wrapper.querySelector('.select-chevron-icon')
+      expect(chevron).toBeInTheDocument()
+      expect(chevron).toHaveAttribute('aria-hidden', 'true')
+    }
+
+    expect(inlineCauseSelect.closest('.downtime-inline-select-wrap')).not.toBeNull()
+    expect(screen.queryByLabelText('Cause for S-04 09:00 AM')).not.toBeInTheDocument()
+
+    await user.selectOptions(inlineCauseSelect, 'Misalignment')
+    await waitFor(() => {
+      expect(updateDowntimeRecord).toHaveBeenCalledWith('test-token', 'editable-1', { cause: 'Misalignment' })
+    })
+  })
 })

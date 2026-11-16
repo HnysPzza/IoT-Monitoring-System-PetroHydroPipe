@@ -54,9 +54,12 @@ function DashboardLoadingFallback() {
 }
 
 function LazyDashboardRoute({ children }) {
+  const { pathname } = useLocation()
   return (
     <Suspense fallback={<DashboardLoadingFallback />}>
-      {children}
+      <div key={pathname} className="dashboard-route-view">
+        {children}
+      </div>
     </Suspense>
   )
 }
@@ -73,17 +76,17 @@ export default function App() {
         {/* Main route map. Dashboard children render inside AdminDashboard through <Outlet />. */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/setup-password" element={<PasswordSetupPage />} />
-        <Route path="/reset-password" element={<PasswordSetupPage resetPassword />} />
-        <Route path="/change-password" element={<ProtectedRoute><PasswordSetupPage changePassword /></ProtectedRoute>} />
+        <Route path="/setup-password" element={<PasswordSetupPage key="setup" />} />
+        <Route path="/reset-password" element={<PasswordSetupPage key="reset" resetPassword />} />
+        <Route path="/change-password" element={<ProtectedRoute><PasswordSetupPage key="change" changePassword /></ProtectedRoute>} />
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
               <DashboardRouteBoundary>
-                <LazyDashboardRoute>
+                <Suspense fallback={<DashboardLoadingFallback />}>
                   <AdminDashboard />
-                </LazyDashboardRoute>
+                </Suspense>
               </DashboardRouteBoundary>
             </ProtectedRoute>
           }

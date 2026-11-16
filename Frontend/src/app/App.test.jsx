@@ -1,7 +1,11 @@
-import { screen } from '@testing-library/react'
+import { useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation, useNavigate } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { AuthContext } from '../features/auth/authSession.jsx'
+import { ThemeContext } from '../shared/context/ThemeContext.jsx'
 import { renderWithAuth } from '../test/renderWithAuth.jsx'
 import App, { DashboardRouteBoundary, ProtectedRoute } from './App.jsx'
 
@@ -163,5 +167,104 @@ describe('ProtectedRoute', () => {
     expect(await screen.findByRole('heading', { name: /this page isn’t here/i })).toBeInTheDocument()
     expect(screen.getByText('404')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /back to dashboard/i })).toHaveAttribute('href', '/dashboard')
+  })
+
+  it('redirects /change-password to /login with password-updated status after submitting without flashing 401', async () => {
+    const user = userEvent.setup()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ completed: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    function StatefulAuthHarness() {
+      const [auth, setAuth] = useState({
+        token: 'tok',
+        user: { id: 'u1', role: 'Admin', mustChangePassword: true },
+      })
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+      return (
+        <QueryClientProvider client={queryClient}>
+          <AuthContext.Provider
+            value={{
+              token: auth?.token || null,
+              user: auth?.user || null,
+              isAuthenticated: Boolean(auth?.token),
+              isRestoring: false,
+              sessionError: null,
+              login: vi.fn(),
+              logout: async () => {
+                setAuth(null)
+              },
+            }}
+          >
+            <ThemeContext.Provider value={{ theme: 'light', setTheme: () => {} }}>
+              <MemoryRouter initialEntries={['/change-password']}>
+                <App />
+              </MemoryRouter>
+            </ThemeContext.Provider>
+          </AuthContext.Provider>
+        </QueryClientProvider>
+      )
+    }
+
+    render(<StatefulAuthHarness />)
+
+    await user.type(await screen.findByLabelText('Current password'), 'temporary-password')
+    await user.type(screen.getByLabelText('New password'), 'Replacement-password1!')
+    await user.type(screen.getByLabelText('Confirm password'), 'Replacement-password1!')
+    await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/password updated.*sign in with your new password/i)
+    expect(screen.getByLabelText(/username/i)).toBeInTheDocument()
+    expect(screen.queryByText('SIGN-IN REQUIRED')).not.toBeInTheDocument()
+    expect(screen.queryByText('401')).not.toBeInTheDocument()
+    expect(fetchSpy).toHaveBeenCalled()
+  })
+
+  it('redirects /change-password to /login when clicking Sign out without flashing 401', async () => {
+    const user = userEvent.setup()
+
+    function StatefulSignOutHarness() {
+      const [auth, setAuth] = useState({
+        token: 'tok',
+        user: { id: 'u1', role: 'Admin', mustChangePassword: true },
+      })
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+      return (
+        <QueryClientProvider client={queryClient}>
+          <AuthContext.Provider
+            value={{
+              token: auth?.token || null,
+              user: auth?.user || null,
+              isAuthenticated: Boolean(auth?.token),
+              isRestoring: false,
+              sessionError: null,
+              login: vi.fn(),
+              logout: async () => {
+                setAuth(null)
+              },
+            }}
+          >
+            <ThemeContext.Provider value={{ theme: 'light', setTheme: () => {} }}>
+              <MemoryRouter initialEntries={['/change-password']}>
+                <App />
+              </MemoryRouter>
+            </ThemeContext.Provider>
+          </AuthContext.Provider>
+        </QueryClientProvider>
+      )
+    }
+
+    render(<StatefulSignOutHarness />)
+
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }))
+
+    expect(await screen.findByLabelText(/username/i)).toBeInTheDocument()
+    expect(screen.queryByText('SIGN-IN REQUIRED')).not.toBeInTheDocument()
+    expect(screen.queryByText('401')).not.toBeInTheDocument()
   })
 })

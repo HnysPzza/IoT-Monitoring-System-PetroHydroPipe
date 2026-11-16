@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { onlineManager } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
@@ -123,7 +123,8 @@ describe('LiveSection polling', () => {
     renderWithAuth(<LiveSection />)
 
     const faultBadge = await screen.findByText('Fault')
-    expect(faultBadge).toHaveClass('status-badge', 'status-fault')
+    expect(faultBadge).toHaveClass('status', 'status-fault')
+    expect(faultBadge).not.toHaveClass('status-danger')
     expect(faultBadge).not.toHaveClass('status-downtime')
     expect(faultBadge.closest('.live-sensor-card')).toHaveClass('status-fault')
   })
@@ -176,16 +177,18 @@ describe('LiveSection polling', () => {
     renderWithAuth(<LiveSection />)
 
     const idleText = await screen.findByText(
-      'S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.',
+      'S-01 Raw Material & Coil Joint is idle.',
     )
     expect(idleText.closest('.overview-alert-banner')).toHaveClass('notice-idle')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Refresh live feed' }))
 
-    expect(await screen.findByText('Fault')).toHaveClass('status-badge', 'status-fault')
+    const faultBadge = await screen.findByText('Fault')
+    expect(faultBadge).toHaveClass('status', 'status-fault')
+    expect(faultBadge).not.toHaveClass('status-danger')
     expect(
-      screen.queryByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      screen.queryByText('S-01 Raw Material & Coil Joint is idle.'),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText(/process issue detected/i)).not.toBeInTheDocument()
@@ -213,7 +216,7 @@ describe('LiveSection polling', () => {
 
     expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
     expect(
-      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('S-04 Outside Filler Wire has no pulse.')).not.toBeInTheDocument()
@@ -245,7 +248,7 @@ describe('LiveSection polling', () => {
     )
 
     expect(
-      await screen.findByText('S-01 Raw Material & Coil Joint is idle — within trigger limit for material changeover.'),
+      await screen.findByText('S-01 Raw Material & Coil Joint is idle.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -281,11 +284,74 @@ describe('LiveSection polling', () => {
     renderWithAuth(<LiveSection />)
 
     const primaryIdleCode = orderedIdleCodes[0]
-    const expectedMessage = `${primaryIdleCode} ${getSensorLabel(primaryIdleCode)} is idle — within trigger limit for material changeover.`
+    const expectedMessage = `${primaryIdleCode} ${getSensorLabel(primaryIdleCode)} is idle.`
     const idleBannerText = await screen.findByText(expectedMessage)
     const banner = idleBannerText.closest('.overview-alert-banner')
     expect(banner).toHaveClass('notice-idle')
     expect(screen.getByText('+1 more idle sensor')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows Last: Run for offline sensors, excludes them from online running counts, and adds configured count', async () => {
+    const offlinePayload = payload()
+    offlinePayload.sensors = [
+      {
+        ...offlinePayload.sensors[0],
+        id: 'sensor-1',
+        sensorCode: 'S-01',
+        status: 'Running',
+        signal: 'active',
+        monitoring: { stateFresh: true, connectivityState: 'offline', detectionState: 'suspended' },
+      },
+      {
+        ...offlinePayload.sensors[0],
+        id: 'sensor-2',
+        sensorCode: 'S-02',
+        status: 'Running',
+        signal: 'active',
+        monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'healthy' },
+      },
+    ]
+    getLiveFeed.mockResolvedValue(offlinePayload)
+
+    renderWithAuth(<LiveSection />)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Live Feed' })).toBeInTheDocument()
+    const offlineStatus = screen.getByText('Last: Run')
+    expect(offlineStatus).toHaveClass('status', 'status-offline')
+    expect(offlineStatus.closest('.live-sensor-card')).toHaveClass('status-offline')
+    expect(screen.getByText('Last run telemetry before disconnect')).toBeInTheDocument()
+    expect(screen.getByText('1 running · 1 offline')).toBeInTheDocument()
+    expect(screen.getByText('2 configured')).toBeInTheDocument()
+  })
+
+  it('offers Retry live feed recovery on 503 error and empty live states', async () => {
+    getLiveFeed.mockRejectedValueOnce(new Error('Live backend unavailable (503)')).mockResolvedValueOnce(payload())
+
+    const user = userEvent.setup()
+    renderWithAuth(<LiveSection />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Live backend unavailable (503)')
+    const retryButtons = screen.getAllByRole('button', { name: 'Retry live feed' })
+    expect(retryButtons.length).toBeGreaterThanOrEqual(2)
+    await user.click(retryButtons[0])
+    expect(await screen.findByText('Spiral Mill 01')).toBeInTheDocument()
+    expect(getLiveFeed).toHaveBeenCalledTimes(2)
+  })
+
+  it('ticks relative event ages every 60 seconds and cleans up on unmount', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-22T00:02:10.000Z'))
+    getLiveFeed.mockResolvedValue(payload())
+
+    const view = renderWithAuth(<LiveSection />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+    const activity = screen.getByRole('list', { name: 'Latest event reported by each sensor' })
+    expect(within(activity).getByText('10 seconds ago')).toBeInTheDocument()
+
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(within(activity).getByText('1 minute ago')).toBeInTheDocument()
+    view.unmount()
   })
 })

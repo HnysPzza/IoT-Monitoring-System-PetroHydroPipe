@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import Status from '../../../shared/components/Status.jsx'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './settings-compact.css'
 import { AlertTriangle, Lock, Plus, RotateCcw, RotateCw, Save } from 'lucide-react'
@@ -10,7 +11,7 @@ import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
-import { cloneSettings, getMinuteBounds, getRotationStallSecondsBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
+import { cloneSettings, getMinuteBounds, getNextBreakSlot, getRotationStallSecondsBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 
 function getBreakDurationLabel(start, end) {
@@ -27,12 +28,27 @@ function getBreakDurationLabel(start, end) {
   return `${mins}m`
 }
 
+let nextBreakKeyCounter = 1
+
+function withBreakKey(entry, existingKey) {
+  const copy = { name: entry.name, startTime: entry.startTime, endTime: entry.endTime }
+  Object.defineProperty(copy, '_key', {
+    value: existingKey || `break-key-${nextBreakKeyCounter++}`,
+    enumerable: false,
+    configurable: true,
+  })
+  return copy
+}
+
 function toDraft(settings, constraints) {
   const cloned = cloneSettings({ sensorThresholds: settings.sensorThresholds, shiftSchedule: settings.shiftSchedule })
   const spindleCode = constraints?.spindleSensorCode || 'S-03'
   const stallBounds = getRotationStallSecondsBounds(constraints?.rotationStallMs)
   if (cloned.sensorThresholds?.[spindleCode] && cloned.sensorThresholds[spindleCode].rotationStallMs === undefined) {
     cloned.sensorThresholds[spindleCode].rotationStallMs = stallBounds.defaultMs
+  }
+  if (Array.isArray(cloned.shiftSchedule?.breaks)) {
+    cloned.shiftSchedule.breaks = cloned.shiftSchedule.breaks.map((entry) => withBreakKey(entry, entry._key))
   }
   return cloned
 }
@@ -98,7 +114,7 @@ export default function SettingsSection() {
     staleTime: 0,
     refetchOnWindowFocus: false,
   })
-  const watchdogMode = !online || diagnosticsQuery.isError || diagnosticsQuery.isFetching ? 'unknown' : diagnosticsQuery.data?.watchdog?.mode || 'unknown'
+  const watchdogMode = !online || diagnosticsQuery.isError || diagnosticsQuery.isPending ? 'unknown' : diagnosticsQuery.data?.watchdog?.mode || 'unknown'
   const isLoading = online && (machinesQuery.isPending || (Boolean(machine) && settingsQuery.isPending) || diagnosticsQuery.isPending)
   const [headerControlsSlot, setHeaderControlsSlot] = useState(() => document.getElementById('settings-header-controls'))
   const [headerVersionSlot, setHeaderVersionSlot] = useState(() => document.getElementById('settings-header-version'))
@@ -108,7 +124,7 @@ export default function SettingsSection() {
     const nextVersion = document.getElementById('settings-header-version')
     if (nextControls !== headerControlsSlot) setHeaderControlsSlot(nextControls)
     if (nextVersion !== headerVersionSlot) setHeaderVersionSlot(nextVersion)
-  })
+  }, [isLoading, headerControlsSlot, headerVersionSlot])
 
   useEffect(() => {
     const latest = settingsQuery.data?.settings
@@ -250,16 +266,22 @@ export default function SettingsSection() {
 
   function updateBreak(index, field, value) {
     const breaks = draft.shiftSchedule.breaks.map((entry, entryIndex) => (
-      entryIndex === index ? { ...entry, [field]: value } : entry
+      entryIndex === index ? withBreakKey({ ...entry, [field]: value }, entry._key) : entry
     ))
     updateSchedule('breaks', breaks)
   }
 
   function addBreak() {
     if (draft.shiftSchedule.breaks.length >= constraints.breaks.maximum) return
+    const nextSlot = getNextBreakSlot(draft.shiftSchedule)
+    const existingNames = new Set(draft.shiftSchedule.breaks.map((entry) => entry.name.trim().toLowerCase()))
+    let nextNumber = draft.shiftSchedule.breaks.length + 1
+    while (existingNames.has(`break ${nextNumber}`)) {
+      nextNumber += 1
+    }
     updateSchedule('breaks', [
       ...draft.shiftSchedule.breaks,
-      { name: `Break ${draft.shiftSchedule.breaks.length + 1}`, startTime: '10:00', endTime: '10:15' },
+      withBreakKey({ name: `Break ${nextNumber}`, startTime: nextSlot.startTime, endTime: nextSlot.endTime }),
     ])
   }
 
@@ -268,7 +290,7 @@ export default function SettingsSection() {
   }
 
   async function saveSettings(event) {
-    event.preventDefault()
+    event?.preventDefault?.()
     if (!canSave) return
     setIsSaving(true)
     setNotice(null)
@@ -280,12 +302,12 @@ export default function SettingsSection() {
       })
       setSettings(payload.settings)
       setDraft(toDraft(payload.settings, constraints))
-      void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.downtime.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all, refetchType: 'active' })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all, refetchType: 'active' })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all, refetchType: 'active' })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all, refetchType: 'active' })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.downtime.all, refetchType: 'active' })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all, refetchType: 'active' })
       setNotice({ type: 'success', message: 'Operational settings saved.' })
     } catch (error) {
       if (error.code === 'SETTINGS_VERSION_CONFLICT') {
@@ -303,8 +325,34 @@ export default function SettingsSection() {
     }
   }
 
+  const saveHandlerRef = useRef(null)
+  saveHandlerRef.current = (event) => {
+    if (canSave) {
+      void saveSettings(event)
+    }
+  }
+
+  useEffect(() => {
+    function handleSaveShortcut(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        saveHandlerRef.current?.(event)
+      }
+    }
+    window.addEventListener('keydown', handleSaveShortcut)
+    return () => window.removeEventListener('keydown', handleSaveShortcut)
+  }, [])
+
   if (!online && (!draft || !constraints)) {
-    return <div role="alert">Unable to refresh while offline. <button type="button" onClick={reloadSettings}>Retry</button></div>
+    return (
+      <div className="notice notice-error dashboard-alert" role="alert">
+        <AlertTriangle size={16} aria-hidden="true" />
+        <span>Unable to refresh while offline.</span>
+        <button className="btn btn-secondary settings-inline-retry-btn" type="button" onClick={reloadSettings}>
+          <RotateCw size={14} aria-hidden="true" /> Retry
+        </button>
+      </div>
+    )
   }
 
   if (isLoading) {
@@ -314,6 +362,7 @@ export default function SettingsSection() {
   const headerControls = headerControlsSlot?.isConnected ? headerControlsSlot : document.getElementById('settings-header-controls')
   const headerVersion = headerVersionSlot?.isConnected ? headerVersionSlot : document.getElementById('settings-header-version')
   const version = draft && constraints && isDirty ? <span className="settings-version">Unsaved changes</span> : null
+  const headerContextPill = machine ? <span className="settings-timezone">{machine.machineCode} · Operational thresholds</span> : null
   function discardSettings() {
     const latest = conflict && settingsQuery.data?.settings?.version !== settings.version ? settingsQuery.data : null
     const nextSettings = latest?.settings || settings
@@ -326,16 +375,20 @@ export default function SettingsSection() {
   }
   const actions = draft && constraints ? (
     <div className="settings-header-actions">
-      {!headerVersion ? version : null}
-      <button className="btn btn-secondary settings-action-btn settings-discard-btn" type="button" aria-label="Discard" title="Discard" disabled={!isDirty || isSaving} onClick={discardSettings}><RotateCcw size={14} aria-hidden="true" /><span className="settings-action-label">Discard</span></button>
-      {conflict || enforcementBlocked ? <button className="btn btn-secondary settings-action-btn settings-reload-btn" type="button" aria-label="Reload latest" title="Reload latest" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /><span className="settings-action-label">Reload latest</span></button> : null}
-      <button className="btn btn-primary settings-action-btn settings-save-btn" type="submit" form="operational-settings-form" aria-label={isSaving ? 'Saving…' : 'Save'} title={isSaving ? 'Saving…' : 'Save'} disabled={!canSave}><Save size={14} aria-hidden="true" /><span className="settings-action-label">{isSaving ? 'Saving…' : 'Save'}</span></button>
+      {version}
+      <button className="btn btn-secondary settings-action-btn settings-discard-btn" type="button" aria-label="Discard" title="Discard unsaved changes" disabled={!isDirty || isSaving} onClick={discardSettings}><RotateCcw size={14} aria-hidden="true" /><span className="settings-action-label">Discard</span></button>
+      {conflict || enforcementBlocked ? <button className="btn btn-secondary settings-action-btn settings-reload-btn" type="button" aria-label="Reload latest" title="Load latest server settings" onClick={reloadSettings}><RotateCw size={14} aria-hidden="true" /><span className="settings-action-label">Reload latest</span></button> : null}
+      <button className="btn btn-primary settings-action-btn settings-save-btn" type="submit" form="operational-settings-form" aria-label={isSaving ? 'Saving…' : 'Save'} title={isSaving ? 'Saving…' : 'Save settings (Ctrl+S)'} disabled={!canSave}>
+        {isSaving ? <RotateCw size={14} className="spin-icon" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+        <span className="settings-action-label">{isSaving ? 'Saving…' : 'Save'}</span>
+      </button>
     </div>
   ) : null
 
   return (
     <div className="settings-layout">
-      {headerVersion ? createPortal(version, headerVersion) : null}
+      <h1 className="sr-only">Operational settings</h1>
+      {headerVersion ? createPortal(headerContextPill, headerVersion) : null}
       {headerControls ? createPortal(actions, headerControls) : actions}
       {!online ? <div className="notice notice-error" role="alert">Settings may be stale. Unable to refresh while offline.</div> : null}
       {notice ? <div className={`notice notice-${notice.type} dashboard-alert`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : null}<span>{notice.message}</span></div> : null}
@@ -349,12 +402,18 @@ export default function SettingsSection() {
               <div className="section-copy">
                 <h2 id="operational-settings-title">{machine.name}</h2>
               </div>
-              <span className={`status-badge ${watchdogMode === 'observe' ? 'status-idle' : watchdogMode === 'enforce' ? 'status-downtime' : 'status-inactive'}`}>
+              <Status
+                tone={watchdogMode === 'enforce' ? 'active' : watchdogMode === 'observe' ? 'fault' : 'offline'}
+                title={watchdogMode === 'enforce' ? 'Watchdog actively enforces thresholds' : watchdogMode === 'observe' ? 'Watchdog evaluates thresholds without creating downtime' : 'Watchdog status unavailable'}
+              >
                 Watchdog {watchdogMode}
-              </span>
+              </Status>
             </div>
             {watchdogMode === 'observe' ? <p className="settings-mode-note">Observe mode evaluates these values but does not create operational downtime or alerts.</p> : null}
             {watchdogMode === 'enforce' ? <p className="settings-mode-note">Enforcement is active. Saved changes apply immediately to live watchdog evaluation and connected sensors.</p> : null}
+            <p className="settings-field-hint">
+              Trigger limit sets how long missing pulses are tolerated before opening downtime; recovery limit sets how long normal pulses must resume to close it.
+            </p>
 
             <div className="settings-matrix-container">
               <div className="settings-matrix-table-wrap">
@@ -371,18 +430,22 @@ export default function SettingsSection() {
                   <tbody>
                     {constraints.sensorCodes.map((sensorCode) => {
                       const threshold = draft.sensorThresholds[sensorCode]
+                      const baselineThreshold = baseline?.sensorThresholds?.[sensorCode]
+                      const isRowDirty = Boolean(baselineThreshold && !settingsAreEqual(threshold, baselineThreshold))
                       const isOutput = sensorCode === constraints.outputSensorCode
                       const isSpindle = sensorCode === spindleSensorCode
                       const sensorLabel = getSensorLabel(sensorCode, 'Plant Sensor')
                       const stallError = isSpindle ? errors[`${sensorCode}.rotationStallMs`] : null
-                      const thresholdError = errors[sensorCode] && errors[sensorCode] !== stallError ? errors[sensorCode] : null
-                      const hasError = Boolean(stallError || thresholdError)
+                      const recoveryError = errors[`${sensorCode}.recoverySeconds`] || null
+                      const triggerError = errors[`${sensorCode}.triggerSeconds`]
+                        || (errors[sensorCode] && errors[sensorCode] !== stallError && errors[sensorCode] !== recoveryError ? errors[sensorCode] : null)
+                      const hasError = Boolean(stallError || triggerError || recoveryError)
                       const isStallError = Boolean(stallError)
 
                       if (isOutput) {
                         return (
                           <tr key={sensorCode} className="settings-matrix-row is-locked-row">
-                            <td className="col-sensor">
+                            <td className="col-sensor" data-label="Sensor & Monitoring Point">
                               <div className="settings-sensor-identity">
                                 <span className="settings-sensor-badge is-locked">{sensorCode}</span>
                                 <div className="settings-sensor-meta">
@@ -390,11 +453,10 @@ export default function SettingsSection() {
                                 </div>
                               </div>
                             </td>
-                            <td colSpan={4} className="settings-locked-cell">
+                            <td colSpan={4} className="settings-locked-cell" data-label="Configuration">
                               <div className="settings-locked-banner">
                                 <Lock size={14} aria-hidden="true" className="settings-locked-icon" />
                                 <span>Locked: S-05 counts output and cannot trigger absence downtime.</span>
-                                {/* Hidden inputs to fulfill test & form accessibility contract */}
                                 <input
                                   type="number"
                                   className="sr-only"
@@ -418,12 +480,15 @@ export default function SettingsSection() {
                       }
 
                       return (
-                        <tr key={sensorCode} className={`settings-matrix-row ${hasError ? 'has-row-error' : ''}`}>
-                          <td className="col-sensor">
+                        <tr key={sensorCode} className={`settings-matrix-row ${hasError ? 'has-row-error' : ''} ${isRowDirty ? 'is-dirty-row' : ''}`.trim()}>
+                          <td className="col-sensor" data-label="Sensor & Monitoring Point">
                             <div className="settings-sensor-identity">
                               <span className="settings-sensor-badge">{sensorCode}</span>
                               <div className="settings-sensor-meta">
-                                <strong className="settings-sensor-title">{sensorLabel}</strong>
+                                <div className="settings-sensor-header-row">
+                                  <strong className="settings-sensor-title">{sensorLabel}</strong>
+                                  {isRowDirty ? <span className="settings-dirty-pill">Edited</span> : null}
+                                </div>
                                 {isSpindle && stallSecondsBounds ? (
                                   <div className="settings-spindle-stall">
                                     <span className="settings-spindle-stall-label" id="s03-stall-range">
@@ -451,7 +516,7 @@ export default function SettingsSection() {
                               </div>
                             </div>
                           </td>
-                          <td className="col-detect">
+                          <td className="col-detect" data-label="Absence Detection">
                             <label className="settings-check">
                               <input
                                 type="checkbox"
@@ -462,10 +527,12 @@ export default function SettingsSection() {
                               <span>Detect missing pulse</span>
                             </label>
                           </td>
-                          <td className="col-trigger">
+                          <td className="col-trigger" data-label={`Trigger Limit (${triggerMinutes.minimumWhenEnabled}–${triggerMinutes.maximum}m)`}>
                             <div className="settings-input-group">
                               <input
                                 aria-label={`${sensorCode} trigger minutes`}
+                                aria-invalid={triggerError ? 'true' : undefined}
+                                aria-describedby={triggerError ? `${sensorCode}-trigger-error` : undefined}
                                 type="number"
                                 className="settings-num-input"
                                 min={triggerMinutes.minimumWhenEnabled}
@@ -477,12 +544,14 @@ export default function SettingsSection() {
                               />
                               <span className="input-group-unit" aria-hidden="true">min</span>
                             </div>
-                            {thresholdError ? <p className="field-error">{thresholdError}</p> : null}
+                            {triggerError ? <p id={`${sensorCode}-trigger-error`} className="field-error">{triggerError}</p> : null}
                           </td>
-                          <td className="col-recovery">
+                          <td className="col-recovery" data-label={`Recovery Limit (${recoveryMinutes.minimumWhenEnabled}–${recoveryMinutes.maximum}m)`}>
                             <div className="settings-input-group">
                               <input
                                 aria-label={`${sensorCode} recovery minutes`}
+                                aria-invalid={recoveryError ? 'true' : undefined}
+                                aria-describedby={recoveryError ? `${sensorCode}-recovery-error` : undefined}
                                 type="number"
                                 className="settings-num-input"
                                 min={recoveryMinutes.minimumWhenEnabled}
@@ -494,19 +563,15 @@ export default function SettingsSection() {
                               />
                               <span className="input-group-unit" aria-hidden="true">min</span>
                             </div>
+                            {recoveryError ? <p id={`${sensorCode}-recovery-error`} className="field-error">{recoveryError}</p> : null}
                           </td>
-                          <td className="col-status">
-                            {threshold.absenceDetectionEnabled ? (
-                              <span className="settings-status-indicator is-active" title="Absence detection active">
-                                <span className="status-dot" aria-hidden="true" />
-                                <span className="status-label">Active</span>
-                              </span>
-                            ) : (
-                              <span className="settings-status-indicator is-disabled" title="Absence detection disabled">
-                                <span className="status-dot" aria-hidden="true" />
-                                <span className="status-label">Disabled</span>
-                              </span>
-                            )}
+                          <td className="col-status" data-label="Status">
+                            <Status
+                              tone={threshold.absenceDetectionEnabled ? 'active' : 'offline'}
+                              title={threshold.absenceDetectionEnabled ? 'Absence detection active' : 'Absence detection disabled'}
+                            >
+                              {threshold.absenceDetectionEnabled ? 'Active' : 'Disabled'}
+                            </Status>
                           </td>
                         </tr>
                       )
@@ -514,7 +579,6 @@ export default function SettingsSection() {
                   </tbody>
                 </table>
               </div>
-
             </div>
           </section>
 
@@ -523,17 +587,16 @@ export default function SettingsSection() {
               <div className="section-copy">
                 <div className="settings-shift-title"><h2 id="shift-settings-title">Shift and planned breaks</h2><span className="settings-timezone">{constraints.timeZone}</span></div>
               </div>
-                {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd) ? (
-                  <span className="shift-duration-badge">
-                    {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd)}
-                  </span>
-                ) : null}
+              {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd) ? (
+                <span className="shift-duration-badge">
+                  {getBreakDurationLabel(draft.shiftSchedule.workStart, draft.shiftSchedule.workEnd)}
+                </span>
+              ) : null}
             </div>
 
             <div className="settings-work-bar">
               <div className="work-bar-header">
                 <strong>Operating hours</strong>
-
               </div>
 
               <div className="settings-work-grid">
@@ -541,6 +604,8 @@ export default function SettingsSection() {
                   <span className="field-label-text">Work start</span>
                   <input
                     aria-label="Work start"
+                    aria-invalid={errors.schedule ? 'true' : undefined}
+                    aria-describedby={errors.schedule ? 'settings-schedule-error' : undefined}
                     type="time"
                     className="settings-time-input"
                     disabled={editingBlocked}
@@ -553,6 +618,8 @@ export default function SettingsSection() {
                   <span className="field-label-text">Work end</span>
                   <input
                     aria-label="Work end"
+                    aria-invalid={errors.schedule ? 'true' : undefined}
+                    aria-describedby={errors.schedule ? 'settings-schedule-error' : undefined}
                     type="time"
                     className="settings-time-input"
                     disabled={editingBlocked}
@@ -562,10 +629,14 @@ export default function SettingsSection() {
                 </label>
 
                 <label className="settings-field-group">
-                  <span className="field-label-text">Grace period</span>
+                  <span className="field-label-text">
+                    Grace period ({constraints.rampUpGraceMinutes.minimum}–{constraints.rampUpGraceMinutes.maximum}m)
+                  </span>
                   <div className="input-grace-wrap">
                     <input
                       aria-label="Grace period minutes"
+                      aria-invalid={errors.rampUpGraceMinutes ? 'true' : undefined}
+                      aria-describedby={errors.rampUpGraceMinutes ? 'settings-grace-hint settings-grace-error' : 'settings-grace-hint'}
                       type="number"
                       className="settings-num-input"
                       min={constraints.rampUpGraceMinutes.minimum}
@@ -576,11 +647,14 @@ export default function SettingsSection() {
                     />
                     <span className="input-unit-tag" aria-hidden="true">mins</span>
                   </div>
+                  <span id="settings-grace-hint" className="settings-field-hint">
+                    Applies at shift start and after each planned break.
+                  </span>
                 </label>
               </div>
 
-              {errors.schedule ? <p className="field-error">{errors.schedule}</p> : null}
-              {errors.rampUpGraceMinutes ? <p className="field-error">{errors.rampUpGraceMinutes}</p> : null}
+              {errors.schedule ? <p id="settings-schedule-error" className="field-error">{errors.schedule}</p> : null}
+              {errors.rampUpGraceMinutes ? <p id="settings-grace-error" className="field-error">{errors.rampUpGraceMinutes}</p> : null}
             </div>
 
             <div className="settings-break-matrix-wrap">
@@ -591,14 +665,14 @@ export default function SettingsSection() {
                     {draft.shiftSchedule.breaks.length} / {constraints.breaks.maximum}
                   </span>
                 </div>
-              <button
-                className="btn btn-secondary settings-add-break"
-                type="button"
-                disabled={editingBlocked || draft.shiftSchedule.breaks.length >= constraints.breaks.maximum}
-                onClick={addBreak}
-              >
-                <Plus size={15} aria-hidden="true" /> Add break
-              </button>
+                <button
+                  className="btn btn-secondary settings-add-break"
+                  type="button"
+                  disabled={editingBlocked || draft.shiftSchedule.breaks.length >= constraints.breaks.maximum}
+                  onClick={addBreak}
+                >
+                  <Plus size={15} aria-hidden="true" /> Add break
+                </button>
               </div>
 
               <div className="settings-break-table-container">
@@ -620,11 +694,14 @@ export default function SettingsSection() {
                     <tbody>
                       {draft.shiftSchedule.breaks.map((entry, index) => {
                         const durationLabel = getBreakDurationLabel(entry.startTime, entry.endTime)
+                        const hasBreakError = !durationLabel || Boolean(errors.breaks)
                         return (
-                          <tr key={index} className="settings-break-row-item">
-                            <td className="col-break-name">
+                          <tr key={entry._key || `${index}-${entry.startTime}`} className="settings-break-row-item">
+                            <td className="col-break-name" data-label="Break Name">
                               <input
                                 aria-label={`Break ${index + 1} name`}
+                                aria-invalid={!entry.name?.trim() || Boolean(errors.breaks) ? 'true' : undefined}
+                                aria-describedby={errors.breaks ? 'settings-breaks-error' : undefined}
                                 className="settings-text-input break-name-field"
                                 disabled={editingBlocked}
                                 value={entry.name}
@@ -633,9 +710,11 @@ export default function SettingsSection() {
                                 onChange={(event) => updateBreak(index, 'name', event.target.value)}
                               />
                             </td>
-                            <td className="col-break-time">
+                            <td className="col-break-time" data-label="Start Time">
                               <input
                                 aria-label={`Break ${index + 1} start`}
+                                aria-invalid={hasBreakError ? 'true' : undefined}
+                                aria-describedby={errors.breaks ? 'settings-breaks-error' : undefined}
                                 type="time"
                                 className="settings-time-input"
                                 disabled={editingBlocked}
@@ -643,9 +722,11 @@ export default function SettingsSection() {
                                 onChange={(event) => updateBreak(index, 'startTime', event.target.value)}
                               />
                             </td>
-                            <td className="col-break-time">
+                            <td className="col-break-time" data-label="End Time">
                               <input
                                 aria-label={`Break ${index + 1} end`}
+                                aria-invalid={hasBreakError ? 'true' : undefined}
+                                aria-describedby={errors.breaks ? 'settings-breaks-error' : undefined}
                                 type="time"
                                 className="settings-time-input"
                                 disabled={editingBlocked}
@@ -653,14 +734,21 @@ export default function SettingsSection() {
                                 onChange={(event) => updateBreak(index, 'endTime', event.target.value)}
                               />
                             </td>
-                            <td className="col-break-duration">
+                            <td className="col-break-duration" data-label="Duration">
                               {durationLabel ? (
-                                <span className="break-duration-pill">{durationLabel}</span>
+                                <span className="break-duration-stack">
+                                  <span className="break-duration-pill">{durationLabel}</span>
+                                  {draft.shiftSchedule.rampUpGraceMinutes > 0 ? (
+                                    <span className="break-grace-note" title="Post-break ramp-up grace buffer">
+                                      +{draft.shiftSchedule.rampUpGraceMinutes}m grace
+                                    </span>
+                                  ) : null}
+                                </span>
                               ) : (
-                                <span className="break-duration-pill is-invalid">Invalid</span>
+                                <Status tone="danger">Invalid</Status>
                               )}
                             </td>
-                            <td className="col-break-action">
+                            <td className="col-break-action" data-label="Action">
                               <AnimatedTrashButton
                                 className="break-trash-btn"
                                 title={`Remove ${entry.name}`}
@@ -677,11 +765,8 @@ export default function SettingsSection() {
                 )}
               </div>
 
-              {errors.breaks ? <p className="field-error break-error-note">{errors.breaks}</p> : null}
-
-
+              {errors.breaks ? <p id="settings-breaks-error" className="field-error break-error-note">{errors.breaks}</p> : null}
             </div>
-
           </section>
         </form>
       )}

@@ -1,3 +1,4 @@
+import Status from '../../../shared/components/Status.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
@@ -6,13 +7,13 @@ import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getSessionGeneration } from '../../../shared/services/sessionRefresh.js'
 import {
   AlertTriangle,
+  Ban,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDashed,
-  CircleSlash,
   Copy,
   Pencil,
   RotateCw,
@@ -30,13 +31,26 @@ import {
 } from './productionService.js'
 import './ProductionSection.css'
 
+const MANILA_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+const MANILA_DATETIME_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
 export function getManilaDateInputValue() {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
+  return MANILA_DATE_FORMATTER.format(new Date())
 }
 
 export function parseProductionDate(value) {
@@ -63,16 +77,7 @@ export function formatManilaDateTime(isoString) {
   if (!isoString) return '—'
   const date = new Date(isoString)
   if (isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(date).replace(', ', ' ')
+  return MANILA_DATETIME_FORMATTER.format(date).replace(', ', ' ')
 }
 
 function formatDimension(value) {
@@ -138,12 +143,32 @@ function CustomDropdown({
   options,
   onChange,
   isActive = false,
+  disabled = false,
+  title,
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(() =>
+    Math.max(0, options.findIndex((opt) => opt.value === value)),
+  )
   const containerRef = useRef(null)
   const triggerRef = useRef(null)
 
+  const dropdownId = id || 'production-dropdown'
   const selectedOption = options.find((opt) => opt.value === value) || options[0]
+  const highlightedOption = options[highlightedIndex] || selectedOption
+
+  const openMenu = () => {
+    if (disabled) return
+    const activeIndex = options.findIndex((opt) => opt.value === value)
+    setHighlightedIndex(activeIndex >= 0 ? activeIndex : 0)
+    setIsOpen(true)
+  }
+
+  useEffect(() => {
+    if (disabled && isOpen) {
+      setIsOpen(false)
+    }
+  }, [disabled, isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -173,24 +198,40 @@ function CustomDropdown({
   }, [isOpen])
 
   const handleTriggerKeyDown = (e) => {
+    if (disabled) return
     if (e.key === 'Escape') {
-      e.preventDefault()
-      setIsOpen(false)
+      if (isOpen) {
+        e.preventDefault()
+        setIsOpen(false)
+      }
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       if (!isOpen) {
-        setIsOpen(true)
+        openMenu()
       } else {
-        const currentIndex = options.findIndex((opt) => opt.value === value)
-        const nextIndex =
+        setHighlightedIndex((prev) =>
           e.key === 'ArrowDown'
-            ? (currentIndex + 1) % options.length
-            : (currentIndex - 1 + options.length) % options.length
-        onChange(options[nextIndex].value)
+            ? (prev + 1) % options.length
+            : (prev - 1 + options.length) % options.length,
+        )
       }
+    } else if (e.key === 'Home' && isOpen) {
+      e.preventDefault()
+      setHighlightedIndex(0)
+    } else if (e.key === 'End' && isOpen) {
+      e.preventDefault()
+      setHighlightedIndex(options.length - 1)
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      setIsOpen((prev) => !prev)
+      if (!isOpen) {
+        openMenu()
+      } else {
+        if (highlightedOption) {
+          onChange(highlightedOption.value)
+        }
+        setIsOpen(false)
+        triggerRef.current?.focus()
+      }
     }
   }
 
@@ -202,29 +243,41 @@ function CustomDropdown({
         id={id}
         className={`production-dropdown-trigger ${isActive ? 'production-filter-btn-active' : ''}`}
         aria-haspopup="listbox"
-        aria-expanded={isOpen}
+        aria-expanded={!disabled && isOpen}
+        aria-activedescendant={
+          !disabled && isOpen && highlightedOption ? `${dropdownId}-opt-${highlightedOption.value}` : undefined
+        }
         aria-label={label}
-        onClick={() => setIsOpen((prev) => !prev)}
+        disabled={disabled}
+        title={title}
+        onClick={() => {
+          if (disabled) return
+          if (isOpen) setIsOpen(false)
+          else openMenu()
+        }}
         onKeyDown={handleTriggerKeyDown}
       >
         <span className="production-dropdown-trigger-label">{selectedOption.label}</span>
-        <ChevronDown size={14} strokeWidth={2} className={`production-dropdown-chevron ${isOpen ? 'open' : ''}`} aria-hidden="true" />
+        <ChevronDown size={14} strokeWidth={2} className={`production-dropdown-chevron ${!disabled && isOpen ? 'open' : ''}`} aria-hidden="true" />
       </button>
 
-      {isOpen && (
+      {!disabled && isOpen && (
         <ul
           className="production-dropdown-popover"
           role="listbox"
           aria-label={label}
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const isSelected = option.value === value
+            const isHighlighted = index === highlightedIndex
             return (
               <li
                 key={option.value}
+                id={`${dropdownId}-opt-${option.value}`}
                 role="option"
                 aria-selected={isSelected}
-                className={`production-dropdown-item ${isSelected ? 'selected' : ''}`}
+                className={`production-dropdown-item ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''}`.trim()}
+                onMouseEnter={() => setHighlightedIndex(index)}
                 onClick={() => {
                   onChange(option.value)
                   setIsOpen(false)
@@ -297,6 +350,10 @@ export default function ProductionSection({
   const setSummary = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, summary: typeof update === 'function' ? update(current.summary || {}) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
   const isLoading = query.isPending && !query.data
   const isRefreshing = query.isFetching && Boolean(query.data)
+  const totalPages = Math.max(1, pagination.totalPages || 1)
+  const isPageTransition = query.isPlaceholderData && query.isFetching
+  const canGoPrevious = !isLoading && !isPageTransition && page > 1 && (query.isPlaceholderData || Boolean(pagination.hasPreviousPage))
+  const canGoNext = !isLoading && !query.isPlaceholderData && Boolean(pagination.hasNextPage) && page < totalPages
   const loadData = () => query.refetch()
   const [error, setError] = useState(null)
   const [conflictNotice, setConflictNotice] = useState(null)
@@ -327,6 +384,8 @@ export default function ProductionSection({
   const flashTimeoutRef = useRef(null)
   const lastClickedIndexRef = useRef(null)
   const headerCheckboxRef = useRef(null)
+  const lastSavedSpecRef = useRef(null)
+  const bulkConfirmRef = useRef(null)
 
   useEffect(() => {
     return () => {
@@ -334,10 +393,28 @@ export default function ProductionSection({
     }
   }, [])
 
-  // Reset last clicked index on page or filter changes
+  useEffect(() => {
+    if (isConfirmingBulk && bulkConfirmRef.current) {
+      bulkConfirmRef.current.focus()
+    }
+  }, [isConfirmingBulk])
+
+  // Clear row selection and transient confirm state when query scope changes.
   useEffect(() => {
     lastClickedIndexRef.current = null
+    setSelectedIds((prev) => (prev.size > 0 ? new Set() : prev))
+    setIsConfirmingBulk(false)
   }, [dateFilter, statusFilter, specStatusFilter, debouncedSearch, page])
+
+  // Clamp requested page within available pages when filtered counts shrink.
+  useEffect(() => {
+    if (!query.data || query.isPlaceholderData) return
+    const serverTotalPages = Math.max(1, query.data.pagination?.totalPages || 1)
+    if (page > serverTotalPages) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.production.all, refetchType: 'none' })
+      setPage(serverTotalPages)
+    }
+  }, [query.data, query.isPlaceholderData, page, queryClient])
 
   const pageAcceptedRecords = records.filter((r) => r.outputAccepted)
   const pageAcceptedIds = pageAcceptedRecords.map((r) => r.id || r.sensorEventId)
@@ -432,17 +509,19 @@ export default function ProductionSection({
   }
 
   const handleRepeatLastSpec = () => {
-    const lastSpec = records.find(
-      (r) =>
-        r.isSpecified ||
-        Boolean(
-          (r.customer && String(r.customer).trim()) ||
-          r.diameter != null ||
-          r.thickness != null ||
-          r.length != null ||
-          r.tonnage != null,
-        ),
-    )
+    const lastSpec =
+      lastSavedSpecRef.current ||
+      records.find(
+        (r) =>
+          r.isSpecified ||
+          Boolean(
+            (r.customer && String(r.customer).trim()) ||
+            r.diameter != null ||
+            r.thickness != null ||
+            r.length != null ||
+            r.tonnage != null,
+          ),
+      )
     if (!lastSpec) return
     const fallbackTonnage =
       lastSpec.tonnage !== null && lastSpec.tonnage !== undefined
@@ -471,6 +550,20 @@ export default function ProductionSection({
     }
     setError(null)
     setIsConfirmingBulk(true)
+  }
+
+  const handleBulkKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleBulkApplyClick()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      if (isConfirmingBulk) {
+        setIsConfirmingBulk(false)
+      } else {
+        handleDeselectAll()
+      }
+    }
   }
 
   const handleConfirmBulkApply = async () => {
@@ -555,7 +648,7 @@ export default function ProductionSection({
     if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
     flashTimeoutRef.current = setTimeout(() => {
       setFlashingRecordIds(new Set())
-    }, 150)
+    }, 500)
 
     try {
       await batchUpdateFn(token, {
@@ -571,6 +664,13 @@ export default function ProductionSection({
       }
       if (!isCurrentSession()) return
 
+      lastSavedSpecRef.current = {
+        customer: newCustomer || '',
+        diameter: newDiameter ?? null,
+        thickness: newThickness ?? null,
+        length: newLength ?? null,
+        tonnage: newTonnage ?? null,
+      }
       setSelectedIds(new Set())
       setBulkForm({
         customer: '',
@@ -593,34 +693,46 @@ export default function ProductionSection({
     }
   }
 
-  const handleToggleUnspecified = () => {
-    setSpecStatusFilter((prev) => (prev === 'unspecified' ? 'all' : 'unspecified'))
+  const isRejectedStatus = statusFilter === 'rejected'
+
+  const handleStatusFilterChange = (nextStatus) => {
+    setStatusFilter(nextStatus)
+    // Spec filters apply only to accepted cuts, so reset to avoid guaranteed empty tables.
+    if (nextStatus === 'rejected') {
+      setSpecStatusFilter('all')
+    }
     setPage(1)
   }
 
-  // Debounce search input changes
+  const handleSpecStatusToggle = (targetSpecStatus) => {
+    if (statusFilter === 'rejected') {
+      setStatusFilter('accepted')
+      setSpecStatusFilter(targetSpecStatus)
+    } else {
+      setSpecStatusFilter((prev) => (prev === targetSpecStatus ? 'all' : targetSpecStatus))
+    }
+    setPage(1)
+  }
+
+  const handleToggleRejected = () => {
+    handleStatusFilterChange(isRejectedStatus ? 'accepted' : 'rejected')
+  }
+
+  // Debounce search input changes without resetting page on initial mount.
   useEffect(() => {
+    const trimmed = searchInput.trim()
+    if (trimmed === debouncedSearch) return undefined
     const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput.trim())
+      setDebouncedSearch(trimmed)
       setPage(1)
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, debouncedSearch])
 
   const maxProductionDate = parseProductionDate(getManilaDateInputValue())
 
   const handleDateFilterChange = (filter) => {
     setDateFilter(filter)
-    setPage(1)
-  }
-
-  const handleStatusChange = (e) => {
-    setStatusFilter(e.target.value)
-    setPage(1)
-  }
-
-  const handleSpecStatusChange = (e) => {
-    setSpecStatusFilter(e.target.value)
     setPage(1)
   }
 
@@ -633,21 +745,20 @@ export default function ProductionSection({
   }
 
   const handlePreviousPage = () => {
-    if (pagination.hasPreviousPage) {
-      setPage((prev) => Math.max(1, prev - 1))
-    }
+    if (!canGoPrevious) return
+    setPage((prev) => Math.max(1, prev - 1))
   }
 
   const handleNextPage = () => {
-    if (pagination.hasNextPage) {
-      setPage((prev) => prev + 1)
-    }
+    if (!canGoNext) return
+    setPage((prev) => Math.min(totalPages, prev + 1))
   }
 
   const handleStartEdit = (record) => {
     const rowId = record.id || record.sensorEventId
     setEditingRecordId(rowId)
     setConflictNotice(null)
+    setError(null)
     const fallbackTonnage =
       record.tonnage !== null && record.tonnage !== undefined
         ? record.tonnage
@@ -664,6 +775,7 @@ export default function ProductionSection({
 
   const handleCancel = () => {
     setEditingRecordId(null)
+    setError(null)
     setEditForm({
       customer: '',
       diameter: '',
@@ -704,7 +816,9 @@ export default function ProductionSection({
     const identity = identityRef.current
     const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
     const rowId = record.id || record.sensorEventId
+    const savedEditForm = { ...editForm }
     setEditingRecordId(null)
+    setError(null)
 
     const prevRecords = records
     const prevSummary = summary
@@ -773,7 +887,7 @@ export default function ProductionSection({
     if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
     flashTimeoutRef.current = setTimeout(() => {
       setFlashingRecordId(null)
-    }, 150)
+    }, 500)
 
     const payload = {
       customer: newCustomer,
@@ -832,6 +946,18 @@ export default function ProductionSection({
           }),
         )
       }
+      if (isNowSpecified) {
+        lastSavedSpecRef.current = {
+          customer: response?.spec?.customer ?? newCustomer ?? '',
+          diameter: response?.spec?.diameter != null ? Number(response.spec.diameter) : newDiameter,
+          thickness: response?.spec?.thickness != null ? Number(response.spec.thickness) : newThickness,
+          length: response?.spec?.length != null ? Number(response.spec.length) : newLength,
+          tonnage:
+            response?.spec?.tonnage != null
+              ? Number(response.spec.tonnage)
+              : newTonnage,
+        }
+      }
       setAnnouncement(`Specification updated for cut at ${record.recordedAt || record.timestamp}.`)
     } catch (err) {
       if (!isCurrentSession()) {
@@ -851,12 +977,23 @@ export default function ProductionSection({
       } else {
         setRecords(prevRecords)
         setSummary(prevSummary)
+        setEditingRecordId(rowId)
+        setEditForm(savedEditForm)
         setError(err.message || 'Unable to update production specification.')
       }
     }
   }
 
-  if (!online && !query.data) return <div role="alert">Unable to refresh while offline. <button type="button" onClick={() => query.refetch()}>Retry</button></div>
+  if (!online && !query.data) {
+    return (
+      <div className="notice notice-error dashboard-alert production-offline-fallback" role="alert">
+        <span>Unable to refresh while offline.</span>
+        <button type="button" className="btn btn-secondary table-action-button" onClick={() => query.refetch()}>
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="production-workspace">
@@ -886,14 +1023,11 @@ export default function ProductionSection({
 
           <button
             type="button"
-            className={`production-kpi-pill specified ${specStatusFilter === 'specified' ? 'production-kpi-active' : ''}`}
+            className={`production-kpi-pill specified ${!isRejectedStatus && specStatusFilter === 'specified' ? 'production-kpi-active' : ''}`}
             title="Specified Cuts"
             aria-label="Filter specified cuts"
-            aria-pressed={specStatusFilter === 'specified'}
-            onClick={() => {
-              setSpecStatusFilter((prev) => (prev === 'specified' ? 'all' : 'specified'))
-              setPage(1)
-            }}
+            aria-pressed={!isRejectedStatus && specStatusFilter === 'specified'}
+            onClick={() => handleSpecStatusToggle('specified')}
           >
             <Tag size={14} strokeWidth={2} aria-hidden="true" />
             <strong className="production-kpi-value tabular-data">{summary.specifiedCount ?? 0}</strong>
@@ -902,59 +1036,35 @@ export default function ProductionSection({
 
           <button
             type="button"
-            className={`production-kpi-pill unspecified ${specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
-            title={specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
+            className={`production-kpi-pill unspecified ${!isRejectedStatus && specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
+            title={!isRejectedStatus && specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
             aria-label="Filter unspecified cuts"
-            aria-pressed={specStatusFilter === 'unspecified'}
-            onClick={handleToggleUnspecified}
+            aria-pressed={!isRejectedStatus && specStatusFilter === 'unspecified'}
+            onClick={() => handleSpecStatusToggle('unspecified')}
           >
             <CircleDashed size={14} strokeWidth={2} aria-hidden="true" />
             <strong className="production-kpi-value tabular-data">{summary.unspecifiedCount ?? 0}</strong>
             <span className="production-kpi-label">Unspecified</span>
           </button>
+
+          {(Number(summary.rejectedCount ?? 0) > 0 || isRejectedStatus) && (
+            <button
+              type="button"
+              className={`production-kpi-pill rejected ${isRejectedStatus ? 'production-kpi-active' : ''}`}
+              title={isRejectedStatus ? 'Show accepted cuts' : 'Filter rejected cuts'}
+              aria-label="Filter rejected cuts"
+              aria-pressed={isRejectedStatus}
+              onClick={handleToggleRejected}
+            >
+              <Ban size={14} strokeWidth={2} aria-hidden="true" />
+              <strong className="production-kpi-value tabular-data">{summary.rejectedCount ?? 0}</strong>
+              <span className="production-kpi-label">Rejected</span>
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Conflict Notice */}
-      {conflictNotice ? (
-        <div className="notice notice-warning dashboard-alert production-notice production-conflict-notice" role="alert">
-          <div className="production-notice-content">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>{conflictNotice}</span>
-          </div>
-          <button
-            type="button"
-            className="production-square-btn"
-            style={{ width: '28px', height: '28px', border: 'none', background: 'transparent', boxShadow: 'none' }}
-            onClick={() => setConflictNotice(null)}
-            aria-label="Dismiss notice"
-            title="Dismiss notice"
-          >
-            <X size={15} strokeWidth={1.75} aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
-
-      {isRefreshing ? <div role="status">{query.isPlaceholderData ? 'Refreshing production logs for the selected filters; previous results remain visible.' : 'Refreshing production logs...'}</div> : null}
-      {query.isError || (!online && query.data) ? <div className="notice notice-error" role="alert">{query.data ? `Production data is stale.${query.isPlaceholderData ? ' Showing previous filter results.' : ''}${query.dataUpdatedAt ? ` Last updated ${new Date(query.dataUpdatedAt).toLocaleString()}.` : ''} ` : ''}{query.error?.message || 'Unable to refresh while offline.'} <button type="button" onClick={() => query.refetch()}>Retry</button></div> : null}
-      {/* Error Notice */}
-      {error ? (
-        <div className="notice notice-error dashboard-alert production-notice" role="alert">
-          <div className="production-notice-content">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>{error}</span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary table-action-button"
-            onClick={() => loadData()}
-          >
-            Retry
-          </button>
-        </div>
-      ) : null}
-
-      {/* Filter & Search Toolbar (Uniform 36px Height) */}
+      {/* Filter & Search Toolbar (Uniform 38px Height) */}
       <section className="production-filter-strip" aria-label="Production Log Filters">
         <div className="production-search-wrapper">
           <Search size={15} strokeWidth={1.75} className="production-search-icon" aria-hidden="true" />
@@ -998,10 +1108,7 @@ export default function ProductionSection({
           label="Filter by cut status"
           value={statusFilter}
           options={CUT_STATUS_OPTIONS}
-          onChange={(newVal) => {
-            setStatusFilter(newVal)
-            setPage(1)
-          }}
+          onChange={handleStatusFilterChange}
           isActive={statusFilter !== 'accepted'}
         />
 
@@ -1014,18 +1121,10 @@ export default function ProductionSection({
             setSpecStatusFilter(newVal)
             setPage(1)
           }}
-          isActive={specStatusFilter !== 'all'}
+          isActive={!isRejectedStatus && specStatusFilter !== 'all'}
+          disabled={isRejectedStatus}
+          title={isRejectedStatus ? 'Specification filter applies to accepted cuts only' : undefined}
         />
-
-        <button
-          type="button"
-          className={`production-square-btn ${specStatusFilter === 'unspecified' ? 'production-filter-btn-active' : ''}`}
-          aria-label="Toggle unspecified cuts filter"
-          title={specStatusFilter === 'unspecified' ? 'Show all specifications' : 'Show unspecified cuts only'}
-          onClick={handleToggleUnspecified}
-        >
-          <CircleDashed size={16} strokeWidth={1.75} aria-hidden="true" />
-        </button>
 
         <button
           type="button"
@@ -1039,9 +1138,83 @@ export default function ProductionSection({
         </button>
       </section>
 
+      {/* Conflict Notice */}
+      {conflictNotice ? (
+        <div className="notice notice-warning dashboard-alert production-notice production-conflict-notice" role="alert">
+          <div className="production-notice-content">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>{conflictNotice}</span>
+          </div>
+          <button
+            type="button"
+            className="production-square-btn production-notice-dismiss-btn"
+            onClick={() => setConflictNotice(null)}
+            aria-label="Dismiss notice"
+            title="Dismiss notice"
+          >
+            <X size={15} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+
+      {isRefreshing ? (
+        <div className="production-refresh-notice" role="status">
+          {query.isPlaceholderData
+            ? 'Refreshing production logs for the selected filters; previous results remain visible.'
+            : 'Refreshing production logs...'}
+        </div>
+      ) : null}
+      {query.isError || (!online && query.data) ? (
+        <div className="notice notice-error dashboard-alert production-notice" role="alert">
+          <div className="production-notice-content">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>
+              {query.data
+                ? `Production data is stale.${query.isPlaceholderData ? ' Showing previous filter results.' : ''}${query.dataUpdatedAt ? ` Last updated ${new Date(query.dataUpdatedAt).toLocaleString()}.` : ''} `
+                : ''}
+              {query.error?.message || 'Unable to refresh while offline.'}
+            </span>
+          </div>
+          <button type="button" className="btn btn-secondary table-action-button" onClick={() => query.refetch()}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {/* Error Notice */}
+      {error ? (
+        <div className="notice notice-error dashboard-alert production-notice" role="alert">
+          <div className="production-notice-content">
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+          <div className="production-notice-actions">
+            <button
+              type="button"
+              className="btn btn-secondary table-action-button"
+              onClick={() => {
+                setError(null)
+                loadData()
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Contextual Bulk Action Bar */}
       {canEdit && selectedIds.size > 0 && (
-        <section className="production-bulk-strip" role="region" aria-label="Bulk specification editor">
+        <section
+          className="production-bulk-strip"
+          role="region"
+          aria-label="Bulk specification editor"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && isConfirmingBulk) {
+              e.preventDefault()
+              setIsConfirmingBulk(false)
+            }
+          }}
+        >
           <div className="production-bulk-header">
             <div className="production-bulk-indicator">
               <span className="production-bulk-count tabular-data">
@@ -1060,7 +1233,7 @@ export default function ProductionSection({
           </div>
 
           {isConfirmingBulk ? (
-            <div className="production-bulk-confirmation" role="alert">
+            <div ref={bulkConfirmRef} tabIndex={-1} className="production-bulk-confirmation" role="alert">
               <span>
                 Apply specifications to {selectedIds.size} {selectedIds.size === 1 ? 'cut' : 'cuts'}? Blank fields will keep their current values.
               </span>
@@ -1075,8 +1248,7 @@ export default function ProductionSection({
                 </button>
                 <button
                   type="button"
-                  className="production-tool-btn"
-                  style={{ width: 'auto', padding: '0 0.75rem', height: '34px' }}
+                  className="production-tool-btn production-confirm-cancel-btn"
                   onClick={() => setIsConfirmingBulk(false)}
                   disabled={isApplyingBulk}
                 >
@@ -1094,6 +1266,7 @@ export default function ProductionSection({
                 value={bulkForm.customer}
                 maxLength={100}
                 onChange={(e) => setBulkForm((prev) => ({ ...prev, customer: e.target.value }))}
+                onKeyDown={handleBulkKeyDown}
               />
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
@@ -1104,6 +1277,7 @@ export default function ProductionSection({
                   min="0"
                   value={bulkForm.diameter}
                   onChange={(e) => handleBulkDimensionChange('diameter', e.target.value)}
+                  onKeyDown={handleBulkKeyDown}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1116,6 +1290,7 @@ export default function ProductionSection({
                   min="0"
                   value={bulkForm.thickness}
                   onChange={(e) => handleBulkDimensionChange('thickness', e.target.value)}
+                  onKeyDown={handleBulkKeyDown}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1128,6 +1303,7 @@ export default function ProductionSection({
                   min="0"
                   value={bulkForm.length}
                   onChange={(e) => handleBulkDimensionChange('length', e.target.value)}
+                  onKeyDown={handleBulkKeyDown}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">mm</span>
               </div>
@@ -1140,6 +1316,7 @@ export default function ProductionSection({
                   min="0"
                   value={bulkForm.tonnage}
                   onChange={(e) => setBulkForm((prev) => ({ ...prev, tonnage: e.target.value }))}
+                  onKeyDown={handleBulkKeyDown}
                 />
                 <span className="unit-suffix production-unit-badge" aria-hidden="true">t</span>
               </div>
@@ -1188,6 +1365,7 @@ export default function ProductionSection({
                       disabled={isHeaderDisabled}
                       onChange={handleSelectAllToggle}
                       aria-label="Select all cuts on this page"
+                      title="Select all unfilled cuts on this page"
                     />
                   </th>
                 )}
@@ -1224,38 +1402,9 @@ export default function ProductionSection({
                   if (isFlashing) rowClasses.push('production-row-flash')
                   const rowClass = rowClasses.join(' ')
 
-                  let statusBadge = null
-                  if (!isAccepted) {
-                    statusBadge = (
-                      <span
-                        className="production-status-badge red"
-                        title={record.rejectionReason || 'Rejected pulse'}
-                        aria-label={record.rejectionReason || 'Rejected pulse'}
-                      >
-                        <CircleSlash size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </span>
-                    )
-                  } else if (isSpec) {
-                    statusBadge = (
-                      <span
-                        className="production-status-badge emerald"
-                        title="Accepted · Specified"
-                        aria-label="Accepted · Specified"
-                      >
-                        <CheckCircle2 size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </span>
-                    )
-                  } else {
-                    statusBadge = (
-                      <span
-                        className="production-status-badge amber"
-                        title="Accepted · Needs details"
-                        aria-label="Accepted · Needs details"
-                      >
-                        <CircleDashed size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </span>
-                    )
-                  }
+                  const statusBadge = !isAccepted
+                    ? <Status tone="danger" title={record.rejectionReason || 'Rejected pulse'}>Rejected</Status>
+                    : <Status tone={isSpec ? 'active' : 'fault'} title={isSpec ? 'Accepted · Specified' : 'Accepted · Needs details'}>{isSpec ? 'Specified' : 'Needs details'}</Status>
 
                   return (
                     <tr key={rowId} className={rowClass || undefined}>
@@ -1455,13 +1604,13 @@ export default function ProductionSection({
       {!isLoading && (
         <footer className="production-pagination">
           <div className="production-pagination-info tabular-data">
-            Page {pagination.page} of {pagination.totalPages || 1} · {pagination.total} records
+            Page {pagination.page} of {totalPages} · {pagination.total} records
           </div>
           <div className="production-pagination-actions">
             <button
               type="button"
               className="production-pagination-btn"
-              disabled={!pagination.hasPreviousPage}
+              disabled={!canGoPrevious}
               onClick={handlePreviousPage}
               aria-label="Previous page"
               title="Previous page"
@@ -1471,7 +1620,7 @@ export default function ProductionSection({
             <button
               type="button"
               className="production-pagination-btn"
-              disabled={!pagination.hasNextPage}
+              disabled={!canGoNext}
               onClick={handleNextPage}
               aria-label="Next page"
               title="Next page"

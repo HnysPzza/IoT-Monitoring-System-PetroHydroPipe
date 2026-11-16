@@ -1311,7 +1311,7 @@ describe('ProductionSection component', () => {
       expect(prodNav?.subtitle).toBeUndefined()
     })
 
-    it('supports quick Unspecified cuts filter toggle button and KPI metric button', async () => {
+    it('toggles Unspecified cuts filter cleanly via KPI pill without duplicate square toolbar button', async () => {
       const user = userEvent.setup()
       const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
@@ -1319,19 +1319,24 @@ describe('ProductionSection component', () => {
 
       await screen.findByText('Maynilad Water')
 
-      const toggleBtn = screen.getByRole('button', { name: 'Toggle unspecified cuts filter' })
-      await user.click(toggleBtn)
+      expect(screen.queryByRole('button', { name: 'Toggle unspecified cuts filter' })).not.toBeInTheDocument()
+
+      const kpiBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+      expect(kpiBtn).toHaveAttribute('aria-pressed', 'false')
+
+      await user.click(kpiBtn)
 
       await waitFor(() => {
         expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
           specStatus: 'unspecified',
         }))
       })
+      expect(kpiBtn).toHaveAttribute('aria-pressed', 'true')
 
-      const kpiBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
       await user.click(kpiBtn)
 
       expect(kpiBtn).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByRole('button', { name: 'Filter by specification status' })).toHaveTextContent('All Specifications')
       expect(mockLoad).toHaveBeenCalledTimes(2)
     })
 
@@ -1414,7 +1419,7 @@ describe('ProductionSection component', () => {
       // Open status dropdown, select option, and verify focus returns to trigger
       await user.click(statusTrigger)
       expect(screen.getByRole('listbox', { name: 'Filter by cut status' })).toBeInTheDocument()
-      await user.click(screen.getByRole('option', { name: 'Rejected' }))
+      await user.click(screen.getByRole('option', { name: 'All Statuses' }))
       expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
       expect(statusTrigger).toHaveFocus()
 
@@ -1743,5 +1748,461 @@ describe('Editable Tonnage & 7850 kg/m^3 Auto-Calculation', () => {
         },
       })
     })
+  })
+})
+
+describe('UX & Accessibility Audit Regression Contracts', () => {
+  it('clears row selection and bulk editor when changing page or filters so off-page cuts cannot be accidentally overwritten', async () => {
+    const user = userEvent.setup()
+    const page2Payload = {
+      ...mockProductionPayload,
+      records: [
+        {
+          id: 'page2-cut-1',
+          sensorEventId: 'page2-cut-1',
+          recordedAt: '2026-10-30T09:15:00.000Z',
+          outputAccepted: true,
+          status: 'accepted',
+          isEditable: true,
+          isSpecified: false,
+          specStatus: 'unspecified',
+          customer: null,
+          diameter: null,
+          thickness: null,
+          length: null,
+          pipeNumber: null,
+          tonnage: null,
+          updatedAt: null,
+        },
+      ],
+      pagination: {
+        page: 2,
+        pageSize: 25,
+        total: 42,
+        totalPages: 2,
+        hasNextPage: false,
+        hasPreviousPage: true,
+      },
+    }
+    const mockLoad = vi.fn().mockImplementation((_token, params) =>
+      Promise.resolve(params?.page === 2 ? page2Payload : mockProductionPayload),
+    )
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />, {
+      authValue: { user: { role: 'Quality Control' } },
+    })
+
+    await screen.findByText('Maynilad Water')
+
+    await user.click(screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i))
+    expect(screen.getByText('1 cut selected')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+
+    const page2Checkbox = await screen.findByLabelText(/select cut at 2026-10-30T09:15:00/i)
+    expect(screen.queryByRole('region', { name: 'Bulk specification editor' })).not.toBeInTheDocument()
+    expect(page2Checkbox).not.toBeChecked()
+
+    await user.click(page2Checkbox)
+    await user.type(screen.getByLabelText('Bulk customer'), 'Bulk Filter Clear Co')
+    await user.click(screen.getByRole('button', { name: 'Apply to 1 cut' }))
+    expect(screen.getByText(/Apply specifications to 1 cut\?/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Filter unspecified cuts' }))
+    expect(screen.queryByRole('region', { name: 'Bulk specification editor' })).not.toBeInTheDocument()
+  })
+
+  it('reopens inline editor with preserved unsaved values on non-conflict save failure', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+    const mockUpdate = vi.fn().mockRejectedValue(new Error('Network timeout'))
+
+    renderWithAuth(
+      <ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />,
+      { authValue: { user: { role: 'Quality Control' } } },
+    )
+
+    await screen.findByText('Maynilad Water')
+
+    await user.click(screen.getAllByRole('button', { name: 'Edit specification' })[1])
+
+    const customerInput = screen.getByLabelText('Specification customer')
+    const diameterInput = screen.getByLabelText('Specification diameter')
+    await user.type(customerInput, 'Unsaved Recovery Customer')
+    await user.type(diameterInput, '800')
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByText('Network timeout')).toBeInTheDocument()
+    expect(screen.getByLabelText('Specification customer')).toHaveValue('Unsaved Recovery Customer')
+    expect(screen.getByLabelText('Specification diameter')).toHaveValue(800)
+  })
+
+  it('navigates CustomDropdown options with arrows without premature requests and commits on Enter', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+    const initialCalls = mockLoad.mock.calls.length
+
+    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+    statusTrigger.focus()
+
+    await user.keyboard('{ArrowDown}')
+    const listbox = screen.getByRole('listbox', { name: 'Filter by cut status' })
+    expect(listbox).toBeInTheDocument()
+    expect(mockLoad).toHaveBeenCalledTimes(initialCalls)
+
+    await user.keyboard('{ArrowDown}')
+    expect(statusTrigger).toHaveAttribute('aria-activedescendant', 'production-status-filter-opt-rejected')
+    expect(mockLoad).toHaveBeenCalledTimes(initialCalls)
+
+    await user.keyboard('{Enter}')
+    expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
+    expect(statusTrigger).toHaveFocus()
+
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenCalledTimes(initialCalls + 1)
+      expect(mockLoad.mock.calls.at(-1)[1]).toMatchObject({ status: 'rejected' })
+    })
+  })
+
+  it('supports Enter to stage bulk apply, Escape to cancel confirmation and deselect, and Repeat Last Spec across pages', async () => {
+    const user = userEvent.setup()
+    const page2UnspecifiedOnly = {
+      ...mockProductionPayload,
+      records: [
+        {
+          id: 'page2-unfilled-1',
+          sensorEventId: 'page2-unfilled-1',
+          recordedAt: '2026-10-30T09:30:00.000Z',
+          outputAccepted: true,
+          status: 'accepted',
+          isEditable: true,
+          isSpecified: false,
+          specStatus: 'unspecified',
+          customer: null,
+          diameter: null,
+          thickness: null,
+          length: null,
+          pipeNumber: null,
+          tonnage: null,
+          updatedAt: null,
+        },
+      ],
+      pagination: {
+        page: 2,
+        pageSize: 25,
+        total: 42,
+        totalPages: 2,
+        hasNextPage: false,
+        hasPreviousPage: true,
+      },
+    }
+
+    let persistedCustomer = null
+    const mockLoad = vi.fn().mockImplementation((_token, params) => {
+      if (params?.page === 2) return Promise.resolve(page2UnspecifiedOnly)
+      if (!persistedCustomer) return Promise.resolve(mockProductionPayload)
+      return Promise.resolve({
+        ...mockProductionPayload,
+        records: mockProductionPayload.records.map((r) =>
+          r.id === 'e0000000-0000-4000-8000-000000000002'
+            ? {
+                ...r,
+                customer: persistedCustomer,
+                diameter: 500,
+                thickness: 10,
+                length: 6000,
+                pipeNumber: 12,
+                tonnage: 1.1583,
+                isSpecified: true,
+                specStatus: 'specified',
+              }
+            : r,
+        ),
+      })
+    })
+    const mockUpdate = vi.fn().mockImplementation(async (_token, _id, payload) => {
+      persistedCustomer = payload.customer
+      return {
+        spec: {
+          sensorEventId: 'e0000000-0000-4000-8000-000000000002',
+          customer: payload.customer,
+          diameter: 500,
+          thickness: 10,
+          length: 6000,
+          pipeNumber: 12,
+          tonnage: 1.1583,
+          isSpecified: true,
+          specStatus: 'specified',
+          updatedAt: '2026-10-30T10:00:00.000Z',
+        },
+      }
+    })
+
+    renderWithAuth(
+      <ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />,
+      { authValue: { user: { role: 'Quality Control' } } },
+    )
+
+    await screen.findByText('Maynilad Water')
+
+    // Save an inline spec on page 1 so Repeat Last Spec stores it across pagination.
+    await user.click(screen.getAllByRole('button', { name: 'Edit specification' })[1])
+    await user.type(screen.getByLabelText('Specification customer'), 'Remembered Cross-Page Co')
+    await user.type(screen.getByLabelText('Specification diameter'), '500')
+    await user.type(screen.getByLabelText('Specification thickness'), '10')
+    await user.type(screen.getByLabelText('Specification length'), '6000')
+    await user.keyboard('{Enter}')
+    await screen.findByText('Remembered Cross-Page Co')
+
+    // Navigate to page 2 where zero rows are specified locally.
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    await screen.findByLabelText(/select cut at 2026-10-30T09:30:00/i)
+
+    await user.click(screen.getByLabelText(/select cut at 2026-10-30T09:30:00/i))
+    await user.click(screen.getByRole('button', { name: 'Repeat last saved specification' }))
+    expect(screen.getByLabelText('Bulk customer')).toHaveValue('Remembered Cross-Page Co')
+
+    await user.click(screen.getByLabelText('Bulk customer'))
+    await user.keyboard('{Enter}')
+    expect(screen.getByText(/Apply specifications to 1 cut\?/i)).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText(/Apply specifications to 1 cut\?/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Bulk customer'))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('region', { name: 'Bulk specification editor' })).not.toBeInTheDocument()
+  })
+
+  it('distinguishes Specified vs Needs details Status tones and exposes aria-pressed on quick unspecified filter', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+
+    const specifiedBadge = screen.getByTitle('Accepted · Specified')
+    const needsDetailsBadge = screen.getByTitle('Accepted · Needs details')
+    const rejectedBadge = screen.getByTitle('Debounce window violated.')
+
+    expect(specifiedBadge).toHaveClass('status-active')
+    expect(needsDetailsBadge).toHaveClass('status-fault')
+    expect(rejectedBadge).toHaveClass('status-danger')
+    expect(specifiedBadge).not.toHaveAttribute('aria-label')
+
+    const quickFilterBtn = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+    expect(quickFilterBtn).toHaveAttribute('aria-pressed', 'false')
+    await user.click(quickFilterBtn)
+    expect(quickFilterBtn).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('prevents rapid Next clicks during pending fetch from advancing past totalPages', async () => {
+    const user = userEvent.setup({ delay: null })
+    let resolvePage2
+    const page2Promise = new Promise((resolve) => {
+      resolvePage2 = resolve
+    })
+    const mockLoad = vi.fn().mockImplementation((_token, params) => {
+      if (params?.page === 1) return Promise.resolve(mockProductionPayload)
+      return page2Promise
+    })
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    expect(await screen.findByText('Page 1 of 2 · 42 records')).toBeInTheDocument()
+
+    const nextButton = screen.getByRole('button', { name: 'Next page' })
+    await user.click(nextButton)
+
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenCalledWith('test-token', expect.objectContaining({ page: 2 }))
+    })
+    expect(nextButton).toBeDisabled()
+
+    await user.click(nextButton)
+    await user.click(nextButton)
+
+    expect(mockLoad).not.toHaveBeenCalledWith('test-token', expect.objectContaining({ page: 3 }))
+
+    resolvePage2({
+      ...mockProductionPayload,
+      records: [
+        {
+          ...mockProductionPayload.records[0],
+          id: 'e0000000-0000-4000-8000-000000000004',
+          sensorEventId: 'e0000000-0000-4000-8000-000000000004',
+          customer: 'Deferred Page Two Customer',
+        },
+      ],
+      pagination: {
+        page: 2,
+        pageSize: 25,
+        total: 42,
+        totalPages: 2,
+        hasNextPage: false,
+        hasPreviousPage: true,
+      },
+    })
+
+    expect(await screen.findByText('Deferred Page Two Customer')).toBeInTheDocument()
+    expect(screen.getByText('Page 2 of 2 · 42 records')).toBeInTheDocument()
+    expect(nextButton).toBeDisabled()
+  })
+
+  it('clamps page back to totalPages when refreshed data shrinks below current page', async () => {
+    const user = userEvent.setup({ delay: null })
+    let shrinkToOnePage = false
+    const mockLoad = vi.fn().mockImplementation((_token, params) => {
+      if (shrinkToOnePage) {
+        return Promise.resolve({
+          ...mockProductionPayload,
+          records: [mockProductionPayload.records[0]],
+          pagination: {
+            page: 1,
+            pageSize: 25,
+            total: 1,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+        })
+      }
+      if (params?.page === 2) {
+        return Promise.resolve({
+          ...mockProductionPayload,
+          records: [
+            {
+              ...mockProductionPayload.records[0],
+              id: 'e0000000-0000-4000-8000-000000000004',
+              sensorEventId: 'e0000000-0000-4000-8000-000000000004',
+              customer: 'Page Two Shrinking Customer',
+            },
+          ],
+          pagination: {
+            page: 2,
+            pageSize: 25,
+            total: 42,
+            totalPages: 2,
+            hasNextPage: false,
+            hasPreviousPage: true,
+          },
+        })
+      }
+      return Promise.resolve(mockProductionPayload)
+    })
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('Page 2 of 2 · 42 records')).toBeInTheDocument()
+
+    shrinkToOnePage = true
+    await user.click(screen.getByRole('button', { name: 'Refresh production logs' }))
+
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 1 }))
+    })
+    expect(screen.getByText('Page 1 of 1 · 1 records')).toBeInTheDocument()
+  })
+
+  it('resets and disables specification filter when Rejected status is selected', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+
+    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+    await user.click(specTrigger)
+    await user.click(screen.getByRole('option', { name: 'Unspecified' }))
+    expect(specTrigger).not.toBeDisabled()
+
+    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+    await user.click(statusTrigger)
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
+
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'rejected',
+        specStatus: 'all',
+        page: 1,
+      }))
+    })
+    expect(specTrigger).toBeDisabled()
+    expect(specTrigger).toHaveAttribute('title', 'Specification filter applies to accepted cuts only')
+  })
+
+  it('switches back to Accepted cuts when clicking Specified or Unspecified KPI while viewing Rejected', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+
+    await screen.findByText('Maynilad Water')
+
+    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
+    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+    const unspecifiedKpi = screen.getByRole('button', { name: 'Filter unspecified cuts' })
+    const specifiedKpi = screen.getByRole('button', { name: 'Filter specified cuts' })
+
+    await user.click(statusTrigger)
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
+    expect(specTrigger).toBeDisabled()
+
+    await user.click(unspecifiedKpi)
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'accepted',
+        specStatus: 'unspecified',
+        page: 1,
+      }))
+    })
+    expect(specTrigger).not.toBeDisabled()
+    expect(unspecifiedKpi).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Filter rejected cuts' }))
+    await user.click(specifiedKpi)
+    await waitFor(() => {
+      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'accepted',
+        specStatus: 'specified',
+        page: 1,
+      }))
+    })
+    expect(specifiedKpi).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('discloses Rejected KPI pill when rejectedCount > 0 or status is rejected, and hides it at zero on default view', async () => {
+    const user = userEvent.setup()
+    const zeroRejectedPayload = {
+      ...mockProductionPayload,
+      summary: { totalAccepted: 3, specifiedCount: 2, unspecifiedCount: 1, rejectedCount: 0 },
+    }
+    const mockLoadZero = vi.fn().mockResolvedValue(zeroRejectedPayload)
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoadZero} />)
+
+    await screen.findByText('Maynilad Water')
+    expect(screen.queryByRole('button', { name: 'Filter rejected cuts' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Filter by cut status' }))
+    await user.click(screen.getByRole('option', { name: 'Rejected' }))
+
+    const disclosedRejectedBtn = await screen.findByRole('button', { name: 'Filter rejected cuts' })
+    expect(disclosedRejectedBtn).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(disclosedRejectedBtn)
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Filter rejected cuts' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Filter by cut status' })).toHaveTextContent('Accepted')
+    expect(screen.getByRole('button', { name: 'Filter by specification status' })).not.toBeDisabled()
   })
 })

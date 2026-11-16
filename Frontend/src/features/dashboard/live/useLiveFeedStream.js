@@ -14,7 +14,7 @@ function normalizeLivePayload(payload) {
   const sensors = Array.isArray(payload.sensors) ? payload.sensors : []
   const formattedSensors = presentLiveSensors(sensors, mode).map((sensor) => ({
     ...sensor,
-    operationalStatus: sensor.status,
+    operationalStatus: sensor.operationalStatus ?? sensor.status,
     status: sensor.displayStatus || sensor.status,
   }))
 

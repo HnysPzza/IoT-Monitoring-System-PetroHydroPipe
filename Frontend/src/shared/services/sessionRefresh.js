@@ -118,7 +118,7 @@ export async function withSessionLock(operation) {
   const locks = globalThis.navigator?.locks
   if (!locks?.request) return operation()
   const controller = new AbortController()
-  const timeout = globalThis.setTimeout(() => controller.abort(), 15000)
+  const timeout = globalThis.setTimeout(() => controller.abort(Object.assign(new Error('Session lock timed out.'), { name: 'AbortError' })), 15000)
   try {
     return await locks.request('petrohydropipe-session-refresh', { signal: controller.signal }, () => {
       globalThis.clearTimeout(timeout)

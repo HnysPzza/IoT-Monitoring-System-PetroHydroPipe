@@ -44,7 +44,7 @@ export function formatNumber(value) {
 }
 
 export function cleanCode(value, fallback = 'Recorded') {
-  if (!value) {
+  if (value === null || value === undefined || value === '') {
     return fallback
   }
 

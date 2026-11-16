@@ -5,14 +5,15 @@
 }
 
 .trend-calendar-trigger {
-  height: 38px;
+  min-width: 44px;
+  min-height: 44px;
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   background: #FFFFFF;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 6px 12px;
   cursor: pointer;
   box-sizing: border-box;
   text-align: left;
@@ -47,12 +48,13 @@
   flex: 1;
 }
 
+.trend-calendar-trigger .trend-calendar-kicker,
 .trend-calendar-kicker {
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   color: #64748B;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.1;
   letter-spacing: 0.04em;
 }
 
@@ -82,8 +84,8 @@
 .shadcn-calendar-popover.trend-calendar-popover,
 .trend-calendar-popover {
   z-index: 1000;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  background: var(--c-surface, #FFFFFF);
+  border: 1px solid var(--card-border, #E2E8F0);
   border-radius: 10px;
   box-shadow: 0 12px 30px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -4px rgba(15, 23, 42, 0.04);
   display: flex;
@@ -91,22 +93,24 @@
   width: 480px;
   max-width: min(calc(100vw - 24px), var(--radix-popover-content-available-width, calc(100vw - 24px)));
   max-height: min(calc(100dvh - 24px), var(--radix-popover-content-available-height, calc(100dvh - 24px)));
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   box-sizing: border-box;
   padding: 0;
 }
 
 .trend-popover-body {
   display: flex;
-  min-height: 290px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Left Sidebar: Quick Presets (Daily, Weekly, Monthly) */
 .trend-popover-sidebar {
-  width: 140px;
-  border-right: 1px solid #E2E8F0;
-  background: #F8FAFC;
+  width: 144px;
+  border-right: 1px solid var(--subtle-border, #E2E8F0);
+  background: var(--c-surface2, #F8FAFC);
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
@@ -116,22 +120,22 @@
 }
 
 .trend-preset-btn {
-  height: 34px;
+  min-height: 34px;
   font-size: 13px;
-  padding: 0 12px;
+  padding: 6px 12px;
   border-radius: 6px;
   text-align: left;
   width: 100%;
   border: 1px solid transparent;
   background: transparent;
-  color: #475569;
+  color: var(--c-text-2, #475569);
   font-weight: 500;
   cursor: pointer;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   font-family: inherit;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .trend-preset-btn:hover {
@@ -154,7 +158,8 @@
 /* Right Calendar Panel */
 .trend-popover-calendar {
   flex: 1;
-  padding: 14px 16px;
+  min-height: 0;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -177,15 +182,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid #E2E8F0;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  border: 1px solid var(--card-border, #E2E8F0);
   border-radius: 6px;
-  background: #FFFFFF;
-  color: #64748B;
+  background: var(--card-bg, #FFFFFF);
+  color: var(--c-text-2, #475569);
   cursor: pointer;
   padding: 0;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .trend-calendar-nav-btn:hover:not(:disabled) {
@@ -208,7 +215,7 @@
 }
 
 .trend-calendar-weekday {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #64748B;
   height: 24px;
@@ -220,17 +227,26 @@
 /* Day Mode Grid */
 .trend-calendar-day-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
+}
+
+.trend-calendar-day-row,
+.trend-calendar-day-cell {
+  display: contents;
 }
 
 .trend-calendar-day-btn {
   width: 100%;
-  height: 32px;
+  min-height: 30px;
+  height: 30px;
   font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
   border: none;
   background: transparent;
-  color: #0F172A;
+  color: var(--c-text, #0F172A);
   font-family: inherit;
   display: flex;
   align-items: center;
@@ -247,7 +263,7 @@
 }
 
 .trend-calendar-day-btn.is-outside:not(.is-selected) {
-  color: #94A3B8;
+  color: #526277;
 }
 
 .trend-calendar-day-btn.is-in-range:not(.is-selected) {
@@ -277,6 +293,7 @@
 
 .trend-calendar-week-row {
   width: 100%;
+  min-height: 34px;
   height: 34px;
   padding: 0;
   border: 1px solid transparent;
@@ -320,7 +337,7 @@
 }
 
 .trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-outside {
-  color: #94A3B8;
+  color: #526277;
 }
 
 .trend-calendar-week-row.is-selected .trend-calendar-week-day-cell {
@@ -336,7 +353,8 @@
 }
 
 .trend-calendar-month-btn {
-  height: 38px;
+  min-height: 44px;
+  height: 44px;
   font-size: 13px;
   font-weight: 500;
   border: 1px solid #E2E8F0;
@@ -348,7 +366,7 @@
   align-items: center;
   justify-content: center;
   font-family: inherit;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .trend-calendar-month-btn:hover:not(:disabled):not(.is-selected) {
@@ -372,6 +390,7 @@
 /* Footer Bar */
 .trend-popover-footer {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
@@ -394,37 +413,40 @@
 }
 
 .trend-popover-cancel-btn {
-  font-size: 12px;
-  color: #64748B;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-2, #475569);
   background: transparent;
   border: none;
-  padding: 4px 8px;
+  padding: 6px 14px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
   font-family: inherit;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .trend-popover-cancel-btn:hover {
-  color: #0F172A;
-  background: #F1F5F9;
+  color: var(--c-text, #0F172A);
+  background: var(--hover-bg, #F1F5F9);
 }
 
 .trend-popover-apply-btn {
-  font-size: 12px;
-  font-weight: 500;
-  background: #2563EB;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--selected-control-bg, #0E62E8);
   color: #FFFFFF;
   border: none;
   border-radius: 6px;
-  padding: 5px 14px;
+  padding: 6px 18px;
   cursor: pointer;
   font-family: inherit;
   transition: background-color 0.15s ease;
 }
 
 .trend-popover-apply-btn:hover:not(:disabled) {
-  background: #1D4ED8;
+  background: var(--c-primary, #1677FF);
 }
 
 .trend-popover-apply-btn:disabled {
@@ -515,7 +537,7 @@
 }
 
 :root[data-theme='dark'] .trend-calendar-day-btn.is-outside:not(.is-selected) {
-  color: #64748B;
+  color: #94A3B8;
 }
 
 :root[data-theme='dark'] .trend-calendar-day-btn.is-in-range:not(.is-selected) {
@@ -538,7 +560,7 @@
 }
 
 :root[data-theme='dark'] .trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-outside {
-  color: #64748B;
+  color: #94A3B8;
 }
 
 :root[data-theme='dark'] .trend-calendar-month-btn {
@@ -575,11 +597,17 @@
   .shadcn-calendar-popover.trend-calendar-popover,
   .trend-calendar-popover {
     width: calc(100vw - 24px);
+    max-height: min(calc(100dvh - 24px), var(--radix-popover-content-available-height, calc(100dvh - 24px)));
+    display: flex;
+    flex-direction: column;
   }
 
   .trend-popover-body {
+    flex: 1 1 auto;
     flex-direction: column;
     min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .trend-popover-sidebar {
@@ -587,6 +615,7 @@
     border-right: none;
     border-bottom: 1px solid #E2E8F0;
     flex-direction: row;
+    flex-shrink: 0;
     overflow-x: auto;
     padding: 8px;
   }
@@ -599,6 +628,24 @@
     white-space: nowrap;
     width: auto;
     flex-shrink: 0;
+    min-height: 44px;
+  }
+
+  .trend-calendar-nav-btn,
+  .trend-popover-cancel-btn,
+  .trend-popover-apply-btn {
+    min-height: 44px;
+  }
+
+  .trend-calendar-nav-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .trend-calendar-day-btn {
+    min-height: 44px;
+    height: 44px;
   }
 
   .trend-popover-calendar {
@@ -606,6 +653,7 @@
   }
 
   .trend-popover-footer {
+    flex-shrink: 0;
     flex-wrap: wrap;
     gap: 8px;
   }
@@ -616,6 +664,34 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+@media (pointer: coarse) {
+  .trend-preset-btn,
+  .trend-calendar-nav-btn,
+  .trend-popover-cancel-btn,
+  .trend-popover-apply-btn,
+  .trend-calendar-day-btn,
+  .trend-calendar-week-row {
+    min-height: 44px;
+    height: auto;
+  }
+
+  .trend-calendar-nav-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+.trend-calendar-nav-btn:focus-visible,
+.trend-calendar-day-btn:focus-visible,
+.trend-calendar-week-row:focus-visible,
+.trend-calendar-month-btn:focus-visible,
+.trend-popover-cancel-btn:focus-visible,
+.trend-popover-apply-btn:focus-visible {
+  outline: 2px solid var(--c-primary, #1677FF);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -630,7 +706,16 @@
     transition: none;
   }
 }
-.trend-calendar-day-btn.is-future, .trend-calendar-month-btn.is-future, .trend-calendar-week-row.is-future { color: var(--c-text-3); }
-.trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-future { color: var(--c-text-3); }
-.trend-calendar-day-btn:disabled, .trend-calendar-month-btn:disabled, .trend-calendar-week-row:disabled { color: var(--c-text-3); opacity: 0.6; }
+.trend-calendar-day-btn.is-future, .trend-calendar-month-btn.is-future, .trend-calendar-week-row.is-future { color: var(--c-text-2); }
+.trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-future { color: var(--c-text-2); }
+.trend-calendar-day-btn:disabled, .trend-calendar-month-btn:disabled, .trend-calendar-week-row:disabled { color: var(--c-text-3); opacity: 0.72; }
 .trend-calendar-day-btn:disabled, .trend-calendar-month-btn:disabled, .trend-calendar-week-row:disabled { background: transparent; box-shadow: none; }
+
+:root[data-theme='dark'] .trend-calendar-day-btn:disabled,
+:root[data-theme='dark'] .trend-calendar-month-btn:disabled,
+:root[data-theme='dark'] .trend-calendar-week-row:disabled {
+  color: #64748b;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.78;
+}

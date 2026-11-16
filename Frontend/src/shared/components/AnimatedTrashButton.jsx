@@ -1,5 +1,3 @@
-import React, { useState } from 'react'
-
 /**
  * AnimatedTrashButton
  * Clean, container-free action button with an animated Lucide trash icon.
@@ -14,8 +12,6 @@ export function AnimatedTrashButton({
   className = '',
   ...props
 }) {
-  const [isHovered, setIsHovered] = useState(false)
-
   return (
     <button
       type="button"
@@ -23,9 +19,7 @@ export function AnimatedTrashButton({
       title={title}
       aria-label={ariaLabel || title}
       disabled={disabled}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className={`animated-trash-btn ${className}`}
+      className={`animated-trash-btn ${className}`.trim()}
       {...props}
     >
       <svg
@@ -39,22 +33,11 @@ export function AnimatedTrashButton({
         className="animated-trash-icon"
         aria-hidden="true"
       >
-        {/* Animated Lid: Anchored to (4px, 6px) bottom-left hinge, rotates upward by -35deg */}
-        <g
-          className="trash-lid"
-          style={{
-            transformOrigin: '4px 6px',
-            transform: isHovered && !disabled ? 'rotate(-35deg) translateY(-1px)' : 'rotate(0deg) translateY(0px)',
-            transition: 'transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-          }}
-        >
-          {/* Top handle */}
+        <g className="trash-lid">
           <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          {/* Lid horizontal rim */}
           <line x1="3" y1="6" x2="21" y2="6" />
         </g>
 
-        {/* Can body */}
         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
         <line x1="10" y1="11" x2="10" y2="17" />
         <line x1="14" y1="11" x2="14" y2="17" />

@@ -132,7 +132,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   useLayoutEffect(() => {
     const slot = document.getElementById('analytics-header-controls')
     if (slot !== headerSlot) setHeaderSlot(slot)
-  })
+  }, [headerSlot])
   const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('analytics-header-controls')
 
   return (

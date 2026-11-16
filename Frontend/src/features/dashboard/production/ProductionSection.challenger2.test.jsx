@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import fs from 'fs'
 import path from 'path'
@@ -191,6 +191,18 @@ describe('Challenger 2 Adversarial Stress Suite — Production Module M4', () =>
       const tabularNumMatches = cssContent.match(/font-variant-numeric:\s*tabular-nums/g)
       expect(tabularNumMatches).not.toBeNull()
       expect(tabularNumMatches.length).toBeGreaterThanOrEqual(6)
+    })
+
+    it('verifies dark theme default parity, dropdown z-index ordering, scoped number rules, and focus-visible retention in CSS', () => {
+      const cssPath = path.resolve(__dirname, 'ProductionSection.css')
+      const cssContent = fs.readFileSync(cssPath, 'utf-8')
+
+      expect(cssContent).toContain(":root:not([data-theme='light']) .production-workspace")
+      expect(cssContent).not.toMatch(/^\s*input\[type="number"\]/m)
+      expect(cssContent).not.toMatch(/outline:\s*none\s*!important/i)
+      expect(cssContent).toMatch(/\.production-dropdown-popover\s*\{[^}]*z-index:\s*200/s)
+      expect(cssContent).toMatch(/\.production-bulk-strip\s*\{[^}]*z-index:\s*20\b/s)
+      expect(cssContent).toMatch(/@media\s*\(pointer:\s*coarse\)/)
     })
 
     it('verifies empty or null values render <span class="production-placeholder">—</span> and NEVER blank empty text', async () => {

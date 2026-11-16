@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
+  ChevronDown,
   Search,
   RotateCw,
   UserPlus,
@@ -53,10 +54,19 @@ export default function UsersSection() {
   const [notice, setNotice] = useState(null)
   const [isMutating, setIsMutating] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
-  const busy = isMutating || Boolean(pendingAction)
+  const busy = isMutating
   const dialog = useRef(null)
   const confirmDialog = useRef(null)
+  const confirmCancelButton = useRef(null)
   const mutation = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!confirmAction || !confirmDialog.current) return
+    if (!confirmDialog.current.hasAttribute('open')) {
+      confirmDialog.current.showModal()
+    }
+    confirmCancelButton.current?.focus()
+  }, [confirmAction])
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery((current) => current.search === search
@@ -135,7 +145,7 @@ export default function UsersSection() {
 
   async function handleSubmit(event) {
     event.preventDefault()
-    const nextErrors = validateAccount(form, [])
+    const nextErrors = validateAccount(form, directory.users)
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) return
     const saved = await runMutation(() => createUser(token, {
@@ -152,6 +162,7 @@ export default function UsersSection() {
     setErrors({})
     setForm(initialUserForm)
     dialog.current.showModal()
+    dialog.current.querySelector('#account-name')?.focus()
   }
 
   const hasActiveFilters = Boolean(
@@ -204,49 +215,58 @@ export default function UsersSection() {
 
           <label className="filter-field" htmlFor="users-filter-role">
             <span className="sr-only">Role</span>
-            <select
-              id="users-filter-role"
-              value={query.role}
-              disabled={busy}
-              onChange={(event) => filter('role', event.target.value)}
-            >
-              <option value="">All roles</option>
-              {roles.map((role) => <option key={role.id} value={role.name}>{getRoleDisplayName(role.name)}</option>)}
-            </select>
+            <div className="users-select-wrap">
+              <select
+                id="users-filter-role"
+                value={query.role}
+                disabled={busy}
+                onChange={(event) => filter('role', event.target.value)}
+              >
+                <option value="">All roles</option>
+                {roles.map((role) => <option key={role.id} value={role.name}>{getRoleDisplayName(role.name)}</option>)}
+              </select>
+              <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
+            </div>
           </label>
 
           <label className="filter-field" htmlFor="users-filter-status">
             <span className="sr-only">Status</span>
-            <select
-              id="users-filter-status"
-              value={query.status}
-              disabled={busy}
-              onChange={(event) => filter('status', event.target.value)}
-            >
-              <option value="">All statuses</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
+            <div className="users-select-wrap">
+              <select
+                id="users-filter-status"
+                value={query.status}
+                disabled={busy}
+                onChange={(event) => filter('status', event.target.value)}
+              >
+                <option value="">All statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+              <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
+            </div>
           </label>
 
           <label className="filter-field users-sort-field" htmlFor="users-filter-sort">
             <span className="sr-only">Sort</span>
-            <select
-              id="users-filter-sort"
-              value={`${query.sort}-${query.direction}`}
-              disabled={busy}
-              onChange={(event) => {
-                const [sort, direction] = event.target.value.split('-')
-                setQuery((current) => ({ ...current, sort, direction, page: 1 }))
-              }}
-            >
-              <option value="created-desc">Newest first</option>
-              <option value="created-asc">Oldest first</option>
-              <option value="name-asc">Name (A–Z)</option>
-              <option value="name-desc">Name (Z–A)</option>
-              <option value="role-asc">Role (A–Z)</option>
-              <option value="status-asc">Status</option>
-            </select>
+            <div className="users-select-wrap">
+              <select
+                id="users-filter-sort"
+                value={`${query.sort}-${query.direction}`}
+                disabled={busy}
+                onChange={(event) => {
+                  const [sort, direction] = event.target.value.split('-')
+                  setQuery((current) => ({ ...current, sort, direction, page: 1 }))
+                }}
+              >
+                <option value="created-desc">Newest first</option>
+                <option value="created-asc">Oldest first</option>
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="name-desc">Name (Z–A)</option>
+                <option value="role-asc">Role (A–Z)</option>
+                <option value="status-asc">Status</option>
+              </select>
+              <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
+            </div>
           </label>
 
           <button
@@ -291,18 +311,20 @@ export default function UsersSection() {
             direction={query.direction}
             isLoading={isLoading}
             busy={busy || usersQuery.isPlaceholderData}
+            updatingUserId={pendingAction?.type === 'deactivate' ? pendingAction.account.id : ''}
+            archivingUserId={pendingAction?.type === 'archive' ? pendingAction.account.id : ''}
             page={query.page}
             totalPages={pages}
             totalCount={directory.total}
             pageSize={query.limit}
             onPageChange={(page) => setQuery((current) => ({ ...current, page }))}
             onRequestDeactivate={(account) => {
+              if (pendingAction) return
               setConfirmAction({ type: 'deactivate', account })
-              confirmDialog.current?.showModal()
             }}
             onRequestArchive={(account) => {
+              if (pendingAction) return
               setConfirmAction({ type: 'archive', account })
-              confirmDialog.current?.showModal()
             }}
             onStatusChange={(account) => {
               runMutation(
@@ -347,12 +369,13 @@ export default function UsersSection() {
         ref={confirmDialog}
         aria-labelledby="confirm-action-title"
         onCancel={(event) => { if (busy) event.preventDefault() }}
+        onClose={() => setConfirmAction(null)}
       >
         {confirmAction && (
           <div className="confirm-dialog-content">
             <div className="confirm-dialog-header">
               <div className="confirm-dialog-icon danger">
-                <AlertTriangle size={22} aria-hidden="true" />
+                <AlertTriangle size={17} aria-hidden="true" />
               </div>
               <div>
                 <h3 id="confirm-action-title" className="confirm-dialog-title">
@@ -373,8 +396,9 @@ export default function UsersSection() {
             </div>
             <div className="confirm-dialog-actions">
               <button
+                ref={confirmCancelButton}
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-secondary confirm-cancel-btn"
                 disabled={busy}
                 onClick={() => {
                   confirmDialog.current?.close()

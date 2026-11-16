@@ -67,6 +67,10 @@ function formatDowntimeDuration(minutes, periodState) {
     return 'Period not reached yet'
   }
 
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes)) {
+    return 'No downtime data'
+  }
+
   if (minutes < 60) {
     return `${minutes} min down${periodState === 'current' ? ' so far' : ''}`
   }
@@ -103,7 +107,9 @@ function ChartTooltip({ active, payload, label }) {
       <span>{formatDowntimeDuration(payload[0].value, point.periodState)}</span>
       {point.periodState !== 'future' ? (
         <>
-          <span>Estimated loss: {point.estimatedLoss} pcs</span>
+          <span>
+            Estimated loss: {typeof point.estimatedLoss === 'number' && Number.isFinite(point.estimatedLoss) ? `${point.estimatedLoss} pcs` : '—'}
+          </span>
           <span>
             {point.cause
               ? `Likely cause: ${point.cause}`
@@ -123,15 +129,20 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
 
   return (
     <div className="trend-chart-panel">
+      <div className="chart-legend" aria-label="Downtime chart legend">
+        <span><i className="legend-swatch legend-downtime-under" aria-hidden="true" />Under {thresholdMinutes}m</span>
+        <span><i className="legend-swatch legend-downtime-over" aria-hidden="true" />{thresholdMinutes}m+</span>
+        <span><i className="legend-line legend-threshold" aria-hidden="true" />{thresholdMinutes}m threshold</span>
+      </div>
       <div role="img" aria-label="Downtime by non-overlapping period bar chart in minutes">
         <ResponsiveContainer width="100%" height={195} minWidth={0}>
-          <BarChart data={data} margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 14, right: 16, left: -4, bottom: 0 }}>
             <CartesianGrid stroke="var(--subtle-border)" strokeDasharray="3 6" vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} interval="preserveStartEnd" />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={12} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} />
             <YAxis tickLine={false} axisLine={false} tick={{ fill: 'var(--c-text-2)', fontSize: 12 }} tickFormatter={(value) => `${value}m`} width={48} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
-            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" label={{ value: `${thresholdMinutes}m threshold`, fill: 'var(--status-downtime-text)', fontSize: 11 }} />
-            <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44}>
+            <ReferenceLine y={thresholdMinutes} stroke="var(--chart-danger)" strokeDasharray="6 6" ifOverflow="extendDomain" />
+            <Bar dataKey="minutes" name="Downtime" radius={[5, 5, 0, 0]} maxBarSize={44} isAnimationActive={false}>
               {data.map((item) => (
                 <Cell key={item.label} fill={item.minutes >= thresholdMinutes ? 'var(--chart-danger)' : 'var(--chart-warning)'} />
               ))}
@@ -144,15 +155,36 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
         <span>Red bars indicate periods at or above {thresholdMinutes} minutes.</span>
       </div>
       <div className="sr-only" role="list" aria-label="Observed downtime period summary">
-        {observedPeriods.slice(-4).map((item) => (
-          <span key={item.label} role="listitem">
-            {item.label}: {item.minutes}m{item.periodState === 'current' ? ' so far' : ''}
-          </span>
-        ))}
+        {observedPeriods.map((item) => {
+          const isFiniteMinutes = typeof item.minutes === 'number' && Number.isFinite(item.minutes)
+          return (
+            <span key={item.label} role="listitem">
+              {item.label}: {isFiniteMinutes ? `${item.minutes}m${item.periodState === 'current' ? ' so far' : ''}` : '—'}
+            </span>
+          )
+        })}
         {futurePeriodCount > 0 ? (
           <span role="listitem">{futurePeriodCount} future {futurePeriodCount === 1 ? 'period' : 'periods'} not reached</span>
         ) : null}
       </div>
+      <table className="sr-only" aria-label="Downtime trend data">
+        <thead>
+          <tr>
+            <th scope="col">Period</th>
+            <th scope="col">Downtime</th>
+            <th scope="col">Estimated loss</th>
+          </tr>
+        </thead>
+        <tbody>
+          {observedPeriods.map((item, index) => (
+            <tr key={`${item.label || 'period'}-${index}`}>
+              <th scope="row">{item.label}</th>
+              <td>{formatDowntimeDuration(item.minutes, item.periodState)}</td>
+              <td>{typeof item.estimatedLoss === 'number' && Number.isFinite(item.estimatedLoss) ? `${item.estimatedLoss} pcs` : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {lossEstimateBasis ? (
         <div className="sr-only">
           <span>

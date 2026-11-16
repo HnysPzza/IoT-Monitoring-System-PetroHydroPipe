@@ -400,3 +400,57 @@ it('commits the delayed account action after navigating to another dashboard rou
     vi.useRealTimers()
   }
 })
+
+it('renders custom role select affordances and the paper-plane flight stage on the Add user submit button', async () => {
+  const user = userEvent.setup()
+  renderUsers()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add user' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: 'Add user' }))
+
+  const dialog = screen.getByRole('dialog')
+  const roleSelect = within(dialog).getByLabelText('Role')
+  expect(roleSelect).toHaveAttribute('data-placeholder', 'true')
+  expect(roleSelect.closest('.account-select-wrap')?.querySelector('.select-chevron-icon')).toBeInTheDocument()
+
+  await user.selectOptions(roleSelect, 'Production Supervisor')
+  expect(roleSelect).toHaveAttribute('data-placeholder', 'false')
+
+  const submitButton = within(dialog).getByRole('button', { name: 'Add user' })
+  expect(submitButton.querySelector('.send-plane-stage .send-plane-icon')).toBeInTheDocument()
+  expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveClass('account-cancel-btn')
+  expect(screen.getByLabelText('Role', { selector: '#users-filter-role' }).closest('.users-select-wrap')?.querySelector('.select-chevron-icon')).toBeInTheDocument()
+})
+
+it('blocks duplicate username or email against loaded directory accounts and focuses initial modal controls', async () => {
+  getUsers.mockResolvedValue({
+    users: [{
+      id: 'existing-1',
+      name: 'Existing Operator',
+      username: 'existingop',
+      email: 'existing@example.test',
+      role: 'Production Supervisor',
+      status: 'Active',
+      createdAt: '2026-06-01T00:00:00.000Z',
+    }],
+    total: 1,
+    summary: { total: 1, active: 1, inactive: 0, pending: 0 },
+  })
+  const user = userEvent.setup()
+  renderUsers()
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add user' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: 'Add user' }))
+
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByLabelText('Full name')).toHaveFocus()
+
+  await user.type(within(dialog).getByLabelText('Full name'), 'Another Operator')
+  await user.type(within(dialog).getByLabelText('Username'), 'existingop')
+  await user.type(within(dialog).getByLabelText('Email'), 'existing@example.test')
+  await user.selectOptions(within(dialog).getByLabelText('Role'), 'Production Supervisor')
+  await user.click(within(dialog).getByRole('button', { name: 'Add user' }))
+
+  expect(within(dialog).getByText('This username already exists.')).toBeInTheDocument()
+  expect(within(dialog).getByText('This email already exists.')).toBeInTheDocument()
+  expect(createUser).not.toHaveBeenCalled()
+})

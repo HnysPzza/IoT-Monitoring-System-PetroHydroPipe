@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sortBreaks, validateOperationalSettings } from './settingsUtils.js'
+import { getNextBreakSlot, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
 
 const constraints = {
   sensorCodes: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'],
@@ -111,5 +111,38 @@ describe('settings validation', () => {
     const bothErrors = validateOperationalSettings(bothInvalid, withStallConstraints)
     expect(bothErrors['S-03.rotationStallMs']).toBe('Rotation stall must be 0.5-30 seconds.')
     expect(bothErrors['S-03']).toBe('Trigger must be 1-60 minutes.')
+  })
+
+  it('reports trigger and recovery validation errors independently when both are invalid on the same sensor', () => {
+    const settings = validSettings()
+    settings.sensorThresholds['S-01'] = {
+      absenceDetectionEnabled: true,
+      triggerSeconds: 0,
+      recoverySeconds: 360,
+    }
+    const errors = validateOperationalSettings(settings, constraints)
+    expect(errors['S-01.triggerSeconds']).toBe('Trigger must be 1-60 minutes.')
+    expect(errors['S-01.recoverySeconds']).toBe('Recovery must be 1-5 minutes.')
+    expect(errors['S-01']).toBe('Trigger must be 1-60 minutes.')
+  })
+
+  it('computes the next non-overlapping 15-minute break slot accounting for ramp-up grace', () => {
+    const slot = getNextBreakSlot({
+      workStart: '08:00',
+      workEnd: '17:00',
+      rampUpGraceMinutes: 10,
+      breaks: [
+        { name: 'Morning', startTime: '10:00', endTime: '10:15' },
+        { name: 'Lunch', startTime: '12:00', endTime: '13:00' },
+      ],
+    })
+    expect(slot).toEqual({ startTime: '10:25', endTime: '10:40' })
+    const candidate = validSettings()
+    candidate.shiftSchedule.breaks = [
+      { name: 'Morning', startTime: '10:00', endTime: '10:15' },
+      { name: 'Lunch', startTime: '12:00', endTime: '13:00' },
+      { name: 'Break 3', ...slot },
+    ]
+    expect(validateOperationalSettings(candidate, constraints)).toEqual({})
   })
 })

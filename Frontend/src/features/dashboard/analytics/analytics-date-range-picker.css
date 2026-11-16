@@ -293,6 +293,10 @@
   border-radius: 6px;
 }
 
+.analytics-calendar-day-btn.is-selecting-start {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+}
+
 /* Popover Footer Bar */
 .analytics-popover-footer {
   display: flex;
@@ -410,14 +414,21 @@
   color: #F8FAFC;
 }
 
-:root[data-theme='dark'] .analytics-date-trigger:hover {
+:root[data-theme='dark'] .analytics-date-trigger:hover,
+:root[data-theme='dark'] .analytics-date-trigger[data-state='open'],
+:root[data-theme='dark'] .analytics-date-trigger.is-open {
   border-color: #334155;
   background: #132033;
 }
 
+:root[data-theme='dark'] .analytics-date-trigger-eyebrow,
 :root[data-theme='dark'] .analytics-date-trigger-icon,
 :root[data-theme='dark'] .analytics-date-trigger-chevron {
   color: #94A3B8;
+}
+
+:root[data-theme='dark'] .analytics-date-trigger-value {
+  color: #F8FAFC;
 }
 
 :root[data-theme='dark'] .shadcn-calendar-popover.analytics-date-range-popover,
@@ -446,6 +457,7 @@
   color: #93C5FD;
 }
 
+:root[data-theme='dark'] .analytics-calendar-month-title,
 :root[data-theme='dark'] .analytics-calendar-header-label {
   color: #F8FAFC;
 }
@@ -502,11 +514,30 @@
   background: #1E293B;
 }
 
+@media (pointer: coarse) {
+  .analytics-date-trigger,
+  .analytics-preset-btn,
+  .analytics-calendar-nav-btn,
+  .analytics-calendar-day-btn,
+  .analytics-popover-cancel-btn,
+  .analytics-popover-apply-btn {
+    min-height: 44px;
+    height: auto;
+  }
+
+  .analytics-calendar-nav-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   .analytics-date-trigger,
   .analytics-date-trigger-chevron,
   .analytics-preset-btn,
+  .analytics-calendar-nav-btn,
   .analytics-calendar-day-btn,
   .analytics-popover-cancel-btn,
   .analytics-popover-apply-btn {

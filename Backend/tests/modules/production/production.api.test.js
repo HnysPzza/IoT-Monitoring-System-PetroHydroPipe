@@ -365,6 +365,29 @@ test('GET /api/production supports pagination with page and pageSize/limit', asy
     assert.equal(limitAlias.body.records.length, 1)
     assert.equal(limitAlias.body.pagination.pageSize, 1)
     assert.equal(limitAlias.body.pagination.limit, 1)
+
+    const outOfRange = await requestJson(baseUrl, '/api/production?date=2026-03-15&page=9&pageSize=2', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(outOfRange.response.status, 200)
+    assert.equal(outOfRange.body.records.length, 1)
+    assert.deepEqual(outOfRange.body.pagination, {
+      page: 2,
+      pageSize: 2,
+      limit: 2,
+      total: 3,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPreviousPage: true,
+    })
+
+    const futureOutOfRange = await requestJson(baseUrl, '/api/production?date=2099-01-01&page=9&pageSize=2', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(futureOutOfRange.response.status, 200)
+    assert.equal(futureOutOfRange.body.pagination.page, 1)
+    assert.equal(futureOutOfRange.body.pagination.totalPages, 1)
+    assert.equal(futureOutOfRange.body.pagination.hasPreviousPage, false)
   })
 })
 

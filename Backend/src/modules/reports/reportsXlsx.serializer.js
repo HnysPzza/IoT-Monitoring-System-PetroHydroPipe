@@ -1,19 +1,48 @@
 const ExcelJS = require('@excel.js/exceljs').default
+const {
+  OUTPUT_SENSOR_CODE,
+  PROCESS_SENSOR_CODES,
+  getSensorLabel,
+} = require('../../shared/sensorIdentity')
+
+const COMPANY_NAME = 'Petro Hydro Pipes Corporation'
+const FONT_FAMILY = 'Arial'
+const MISSING_PLACEHOLDER = '—'
 
 const COLOR = {
-  ink: 'FF1F3A5F',
-  rule: 'FFE4E9EF',
+  primary: 'FF0F172A',
+  body: 'FF1E293B',
+  muted: 'FF475569',
+  subtle: 'FF64748B',
+  surface: 'FFF8FAFC',
+  rule: 'FFCBD5E1',
+  hairline: 'FFE2E8F0',
+  accent: 'FF1E3A8A',
   paper: 'FFFFFFFF',
 }
 
-const THIN_RULE = { style: 'thin', color: { argb: COLOR.rule } }
+const BORDER = {
+  mastheadBottom: { bottom: { style: 'medium', color: { argb: COLOR.accent } } },
+  sectionBottom: { bottom: { style: 'thin', color: { argb: COLOR.rule } } },
+  headerBox: {
+    top: { style: 'thin', color: { argb: COLOR.rule } },
+    bottom: { style: 'thin', color: { argb: COLOR.rule } },
+  },
+  bodyBottom: { bottom: { style: 'thin', color: { argb: COLOR.hairline } } },
+  totalBox: {
+    top: { style: 'thin', color: { argb: COLOR.primary } },
+    bottom: { style: 'double', color: { argb: COLOR.rule } },
+  },
+}
+
+const PCT_UNIT_FMT = '[=1]#,##0 "pc";#,##0 "pcs"'
 
 function numericValue(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function escapeFormula(value) {
-  if (typeof value === 'string' && /^[=+@-]/.test(value)) {
+  if (typeof value === 'string' && /^[\t\r\n ]*[=+@-]/.test(value)) {
     return `'${value}`
   }
   return value
@@ -37,616 +66,959 @@ function dateValue(value) {
   return date.toISOString().slice(0, 10) === value ? date : null
 }
 
-function formatManilaDayKey(dateStr, fallbackDate) {
-  if (!dateStr) return fallbackDate || 'UNDATED'
-  try {
-    const d = new Date(dateStr)
-    if (Number.isNaN(d.getTime())) return fallbackDate || 'UNDATED'
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(d)
-  } catch {
-    return fallbackDate || 'UNDATED'
+function capitalizeWord(value, fallback) {
+  if (!value) return fallback
+  const str = String(value).trim()
+  return str ? str.charAt(0).toUpperCase() + str.slice(1) : fallback
+}
+
+function getManilaParts(dateInput) {
+  const d = new Date(dateInput)
+  if (Number.isNaN(d.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]))
+}
+
+function manilaExcelDate(dateInput) {
+  if (!dateInput) return null
+  const parts = getManilaParts(dateInput)
+  if (!parts) return null
+  // Excel date serials lack timezone metadata, so store Manila wall clock in UTC fields.
+  return new Date(Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  ))
+}
+
+function formatManilaDayKey(dateStr, fallbackDate = null) {
+  if (!dateStr) return fallbackDate
+  const parts = getManilaParts(dateStr)
+  if (!parts) return fallbackDate
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+function formatManilaDateText(dateInput) {
+  if (!dateInput) return MISSING_PLACEHOLDER
+  const d = new Date(dateInput)
+  if (Number.isNaN(d.getTime())) return String(dateInput)
+  return d.toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }) + ' PST'
+}
+
+function formatShortDay(dayKey) {
+  const d = dateValue(dayKey)
+  if (!d) return dayKey ? String(dayKey) : 'Undated'
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(d)
+}
+
+function formatPeriodWindowLabel(report) {
+  if (report.observedStartAt && report.observedEndAt) {
+    const startKey = formatManilaDayKey(report.observedStartAt)
+    const endMs = Date.parse(report.observedEndAt)
+    const endKey = Number.isFinite(endMs)
+      ? formatManilaDayKey(new Date(endMs - 1).toISOString())
+      : null
+    if (startKey && endKey && startKey !== endKey) {
+      return `${formatShortDay(startKey)} - ${formatShortDay(endKey)}`
+    }
+    if (startKey) return formatShortDay(startKey)
+  }
+  return report.selectedDate ? formatShortDay(report.selectedDate) : 'Undated'
+}
+
+function buildDocRef(report) {
+  const prefix = report.category === 'production' ? 'PHP-PROD' : 'PHP-RPT'
+  const typeToken = String(report.reportType || 'DAILY').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'DAILY'
+  const dateToken = String(report.selectedDate || 'UNDATED').replace(/[^A-Za-z0-9]/g, '') || 'UNDATED'
+  return `${prefix}-${typeToken}-${dateToken}`
+}
+
+function formatHeaderFooterText(value) {
+  return String(value || '').replaceAll('&', '&&')
+}
+
+function estimateRowHeight(cellSpecs, fontSize, minHeight = 22, isBold = false) {
+  const lineHeight = Math.round(fontSize * 1.4)
+  const scaleFactor = isBold ? 0.84 : 0.94
+  let maxLines = 1
+
+  for (const { text, width } of cellSpecs) {
+    if (text === null || text === undefined || text === '') continue
+    const effectiveChars = Math.max(6, Math.floor(((width || 14) - 2) * (10 / fontSize) * scaleFactor))
+    let lines = 0
+    for (const paragraph of String(text).split(/\r?\n/)) {
+      lines += Math.max(1, Math.ceil(paragraph.length / effectiveChars))
+    }
+    if (lines > maxLines) maxLines = lines
+  }
+
+  return Math.max(minHeight, (maxLines * lineHeight) + 8)
+}
+
+function applySheetPageSetup(sheet, { printTitlesRow, machineLabel }) {
+  const safeMachine = machineLabel || 'Spiral Mill 01'
+  sheet.pageSetup = {
+    orientation: 'landscape',
+    paperSize: 9,
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    horizontalCentered: true,
+    margins: { left: 0.4, right: 0.4, top: 0.45, bottom: 0.5, header: 0.25, footer: 0.25 },
+    ...(printTitlesRow ? { printTitlesRow } : {}),
+  }
+  sheet.headerFooter = {
+    oddFooter: `&L&"${FONT_FAMILY}"&8&K64748B${formatHeaderFooterText(COMPANY_NAME)} · ${formatHeaderFooterText(safeMachine)}&R&"${FONT_FAMILY}"&8&K64748BPage &P of &N`,
   }
 }
 
-function formatManilaDate(dateStr) {
-  if (!dateStr) return 'N/A'
-  try {
-    const d = new Date(dateStr)
-    if (Number.isNaN(d.getTime())) return String(dateStr)
-    return d.toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    }) + ' PST'
-  } catch {
-    return String(dateStr)
+function setFormula(cell, formula, result, numberFormat) {
+  cell.value = { formula, result }
+  if (numberFormat) cell.numFmt = numberFormat
+}
+
+function setMissing(cell, horizontal = 'right') {
+  cell.value = MISSING_PLACEHOLDER
+  cell.font = { name: FONT_FAMILY, size: 10, color: { argb: COLOR.subtle } }
+  cell.alignment = { vertical: 'middle', horizontal }
+}
+
+function setTypedNumber(cell, value, numberFormat, font, fixed = false) {
+  const num = numericValue(value)
+  if (num === null) {
+    setMissing(cell, 'right')
+    return false
+  }
+  cell.value = num
+  cell.numFmt = fixed ? numberFormat : numberFormatFor(num, numberFormat)
+  if (font) cell.font = font
+  return true
+}
+
+function styleNumericCells(row, specs, font) {
+  for (const [colIdx, val, fmt, fixed = false] of specs) {
+    const cell = row.getCell(colIdx)
+    cell.alignment = { vertical: 'middle', horizontal: 'right' }
+    setTypedNumber(cell, val, fmt, font, fixed)
   }
 }
 
-function setNumber(cell, value, numberFormat) {
-  cell.value = numericValue(value) ?? 'N/A'
-  if (typeof cell.value === 'number') cell.numFmt = numberFormatFor(cell.value, numberFormat)
+function applyRowBorder(row, colCount, border) {
+  for (let col = 1; col <= colCount; col += 1) {
+    row.getCell(col).border = border
+  }
 }
 
-function styleLabel(cell) {
-  cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: COLOR.ink } }
-  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  cell.alignment = { vertical: 'middle', horizontal: 'left' }
+function renderMasthead(sheet, { colCount, splitCol, title, docRef, metaLeft, metaRight }) {
+  const lastColLetter = sheet.getColumn(colCount).letter
+  const leftEndLetter = sheet.getColumn(splitCol).letter
+  const rightStartLetter = sheet.getColumn(splitCol + 1).letter
+  const leftWidth = sheet.columns.slice(0, splitCol).reduce((sum, col) => sum + (col.width || 12), 0)
+  const rightWidth = sheet.columns.slice(splitCol, colCount).reduce((sum, col) => sum + (col.width || 12), 0)
+
+  sheet.mergeCells(`A1:${leftEndLetter}1`)
+  const titleCell = sheet.getCell('A1')
+  titleCell.value = escapeFormula(title)
+  titleCell.font = { name: FONT_FAMILY, size: 14, bold: true, color: { argb: COLOR.primary } }
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' }
+
+  sheet.mergeCells(`${rightStartLetter}1:${lastColLetter}1`)
+  const refCell = sheet.getCell(`${rightStartLetter}1`)
+  refCell.value = escapeFormula(docRef)
+  refCell.font = { name: FONT_FAMILY, size: 8.5, bold: true, color: { argb: COLOR.subtle } }
+  refCell.alignment = { vertical: 'middle', horizontal: 'right' }
+  sheet.getRow(1).height = 26
+
+  sheet.mergeCells(`A2:${leftEndLetter}2`)
+  const safeMetaLeft = escapeFormula(metaLeft)
+  const leftMetaCell = sheet.getCell('A2')
+  leftMetaCell.value = safeMetaLeft
+  leftMetaCell.font = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.muted } }
+  leftMetaCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+
+  sheet.mergeCells(`${rightStartLetter}2:${lastColLetter}2`)
+  const safeMetaRight = escapeFormula(metaRight)
+  const rightMetaCell = sheet.getCell(`${rightStartLetter}2`)
+  rightMetaCell.value = safeMetaRight
+  rightMetaCell.font = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.muted } }
+  rightMetaCell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true }
+  sheet.getRow(2).height = estimateRowHeight([
+    { text: safeMetaLeft, width: leftWidth },
+    { text: safeMetaRight, width: rightWidth },
+  ], 9.5, 20, false)
+
+  for (let col = 1; col <= colCount; col += 1) {
+    sheet.getRow(2).getCell(col).border = BORDER.mastheadBottom
+  }
+
+  sheet.getRow(3).height = 10
 }
 
-function styleTableHeader(row) {
-  row.height = 23
-  row.eachCell((cell) => {
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.paper } }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.ink } }
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+function renderKpiStrip(sheet, labelRowNum, items, colWidths) {
+  const valueRowNum = labelRowNum + 1
+  const labelRow = sheet.getRow(labelRowNum)
+  const valueRow = sheet.getRow(valueRowNum)
+
+  labelRow.height = estimateRowHeight(
+    items.map((item, idx) => ({ text: item.label, width: colWidths[idx] })),
+    8.5,
+    20,
+    true,
+  )
+  valueRow.height = 26
+
+  items.forEach((item, idx) => {
+    const colIdx = idx + 1
+    const align = item.align || 'right'
+    const labelCell = labelRow.getCell(colIdx)
+    const valueCell = valueRow.getCell(colIdx)
+    const sideDivider = idx < items.length - 1
+      ? { right: { style: 'thin', color: { argb: COLOR.hairline } } }
+      : {}
+
+    labelCell.value = item.label
+    labelCell.font = { name: FONT_FAMILY, size: 8.5, bold: true, color: { argb: COLOR.muted } }
+    labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.surface } }
+    labelCell.alignment = { vertical: 'middle', horizontal: align, wrapText: true }
+    labelCell.border = { top: { style: 'thin', color: { argb: COLOR.rule } }, ...sideDivider }
+
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.surface } }
+    valueCell.border = { bottom: { style: 'thin', color: { argb: COLOR.rule } }, ...sideDivider }
+
+    if (item.formula) {
+      if (item.result === null) {
+        setMissing(valueCell, align)
+      } else {
+        setFormula(valueCell, item.formula, item.result, item.numFmt)
+        valueCell.font = { name: FONT_FAMILY, size: item.fontSize || 14, bold: true, color: { argb: item.color || COLOR.primary } }
+        valueCell.alignment = { vertical: 'middle', horizontal: align }
+      }
+      return
+    }
+
+    if (item.kind === 'text') {
+      if (!item.value) {
+        setMissing(valueCell, align)
+      } else {
+        valueCell.value = escapeFormula(item.value)
+        valueCell.font = { name: FONT_FAMILY, size: item.fontSize || 11, bold: true, color: { argb: item.color || COLOR.primary } }
+        valueCell.alignment = { vertical: 'middle', horizontal: align }
+      }
+      return
+    }
+
+    const num = numericValue(item.value)
+    if (num === null) {
+      setMissing(valueCell, align)
+    } else {
+      valueCell.value = num
+      valueCell.numFmt = item.exactFmt ? item.numFmt : numberFormatFor(num, item.numFmt || '#,##0')
+      valueCell.font = { name: FONT_FAMILY, size: item.fontSize || 14, bold: true, color: { argb: item.color || COLOR.primary } }
+      valueCell.alignment = { vertical: 'middle', horizontal: align }
+    }
   })
 }
 
-function styleTableBody(row) {
+function renderSectionTitle(sheet, rowNumber, colCount, title) {
+  const endLetter = sheet.getColumn(colCount).letter
+  sheet.mergeCells(`A${rowNumber}:${endLetter}${rowNumber}`)
+  const row = sheet.getRow(rowNumber)
   row.height = 22
-  row.eachCell({ includeEmpty: true }, (cell) => {
-    cell.font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
-    cell.border = { bottom: THIN_RULE }
+  const cell = row.getCell(1)
+  cell.value = title
+  cell.font = { name: FONT_FAMILY, size: 10.5, bold: true, color: { argb: COLOR.primary } }
+  cell.alignment = { vertical: 'middle', horizontal: 'left' }
+  for (let col = 1; col <= colCount; col += 1) {
+    row.getCell(col).border = BORDER.sectionBottom
+  }
+}
+
+function styleHeaderRow(sheet, rowNumber, columns, colWidths) {
+  const row = sheet.getRow(rowNumber)
+  row.values = columns.map((col) => col.label)
+  row.height = estimateRowHeight(
+    columns.map((col, idx) => ({ text: col.label, width: colWidths[idx] })),
+    9,
+    26,
+    true,
+  )
+  columns.forEach((col, idx) => {
+    const cell = row.getCell(idx + 1)
+    cell.font = { name: FONT_FAMILY, size: 9, bold: true, color: { argb: COLOR.muted } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.surface } }
+    cell.alignment = { vertical: 'middle', horizontal: col.align || 'left', wrapText: true }
+    cell.border = BORDER.headerBox
+  })
+}
+
+function styleEmptyNoticeRow(sheet, rowNumber, colCount, message) {
+  const row = sheet.getRow(rowNumber)
+  const endLetter = sheet.getColumn(colCount).letter
+  sheet.mergeCells(`A${rowNumber}:${endLetter}${rowNumber}`)
+  row.height = 24
+  const cell = row.getCell(1)
+  cell.value = message
+  cell.font = { name: FONT_FAMILY, size: 9.5, italic: true, color: { argb: COLOR.subtle } }
+  cell.alignment = { vertical: 'middle', horizontal: 'left' }
+  for (let col = 1; col <= colCount; col += 1) {
+    row.getCell(col).border = BORDER.bodyBottom
+  }
+}
+
+function styleTotalRow(sheet, rowNumber, colCount, cellsByCol) {
+  const row = sheet.getRow(rowNumber)
+  row.height = 23
+
+  for (let col = 1; col <= colCount; col += 1) {
+    const cell = row.getCell(col)
+    cell.font = { name: FONT_FAMILY, size: 9.5, bold: true, color: { argb: COLOR.primary } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.surface } }
+    cell.border = BORDER.totalBox
+    cell.alignment = { vertical: 'middle', horizontal: col === 1 ? 'left' : 'right' }
+  }
+
+  for (const [colIdx, spec] of Object.entries(cellsByCol)) {
+    const cell = row.getCell(Number(colIdx))
+    if (spec.formula) {
+      setFormula(cell, spec.formula, spec.result, spec.numFmt)
+    } else {
+      cell.value = spec.value
+      if (spec.numFmt) cell.numFmt = spec.numFmt
+    }
+    if (spec.align) cell.alignment = { vertical: 'middle', horizontal: spec.align }
+  }
+}
+
+function renderFootnote(sheet, rowNumber, colCount, text) {
+  const endLetter = sheet.getColumn(colCount).letter
+  sheet.mergeCells(`A${rowNumber}:${endLetter}${rowNumber}`)
+  const row = sheet.getRow(rowNumber)
+  const safeText = escapeFormula(text)
+  const spanWidth = sheet.columns.slice(0, colCount).reduce((sum, col) => sum + (col.width || 12), 0)
+  row.height = estimateRowHeight([{ text: safeText, width: spanWidth }], 8.5, 18, false)
+  const cell = row.getCell(1)
+  cell.value = safeText
+  cell.font = { name: FONT_FAMILY, size: 8.5, color: { argb: COLOR.subtle } }
+  cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+}
+
+function collectDatedDailyStats(productionLogs) {
+  const dayStats = new Map()
+  let undatedCount = 0
+
+  for (const log of productionLogs) {
+    const dayKey = formatManilaDayKey(log.recordedAt, null)
+    const parsedDay = dayKey ? dateValue(dayKey) : null
+    if (!parsedDay) {
+      undatedCount += 1
+      continue
+    }
+    const existing = dayStats.get(dayKey) || { dayKey, date: parsedDay, count: 0, tons: 0 }
+    existing.count += 1
+    const tonVal = numericValue(log.tonnage)
+    if (tonVal !== null && tonVal > 0) existing.tons += tonVal
+    dayStats.set(dayKey, existing)
+  }
+
+  const days = Array.from(dayStats.values())
+    .sort((a, b) => a.dayKey.localeCompare(b.dayKey))
+    .map((entry) => ({ ...entry, tons: Math.round(entry.tons * 10000) / 10000 }))
+
+  return { days, undatedCount }
+}
+
+function renderProductionSummarySheet(workbook, report, { machineLabel, sensorLabel, reportTypeLabel, periodWindow, generatedText, docRef }) {
+  const colWidths = [32, 18, 15, 15, 15, 17, 15]
+  const sheet = workbook.addWorksheet('Production Summary', {
+    properties: { defaultRowHeight: 20 },
+  })
+  sheet.columns = colWidths.map((width) => ({ width }))
+  sheet.views = [{ showGridLines: false }]
+  applySheetPageSetup(sheet, { machineLabel })
+
+  const observation = capitalizeWord(report.periodState, MISSING_PLACEHOLDER)
+  renderMasthead(sheet, {
+    colCount: 7,
+    splitCol: 4,
+    title: `${COMPANY_NAME}  ·  Production Output Report`,
+    docRef,
+    metaLeft: `${reportTypeLabel}  ·  ${machineLabel}  ·  ${periodWindow}`,
+    metaRight: `Station: ${sensorLabel}\nGenerated ${generatedText}`,
+  })
+
+  const totalOut = numericValue(report.metrics?.totalProductionOutput)
+  const specPipes = numericValue(report.metrics?.specifiedPipes)
+  const unspecPipes = numericValue(report.metrics?.unspecifiedPipes)
+  const totalTons = numericValue(report.metrics?.totalTonnage ?? report.totalTonnage)
+  const distinctSizes = numericValue(report.metrics?.distinctProductSizes)
+  const coverageResult = totalOut !== null && specPipes !== null
+    ? (totalOut > 0 ? specPipes / totalOut : 0)
+    : null
+
+  renderKpiStrip(sheet, 4, [
+    { label: 'TOTAL OUTPUT', value: totalOut, numFmt: PCT_UNIT_FMT, exactFmt: true, align: 'left' },
+    { label: 'TOTAL TONNAGE (tons)', value: totalTons, numFmt: '#,##0.0000', exactFmt: true, align: 'right' },
+    { label: 'SPECIFIED', value: specPipes, numFmt: PCT_UNIT_FMT, exactFmt: true, align: 'right' },
+    { label: 'UNSPECIFIED', value: unspecPipes, numFmt: PCT_UNIT_FMT, exactFmt: true, align: 'right' },
+    { label: 'TAG COVERAGE', formula: 'IF(A5>0,C5/A5,0)', result: coverageResult, numFmt: '0.0%', align: 'right' },
+    { label: 'DISTINCT SPECS', value: distinctSizes, numFmt: '#,##0', align: 'right' },
+    { label: 'OBSERVATION', kind: 'text', value: observation === MISSING_PLACEHOLDER ? null : observation, align: 'right', fontSize: 12, color: COLOR.accent },
+  ], colWidths)
+
+  sheet.getRow(6).height = 12
+
+  renderSectionTitle(sheet, 7, 7, 'Breakdown by Product Specification')
+  styleHeaderRow(sheet, 8, [
+    { label: 'Customer', align: 'left' },
+    { label: 'Diameter (OD) mm', align: 'right' },
+    { label: 'Thickness mm', align: 'right' },
+    { label: 'Length mm', align: 'right' },
+    { label: 'Quantity (pcs)', align: 'right' },
+    { label: 'Total Tons', align: 'right' },
+    { label: '% of Total', align: 'right' },
+  ], colWidths)
+
+  const specBreakdown = Array.isArray(report.specBreakdown) ? report.specBreakdown : []
+  let nextRow = 9
+
+  if (specBreakdown.length === 0) {
+    styleEmptyNoticeRow(sheet, nextRow, 7, 'No accepted pipe cutting events recorded for this period.')
+    nextRow += 1
+  } else {
+    const firstSpecRow = 9
+    const lastSpecRow = firstSpecRow + specBreakdown.length - 1
+    const totalSpecRow = lastSpecRow + 1
+    const breakdownQtySum = specBreakdown.reduce((sum, g) => sum + (numericValue(g.pipeCount) ?? 0), 0)
+    const breakdownTonsSum = Math.round(
+      specBreakdown.reduce((sum, g) => sum + (numericValue(g.totalTonnage) ?? 0), 0) * 10000,
+    ) / 10000
+
+    sheet.autoFilter = `A8:G${lastSpecRow}`
+
+    specBreakdown.forEach((group, idx) => {
+      const row = sheet.getRow(firstSpecRow + idx)
+      const customerText = escapeFormula(
+        group.customer || (group.isSpecified === false ? 'Unspecified / Pending Tag' : (group.label || MISSING_PLACEHOLDER)),
+      )
+      const bodyFont = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.body } }
+
+      row.getCell(1).value = customerText
+      row.getCell(1).font = bodyFont
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+
+      styleNumericCells(row, [
+        [2, group.diameter, '#,##0.00', true],
+        [3, group.thickness, '#,##0.00', true],
+        [4, group.length, '#,##0.##', false],
+      ], bodyFont)
+
+      const qtyVal = numericValue(group.pipeCount) ?? 0
+      const qtyCell = row.getCell(5)
+      qtyCell.value = qtyVal
+      qtyCell.numFmt = '#,##0'
+      qtyCell.font = bodyFont
+      qtyCell.alignment = { vertical: 'middle', horizontal: 'right' }
+
+      styleNumericCells(row, [[6, group.totalTonnage, '#,##0.0000', true]], bodyFont)
+
+      const pctCell = row.getCell(7)
+      pctCell.alignment = { vertical: 'middle', horizontal: 'right' }
+      const pctFallback = numericValue(group.percentageOfTotal) !== null
+        ? group.percentageOfTotal / 100
+        : (breakdownQtySum > 0 ? qtyVal / breakdownQtySum : 0)
+      const pctResult = breakdownQtySum > 0 ? qtyVal / breakdownQtySum : pctFallback
+      setFormula(pctCell, `IF($E$${totalSpecRow}>0,E${row.number}/$E$${totalSpecRow},0)`, pctResult, '0.0%')
+      pctCell.font = bodyFont
+
+      applyRowBorder(row, 7, BORDER.bodyBottom)
+      row.height = estimateRowHeight([{ text: customerText, width: colWidths[0] }], 9.5, 22, false)
+    })
+
+    const totalPctResult = specBreakdown.length > 0 && breakdownQtySum > 0 ? 1 : 0
+    styleTotalRow(sheet, totalSpecRow, 7, {
+      1: { value: 'TOTAL ACCEPTED OUTPUT', align: 'left' },
+      5: { formula: `SUM(E${firstSpecRow}:E${lastSpecRow})`, result: breakdownQtySum, numFmt: '#,##0' },
+      6: { formula: `SUM(F${firstSpecRow}:F${lastSpecRow})`, result: breakdownTonsSum, numFmt: '#,##0.0000' },
+      7: { formula: `SUM(G${firstSpecRow}:G${lastSpecRow})`, result: totalPctResult, numFmt: '0.0%' },
+    })
+    nextRow = totalSpecRow + 1
+  }
+
+  const productionLogs = Array.isArray(report.productionLogs) ? report.productionLogs : []
+  const { days: dailyStats, undatedCount } = collectDatedDailyStats(productionLogs)
+
+  if (dailyStats.length > 0 && productionLogs.length > 0) {
+    const lastLogRow = 4 + productionLogs.length
+    sheet.getRow(nextRow).height = 12
+    const titleRow = nextRow + 1
+    renderSectionTitle(sheet, titleRow, 4, 'Daily Production Rollup (Manila PST)')
+    const dailyHeaderRow = titleRow + 1
+    styleHeaderRow(sheet, dailyHeaderRow, [
+      { label: 'Date (PST)', align: 'left' },
+      { label: 'Cut Count', align: 'right' },
+      { label: 'Total Tons', align: 'right' },
+      { label: '% of Logged Tons', align: 'right' },
+    ], colWidths)
+
+    const firstDailyRow = dailyHeaderRow + 1
+    const lastDailyRow = firstDailyRow + dailyStats.length - 1
+    const totalDailyRow = lastDailyRow + 1
+    const loggedTotalCuts = dailyStats.reduce((sum, d) => sum + d.count, 0)
+    const loggedTotalTons = Math.round(dailyStats.reduce((sum, d) => sum + d.tons, 0) * 10000) / 10000
+    const logRangeDate = `'Production Cut Logs'!$A$5:$A$${lastLogRow}`
+    const logRangeTons = `'Production Cut Logs'!$G$5:$G$${lastLogRow}`
+
+    dailyStats.forEach((day, idx) => {
+      const rowNum = firstDailyRow + idx
+      const row = sheet.getRow(rowNum)
+      row.height = 22
+      const bodyFont = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.body } }
+
+      const dateCell = row.getCell(1)
+      dateCell.value = day.date
+      dateCell.numFmt = 'mmm d, yyyy'
+      dateCell.font = bodyFont
+      dateCell.alignment = { vertical: 'middle', horizontal: 'left' }
+
+      const countCell = row.getCell(2)
+      setFormula(
+        countCell,
+        `COUNTIFS(${logRangeDate},">="&A${rowNum},${logRangeDate},"<"&(A${rowNum}+1))`,
+        day.count,
+        PCT_UNIT_FMT,
+      )
+      countCell.font = bodyFont
+      countCell.alignment = { vertical: 'middle', horizontal: 'right' }
+
+      const tonsCell = row.getCell(3)
+      setFormula(
+        tonsCell,
+        `SUMIFS(${logRangeTons},${logRangeDate},">="&A${rowNum},${logRangeDate},"<"&(A${rowNum}+1))`,
+        day.tons,
+        '#,##0.0000',
+      )
+      tonsCell.font = bodyFont
+      tonsCell.alignment = { vertical: 'middle', horizontal: 'right' }
+
+      const shareCell = row.getCell(4)
+      setFormula(
+        shareCell,
+        `IF($C$${totalDailyRow}>0,C${rowNum}/$C$${totalDailyRow},0)`,
+        loggedTotalTons > 0 ? day.tons / loggedTotalTons : 0,
+        '0.0%',
+      )
+      shareCell.font = bodyFont
+      shareCell.alignment = { vertical: 'middle', horizontal: 'right' }
+
+      applyRowBorder(row, 4, BORDER.bodyBottom)
+    })
+
+    styleTotalRow(sheet, totalDailyRow, 4, {
+      1: { value: 'TOTAL LOGGED CUTS', align: 'left' },
+      2: { formula: `SUM(B${firstDailyRow}:B${lastDailyRow})`, result: loggedTotalCuts, numFmt: PCT_UNIT_FMT },
+      3: { formula: `SUM(C${firstDailyRow}:C${lastDailyRow})`, result: loggedTotalTons, numFmt: '#,##0.0000' },
+      4: { formula: `SUM(D${firstDailyRow}:D${lastDailyRow})`, result: loggedTotalTons > 0 ? 1 : 0, numFmt: '0.0%' },
+    })
+    nextRow = totalDailyRow + 1
+    if (undatedCount > 0) {
+      sheet.getRow(nextRow).height = 8
+      renderFootnote(
+        sheet,
+        nextRow + 1,
+        7,
+        `Source: ${sensorLabel} · Observation: ${observation} · ${undatedCount} cut(s) without valid timestamp excluded from daily rollup.`,
+      )
+      return
+    }
+  }
+
+  sheet.getRow(nextRow).height = 8
+  const capNote = totalOut !== null && productionLogs.length > 0 && productionLogs.length < totalOut
+    ? `Cut Logs tab displays ${productionLogs.length} of ${totalOut} total cuts.`
+    : 'Cut Logs tab contains individual sortable pipe cuts.'
+  renderFootnote(sheet, nextRow + 1, 7, `Source: ${sensorLabel} · Observation: ${observation} · ${capNote}`)
+}
+
+function renderProductionCutLogsSheet(workbook, report, { machineLabel, reportTypeLabel, periodWindow, docRef }) {
+  const colWidths = [24, 30, 14, 13, 13, 12, 14, 14]
+  const sheet = workbook.addWorksheet('Production Cut Logs', {
+    properties: { defaultRowHeight: 20 },
+  })
+  sheet.columns = colWidths.map((width) => ({ width }))
+  applySheetPageSetup(sheet, { printTitlesRow: '4:4', machineLabel })
+
+  const productionLogs = Array.isArray(report.productionLogs) ? report.productionLogs : []
+  const totalOut = numericValue(report.metrics?.totalProductionOutput ?? report.totalProductionOutput)
+  const observation = capitalizeWord(report.periodState, MISSING_PLACEHOLDER)
+  const countNotice = totalOut !== null && productionLogs.length < totalOut
+    ? `Showing ${productionLogs.length} of ${totalOut} cuts`
+    : 'All times Manila (PST)'
+
+  renderMasthead(sheet, {
+    colCount: 8,
+    splitCol: 4,
+    title: `${COMPANY_NAME}  ·  Production Cut Logs (${OUTPUT_SENSOR_CODE})`,
+    docRef,
+    metaLeft: `${reportTypeLabel}  ·  ${machineLabel}  ·  ${periodWindow}`,
+    metaRight: `Observation: ${observation}  ·  ${countNotice}`,
+  })
+
+  styleHeaderRow(sheet, 4, [
+    { label: 'Cut Timestamp (PST)', align: 'left' },
+    { label: 'Customer', align: 'left' },
+    { label: 'Diameter (OD) mm', align: 'right' },
+    { label: 'Thickness mm', align: 'right' },
+    { label: 'Length mm', align: 'right' },
+    { label: 'Pipe #', align: 'center' },
+    { label: 'Tons', align: 'right' },
+    { label: 'Status', align: 'center' },
+  ], colWidths)
+
+  if (productionLogs.length === 0) {
+    sheet.views = [{ state: 'frozen', ySplit: 4, topLeftCell: 'A5', activeCell: 'A5', showGridLines: false }]
+    styleEmptyNoticeRow(sheet, 5, 8, 'No individual pipe cuts registered for this period.')
+    return
+  }
+
+  sheet.views = [{ state: 'frozen', ySplit: 4, topLeftCell: 'A5', activeCell: 'A5', showGridLines: false }]
+  const firstLogRow = 5
+  const lastLogRow = firstLogRow + productionLogs.length - 1
+  sheet.autoFilter = `A4:H${lastLogRow}`
+
+  let totalLogTons = 0
+  const bodyFont = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.body } }
+
+  productionLogs.forEach((log, idx) => {
+    const rowNum = firstLogRow + idx
+    const row = sheet.getRow(rowNum)
+
+    const tsCell = row.getCell(1)
+    const excelDate = manilaExcelDate(log.recordedAt)
+    tsCell.alignment = { vertical: 'middle', horizontal: 'left' }
+    if (excelDate) {
+      tsCell.value = excelDate
+      tsCell.numFmt = 'mmm d, yyyy hh:mm AM/PM'
+      tsCell.font = bodyFont
+    } else if (log.recordedAt) {
+      tsCell.value = escapeFormula(String(log.recordedAt))
+      tsCell.font = bodyFont
+    } else {
+      setMissing(tsCell, 'left')
+    }
+
+    const customerText = escapeFormula(
+      log.customer || (log.isSpecified ? (log.label || MISSING_PLACEHOLDER) : 'Pending Tag'),
+    )
+    const customerCell = row.getCell(2)
+    customerCell.value = customerText
+    customerCell.font = log.isSpecified
+      ? bodyFont
+      : { name: FONT_FAMILY, size: 9.5, italic: true, color: { argb: COLOR.subtle } }
+    customerCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+
+    styleNumericCells(row, [
+      [3, log.diameter, '#,##0.00', true],
+      [4, log.thickness, '#,##0.00', true],
+      [5, log.length, '#,##0.##', false],
+    ], bodyFont)
+
+    const pipeCell = row.getCell(6)
+    pipeCell.alignment = { vertical: 'middle', horizontal: 'center' }
+    const parsedPipeNumber = log.pipeNumber !== null &&
+      log.pipeNumber !== undefined &&
+      typeof log.pipeNumber !== 'boolean' &&
+      String(log.pipeNumber).trim() !== ''
+      ? Number(log.pipeNumber)
+      : NaN
+    if (Number.isFinite(parsedPipeNumber)) {
+      pipeCell.value = parsedPipeNumber
+      pipeCell.numFmt = '#,##0'
+      pipeCell.font = bodyFont
+    } else if (typeof log.deviceEventId === 'string') {
+      pipeCell.value = escapeFormula(log.deviceEventId)
+      pipeCell.font = bodyFont
+    } else if (log.deviceEventId !== null && log.deviceEventId !== undefined) {
+      pipeCell.value = log.deviceEventId
+      if (typeof pipeCell.value === 'number') pipeCell.numFmt = '#,##0'
+      pipeCell.font = bodyFont
+    } else if (log.id) {
+      pipeCell.value = escapeFormula(String(log.id).slice(0, 8))
+      pipeCell.font = bodyFont
+    } else {
+      setMissing(pipeCell, 'center')
+    }
+
+    const tonVal = numericValue(log.tonnage)
+    if (tonVal !== null && tonVal > 0) totalLogTons += tonVal
+    styleNumericCells(row, [[7, log.tonnage, '#,##0.0000', true]], bodyFont)
+
+    const statusCell = row.getCell(8)
+    statusCell.value = log.isSpecified ? 'Specified' : 'Pending Tag'
+    statusCell.font = log.isSpecified
+      ? { name: FONT_FAMILY, size: 9, bold: true, color: { argb: COLOR.primary } }
+      : { name: FONT_FAMILY, size: 9, italic: true, color: { argb: COLOR.subtle } }
+    statusCell.alignment = { vertical: 'middle', horizontal: 'center' }
+
+    applyRowBorder(row, 8, BORDER.bodyBottom)
+    row.height = estimateRowHeight([{ text: customerText, width: colWidths[1] }], 9.5, 22, false)
+  })
+
+  const roundedTotalTons = Math.round(totalLogTons * 10000) / 10000
+  styleTotalRow(sheet, lastLogRow + 1, 8, {
+    1: { value: 'TOTAL (VISIBLE CUTS)', align: 'left' },
+    6: { formula: `SUBTOTAL(3,A${firstLogRow}:A${lastLogRow})`, result: productionLogs.length, numFmt: PCT_UNIT_FMT, align: 'center' },
+    7: { formula: `SUBTOTAL(9,G${firstLogRow}:G${lastLogRow})`, result: roundedTotalTons, numFmt: '#,##0.0000', align: 'right' },
   })
 }
 
 async function renderProductionWorkbook(workbook, report) {
-  workbook.creator = 'PetroHydroPipe Operations'
+  workbook.creator = COMPANY_NAME
   workbook.subject = 'Production Output Report'
   workbook.title = 'Production Output Report'
+  workbook.calcProperties.fullCalcOnLoad = true
 
-  // Worksheet 1: Production Summary
-  const summarySheet = workbook.addWorksheet('Production Summary', {
-    properties: { defaultRowHeight: 20 },
-    pageSetup: {
-      orientation: 'landscape',
-      paperSize: 9,
-      fitToPage: true,
-      fitToWidth: 1,
-      fitToHeight: 0,
-      margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
-    },
-  })
-
-  summarySheet.columns = [
-    { width: 32 },
-    { width: 18 },
-    { width: 16 },
-    { width: 16 },
-    { width: 20 },
-    { width: 18 },
-    { width: 16 },
-  ]
-  summarySheet.views = [{ state: 'frozen', ySplit: 3, topLeftCell: 'A4', activeCell: 'A4', showGridLines: false }]
-
-  summarySheet.mergeCells('A2:G2')
-  summarySheet.getCell('A2').value = 'PETRO HYDRO PIPE CORP.  |  Production Output Report'
-  summarySheet.getCell('A2').font = { name: 'Arial', size: 16, bold: true, color: { argb: COLOR.ink } }
-  summarySheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' }
-  summarySheet.getRow(2).height = 25
-
-  summarySheet.mergeCells('A3:D3')
-  const reportTypeLabel = report.reportType
-    ? String(report.reportType).charAt(0).toUpperCase() + String(report.reportType).slice(1) + ' report'
-    : 'Production Output Report'
-  summarySheet.getCell('A3').value = reportTypeLabel
-  summarySheet.getCell('A3').font = { name: 'Arial', size: 18, bold: true, color: { argb: COLOR.ink } }
-  summarySheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  summarySheet.getCell('A3').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  summarySheet.mergeCells('E3:G3')
   const machineLabel = report.machine?.name
     ? `${report.machine.name} (${report.machine.code || 'M-01'})`
     : 'Spiral Mill 01 (M-01)'
-  summarySheet.getCell('E3').value = machineLabel
-  summarySheet.getCell('E3').font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-  summarySheet.getCell('E3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  summarySheet.getCell('E3').alignment = { vertical: 'middle', horizontal: 'right' }
-  summarySheet.getRow(3).height = 34
+  const canonicalS05 = `${OUTPUT_SENSOR_CODE} ${getSensorLabel(OUTPUT_SENSOR_CODE, 'Production Output Cutting')}`
+  const sensorLabel = report.sensor?.label || canonicalS05
+  const reportTypeLabel = `${capitalizeWord(report.reportType, 'Production')} Report`
+  const periodWindow = formatPeriodWindowLabel(report)
+  const generatedText = formatManilaDateText(report.generatedAt)
+  const docRef = buildDocRef(report)
 
-  summarySheet.getCell('A4').value = 'Period'
-  styleLabel(summarySheet.getCell('A4'))
-  summarySheet.getCell('B4').value = dateValue(report.selectedDate) || report.selectedDate || 'N/A'
-  if (summarySheet.getCell('B4').value instanceof Date) summarySheet.getCell('B4').numFmt = 'mmm d, yyyy'
-  summarySheet.getCell('B4').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  summarySheet.getCell('C4').value = 'Observation'
-  styleLabel(summarySheet.getCell('C4'))
-  summarySheet.getCell('D4').value = report.periodState
-    ? String(report.periodState).charAt(0).toUpperCase() + String(report.periodState).slice(1)
-    : 'N/A'
-  summarySheet.getCell('D4').font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-  summarySheet.getCell('D4').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  summarySheet.getCell('E4').value = 'Target Station'
-  styleLabel(summarySheet.getCell('E4'))
-  summarySheet.mergeCells('F4:G4')
-  summarySheet.getCell('F4').value = report.sensor?.label || 'S-05 Cutting Sensor'
-  summarySheet.getCell('F4').font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-  summarySheet.getCell('F4').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  summarySheet.getCell('A5').value = 'Generated (UTC)'
-  styleLabel(summarySheet.getCell('A5'))
-  summarySheet.mergeCells('B5:C5')
-  const generatedAt = typeof report.generatedAt === 'string' ? new Date(report.generatedAt) : null
-  summarySheet.getCell('B5').value = generatedAt && !Number.isNaN(generatedAt.getTime()) ? generatedAt : 'N/A'
-  if (summarySheet.getCell('B5').value instanceof Date) summarySheet.getCell('B5').numFmt = 'mmm d, yyyy hh:mm AM/PM'
-  summarySheet.getCell('B5').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  summarySheet.getCell('D5').value = 'Tag Coverage'
-  styleLabel(summarySheet.getCell('D5'))
-  summarySheet.mergeCells('E5:G5')
-  const totalOut = numericValue(report.metrics?.totalProductionOutput)
-  const specPipes = numericValue(report.metrics?.specifiedPipes)
-  const coveragePercent = totalOut && totalOut > 0 && specPipes !== null
-    ? `${Math.round((specPipes / totalOut) * 100)}% tagged`
-    : 'N/A'
-  summarySheet.getCell('E5').value = coveragePercent
-  summarySheet.getCell('E5').font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-  summarySheet.getCell('E5').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  summarySheet.mergeCells('A7:G7')
-  summarySheet.getCell('A7').value = 'Period Summary'
-  summarySheet.getCell('A7').font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-  summarySheet.getCell('A7').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  summarySheet.getCell('A7').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
-
-  const summaryGrid = [
-    [
-      ['Total Production Output', numericValue(report.metrics?.totalProductionOutput), '#,##0 "pcs"'],
-      ['Total Production Tonnage (tons)', numericValue(report.metrics?.totalTonnage ?? report.totalTonnage), '#,##0.0000 "tons"'],
-    ],
-    [
-      ['Specified Pipes', numericValue(report.metrics?.specifiedPipes), '#,##0 "pcs"'],
-      ['Unspecified Pipes', numericValue(report.metrics?.unspecifiedPipes), '#,##0 "pcs"'],
-    ],
-    [
-      ['Distinct Product Sizes', numericValue(report.metrics?.distinctProductSizes), '#,##0'],
-      ['Tag Coverage', totalOut && totalOut > 0 && specPipes !== null ? Math.round((specPipes / totalOut) * 100) / 100 : null, '0.0%'],
-    ],
-  ]
-
-  summaryGrid.forEach((rowItems, index) => {
-    const rowNum = 8 + index
-    const [leftItem, rightItem] = rowItems
-
-    summarySheet.getCell('A' + rowNum).value = leftItem[0]
-    styleLabel(summarySheet.getCell('A' + rowNum))
-    setNumber(summarySheet.getCell('B' + rowNum), leftItem[1], leftItem[2])
-
-    summarySheet.getCell('D' + rowNum).value = rightItem[0]
-    styleLabel(summarySheet.getCell('D' + rowNum))
-    setNumber(summarySheet.getCell('E' + rowNum), rightItem[1], rightItem[2])
-
-    for (const address of ['B' + rowNum, 'E' + rowNum]) {
-      summarySheet.getCell(address).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-      summarySheet.getCell(address).alignment = { vertical: 'middle', horizontal: 'right' }
-      summarySheet.getCell(address).border = { bottom: THIN_RULE }
-    }
+  renderProductionSummarySheet(workbook, report, {
+    machineLabel,
+    sensorLabel,
+    reportTypeLabel,
+    periodWindow,
+    generatedText,
+    docRef,
   })
 
-  summarySheet.mergeCells('A11:G11')
-  summarySheet.getCell('A11').value = 'Breakdown by Product Specification'
-  summarySheet.getCell('A11').font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-  summarySheet.getCell('A11').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  summarySheet.getCell('A11').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
-
-  const specHeaderRow = summarySheet.getRow(12)
-  specHeaderRow.values = ['Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Quantity (pcs)', 'Total Tons', '% of Total']
-  styleTableHeader(specHeaderRow)
-
-  const specBreakdown = Array.isArray(report.specBreakdown) ? report.specBreakdown : []
-  if (specBreakdown.length === 0) {
-    const emptyRow = summarySheet.getRow(13)
-    summarySheet.mergeCells('A13:G13')
-    emptyRow.getCell(1).value = 'No accepted pipe cutting events recorded for this period.'
-    emptyRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: COLOR.ink } }
-    emptyRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' }
-    emptyRow.getCell(1).border = { bottom: THIN_RULE }
-    emptyRow.height = 24
-  } else {
-    specBreakdown.forEach((group, index) => {
-      const row = summarySheet.getRow(13 + index)
-      const customer = escapeFormula(group.customer || (group.isSpecified === false ? 'Unspecified / Pending Tag' : (group.label || 'N/A')))
-      const diameter = numericValue(group.diameter) ?? 'N/A'
-      const thickness = numericValue(group.thickness) ?? 'N/A'
-      const length = numericValue(group.length) ?? 'N/A'
-      const count = numericValue(group.pipeCount) ?? 0
-      const totalTons = numericValue(group.totalTonnage) ?? 'N/A'
-      const pct = numericValue(group.percentageOfTotal) !== null ? group.percentageOfTotal / 100 : 'N/A'
-
-      row.values = [customer, diameter, thickness, length, count, totalTons, pct]
-      styleTableBody(row)
-
-      for (const colIdx of [2, 3, 4]) {
-        row.getCell(colIdx).alignment = { vertical: 'middle', horizontal: 'right' }
-        if (typeof row.getCell(colIdx).value === 'number') {
-          row.getCell(colIdx).numFmt = '#,##0.##'
-        }
-      }
-
-      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' }
-      if (typeof row.getCell(5).value === 'number') {
-        row.getCell(5).numFmt = '#,##0'
-      }
-
-      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' }
-      if (typeof row.getCell(6).value === 'number') {
-        row.getCell(6).numFmt = '#,##0.0000'
-      }
-
-      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
-      if (typeof row.getCell(7).value === 'number') {
-        row.getCell(7).numFmt = '0.0%'
-      }
-    })
-
-    const totalRow = summarySheet.getRow(13 + specBreakdown.length)
-    const totalTons = numericValue(report.totalTonnage) ?? 0
-    totalRow.values = [
-      'TOTAL ACCEPTED OUTPUT',
-      '-',
-      '-',
-      '-',
-      numericValue(report.totalProductionOutput) ?? 0,
-      totalTons,
-      1.0,
-    ]
-    styleTableBody(totalRow)
-    totalRow.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-    totalRow.getCell(5).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-    totalRow.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' }
-    totalRow.getCell(5).numFmt = '#,##0'
-    totalRow.getCell(6).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-    totalRow.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' }
-    totalRow.getCell(6).numFmt = '#,##0.0000'
-    totalRow.getCell(7).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-    totalRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
-    totalRow.getCell(7).numFmt = '0.0%'
-  }
-
-  // Worksheet 2: Production Cut Logs
-  const logsSheet = workbook.addWorksheet('Production Cut Logs', {
-    properties: { defaultRowHeight: 20 },
-    pageSetup: {
-      orientation: 'landscape',
-      paperSize: 9,
-      fitToPage: true,
-      fitToWidth: 1,
-      fitToHeight: 0,
-      margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
-    },
+  renderProductionCutLogsSheet(workbook, report, {
+    machineLabel,
+    reportTypeLabel,
+    periodWindow,
+    docRef,
   })
-
-  logsSheet.columns = [
-    { width: 26 },
-    { width: 26 },
-    { width: 18 },
-    { width: 16 },
-    { width: 16 },
-    { width: 16 },
-    { width: 18 },
-    { width: 16 },
-  ]
-  logsSheet.views = [{ state: 'frozen', ySplit: 5, topLeftCell: 'A6', activeCell: 'A6', showGridLines: false }]
-
-  logsSheet.mergeCells('A2:H2')
-  logsSheet.getCell('A2').value = 'PETRO HYDRO PIPE CORP.  |  Production Cut Logs (S-05)'
-  logsSheet.getCell('A2').font = { name: 'Arial', size: 16, bold: true, color: { argb: COLOR.ink } }
-  logsSheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' }
-  logsSheet.getRow(2).height = 25
-
-  logsSheet.mergeCells('A3:D3')
-  logsSheet.getCell('A3').value = reportTypeLabel
-  logsSheet.getCell('A3').font = { name: 'Arial', size: 14, bold: true, color: { argb: COLOR.ink } }
-  logsSheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  logsSheet.getCell('A3').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  logsSheet.mergeCells('E3:H3')
-  logsSheet.getCell('E3').value = report.selectedDate || 'Undated'
-  logsSheet.getCell('E3').font = { name: 'Arial', size: 12, bold: true, color: { argb: COLOR.ink } }
-  logsSheet.getCell('E3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  logsSheet.getCell('E3').alignment = { vertical: 'middle', horizontal: 'right' }
-  logsSheet.getRow(3).height = 28
-
-  const logHeaderRow = logsSheet.getRow(5)
-  logHeaderRow.values = [
-    'Cut Timestamp (PST)',
-    'Customer',
-    'Diameter (OD) mm',
-    'Thickness mm',
-    'Length mm',
-    'Pipe #',
-    'Tons',
-    'Status',
-  ]
-  styleTableHeader(logHeaderRow)
-
-  const productionLogs = Array.isArray(report.productionLogs) ? report.productionLogs : []
-  if (productionLogs.length === 0) {
-    const emptyRow = logsSheet.getRow(6)
-    logsSheet.mergeCells('A6:H6')
-    emptyRow.getCell(1).value = 'No individual pipe cuts registered for this period.'
-    emptyRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: COLOR.ink } }
-    emptyRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' }
-    emptyRow.getCell(1).border = { bottom: THIN_RULE }
-    emptyRow.height = 24
-  } else {
-    let currentRowNumber = 6
-    let dailyPipeCount = 0
-    let dailyTonnage = 0
-
-    productionLogs.forEach((log, index) => {
-      const dayKey = formatManilaDayKey(log.recordedAt, report.selectedDate)
-      dailyPipeCount += 1
-      const tonVal = numericValue(log.tonnage)
-      if (tonVal !== null && tonVal > 0) {
-        dailyTonnage += tonVal
-      }
-
-      const row = logsSheet.getRow(currentRowNumber)
-      currentRowNumber += 1
-
-      const recordedAt = formatManilaDate(log.recordedAt)
-      const customer = escapeFormula(log.customer || (log.isSpecified ? (log.label || 'N/A') : 'Pending Tag'))
-      const diameter = numericValue(log.diameter) ?? 'N/A'
-      const thickness = numericValue(log.thickness) ?? 'N/A'
-      const length = numericValue(log.length) ?? 'N/A'
-      const pipeNum = log.pipeNumber != null && Number.isFinite(Number(log.pipeNumber))
-        ? Number(log.pipeNumber)
-        : (typeof log.deviceEventId === 'string'
-            ? escapeFormula(log.deviceEventId)
-            : (log.deviceEventId ?? (log.id ? String(log.id).slice(0, 8) : 'N/A')))
-      const tons = tonVal ?? 'N/A'
-      const status = log.isSpecified ? 'Specified' : 'Pending Tag'
-
-      row.values = [recordedAt, customer, diameter, thickness, length, pipeNum, tons, status]
-      styleTableBody(row)
-
-      for (const colIdx of [3, 4, 5]) {
-        row.getCell(colIdx).alignment = { vertical: 'middle', horizontal: 'right' }
-        if (typeof row.getCell(colIdx).value === 'number') {
-          row.getCell(colIdx).numFmt = '#,##0.##'
-        }
-      }
-
-      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' }
-      if (typeof row.getCell(6).value === 'number') {
-        row.getCell(6).numFmt = '#,##0'
-      }
-
-      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
-      if (typeof row.getCell(7).value === 'number') {
-        row.getCell(7).numFmt = '#,##0.0000'
-      }
-
-      row.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }
-
-      const nextLog = productionLogs[index + 1]
-      const nextDayKey = nextLog ? formatManilaDayKey(nextLog.recordedAt, report.selectedDate) : null
-
-      if (nextDayKey !== dayKey) {
-        const dailyRow = logsSheet.getRow(currentRowNumber)
-        currentRowNumber += 1
-        const roundedDailyTons = Math.round(dailyTonnage * 10000) / 10000
-
-        dailyRow.values = [
-          `DAILY TOTAL (${dayKey})`,
-          '-',
-          '-',
-          '-',
-          '-',
-          dailyPipeCount,
-          roundedDailyTons,
-          '-',
-        ]
-        styleTableBody(dailyRow)
-        dailyRow.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-        dailyRow.getCell(6).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-        dailyRow.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' }
-        dailyRow.getCell(6).numFmt = '#,##0 "pcs"'
-        dailyRow.getCell(7).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-        dailyRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' }
-        dailyRow.getCell(7).numFmt = '#,##0.0000'
-        dailyRow.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }
-
-        dailyPipeCount = 0
-        dailyTonnage = 0
-      }
-    })
-  }
 }
 
 async function renderRegularWorkbook(workbook, report) {
-  workbook.creator = 'PetroHydroPipe Operations'
-  workbook.subject = 'Production and downtime report'
+  workbook.creator = COMPANY_NAME
+  workbook.subject = 'Operational Report'
   workbook.title = 'Operational Report'
+  workbook.calcProperties.fullCalcOnLoad = true
 
+  const colWidths = [36, 28, 16, 18, 21]
   const sheet = workbook.addWorksheet('Operational Report', {
     properties: { defaultRowHeight: 20 },
-    pageSetup: {
-      orientation: 'landscape',
-      paperSize: 9,
-      fitToPage: true,
-      fitToWidth: 1,
-      fitToHeight: 0,
-      margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
-    },
   })
-
-  sheet.columns = [
-    { width: 34 },
-    { width: 30 },
-    { width: 12 },
-    { width: 18 },
-    { width: 20 },
-  ]
-  sheet.views = [{ state: 'frozen', ySplit: 3, topLeftCell: 'A4', activeCell: 'A4', showGridLines: false }]
-
-  sheet.mergeCells('A2:E2')
-  sheet.getCell('A2').value = 'PETRO HYDRO PIPE CORP.  |  Operational Report'
-  sheet.getCell('A2').font = { name: 'Arial', size: 16, bold: true, color: { argb: COLOR.ink } }
-  sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' }
-  sheet.getRow(2).height = 25
+  sheet.columns = colWidths.map((width) => ({ width }))
+  sheet.views = [{ showGridLines: false }]
 
   const machineLabel = report.machine?.name || 'Spiral Mill 01'
-  sheet.mergeCells('A3:C3')
+  applySheetPageSetup(sheet, { machineLabel })
+
   const reportTypeLabel = report.reportType
-    ? String(report.reportType).charAt(0).toUpperCase() + String(report.reportType).slice(1) + ' report'
-    : 'Production and downtime'
-  sheet.getCell('A3').value = reportTypeLabel
-  sheet.getCell('A3').font = { name: 'Arial', size: 18, bold: true, color: { argb: COLOR.ink } }
-  sheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  sheet.getCell('A3').alignment = { vertical: 'middle', horizontal: 'left' }
-  sheet.mergeCells('D3:E3')
-  sheet.getCell('D3').value = machineLabel
-  sheet.getCell('D3').font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-  sheet.getCell('D3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  sheet.getCell('D3').alignment = { vertical: 'middle', horizontal: 'right' }
-  sheet.getRow(3).height = 34
+    ? `${capitalizeWord(report.reportType, 'Operational')} Report`
+    : 'Operational Report'
+  const periodWindow = formatPeriodWindowLabel(report)
+  const observation = capitalizeWord(report.periodState, MISSING_PLACEHOLDER)
+  const generatedText = formatManilaDateText(report.generatedAt)
 
-  sheet.getCell('A4').value = 'Period'
-  styleLabel(sheet.getCell('A4'))
-  sheet.getCell('B4').value = dateValue(report.selectedDate) || report.selectedDate || 'N/A'
-  if (sheet.getCell('B4').value instanceof Date) sheet.getCell('B4').numFmt = 'mmm d, yyyy'
-  sheet.getCell('B4').alignment = { vertical: 'middle', horizontal: 'left' }
-  sheet.getCell('C4').value = 'Observation'
-  styleLabel(sheet.getCell('C4'))
-  sheet.mergeCells('D4:E4')
-  sheet.getCell('D4').value = report.periodState
-    ? String(report.periodState).charAt(0).toUpperCase() + String(report.periodState).slice(1)
-    : 'N/A'
-  sheet.getCell('D4').font = { name: 'Arial', size: 10, color: { argb: COLOR.ink } }
-  sheet.getCell('D4').alignment = { vertical: 'middle', horizontal: 'left' }
-
-  sheet.getCell('A5').value = 'Generated (UTC)'
-  styleLabel(sheet.getCell('A5'))
-  sheet.mergeCells('B5:C5')
-  const generatedAt = typeof report.generatedAt === 'string' ? new Date(report.generatedAt) : null
-  sheet.getCell('B5').value = generatedAt && !Number.isNaN(generatedAt.getTime()) ? generatedAt : 'N/A'
-  if (sheet.getCell('B5').value instanceof Date) sheet.getCell('B5').numFmt = 'mmm d, yyyy hh:mm AM/PM'
-  sheet.getCell('B5').alignment = { vertical: 'middle', horizontal: 'left' }
-  sheet.getCell('D5').value = 'Loss rate'
-  styleLabel(sheet.getCell('D5'))
-  setNumber(sheet.getCell('E5'), numericValue(report.lossEstimateBasis?.ratePiecesPerMinute) === null
-    ? null
-    : report.lossEstimateBasis.ratePiecesPerMinute * 60, '#,##0.# "pcs/hr"')
-  sheet.getCell('E5').alignment = { vertical: 'middle', horizontal: 'right' }
-
-  sheet.mergeCells('A7:E7')
-  sheet.getCell('A7').value = 'Period Summary'
-  sheet.getCell('A7').font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-  sheet.getCell('A7').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  sheet.getCell('A7').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
-
-  const processSensors = Array.isArray(report.processSensors) ? report.processSensors : []
-  const processEvents = processSensors.length > 0 && processSensors.every((sensor) => numericValue(sensor.eventCount) !== null)
-    ? processSensors.reduce((total, sensor) => total + sensor.eventCount, 0)
-    : null
-  const summaryRows = [
-    [
-      ['Production count', numericValue(report.metrics?.outputPieces), '#,##0 "pcs"'],
-      ['Process sensor events', processEvents, '#,##0'],
-    ],
-    [
-      ['Downtime events', summaryNumber(report, 'events'), '#,##0'],
-      ['Downtime duration', numericValue(report.metrics?.durationMinutes), '#,##0.## "min"'],
-    ],
-    [
-      ['Availability', numericValue(report.metrics?.availabilityPercent) === null ? null : report.metrics.availabilityPercent / 100, '0.0%'],
-      ['Estimated loss', numericValue(report.metrics?.estimatedLoss), '#,##0.## "pcs"'],
-    ],
-  ]
-
-  summaryRows.forEach((items, index) => {
-    const rowNumber = 8 + index
-    const [leftItem, rightItem] = items
-    sheet.getCell('A' + rowNumber).value = leftItem[0]
-    styleLabel(sheet.getCell('A' + rowNumber))
-    setNumber(sheet.getCell('B' + rowNumber), leftItem[1], leftItem[2])
-    sheet.getCell('D' + rowNumber).value = rightItem[0]
-    styleLabel(sheet.getCell('D' + rowNumber))
-    setNumber(sheet.getCell('E' + rowNumber), rightItem[1], rightItem[2])
-    for (const address of ['B' + rowNumber, 'E' + rowNumber]) {
-      sheet.getCell(address).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-      sheet.getCell(address).alignment = { vertical: 'middle', horizontal: 'right' }
-      sheet.getCell(address).border = { bottom: THIN_RULE }
-    }
+  renderMasthead(sheet, {
+    colCount: 5,
+    splitCol: 3,
+    title: `${COMPANY_NAME}  ·  Operational Report`,
+    docRef: buildDocRef(report),
+    metaLeft: `${reportTypeLabel}  ·  ${machineLabel}  ·  ${periodWindow}`,
+    metaRight: `Observation: ${observation}\nGenerated ${generatedText}`,
   })
 
-  const hasProcessSensors = Boolean(processSensors.length)
-  if (hasProcessSensors) {
-    sheet.mergeCells('A12:E12')
-    sheet.getCell('A12').value = 'Process Sensor Activity'
-    sheet.getCell('A12').font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-    sheet.getCell('A12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-    sheet.getCell('A12').border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
-    sheet.getRow(13).values = ['Code', 'Sensor', 'Events', null, null]
-    sheet.mergeCells('C13:E13')
-    styleTableHeader(sheet.getRow(13))
-
-    processSensors.forEach((sensor, index) => {
-      const row = sheet.getRow(14 + index)
-      row.values = [escapeFormula(sensor.sensorCode || 'N/A'), escapeFormula(sensor.sensorLabel || 'N/A'), numericValue(sensor.eventCount) ?? 'N/A']
-      sheet.mergeCells('C' + row.number + ':E' + row.number)
-      styleTableBody(row)
-      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'right' }
-      if (typeof row.getCell(3).value === 'number') row.getCell(3).numFmt = '#,##0'
-    })
-  }
-
-  const downtimeSectionRow = hasProcessSensors ? Math.max(18, 15 + processSensors.length) : 13
-  sheet.mergeCells('A' + downtimeSectionRow + ':E' + downtimeSectionRow)
-  sheet.getCell('A' + downtimeSectionRow).value = 'Downtime Records'
-  sheet.getCell('A' + downtimeSectionRow).font = { name: 'Arial', size: 10, bold: true, color: { argb: COLOR.ink } }
-  sheet.getCell('A' + downtimeSectionRow).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.rule } }
-  sheet.getCell('A' + downtimeSectionRow).border = { bottom: { style: 'thin', color: { argb: COLOR.ink } } }
-
-  const headerRowNumber = downtimeSectionRow + 1
-  const headerRow = sheet.getRow(headerRowNumber)
-  headerRow.values = ['Cause', 'Sensor', 'Events', 'Duration (min)', 'Estimated loss (pcs)']
-  styleTableHeader(headerRow)
-
+  const availability = numericValue(report.metrics?.availabilityPercent)
   const downtimeRows = Array.isArray(report.rows) ? report.rows : []
-  if (downtimeRows.length === 0) {
-    const emptyRow = sheet.getRow(headerRowNumber + 1)
-    sheet.mergeCells('A' + emptyRow.number + ':E' + emptyRow.number)
-    emptyRow.getCell(1).value = 'No downtime records for this period.'
-    emptyRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: COLOR.ink } }
-    emptyRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' }
-    emptyRow.getCell(1).border = { bottom: THIN_RULE }
-    emptyRow.height = 24
-  } else {
-    downtimeRows.forEach((item, index) => {
-      const row = sheet.getRow(headerRowNumber + 1 + index)
-      row.values = [
-        escapeFormula(item.cause || 'N/A'),
-        escapeFormula(item.sensor || 'N/A'),
-        numericValue(item.events) ?? 'N/A',
-        numericValue(item.durationMinutes) ?? 'N/A',
-        numericValue(item.estimatedLoss) ?? 'N/A',
-      ]
-      styleTableBody(row)
-      for (const column of [3, 4, 5]) {
-        row.getCell(column).alignment = { vertical: 'middle', horizontal: 'right' }
-        if (typeof row.getCell(column).value === 'number') {
-          const numberFormat = column === 3 ? '#,##0' : '#,##0.##'
-          row.getCell(column).numFmt = numberFormatFor(row.getCell(column).value, numberFormat)
-        }
+  const hasEventsSummary = Array.isArray(report.summary) && report.summary.some((item) => item.id === 'events')
+  const isObserved = report.periodState !== 'future' && numericValue(report.metrics?.outputPieces) !== null
+  const downtimeEventCount = hasEventsSummary
+    ? summaryNumber(report, 'events')
+    : (isObserved ? downtimeRows.length : null)
+
+  renderKpiStrip(sheet, 4, [
+    { label: 'PRODUCTION COUNT', value: numericValue(report.metrics?.outputPieces), numFmt: PCT_UNIT_FMT, exactFmt: true, align: 'left' },
+    { label: 'AVAILABILITY', value: availability === null ? null : availability / 100, numFmt: '0.0%', exactFmt: true, align: 'right' },
+    { label: 'DOWNTIME EVENTS', value: downtimeEventCount, numFmt: '#,##0', align: 'right' },
+    { label: 'DOWNTIME DURATION', value: numericValue(report.metrics?.durationMinutes), numFmt: '#,##0.## "min"', align: 'right' },
+    { label: 'ESTIMATED LOSS', value: numericValue(report.metrics?.estimatedLoss), numFmt: '#,##0.## "pcs"', align: 'right' },
+  ], colWidths)
+
+  sheet.getRow(6).height = 12
+  let cursorRow = 7
+
+  const processSensors = Array.isArray(report.processSensors) ? report.processSensors : []
+  const bodyFont = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.body } }
+
+  if (processSensors.length > 0) {
+    renderSectionTitle(sheet, cursorRow, 3, 'Process Sensor Activity')
+    const sensorHeaderRow = cursorRow + 1
+    styleHeaderRow(sheet, sensorHeaderRow, [
+      { label: 'Code', align: 'left' },
+      { label: 'Sensor', align: 'left' },
+      { label: 'Pulses', align: 'right' },
+    ], colWidths)
+
+    const firstSensorRow = sensorHeaderRow + 1
+    const lastSensorRow = firstSensorRow + processSensors.length - 1
+    let pulseSum = 0
+    let hasObservedPulse = false
+
+    processSensors.forEach((sensor, idx) => {
+      const row = sheet.getRow(firstSensorRow + idx)
+      const code = escapeFormula(sensor.sensorCode || MISSING_PLACEHOLDER)
+      const label = escapeFormula(sensor.sensorLabel || MISSING_PLACEHOLDER)
+
+      row.getCell(1).value = code
+      row.getCell(1).font = { name: FONT_FAMILY, size: 9.5, bold: true, color: { argb: COLOR.primary } }
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' }
+
+      row.getCell(2).value = label
+      row.getCell(2).font = bodyFont
+      row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+
+      const pulseCell = row.getCell(3)
+      pulseCell.alignment = { vertical: 'middle', horizontal: 'right' }
+      const count = numericValue(sensor.eventCount)
+      if (count !== null) {
+        pulseSum += count
+        hasObservedPulse = true
       }
+      setTypedNumber(pulseCell, sensor.eventCount, '#,##0', bodyFont)
+
+      applyRowBorder(row, 3, BORDER.bodyBottom)
+      row.height = estimateRowHeight([{ text: label, width: colWidths[1] }], 9.5, 22, false)
     })
+
+    const sensorTotalRow = lastSensorRow + 1
+    styleTotalRow(sheet, sensorTotalRow, 3, {
+      1: { value: 'TOTAL PROCESS PULSES', align: 'left' },
+      3: hasObservedPulse
+        ? { formula: `SUM(C${firstSensorRow}:C${lastSensorRow})`, result: pulseSum, numFmt: '#,##0', align: 'right' }
+        : { value: MISSING_PLACEHOLDER, align: 'right' },
+    })
+    if (!hasObservedPulse) {
+      sheet.getRow(sensorTotalRow).getCell(3).font = { name: FONT_FAMILY, size: 9.5, color: { argb: COLOR.subtle } }
+    }
+
+    sheet.getRow(sensorTotalRow + 1).height = 12
+    cursorRow = sensorTotalRow + 2
   }
+
+  renderSectionTitle(sheet, cursorRow, 5, 'Downtime Records')
+  const downtimeHeaderRow = cursorRow + 1
+  styleHeaderRow(sheet, downtimeHeaderRow, [
+    { label: 'Cause', align: 'left' },
+    { label: 'Sensor', align: 'left' },
+    { label: 'Events', align: 'right' },
+    { label: 'Duration (min)', align: 'right' },
+    { label: 'Estimated Loss (pcs)', align: 'right' },
+  ], colWidths)
+
+  let afterTableRow
+
+  if (downtimeRows.length === 0) {
+    const emptyRow = downtimeHeaderRow + 1
+    styleEmptyNoticeRow(sheet, emptyRow, 5, 'No downtime records for this period.')
+    afterTableRow = emptyRow + 1
+  } else {
+    const firstDtRow = downtimeHeaderRow + 1
+    const lastDtRow = firstDtRow + downtimeRows.length - 1
+    sheet.autoFilter = `A${downtimeHeaderRow}:E${lastDtRow}`
+
+    let sumEvents = 0
+    let sumDuration = 0
+    let sumLoss = 0
+
+    downtimeRows.forEach((item, idx) => {
+      const row = sheet.getRow(firstDtRow + idx)
+      const cause = escapeFormula(item.cause || MISSING_PLACEHOLDER)
+      const sensor = escapeFormula(item.sensor || MISSING_PLACEHOLDER)
+
+      row.getCell(1).value = cause
+      row.getCell(1).font = bodyFont
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+
+      row.getCell(2).value = sensor
+      row.getCell(2).font = bodyFont
+      row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+
+      const eventsVal = numericValue(item.events)
+      const durVal = numericValue(item.durationMinutes)
+      const lossVal = numericValue(item.estimatedLoss)
+      if (eventsVal !== null) sumEvents += eventsVal
+      if (durVal !== null) sumDuration += durVal
+      if (lossVal !== null) sumLoss += lossVal
+
+      styleNumericCells(row, [
+        [3, item.events, '#,##0', false],
+        [4, item.durationMinutes, '#,##0.##', false],
+        [5, item.estimatedLoss, '#,##0.00', true],
+      ], bodyFont)
+
+      applyRowBorder(row, 5, BORDER.bodyBottom)
+      row.height = estimateRowHeight([
+        { text: cause, width: colWidths[0] },
+        { text: sensor, width: colWidths[1] },
+      ], 9.5, 22, false)
+    })
+
+    const dtTotalRow = lastDtRow + 1
+    const roundedDuration = Math.round(sumDuration * 100) / 100
+    const roundedLoss = Math.round(sumLoss * 100) / 100
+    styleTotalRow(sheet, dtTotalRow, 5, {
+      1: { value: 'TOTAL ATTRIBUTED DOWNTIME', align: 'left' },
+      3: { formula: `SUM(C${firstDtRow}:C${lastDtRow})`, result: sumEvents, numFmt: '#,##0' },
+      4: { formula: `SUM(D${firstDtRow}:D${lastDtRow})`, result: roundedDuration, numFmt: '#,##0.##' },
+      5: { formula: `SUM(E${firstDtRow}:E${lastDtRow})`, result: roundedLoss, numFmt: '#,##0.00' },
+    })
+    afterTableRow = dtTotalRow + 1
+  }
+
+  sheet.getRow(afterTableRow).height = 8
+  const rate = numericValue(report.lossEstimateBasis?.ratePiecesPerMinute)
+  const rateLabel = rate !== null ? `${Math.round(rate * 60 * 100) / 100} pcs/hr` : MISSING_PLACEHOLDER
+  const basisSource = report.lossEstimateBasis?.source || 'configured'
+  const includedList = PROCESS_SENSOR_CODES.join(', ')
+  renderFootnote(
+    sheet,
+    afterTableRow + 1,
+    5,
+    `Loss basis: ${rateLabel} (${basisSource}) · Process pulses cover ${includedList}; excludes S-03 & ${OUTPUT_SENSOR_CODE}.`,
+  )
 }
 
 // ponytail: synchronous in-memory buffer ceiling: 10k events upgrade: stream via PassThrough to response

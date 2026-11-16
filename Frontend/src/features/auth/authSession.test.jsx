@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApiError } from '../../shared/errors/apiError.js'
@@ -364,5 +365,63 @@ describe('AuthProvider memory-only sessions', () => {
 
     expect(screen.getByText('authenticated')).toBeInTheDocument()
     expect(screen.getByText('stored-token')).toBeInTheDocument()
+  })
+
+  it('preserves mounted children on initial sign-in while remounting on role switch, unauthorized clear, and logout', async () => {
+    let mountCount = 0
+    function MountProbe() {
+      useEffect(() => {
+        mountCount += 1
+      }, [])
+
+      return <SessionProbe />
+    }
+
+    apiRequest.mockRejectedValueOnce(createApiError('No active session.', 401))
+    render(
+      <AuthProvider>
+        <MountProbe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByText('settled')).toBeInTheDocument())
+    expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(mountCount).toBe(1)
+
+    loginRequest.mockResolvedValueOnce({
+      token: 'admin-token',
+      user: { id: 'user-1', name: 'Admin', role: 'Admin' },
+    })
+    await act(async () => screen.getByText('do-login').click())
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    expect(mountCount).toBe(1)
+
+    act(() => {
+      sharedSessionHandler({
+        token: 'operator-token',
+        user: { id: 'user-1', name: 'Operator', role: 'Operator' },
+      })
+    })
+    expect(screen.getByText('operator-token')).toBeInTheDocument()
+    expect(mountCount).toBe(2)
+
+    act(() => {
+      notifyUnauthorized(createApiError('Expired.', 401), { token: 'operator-token', path: '/api/reports' })
+    })
+    expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(mountCount).toBe(3)
+
+    loginRequest.mockResolvedValueOnce({
+      token: 'second-admin-token',
+      user: { id: 'user-1', name: 'Admin', role: 'Admin' },
+    })
+    await act(async () => screen.getByText('do-login').click())
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    expect(mountCount).toBe(3)
+
+    logoutRequest.mockResolvedValueOnce({ ok: true })
+    await act(async () => screen.getByText('do-logout').click())
+    await waitFor(() => expect(screen.getByText('signed-out')).toBeInTheDocument())
+    expect(mountCount).toBe(4)
   })
 })

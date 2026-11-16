@@ -5,7 +5,7 @@ import { setSessionRefresher } from '../../../shared/services/sessionRefresh.js'
 
 function exportResponse(body, {
   status = 200,
-  filename = 'report-daily-2026-09-02.pdf',
+  filename = 'Operational-DailyReport-2026-09-02.pdf',
   contentType = 'application/pdf',
 } = {}) {
   return new Response(body, {
@@ -110,7 +110,7 @@ describe('exportReport', () => {
     expect(options.headers.Authorization).toBe('Bearer test-token')
     expect(JSON.parse(options.body)).toEqual({ category: 'regular', type: 'daily', date: '2026-09-02', format: 'pdf' })
 
-    expect(result.filename).toBe('report-daily-2026-09-02.pdf')
+    expect(result.filename).toBe('Operational-DailyReport-2026-09-02.pdf')
     expect(result.blob).toBeInstanceOf(Blob)
   })
 
@@ -143,7 +143,7 @@ describe('exportReport', () => {
 
   it('supports category: production in export payload', async () => {
     const fetchMock = vi.fn().mockResolvedValue(exportResponse('%PDF-x', {
-      filename: 'production-report-daily-2026-09-02.pdf',
+      filename: 'Production-DailyReport-2026-09-02.pdf',
     }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -160,7 +160,7 @@ describe('exportReport', () => {
       date: '2026-09-02',
       format: 'pdf',
     })
-    expect(result.filename).toBe('production-report-daily-2026-09-02.pdf')
+    expect(result.filename).toBe('Production-DailyReport-2026-09-02.pdf')
   })
 
   it('normalizes a month-only date before exporting', async () => {
@@ -183,7 +183,7 @@ describe('exportReport', () => {
 
   it('accepts the XLSX attachment and preserves its filename', async () => {
     const fetchMock = vi.fn().mockResolvedValue(exportResponse('xlsx-data', {
-      filename: 'report-daily-2026-09-02.xlsx',
+      filename: 'Operational-DailyReport-2026-09-02.xlsx',
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }))
     vi.stubGlobal('fetch', fetchMock)
@@ -197,7 +197,7 @@ describe('exportReport', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       category: 'regular', type: 'daily', date: '2026-09-02', format: 'xlsx',
     })
-    expect(result.filename).toBe('report-daily-2026-09-02.xlsx')
+    expect(result.filename).toBe('Operational-DailyReport-2026-09-02.xlsx')
     expect(result.blob).toBeInstanceOf(Blob)
   })
 
@@ -217,10 +217,15 @@ describe('exportReport', () => {
   })
 
   it('falls back to a derived filename when the header is missing', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('%PDF-x', {
-      status: 200,
-      headers: { 'Content-Type': 'application/pdf' },
-    }))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('%PDF-x', {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf' },
+      }))
+      .mockResolvedValueOnce(new Response('xlsx-data', {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      }))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await exportReport('test-token', {
@@ -228,8 +233,15 @@ describe('exportReport', () => {
       selectedDate: '2026-09-02',
       format: 'pdf',
     })
+    const prodResult = await exportReport('test-token', {
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: '',
+      format: 'xlsx',
+    })
 
-    expect(result.filename).toBe('report-weekly-2026-09-02.pdf')
+    expect(result.filename).toBe('Operational-WeeklyReport-2026-09-02.pdf')
+    expect(prodResult.filename).toBe('Production-DailyReport-undated.xlsx')
   })
 
   it('normalizes request timeouts', async () => {

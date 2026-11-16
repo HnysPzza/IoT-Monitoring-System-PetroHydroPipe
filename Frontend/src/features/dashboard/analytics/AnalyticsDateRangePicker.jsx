@@ -461,12 +461,13 @@ export default function AnalyticsDateRangePicker({
                       }
 
                       const dayLabel = day.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      const isSelectingStart = Boolean(pendingPreset === 'custom' && isCustomSelecting && isStart && !pendingRange.end)
 
                       return (
                         <button
                           key={day.toISOString()}
                           type="button"
-                          className={`analytics-calendar-day-btn ${cellClass} ${maxDateValue && day > maxDateValue ? 'is-future' : ''}`.trim()}
+                          className={`analytics-calendar-day-btn ${cellClass} ${isSelectingStart ? 'is-selecting-start' : ''} ${maxDateValue && day > maxDateValue ? 'is-future' : ''}`.replace(/\s+/g, ' ').trim()}
                           disabled={pendingPreset === 'all' || Boolean(maxDateValue && !isCustomSelecting && day > maxDateValue)}
                           aria-label={`Select date ${dayLabel}`}
                           onClick={() => handleDayClick(day)}
@@ -484,7 +485,7 @@ export default function AnalyticsDateRangePicker({
           </div>
 
           <div className="analytics-popover-footer">
-            <span className="analytics-popover-footer-text">
+            <span className="analytics-popover-footer-text" aria-live="polite">
               {getFooterText(pendingPreset, pendingRange.start, pendingRange.end)}
             </span>
             <div className="analytics-popover-footer-actions">

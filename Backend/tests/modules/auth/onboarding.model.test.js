@@ -9,8 +9,17 @@ test('new passwords require all four character categories without breaking legac
     assert.equal(setupPasswordSchema.safeParse({ body: { token: 'a'.repeat(64), password } }).success, false, password)
     assert.equal(changePasswordSchema.safeParse({ body: { currentPassword: 'old', password } }).success, false, password)
   }
-  for (const password of ['Abcdefghij1!', 'Aa1!' + 'x'.repeat(68), 'Aa1!' + 'é'.repeat(34)]) {
-    assert.equal(setupPasswordSchema.safeParse({ body: { token: 'a'.repeat(64), password } }).success, true)
+  for (const password of [
+    'Abcdefghij1!',
+    'Abcdefghij1£',
+    'Abcdefghij1€',
+    'Abcdefghij1§',
+    'Abcdefghij1—',
+    'Aa1!' + 'x'.repeat(68),
+    'Aa1!' + 'é'.repeat(34),
+  ]) {
+    assert.equal(setupPasswordSchema.safeParse({ body: { token: 'a'.repeat(64), password } }).success, true, password)
+    assert.equal(changePasswordSchema.safeParse({ body: { currentPassword: 'old', password } }).success, true, password)
   }
   for (const password of ['Abcdefghi1!', 'Aa1!😀😀😀😀', 'Aa1!' + 'x'.repeat(69), 'Aa1!' + 'é'.repeat(35), null, 123, {}]) {
     assert.equal(setupPasswordSchema.safeParse({ body: { token: 'a'.repeat(64), password } }).success, false)

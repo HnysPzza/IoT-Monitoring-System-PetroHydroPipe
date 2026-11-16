@@ -68,7 +68,9 @@ describe('MachinesSection live snapshot', () => {
     getLiveFeed.mockResolvedValue(livePayload({ sensors }))
     renderWithAuth(<MachinesSection />)
     expect(await screen.findByText('Connected')).toHaveClass('machines-connection-connected')
-    expect(screen.getByText('Offline')).toHaveClass('machines-connection-unavailable')
+    const offlineConnection = screen.getByText('Offline')
+    expect(offlineConnection).toHaveClass('machines-connection-offline')
+    expect(offlineConnection.querySelector('svg')).toBeInTheDocument()
     const card = screen.getByText('S-03').closest('article')
     expect(within(card).getAllByText('Unavailable').find((item) => item.classList.contains('machines-connection-unavailable'))).toBeDefined()
   })
@@ -109,8 +111,38 @@ describe('MachinesSection live snapshot', () => {
 
     expect(await within(s03Card).findByText('5 min')).toBeInTheDocument()
     expect(within(s01Card).getByText('Disabled')).toBeInTheDocument()
-    expect(within(s05Card).getByText('Not applicable')).toBeInTheDocument()
+    expect(within(s05Card).getByText('N/A')).toBeInTheDocument()
     expect(getOperationalSettings).toHaveBeenCalledWith('test-token', 'machine-1', expect.anything())
+  })
+
+  it('shows a Settings threshold link for Admin and hides it for Engineering Supervisor', async () => {
+    getLiveFeed.mockResolvedValue(livePayload())
+    const adminView = renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-1', role: 'Admin' } } })
+    const settingsLink = await screen.findByRole('link', { name: /Configure thresholds/i })
+    expect(settingsLink).toHaveAttribute('href', '/dashboard/settings')
+    adminView.unmount()
+
+    renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-2', role: 'Engineering Supervisor' } } })
+    await screen.findByRole('heading', { name: 'Spiral Mill 01' })
+    expect(screen.queryByRole('link', { name: /Configure thresholds/i })).not.toBeInTheDocument()
+  })
+
+  it('adds data-label attributes on sensor table cells for mobile stacked cards', async () => {
+    const user = userEvent.setup()
+    getLiveFeed.mockResolvedValue(livePayload())
+    renderWithAuth(<MachinesSection />)
+    await screen.findByText('ESP32-03')
+    await user.click(screen.getByRole('button', { name: 'Table view' }))
+    const table = screen.getByRole('table')
+    const cells = within(table).getAllByRole('cell')
+    expect(cells.map((cell) => cell.getAttribute('data-label'))).toEqual([
+      'Sensor',
+      'Status',
+      'Trigger limit',
+      'Hardware',
+      'Connection',
+      'Last event',
+    ])
   })
 
   it('F03 does not replace an in-flight snapshot on a polling tick', async () => {
@@ -216,7 +248,8 @@ describe('MachinesSection live snapshot', () => {
     renderWithAuth(<MachinesSection />)
 
     const faultBadge = await screen.findByText('Fault')
-    expect(faultBadge).toHaveClass('status-badge', 'status-fault')
+    expect(faultBadge).toHaveClass('status', 'status-fault')
+    expect(faultBadge).not.toHaveClass('status-danger')
     expect(faultBadge).not.toHaveClass('status-downtime')
     expect(faultBadge.closest('.admin-sensor-card')).toHaveClass('status-fault')
   })
@@ -327,5 +360,61 @@ describe('MachinesSection live snapshot', () => {
     expect(topbarSlot).toContainElement(refreshBtn)
     expect(refreshBtn).not.toHaveTextContent('Refresh')
     expect(document.querySelector('.machines-layout .machines-header-controls')).not.toBeInTheDocument()
+  })
+
+  it('shows Last: Run offline status, trigger limit and purpose in table view, and excludes offline sensors from running counts without a layout-shifting refresh banner', async () => {
+    const user = userEvent.setup()
+    getOperationalSettings.mockResolvedValue({
+      settings: {
+        sensorThresholds: {
+          'S-01': { absenceDetectionEnabled: true, triggerSeconds: 300 },
+          'S-02': { absenceDetectionEnabled: false, triggerSeconds: 300 },
+        },
+      },
+      constraints: { outputSensorCode: 'S-05' },
+    })
+    getLiveFeed.mockResolvedValue(livePayload({
+      sensors: [
+        { ...livePayload().sensors[0], id: 's-1', sensorCode: 'S-01', esp32DeviceId: 'ESP32-S01-MAIN', status: 'Running', monitoring: { stateFresh: true, connectivityState: 'offline' } },
+        { ...livePayload().sensors[0], id: 's-2', sensorCode: 'S-02', esp32DeviceId: 'ESP32-S02-AUX', status: 'Running', monitoring: { stateFresh: true, connectivityState: 'online' } },
+      ],
+    }))
+
+    renderWithAuth(<MachinesSection />)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Machines' })).toBeInTheDocument()
+    expect(screen.getByText('1 running · 1 offline')).toBeInTheDocument()
+    expect(screen.queryByText('Refreshing live machine status...')).not.toBeInTheDocument()
+    expect(screen.getByText('Last: Run').closest('.admin-sensor-card')).toHaveClass('status-offline')
+
+    await user.click(screen.getByRole('button', { name: 'Table view' }))
+    const table = screen.getByRole('table')
+    expect(within(table).getByRole('columnheader', { name: 'Trigger limit' })).toBeInTheDocument()
+    expect(within(table).getByText('5 min')).toBeInTheDocument()
+    expect(within(table).getByText('ESP32-S01-MAIN')).toHaveClass('machines-hardware-code')
+    expect(within(table).getByText('Entry uncoiler detection')).toBeInTheDocument()
+    expect(within(table).getByText('Offline')).toHaveClass('machines-connection-offline')
+  })
+
+  it('sets aria-busy on refresh without rendering a shifting refresh banner', () => {
+    const preloadedFeed = {
+      ...livePayload(),
+      state: 'ready',
+      error: '',
+      lastUpdated: new Date('2026-08-10T02:00:00.000Z'),
+      isRefreshing: true,
+      reload: vi.fn(),
+    }
+
+    renderWithAuth(
+      <Routes>
+        <Route element={<Outlet context={{ liveFeed: preloadedFeed }} />}>
+          <Route index element={<MachinesSection />} />
+        </Route>
+      </Routes>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Refresh machines' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText('Refreshing live machine status...')).not.toBeInTheDocument()
   })
 })

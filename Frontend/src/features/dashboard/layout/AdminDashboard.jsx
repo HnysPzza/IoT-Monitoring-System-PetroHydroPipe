@@ -1,9 +1,10 @@
+import Status from '../../../shared/components/Status.jsx'
+import { useExitPresence } from '../../../shared/hooks/useExitPresence.js'
+
+const LONG_ALERT_THRESHOLD = 110
 import {
   BarChart3,
   Bell,
-  ChartNoAxesCombined,
-  Check,
-  Gauge,
   History,
   LogOut,
   Logs,
@@ -17,11 +18,13 @@ import {
   UserRound,
   UserRoundCheck,
   Users,
+  X,
 } from 'lucide-react'
 import './sidebar-compact.css'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useMobileViewport } from '../../../shared/hooks/useMobileViewport.js'
 import { onlineManager, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
@@ -111,10 +114,6 @@ function getAlertStatusLabel(alert) {
   return alert.status
 }
 
-function matchesMobileDashboard() {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 900px)').matches
-}
-
 export default function AdminDashboard() {
   const queryClient = useQueryClient()
   const online = useNetworkOnline()
@@ -128,10 +127,17 @@ export default function AdminDashboard() {
   const [cachedAlertsAt, setCachedAlertsAt] = useState(null)
   const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
   const [isAlertsOpen, setIsAlertsOpen] = useState(false)
-  const [isMobileViewport, setIsMobileViewport] = useState(matchesMobileDashboard)
+  const isMobileViewport = useMobileViewport()
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
+  const [hoveredTooltip, setHoveredTooltip] = useState(null)
+  const [focusedTooltip, setFocusedTooltip] = useState(null)
+  const [ackStatusMessage, setAckStatusMessage] = useState('')
+  const pointerFocusedToRef = useRef(null)
+  const collapsedTooltip = hoveredTooltip || focusedTooltip
+  const topbarRef = useRef(null)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
+  const sidebarRef = useRef(null)
   const desktopSidebarToggleRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
@@ -164,12 +170,30 @@ export default function AdminDashboard() {
   const unresolvedAlerts = alerts.filter((alert) => (
     alert.status === 'Active' || alert.status === 'Acknowledged'
   ))
+  const [bellSwingState, setBellSwingState] = useState({ count: 0, isSwinging: false })
+  const [expandedAlertIds, setExpandedAlertIds] = useState(() => new Set())
+  const previousActiveCountRef = useRef(null)
+  const bellSwingTimerRef = useRef(null)
+  const pendingFocusRestoreRef = useRef(null)
+  const {
+    isPresent: isAlertsPopoverPresent,
+    isExiting: isAlertsPopoverExiting,
+    handleAnimationEnd: handleAlertsPopoverAnimationEnd,
+  } = useExitPresence(isAlertsOpen, alertsPopoverRef, 140)
   const alertDestinations = Array.from(new Map(alerts.map((alert) => {
     const destination = getAlertDestination(alert)
     return [destination.to, destination]
   })).values())
   const activeAlertCount = activeAlerts.length
   const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
+
+  useEffect(() => {
+    if (!isDesktopSidebarCollapsed) {
+      setHoveredTooltip(null)
+      setFocusedTooltip(null)
+      pointerFocusedToRef.current = null
+    }
+  }, [isDesktopSidebarCollapsed])
   const matchedNavItem = navItems.find((item) => item.to === normalizedPathname)
   const isRouteForbidden = Boolean(matchedNavItem && !matchedNavItem.roles.includes(user?.role))
   const liveFeed = useLiveFeedStream(isRouteForbidden ? null : token, {
@@ -187,23 +211,19 @@ export default function AdminDashboard() {
 
   // Close the mobile drawer whenever a nested dashboard route changes.
   useEffect(() => {
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      document.activeElement?.blur?.()
+    }
     setIsDrawerOpen(false)
     setIsAlertsOpen(false)
   }, [location.pathname])
 
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined
-
-    const mediaQuery = window.matchMedia('(max-width: 900px)')
-    const updateViewport = () => setIsMobileViewport(mediaQuery.matches)
-
-    updateViewport()
-    mediaQuery.addEventListener('change', updateViewport)
-
-    return () => {
-      mediaQuery.removeEventListener('change', updateViewport)
+    if (!isMobileViewport || isDrawerOpen) return
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      mobileMenuButtonRef.current?.focus({ preventScroll: true })
     }
-  }, [])
+  }, [isDrawerOpen, isMobileViewport])
 
   useEffect(() => {
     if (isMobileViewport || !isDrawerOpen) return
@@ -218,6 +238,27 @@ export default function AdminDashboard() {
     mobileCloseButtonRef.current?.focus({ preventScroll: true })
   }, [isDrawerOpen, isMobileViewport])
 
+  useLayoutEffect(() => {
+    const headerEl = topbarRef.current
+    if (!headerEl) return undefined
+
+    function syncTopbarOffset() {
+      const bottom = headerEl.getBoundingClientRect().bottom
+      if (Number.isFinite(bottom) && bottom > 0) {
+        headerEl.style.setProperty('--topbar-offset', `${Math.ceil(bottom + 8)}px`)
+      }
+    }
+
+    syncTopbarOffset()
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(syncTopbarOffset)
+      observer.observe(headerEl)
+      return () => observer.disconnect()
+    }
+    window.addEventListener('resize', syncTopbarOffset)
+    return () => window.removeEventListener('resize', syncTopbarOffset)
+  }, [isAlertsOpen, isMobileViewport, normalizedPathname])
+
   useEffect(() => {
     if (!isAlertsOpen) return
 
@@ -231,15 +272,115 @@ export default function AdminDashboard() {
       setIsAlertsOpen(false)
     }
 
+    function handleFocusTrap(event) {
+      if (event.key !== 'Tab' || !alertsPopoverRef.current) return
+      const focusable = Array.from(
+        alertsPopoverRef.current.querySelectorAll(
+          'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      if (focusable.length === 0) {
+        event.preventDefault()
+        alertsPopoverRef.current.focus({ preventScroll: true })
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === alertsPopoverRef.current)) {
+        event.preventDefault()
+        last.focus({ preventScroll: true })
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus({ preventScroll: true })
+      }
+    }
+
     document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleFocusTrap)
 
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleFocusTrap)
     }
   }, [isAlertsOpen])
 
   useEffect(() => {
-    if (!isDrawerOpen && !isAlertsOpen) return undefined
+    if (!hasTrustedAlertList) {
+      previousActiveCountRef.current = null
+      return undefined
+    }
+
+    const prevCount = previousActiveCountRef.current
+    previousActiveCountRef.current = activeAlertCount
+
+    const shouldSwing = activeAlertCount > 0 && !isAlertsOpen && (
+      prevCount === null || activeAlertCount > prevCount
+    )
+
+    if (shouldSwing) {
+      if (bellSwingTimerRef.current !== null) {
+        clearTimeout(bellSwingTimerRef.current)
+      }
+      setBellSwingState((prev) => ({ count: prev.count + 1, isSwinging: true }))
+      bellSwingTimerRef.current = setTimeout(() => {
+        bellSwingTimerRef.current = null
+        setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))
+      }, 1150)
+    } else if (activeAlertCount === 0 || isAlertsOpen) {
+      if (bellSwingTimerRef.current !== null) {
+        clearTimeout(bellSwingTimerRef.current)
+        bellSwingTimerRef.current = null
+      }
+      setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))
+    }
+
+    return undefined
+  }, [activeAlertCount, hasTrustedAlertList, isAlertsOpen])
+
+  useEffect(() => () => {
+    if (bellSwingTimerRef.current !== null) {
+      clearTimeout(bellSwingTimerRef.current)
+      bellSwingTimerRef.current = null
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const pending = pendingFocusRestoreRef.current
+    if (!pending || !isAlertsOpen) return
+
+    const stillActiveButton = alertsPopoverRef.current?.querySelector(`[data-alert-ack-id="${pending.alertId}"]`)
+    if (stillActiveButton) return
+
+    pendingFocusRestoreRef.current = null
+    if (!pending.shouldRestoreFocus) return
+
+    const container = alertsPopoverRef.current
+    if (!container) return
+
+    const buttons = Array.from(container.querySelectorAll('[data-alert-ack-id]'))
+    if (buttons.length > 0) {
+      const startIndex = pending.snapshotOrder.indexOf(pending.alertId)
+      const nextId = startIndex >= 0
+        ? pending.snapshotOrder
+          .slice(startIndex + 1)
+          .find((candidateId) => buttons.some((btn) => btn.getAttribute('data-alert-ack-id') === String(candidateId)))
+        : null
+      const targetButton = buttons.find((btn) => btn.getAttribute('data-alert-ack-id') === String(nextId))
+        || buttons[buttons.length - 1]
+      targetButton.focus({ preventScroll: true })
+      return
+    }
+
+    const footerLink = container.querySelector('.alerts-popover-footer a')
+    if (footerLink) {
+      footerLink.focus({ preventScroll: true })
+      return
+    }
+    container.focus({ preventScroll: true })
+  }, [isAlertsOpen, unresolvedAlerts])
+
+  useEffect(() => {
+    if (!isDrawerOpen && !isAlertsOpen && !collapsedTooltip) return undefined
 
     function handleEscape(event) {
       if (event.key !== 'Escape') return
@@ -250,8 +391,14 @@ export default function AdminDashboard() {
         return
       }
 
-      setIsDrawerOpen(false)
-      mobileMenuButtonRef.current?.focus({ preventScroll: true })
+      if (isDrawerOpen) {
+        setIsDrawerOpen(false)
+        mobileMenuButtonRef.current?.focus({ preventScroll: true })
+        return
+      }
+
+      setHoveredTooltip(null)
+      setFocusedTooltip(null)
     }
 
     document.addEventListener('keydown', handleEscape)
@@ -259,7 +406,7 @@ export default function AdminDashboard() {
     return () => {
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [isAlertsOpen, isDrawerOpen])
+  }, [collapsedTooltip, isAlertsOpen, isDrawerOpen])
 
   useEffect(() => () => {
     if (sidebarScrollTimerRef.current !== null) {
@@ -525,6 +672,12 @@ export default function AdminDashboard() {
   async function handleAcknowledgeAlert(alertId) {
     if (!token || acknowledgementOperationsRef.current.has(alertId)) return
 
+    const wasFocused = typeof document !== 'undefined' && (
+      document.activeElement?.getAttribute?.('data-alert-ack-id') === String(alertId)
+      || (isAlertsOpen && document.activeElement === document.body)
+    )
+    const snapshotOrder = unresolvedAlerts.map((item) => item.id)
+
     const operationId = acknowledgementIdRef.current + 1
     acknowledgementIdRef.current = operationId
     acknowledgementOperationsRef.current.set(alertId, operationId)
@@ -536,6 +689,10 @@ export default function AdminDashboard() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       if (sessionTokenRef.current !== token || acknowledgementOperationsRef.current.get(alertId) !== operationId) return
+      if (wasFocused || (typeof document !== 'undefined' && isAlertsOpen && document.activeElement === document.body)) {
+        pendingFocusRestoreRef.current = { alertId, snapshotOrder, shouldRestoreFocus: true }
+      }
+      setAckStatusMessage(`Alert acknowledged: ${payload.alert?.title || payload.alert?.message || alertId}`)
       applyAlertDeltaRef.current(payload.alert, { fromAcknowledgement: true })
     } catch (error) {
       if (sessionTokenRef.current === token && acknowledgementOperationsRef.current.get(alertId) === operationId) {
@@ -560,6 +717,9 @@ export default function AdminDashboard() {
 
   function handleSidebarScroll() {
     setIsSidebarScrolling(true)
+    setHoveredTooltip(null)
+    setFocusedTooltip(null)
+    pointerFocusedToRef.current = null
 
     if (sidebarScrollTimerRef.current !== null) {
       window.clearTimeout(sidebarScrollTimerRef.current)
@@ -580,8 +740,9 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main className="dashboard-shell">
+    <div className="dashboard-shell">
       <aside
+        ref={sidebarRef}
         className={`dashboard-sidebar ${isDesktopSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
         aria-hidden={isMobileViewport && !isDrawerOpen ? 'true' : undefined}
         inert={isMobileViewport && !isDrawerOpen}
@@ -632,6 +793,36 @@ export default function AdminDashboard() {
                       title={isDesktopSidebarCollapsed ? item.label : undefined}
                       data-label={item.label}
                       aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
+                      aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === item.to ? 'sidebar-collapsed-tooltip' : undefined}
+                      onPointerDown={() => {
+                        pointerFocusedToRef.current = item.to
+                        setFocusedTooltip((current) => (current?.to === item.to ? null : current))
+                      }}
+                      onMouseEnter={(event) => {
+                        if (!isDesktopSidebarCollapsed) return
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setHoveredTooltip({ to: item.to, label: item.label, top: rect.top + rect.height / 2 })
+                      }}
+                      onMouseLeave={() => {
+                        if (pointerFocusedToRef.current === item.to) {
+                          pointerFocusedToRef.current = null
+                        }
+                        setHoveredTooltip((current) => (current?.to === item.to ? null : current))
+                      }}
+                      onFocus={(event) => {
+                        const isPointerFocus = pointerFocusedToRef.current === item.to
+                        pointerFocusedToRef.current = null
+                        if (!isDesktopSidebarCollapsed || isPointerFocus) return
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setFocusedTooltip({ to: item.to, label: item.label, top: rect.top + rect.height / 2 })
+                      }}
+                      onBlur={() => {
+                        pointerFocusedToRef.current = null
+                        setFocusedTooltip((current) => (current?.to === item.to ? null : current))
+                      }}
+                      onClick={(event) => {
+                        if (isMobileViewport) event.currentTarget.blur()
+                      }}
                       className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
                     >
                       <Icon
@@ -654,33 +845,78 @@ export default function AdminDashboard() {
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="sidebar-avatar" aria-hidden="true">
-              <UserRound size={18} />
+              <UserRound size={16} strokeWidth={1.85} />
             </span>
             <div className="sidebar-user-copy">
               <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
               <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
             </div>
-            <button className="sidebar-logout" type="button" aria-label="Logout" title="Log out" onClick={handleLogout}>
-              <LogOut size={14} aria-hidden="true" />
+            <button
+              className="sidebar-logout"
+              type="button"
+              aria-label="Logout"
+              title={isDesktopSidebarCollapsed ? undefined : 'Log out'}
+              aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === '__logout__' ? 'sidebar-collapsed-tooltip' : undefined}
+              onPointerDown={() => {
+                pointerFocusedToRef.current = '__logout__'
+                setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
+              }}
+              onMouseEnter={(event) => {
+                if (!isDesktopSidebarCollapsed) return
+                const rect = event.currentTarget.getBoundingClientRect()
+                setHoveredTooltip({ to: '__logout__', label: 'Log out', top: rect.top + rect.height / 2 })
+              }}
+              onMouseLeave={() => {
+                if (pointerFocusedToRef.current === '__logout__') {
+                  pointerFocusedToRef.current = null
+                }
+                setHoveredTooltip((current) => (current?.to === '__logout__' ? null : current))
+              }}
+              onFocus={(event) => {
+                const isPointerFocus = pointerFocusedToRef.current === '__logout__'
+                pointerFocusedToRef.current = null
+                if (!isDesktopSidebarCollapsed || isPointerFocus) return
+                const rect = event.currentTarget.getBoundingClientRect()
+                setFocusedTooltip({ to: '__logout__', label: 'Log out', top: rect.top + rect.height / 2 })
+              }}
+              onBlur={() => {
+                pointerFocusedToRef.current = null
+                setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
+              }}
+              onClick={handleLogout}
+            >
+              <LogOut className="sidebar-logout-icon" size={16} strokeWidth={1.85} aria-hidden="true" />
             </button>
           </div>
         </div>
       </aside>
 
-      {isDrawerOpen ? (
-        <button
-          className="sidebar-backdrop mobile-only"
-          type="button"
-          aria-label="Close navigation overlay"
-          onClick={() => {
-            setIsDrawerOpen(false)
-            mobileMenuButtonRef.current?.focus({ preventScroll: true })
-          }}
-        />
+      {isDesktopSidebarCollapsed && collapsedTooltip ? (
+        <div
+          id="sidebar-collapsed-tooltip"
+          className="sidebar-collapsed-tooltip"
+          role="tooltip"
+          style={{ top: `${collapsedTooltip.top}px` }}
+        >
+          {collapsedTooltip.label}
+        </div>
       ) : null}
 
+      <button
+        className={`sidebar-backdrop mobile-only ${isDrawerOpen ? 'is-open' : ''}`}
+        type="button"
+        aria-label="Close navigation overlay"
+        aria-hidden={!isDrawerOpen || undefined}
+        tabIndex={isDrawerOpen ? 0 : -1}
+        disabled={!isDrawerOpen}
+        onClick={() => {
+          setIsDrawerOpen(false)
+          mobileMenuButtonRef.current?.focus({ preventScroll: true })
+        }}
+      />
+
       <div className="dashboard-main">
-        <header className="dashboard-topbar overview-topbar">
+        <header ref={topbarRef} className={`dashboard-topbar ${normalizedPathname === '/dashboard' ? 'overview-topbar' : ''}`.trim()}>
           <div className="topbar-leading">
             <PanelToggle
               ref={mobileMenuButtonRef}
@@ -701,8 +937,12 @@ export default function AdminDashboard() {
 
           <div className="topbar-trailing">
             {normalizedPathname === '/dashboard/settings' ? <div id="settings-header-controls" /> : null}
-            {cachedAlertsAt && !hasTrustedAlertList ? <span className="status-badge status-inactive">Cached alerts stale</span> : null}
-            <span className={`alert-connection-status is-${online ? alertConnectionStatus : 'degraded'}`} role="status">
+            {cachedAlertsAt && !hasTrustedAlertList ? <Status tone="danger">Cached alerts stale</Status> : null}
+            <Status
+              value={online && alertConnectionStatus === 'live' ? 'active' : ''}
+              tone={!online || alertConnectionStatus === 'degraded' ? 'danger' : alertConnectionStatus === 'polling' || alertConnectionStatus === 'reconnecting' ? 'fault' : undefined}
+              role="status"
+            >
               {!online ? 'Offline' : alertConnectionStatus === 'live'
                 ? 'Live'
                 : alertConnectionStatus === 'polling'
@@ -712,7 +952,7 @@ export default function AdminDashboard() {
                     : alertConnectionStatus === 'degraded'
                       ? 'Real-time temporarily unavailable — retrying'
                       : 'Reconnecting'}
-            </span>
+            </Status>
             <div className="topbar-divider" aria-hidden="true" />
             <DashboardClock />
             <div className="topbar-divider" aria-hidden="true" />
@@ -734,6 +974,7 @@ export default function AdminDashboard() {
               ref={alertsButtonRef}
               className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
               type="button"
+              data-bell-swing={bellSwingState.isSwinging && !isAlertsOpen ? 'true' : 'false'}
               aria-label={
                 !hasTrustedAlertList
                   ? 'Open alerts, status unavailable'
@@ -747,9 +988,15 @@ export default function AdminDashboard() {
                 setIsAlertsOpen((value) => !value)
               }}
             >
-              <Bell className="bell-icon" size={20} aria-hidden="true" />
+              <Bell
+                key={`bell-${bellSwingState.count}`}
+                className={`bell-icon ${bellSwingState.isSwinging && !isAlertsOpen ? 'is-swinging' : ''}`.trim()}
+                size={20}
+                aria-hidden="true"
+                onAnimationEnd={() => setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))}
+              />
               {hasTrustedAlertList && activeAlertCount > 0 ? (
-                <span key={activeAlertCount} className="notification-badge" aria-hidden="true">
+                <span key={`badge-${activeAlertCount}`} className="notification-badge" aria-hidden="true">
                   {activeAlertCount > 99 ? '99+' : activeAlertCount}
                 </span>
               ) : null}
@@ -761,8 +1008,17 @@ export default function AdminDashboard() {
                     : 'No active alerts'}
               </span>
             </button>
-            {isAlertsOpen ? (
-              <div ref={alertsPopoverRef} className="alerts-popover" role="dialog" aria-label="Active alerts" tabIndex="-1">
+            {isAlertsPopoverPresent ? (
+              <div
+                ref={alertsPopoverRef}
+                data-state={isAlertsOpen ? 'open' : 'closed'}
+                inert={isAlertsPopoverExiting || undefined}
+                onAnimationEnd={handleAlertsPopoverAnimationEnd}
+                className="alerts-popover"
+                role="dialog"
+                aria-label="Active alerts"
+                tabIndex="-1"
+              >
                 <div className="alerts-popover-header">
                   <div className="alerts-header-title-wrap">
                     <strong>Notifications</strong>
@@ -773,7 +1029,30 @@ export default function AdminDashboard() {
                       {hasTrustedAlertList ? (activeAlertCount > 99 ? '99+' : activeAlertCount) : '—'}
                     </span>
                   </div>
+                  <div className="alerts-header-actions">
+                    {hasTrustedAlertList && acknowledgedAlerts.length > 0 ? (
+                      <span className="alerts-header-acknowledged">
+                        {acknowledgedAlerts.length} acknowledged
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="alerts-popover-close-btn"
+                      aria-label="Close alerts"
+                      onClick={() => {
+                        setIsAlertsOpen(false)
+                        alertsButtonRef.current?.focus({ preventScroll: true })
+                      }}
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
+                {ackStatusMessage ? (
+                  <div className="sr-only" aria-live="polite" aria-atomic="true">
+                    {ackStatusMessage}
+                  </div>
+                ) : null}
                 {cachedAlertsAt && !hasTrustedAlertList ? (
                   <div className="alert-load-error" role="status">Cached alerts are stale. Updated <UpdatedAgo updatedAt={cachedAlertsAt} />.</div>
                 ) : null}
@@ -797,6 +1076,13 @@ export default function AdminDashboard() {
                         : isAcked
                           ? 'is-acknowledged'
                           : 'is-active'
+                      const primaryText = alert.title || alert.message || ''
+                      const secondaryMessage = alert.title && alert.message && alert.title !== alert.message
+                        ? alert.message
+                        : ''
+                      const hasExpandableCopy = secondaryMessage.length > LONG_ALERT_THRESHOLD
+                        || (!secondaryMessage && primaryText.length > LONG_ALERT_THRESHOLD)
+                      const isExpanded = expandedAlertIds.has(alert.id)
                       return (
                         <li key={alert.id} className={`alert-row ${rowStateClass} ${alertKind?.className || ''}`}>
                           <div className="alert-row-indicator">
@@ -810,15 +1096,35 @@ export default function AdminDashboard() {
                           </div>
                           <div className="alert-row-body">
                             <div className="alert-row-heading">
-                              <p className="alert-row-primary">
-                                {alert.title || alert.message}
+                              <p className={`alert-row-primary ${!secondaryMessage && hasExpandableCopy && !isExpanded ? 'is-clamped' : ''}`.trim()}>
+                                {primaryText}
                               </p>
                               {alertKind ? (
                                 <span className={`alert-kind-tag ${alertKind.className}`}>{alertKind.label}</span>
                               ) : null}
                             </div>
-                            {alert.title && alert.message && alert.title !== alert.message ? (
-                              <p className="alert-row-message">{alert.message}</p>
+                            {secondaryMessage ? (
+                              <p className={`alert-row-message ${hasExpandableCopy && !isExpanded ? 'is-clamped' : ''}`.trim()}>
+                                {secondaryMessage}
+                              </p>
+                            ) : null}
+                            {hasExpandableCopy ? (
+                              <button
+                                type="button"
+                                className="alert-expand-btn"
+                                aria-expanded={isExpanded}
+                                onClick={() => setExpandedAlertIds((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(alert.id)) {
+                                    next.delete(alert.id)
+                                  } else {
+                                    next.add(alert.id)
+                                  }
+                                  return next
+                                })}
+                              >
+                                {isExpanded ? 'Show less' : 'Show more'}
+                              </button>
                             ) : null}
                             <div className="alert-row-meta">
                               <span>{alert.machineName || 'Spiral Mill 01'}</span>
@@ -835,6 +1141,7 @@ export default function AdminDashboard() {
                             <button
                               className="alert-acknowledge-ghost-btn"
                               type="button"
+                              data-alert-ack-id={alert.id}
                               disabled={!hasTrustedAlertList || acknowledgingAlertIds.includes(alert.id)}
                               onClick={() => handleAcknowledgeAlert(alert.id)}
                             >
@@ -842,7 +1149,7 @@ export default function AdminDashboard() {
                             </button>
                           ) : (
                             <span className="alert-acked-tag">
-                              <UserRoundCheck size={12} aria-hidden="true" /> Acked
+                              <UserRoundCheck size={12} aria-hidden="true" /> Confirmed
                             </span>
                           )}
                         </li>
@@ -877,13 +1184,13 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        <section className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
+        <main className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
           {/* Nested /dashboard routes render here. */}
           <UsersActionProvider>
             <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
           </UsersActionProvider>
-        </section>
+        </main>
       </div>
-    </main>
+    </div>
   )
 }

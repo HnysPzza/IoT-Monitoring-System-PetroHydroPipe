@@ -1,8 +1,9 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
+import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import SettingsSection from './SettingsSection.jsx'
 import { getMachines } from '../machines/machinesService.js'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
@@ -77,6 +78,12 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByLabelText('S-01 recovery minutes')).toHaveValue(1)
     expect(screen.getByText(/S-05 counts output/i)).toBeInTheDocument()
     expect(screen.getByLabelText('S-05 trigger minutes')).toBeDisabled()
+
+    const matrix = screen.getByRole('table', { name: 'Sensor absence tolerance matrix' })
+    for (const identity of sensorIdentities) {
+      expect(within(matrix).getByText(identity.label)).toBeInTheDocument()
+      expect(within(matrix).queryByText(identity.purpose)).not.toBeInTheDocument()
+    }
   })
 
   it('keeps an unsaved draft when the window loses and regains focus', async () => {
@@ -328,5 +335,43 @@ describe('SettingsSection operational settings', () => {
     expect(stallInput.closest('.col-sensor')).toContainElement(stallError)
     expect(s03Trigger.closest('.col-trigger')).toContainElement(triggerError)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('renders recovery validation errors in the recovery column with aria-invalid and aria-describedby', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const s01Trigger = await screen.findByLabelText('S-01 trigger minutes')
+    const s01Recovery = screen.getByLabelText('S-01 recovery minutes')
+
+    await user.clear(s01Trigger)
+    await user.type(s01Trigger, '0')
+    await user.clear(s01Recovery)
+    await user.type(s01Recovery, '9')
+
+    const triggerError = screen.getByText('Trigger must be 1-60 minutes.')
+    const recoveryError = screen.getByText('Recovery must be 1-5 minutes.')
+
+    expect(s01Trigger.closest('.col-trigger')).toContainElement(triggerError)
+    expect(s01Recovery.closest('.col-recovery')).toContainElement(recoveryError)
+    expect(s01Trigger).toHaveAttribute('aria-invalid', 'true')
+    expect(s01Recovery).toHaveAttribute('aria-invalid', 'true')
+    expect(s01Recovery).toHaveAttribute('aria-describedby', 'S-01-recovery-error')
+  })
+
+  it('adds a non-overlapping break slot and supports Ctrl+S keyboard save', async () => {
+    const user = userEvent.setup()
+    updateOperationalSettings.mockResolvedValue({ settings: settingsFixture({ version: '2' }) })
+    renderWithAuth(<SettingsSection />)
+
+    const addBreakBtn = await screen.findByRole('button', { name: /Add break/i })
+    await user.click(addBreakBtn)
+
+    expect(screen.queryByText(/no overlap/i)).not.toBeInTheDocument()
+    const saveBtn = screen.getByRole('button', { name: 'Save' })
+    expect(saveBtn).toBeEnabled()
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
   })
 })

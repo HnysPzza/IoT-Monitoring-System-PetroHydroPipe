@@ -614,11 +614,11 @@ test('Security Suite 6.1: Serializers escape potential formula injection charact
   await wb.xlsx.load(xlsxBuffer)
 
   const summarySheet = wb.getWorksheet('Production Summary')
-  // Row 13 has first breakdown item
-  const c1 = summarySheet.getCell('A13').value
-  const c2 = summarySheet.getCell('A14').value
-  const c3 = summarySheet.getCell('A15').value
-  const c4 = summarySheet.getCell('A16').value
+  // Row 9 has first breakdown item
+  const c1 = summarySheet.getCell('A9').value
+  const c2 = summarySheet.getCell('A10').value
+  const c3 = summarySheet.getCell('A11').value
+  const c4 = summarySheet.getCell('A12').value
 
   assert.equal(c1, "'=CMD('calc')", 'Must prepend single quote to = formula')
   assert.equal(c2, "'+123456789", 'Must prepend single quote to + formula')

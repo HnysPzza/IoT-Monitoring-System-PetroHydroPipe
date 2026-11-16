@@ -30,7 +30,7 @@ export const PanelToggle = forwardRef(function PanelToggle(
   // Determine if pointing right (to open) vs pointing left (to close)
   // If isCollapsed is provided (sidebar mode): collapsed = true means closed (needs to open -> point right)
   // If isOpen is provided (drawer mode): open = false means closed (needs to open -> point right)
-  const isPointingRight = isCollapsed !== undefined ? Boolean(isCollapsed) : !Boolean(isOpen)
+  const isPointingRight = isCollapsed !== undefined ? Boolean(isCollapsed) : !isOpen
 
   const computedAriaLabel =
     ariaLabelProp ||
