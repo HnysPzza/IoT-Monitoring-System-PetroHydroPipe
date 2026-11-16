@@ -1,12 +1,21 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import SettingsSection from './SettingsSection.jsx'
 import { getMachines } from '../machines/machinesService.js'
-import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
+import {
+  getOperationalSettings,
+  getProductionCalendar,
+  getWatchdogDiagnostics,
+  removeProductionCalendarDay,
+  removeProductionCalendarRange,
+  setProductionCalendarDay,
+  setProductionCalendarRange,
+  updateOperationalSettings,
+} from './settingsService.js'
 
 vi.mock('../../../shared/hooks/useTheme.js', () => ({
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
@@ -14,7 +23,12 @@ vi.mock('../../../shared/hooks/useTheme.js', () => ({
 vi.mock('../machines/machinesService.js', () => ({ getMachines: vi.fn() }))
 vi.mock('./settingsService.js', () => ({
   getOperationalSettings: vi.fn(),
+  getProductionCalendar: vi.fn(),
   getWatchdogDiagnostics: vi.fn(),
+  removeProductionCalendarDay: vi.fn(),
+  removeProductionCalendarRange: vi.fn(),
+  setProductionCalendarDay: vi.fn(),
+  setProductionCalendarRange: vi.fn(),
   updateOperationalSettings: vi.fn(),
 }))
 
@@ -61,8 +75,19 @@ describe('SettingsSection operational settings', () => {
   beforeEach(() => {
     getMachines.mockReset().mockResolvedValue({ machines: [machine] })
     getOperationalSettings.mockReset().mockResolvedValue({ settings: settingsFixture(), constraints })
+    getProductionCalendar.mockReset().mockResolvedValue({ entries: [] })
     getWatchdogDiagnostics.mockReset().mockResolvedValue({ watchdog: { mode: 'observe' } })
+    removeProductionCalendarDay.mockReset()
+    removeProductionCalendarRange.mockReset()
+    setProductionCalendarDay.mockReset()
+    setProductionCalendarRange.mockReset()
     updateOperationalSettings.mockReset()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('loads backend constraints in minutes and keeps S-05 absence controls locked', async () => {
@@ -373,5 +398,326 @@ describe('SettingsSection operational settings', () => {
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
     await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+  })
+
+  it('toggles weekly rest days, tracks dirty state, and saves shiftSchedule.restDays', async () => {
+    const user = userEvent.setup()
+    updateOperationalSettings.mockResolvedValue({
+      settings: settingsFixture({
+        version: '2',
+        shiftSchedule: {
+          ...settingsFixture().shiftSchedule,
+          restDays: ['sunday'],
+        },
+      }),
+    })
+    renderWithAuth(<SettingsSection />)
+
+    const sundayCheckbox = await screen.findByRole('checkbox', { name: 'Sunday' })
+    expect(sundayCheckbox).not.toBeChecked()
+
+    await user.click(sundayCheckbox)
+    expect(sundayCheckbox).toBeChecked()
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
+    expect(updateOperationalSettings.mock.calls[0][2].shiftSchedule.restDays).toEqual(['sunday'])
+  })
+
+  it('blocks saving when all 7 weekdays are selected as rest days', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    for (const day of weekdays) {
+      await user.click(await screen.findByRole('checkbox', { name: day }))
+    }
+
+    expect(screen.getByText(/At least one working day per week is required/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('toggles a future seeded holiday without submitting or resetting unsaved operational settings', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2026-12-25',
+          name: 'Christmas Day',
+          dayType: 'holiday',
+          isWorking: false,
+          reason: null,
+          source: 'seeded',
+          groupId: null,
+          version: '1',
+          updatedBy: null,
+          updatedAt: '2026-11-16T00:00:00.000Z',
+        },
+      ],
+    })
+    setProductionCalendarDay.mockResolvedValue({
+      entry: {
+        calendarDate: '2026-12-25',
+        name: 'Christmas Day',
+        dayType: 'holiday',
+        isWorking: true,
+        reason: null,
+        source: 'seeded',
+        groupId: null,
+        version: '2',
+        updatedBy: 'user-1',
+        updatedAt: '2026-11-16T01:00:00.000Z',
+      },
+    })
+    renderWithAuth(<SettingsSection />)
+
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '6')
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).not.toBeInTheDocument()
+    const holidaysToggle = screen.getByRole('button', { name: /Show holidays/i })
+    expect(holidaysToggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(holidaysToggle)
+    expect(screen.getByRole('button', { name: /Hide holidays/i })).toHaveAttribute('aria-expanded', 'true')
+
+    const toggleButton = await screen.findByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })
+    await user.click(toggleButton)
+
+    await waitFor(() => expect(setProductionCalendarDay).toHaveBeenCalledTimes(1))
+    expect(setProductionCalendarDay).toHaveBeenCalledWith(
+      'test-token',
+      machine.id,
+      '2026-12-25',
+      expect.objectContaining({
+        dayType: 'holiday',
+        name: 'Christmas Day',
+        isWorking: true,
+        expectedVersion: '1',
+      }),
+    )
+    expect(updateOperationalSettings).not.toHaveBeenCalled()
+    expect(trigger).toHaveValue(6)
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+  })
+
+  it('previews Back to work across a Sunday rest day and submits a multi-day shutdown range', async () => {
+    const user = userEvent.setup()
+    getOperationalSettings.mockResolvedValue({
+      settings: settingsFixture({
+        shiftSchedule: {
+          ...settingsFixture().shiftSchedule,
+          restDays: ['sunday'],
+        },
+      }),
+      constraints,
+    })
+    setProductionCalendarRange.mockResolvedValue({
+      groupId: 'group-shutdown-1',
+      entries: [],
+    })
+    renderWithAuth(<SettingsSection />)
+
+    const rangeRadio = await screen.findByRole('radio', { name: /Date range/i })
+    await user.click(rangeRadio)
+
+    const startInput = screen.getByLabelText(/First day off/i)
+    const endInput = screen.getByLabelText(/Last day off/i)
+    fireEvent.change(startInput, { target: { value: '2026-12-23' } })
+    fireEvent.change(endInput, { target: { value: '2027-01-02' } })
+
+    expect(screen.getByText(/Back to work:\s*Mon, Jan 4, 2027/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Save calendar range|Add to calendar/i }))
+    await waitFor(() => expect(setProductionCalendarRange).toHaveBeenCalledTimes(1))
+    expect(setProductionCalendarRange).toHaveBeenCalledWith(
+      'test-token',
+      machine.id,
+      expect.objectContaining({
+        startDate: '2026-12-23',
+        endDate: '2027-01-02',
+        dayType: 'day_off',
+      }),
+    )
+  })
+
+  it('disables toggle and remove buttons for calendar entries on or before Manila today', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2020-01-01',
+          name: "New Year's Day",
+          dayType: 'holiday',
+          isWorking: false,
+          reason: null,
+          source: 'seeded',
+          groupId: null,
+          version: '1',
+          updatedBy: null,
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        },
+        {
+          calendarDate: '2020-01-02',
+          name: 'Past Manual Closure',
+          dayType: 'day_off',
+          isWorking: false,
+          reason: null,
+          source: 'manual',
+          groupId: null,
+          version: '1',
+          updatedBy: 'user-1',
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    renderWithAuth(<SettingsSection />)
+
+    const pastManualRemove = await screen.findByRole('button', { name: /Remove Past Manual Closure \(2020-01-02\)/i })
+    expect(pastManualRemove).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /Show holidays/i }))
+    const pastHolidayToggle = await screen.findByRole('button', { name: /Set New Year's Day \(2020-01-01\) to Working/i })
+    expect(pastHolidayToggle).toBeDisabled()
+  })
+
+  it('displays feedback that only remaining future dates were removed when deleting a partially elapsed range', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2020-12-23',
+          name: 'Holiday Shutdown',
+          dayType: 'day_off',
+          isWorking: false,
+          reason: null,
+          source: 'manual',
+          groupId: 'group-partial-1',
+          version: '1',
+          updatedBy: 'user-1',
+          updatedAt: '2020-12-01T00:00:00.000Z',
+        },
+        {
+          calendarDate: '2027-01-03',
+          name: 'Holiday Shutdown',
+          dayType: 'day_off',
+          isWorking: false,
+          reason: null,
+          source: 'manual',
+          groupId: 'group-partial-1',
+          version: '1',
+          updatedBy: 'user-1',
+          updatedAt: '2020-12-01T00:00:00.000Z',
+        },
+      ],
+    })
+    removeProductionCalendarRange.mockResolvedValue({
+      result: {
+        machineId: machine.id,
+        groupId: 'group-partial-1',
+        removedCount: 1,
+        removedDates: ['2027-01-03'],
+        lockedDates: ['2020-12-23'],
+        restoredDates: [],
+        restoredHolidays: [],
+      },
+    })
+    renderWithAuth(<SettingsSection />)
+
+    const removeRangeBtn = await screen.findByRole('button', { name: /Remove range Holiday Shutdown \(2027-01-03\)/i })
+    await user.click(removeRangeBtn)
+
+    await waitFor(() => expect(removeProductionCalendarRange).toHaveBeenCalledWith('test-token', machine.id, 'group-partial-1'))
+    expect(await screen.findByText(/only remaining future dates were removed/i)).toBeInTheDocument()
+  })
+
+  it('validates that Machine not scheduled requires a non-empty reason before calling the API', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const dayTypeSelect = await screen.findByLabelText(/Exclusion type/i)
+    await user.selectOptions(dayTypeSelect, 'machine_not_scheduled')
+
+    const dateInput = screen.getByLabelText('Exclusion date')
+    fireEvent.change(dateInput, { target: { value: '2026-12-20' } })
+
+    await user.click(screen.getByRole('button', { name: /Add to calendar/i }))
+
+    expect(await screen.findByText(/reason is required/i)).toBeInTheDocument()
+    expect(setProductionCalendarDay).not.toHaveBeenCalled()
+    expect(setProductionCalendarRange).not.toHaveBeenCalled()
+  })
+
+  it('prompts for confirmation with conflictingDates on 409 and retries with confirmOverwrite: true when confirmed', async () => {
+    const user = userEvent.setup()
+    const conflictError = Object.assign(new Error('Manual entries exist'), {
+      status: 409,
+      code: 'CALENDAR_OVERWRITE_CONFIRM_REQUIRED',
+      details: { conflictingDates: ['2026-12-28'] },
+    })
+    setProductionCalendarRange
+      .mockRejectedValueOnce(conflictError)
+      .mockResolvedValueOnce({ groupId: 'group-overwrite-1', entries: [] })
+
+    renderWithAuth(<SettingsSection />)
+
+    await user.click(await screen.findByRole('radio', { name: /Date range/i }))
+    fireEvent.change(screen.getByLabelText(/First day off/i), { target: { value: '2026-12-23' } })
+    fireEvent.change(screen.getByLabelText(/Last day off/i), { target: { value: '2027-01-02' } })
+    await user.click(screen.getByRole('button', { name: /Add to calendar/i }))
+
+    await waitFor(() => expect(setProductionCalendarRange).toHaveBeenCalledTimes(1))
+    expect(setProductionCalendarRange.mock.calls[0][2].confirmOverwrite).toBeFalsy()
+
+    expect(await screen.findByText(/2026-12-28/)).toBeInTheDocument()
+    const confirmBtn = screen.getByRole('button', { name: /Confirm overwrite/i })
+    await user.click(confirmBtn)
+
+    await waitFor(() => expect(setProductionCalendarRange).toHaveBeenCalledTimes(2))
+    expect(setProductionCalendarRange.mock.calls[1][2]).toEqual(
+      expect.objectContaining({
+        startDate: '2026-12-23',
+        endDate: '2027-01-02',
+        confirmOverwrite: true,
+      }),
+    )
+  })
+
+  it('disables production calendar mutation controls for non-Admin roles while allowing holiday list expand and collapse', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2026-12-25',
+          name: 'Christmas Day',
+          dayType: 'holiday',
+          isWorking: false,
+          reason: null,
+          source: 'seeded',
+          groupId: null,
+          version: '1',
+          updatedBy: null,
+          updatedAt: '2026-11-16T00:00:00.000Z',
+        },
+      ],
+    })
+    renderWithAuth(<SettingsSection />, {
+      authValue: {
+        user: { id: 'user-op', name: 'operator', username: 'operator', role: 'Operation Manager' },
+      },
+    })
+
+    const showHolidaysBtn = await screen.findByRole('button', { name: /Show holidays/i })
+    expect(showHolidaysBtn).toBeEnabled()
+    expect(showHolidaysBtn).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(showHolidaysBtn)
+    expect(await screen.findByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Add to calendar/i })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /Hide holidays/i }))
+    expect(screen.queryByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).not.toBeInTheDocument()
   })
 })

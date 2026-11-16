@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { getNextBreakSlot, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
+import {
+  getBackToWorkDate,
+  getNextBreakSlot,
+  normalizeRestDays,
+  settingsAreEqual,
+  sortBreaks,
+  validateOperationalSettings,
+} from './settingsUtils.js'
 
 const constraints = {
   sensorCodes: ['S-01', 'S-02', 'S-03', 'S-04', 'S-05'],
@@ -144,5 +151,36 @@ describe('settings validation', () => {
       { name: 'Break 3', ...slot },
     ]
     expect(validateOperationalSettings(candidate, constraints)).toEqual({})
+  })
+
+  it('validates weekly restDays bounds and normalizes comparison across legacy schedules', () => {
+    expect(normalizeRestDays(['Sunday', 'friday', 'sunday', 'invalid'])).toEqual(['sunday', 'friday'])
+
+    const legacy = validSettings()
+    const normalized = validSettings()
+    normalized.shiftSchedule.restDays = []
+    expect(settingsAreEqual(legacy, normalized)).toBe(true)
+
+    const allSeven = validSettings()
+    allSeven.shiftSchedule.restDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    expect(validateOperationalSettings(allSeven, constraints).restDays).toMatch(/at least one working day/i)
+
+    const dupes = validSettings()
+    dupes.shiftSchedule.restDays = ['sunday', 'sunday']
+    expect(validateOperationalSettings(dupes, constraints).restDays).toMatch(/unique weekdays/i)
+  })
+
+  it('computes Back to work skipping weekly rest days and non-working overrides while respecting working overrides', () => {
+    expect(
+      getBackToWorkDate('2027-01-02', ['sunday'], [
+        { calendarDate: '2027-01-03', isWorking: false },
+      ]),
+    ).toBe('2027-01-04')
+
+    expect(
+      getBackToWorkDate('2027-01-02', ['sunday'], [
+        { calendarDate: '2027-01-03', isWorking: true },
+      ]),
+    ).toBe('2027-01-03')
   })
 })

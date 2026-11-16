@@ -10,7 +10,12 @@ export const queryKeys = {
   audit: { all: ['audit'], list: (params) => ['audit', 'list', params] },
   users: { all: ['users'], list: (params) => ['users', 'list', params], roles: ['users', 'roles'] },
   machines: { all: ['machines'], list: ['machines', 'list'] },
-  settings: { all: ['settings'], machine: (id) => ['settings', 'machine', id], watchdog: ['settings', 'watchdog'] },
+  settings: {
+    all: ['settings'],
+    machine: (id) => ['settings', 'machine', id],
+    watchdog: ['settings', 'watchdog'],
+    calendar: (machineId, range) => (range === undefined ? ['settings', 'calendar', machineId] : ['settings', 'calendar', machineId, range]),
+  },
   overview: { all: ['overview'], summary: ['overview', 'summary'], downtimeImpact: (params) => ['overview', 'downtime-impact', params] },
 }
 

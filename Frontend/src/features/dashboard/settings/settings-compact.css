@@ -245,6 +245,134 @@
   white-space: nowrap;
 }
 
+.settings-form .btn:disabled,
+.settings-calendar-panel .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-calendar-panel .btn {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.settings-calendar-panel .btn-secondary {
+  color: var(--c-text);
+  border-color: var(--c-border);
+  background: var(--c-surface2);
+}
+
+.settings-calendar-panel .btn-secondary:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.settings-rest-days-grid,
+.settings-calendar-mode-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-rest-day-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-surface2);
+  color: var(--c-text-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-rest-day-pill input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--c-primary);
+}
+
+.settings-rest-day-pill.is-selected {
+  border-color: var(--c-primary);
+  background: var(--panel-bg-soft);
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.settings-rest-day-pill:has(input:focus-visible) {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.settings-calendar-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.settings-calendar-footer {
+  padding-top: 2px;
+}
+
+.settings-calendar-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-text-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.settings-calendar-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-overwrite-dialog {
+  align-items: flex-start;
+}
+
+.settings-overwrite-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-overwrite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.settings-holidays-section {
+  padding-top: 8px;
+  border-top: 1px solid var(--subtle-border);
+}
+
+.settings-holiday-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-holiday-chevron {
+  transition: transform 180ms var(--ease-out);
+}
+
+.settings-holiday-chevron.is-open {
+  transform: rotate(180deg);
+}
+
 #settings-header-version:not(:empty) {
   border-left: 0;
   padding-left: 0;

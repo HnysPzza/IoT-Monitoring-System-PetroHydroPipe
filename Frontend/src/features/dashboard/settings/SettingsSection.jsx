@@ -10,8 +10,19 @@ import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
 import { getMachines } from '../machines/machinesService.js'
+import ProductionCalendarPanel from './ProductionCalendarPanel.jsx'
 import { getOperationalSettings, getWatchdogDiagnostics, updateOperationalSettings } from './settingsService.js'
-import { cloneSettings, getMinuteBounds, getNextBreakSlot, getRotationStallSecondsBounds, settingsAreEqual, sortBreaks, validateOperationalSettings } from './settingsUtils.js'
+import {
+  WEEKDAY_OPTIONS,
+  cloneSettings,
+  getMinuteBounds,
+  getNextBreakSlot,
+  getRotationStallSecondsBounds,
+  normalizeRestDays,
+  settingsAreEqual,
+  sortBreaks,
+  validateOperationalSettings,
+} from './settingsUtils.js'
 import { getSensorLabel } from '../../../shared/constants/sensorIdentity.js'
 
 function getBreakDurationLabel(start, end) {
@@ -49,6 +60,9 @@ function toDraft(settings, constraints) {
   }
   if (Array.isArray(cloned.shiftSchedule?.breaks)) {
     cloned.shiftSchedule.breaks = cloned.shiftSchedule.breaks.map((entry) => withBreakKey(entry, entry._key))
+  }
+  if (cloned.shiftSchedule) {
+    cloned.shiftSchedule.restDays = normalizeRestDays(cloned.shiftSchedule.restDays)
   }
   return cloned
 }
@@ -264,6 +278,20 @@ export default function SettingsSection() {
     setNotice(null)
   }
 
+  function toggleRestDay(weekdayValue, checked) {
+    const currentRestDays = Array.isArray(draft.shiftSchedule.restDays) ? draft.shiftSchedule.restDays : []
+    const nextSet = new Set(currentRestDays)
+    if (checked) {
+      nextSet.add(weekdayValue)
+    } else {
+      nextSet.delete(weekdayValue)
+    }
+    updateSchedule(
+      'restDays',
+      WEEKDAY_OPTIONS.map((option) => option.value).filter((day) => nextSet.has(day)),
+    )
+  }
+
   function updateBreak(index, field, value) {
     const breaks = draft.shiftSchedule.breaks.map((entry, entryIndex) => (
       entryIndex === index ? withBreakKey({ ...entry, [field]: value }, entry._key) : entry
@@ -298,7 +326,11 @@ export default function SettingsSection() {
       const payload = await updateOperationalSettings(token, machine.id, {
         expectedVersion: settings.version,
         sensorThresholds: draft.sensorThresholds,
-        shiftSchedule: { ...draft.shiftSchedule, breaks: sortBreaks(draft.shiftSchedule.breaks) },
+        shiftSchedule: {
+          ...draft.shiftSchedule,
+          breaks: sortBreaks(draft.shiftSchedule.breaks),
+          restDays: normalizeRestDays(draft.shiftSchedule.restDays),
+        },
       })
       setSettings(payload.settings)
       setDraft(toDraft(payload.settings, constraints))
@@ -396,6 +428,7 @@ export default function SettingsSection() {
       {!draft || !constraints ? (
         <section className="section-card section-placeholder"><div className="section-copy"><p className="section-eyebrow">Configuration unavailable</p><h2>Unable to load operational settings</h2><p>No changes can be made until the current server configuration is loaded.</p><button className="btn btn-secondary" type="button" onClick={reloadSettings}><RotateCw size={16} aria-hidden="true" /> Retry</button></div></section>
       ) : (
+        <>
         <form id="operational-settings-form" className="settings-form" noValidate onSubmit={saveSettings}>
           <section className="section-card settings-panel" aria-labelledby="operational-settings-title">
             <div className="section-heading">
@@ -657,6 +690,42 @@ export default function SettingsSection() {
               {errors.rampUpGraceMinutes ? <p id="settings-grace-error" className="field-error">{errors.rampUpGraceMinutes}</p> : null}
             </div>
 
+            <div className="settings-work-bar settings-rest-days-bar">
+              <div className="work-bar-header">
+                <strong id="settings-rest-days-label">Weekly Rest Days</strong>
+              </div>
+              <p id="settings-rest-days-hint" className="settings-field-hint">
+                Selected weekdays have 0 scheduled production time unless overridden on the production calendar.
+              </p>
+              <div
+                className="settings-rest-days-grid"
+                role="group"
+                aria-labelledby="settings-rest-days-label"
+                aria-describedby={errors.restDays ? 'settings-rest-days-hint settings-rest-days-error' : 'settings-rest-days-hint'}
+              >
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const isSelected = Boolean(draft.shiftSchedule.restDays?.includes(day.value))
+                  return (
+                    <label
+                      key={day.value}
+                      className={`settings-check settings-rest-day-pill ${isSelected ? 'is-selected' : ''}`.trim()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={day.label}
+                        aria-invalid={errors.restDays ? 'true' : undefined}
+                        disabled={editingBlocked}
+                        checked={isSelected}
+                        onChange={(event) => toggleRestDay(day.value, event.target.checked)}
+                      />
+                      <span>{day.shortLabel}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {errors.restDays ? <p id="settings-rest-days-error" className="field-error">{errors.restDays}</p> : null}
+            </div>
+
             <div className="settings-break-matrix-wrap">
               <div className="break-matrix-header">
                 <div className="break-matrix-title">
@@ -769,6 +838,12 @@ export default function SettingsSection() {
             </div>
           </section>
         </form>
+        <ProductionCalendarPanel
+          machine={machine}
+          restDays={draft.shiftSchedule.restDays || []}
+          timeZone={constraints.timeZone}
+        />
+        </>
       )}
     </div>
   )
