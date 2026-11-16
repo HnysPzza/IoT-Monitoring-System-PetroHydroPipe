@@ -17,7 +17,7 @@ const actionLabels = {
   USER_STATUS_UPDATED: 'User account status changed',
   USER_ARCHIVED: 'User account archived',
   WATCHDOG_DOWNTIME_CREATED: 'Sensor monitoring confirmed downtime',
-  WATCHDOG_DOWNTIME_CONFIRMED: 'Sensor monitoring confirmed downtime',
+  WATCHDOG_DOWNTIME_CONFIRMED: 'Sensor monitoring confirmed downtime (legacy confirmation)',
   WATCHDOG_DOWNTIME_RESOLVED: 'Sensor monitoring confirmed recovery',
   CONNECTIVITY_ALERT_CREATED: 'Sensor connection lost',
   CONNECTIVITY_ALERT_RESOLVED: 'Sensor connection restored',
@@ -28,14 +28,14 @@ const actionLabels = {
   DOWNTIME_AUTO_RESOLVED: 'Downtime automatically resolved',
   DOWNTIME_UPDATED: 'Downtime record updated',
   MACHINE_STATUS_UPDATED: 'Machine status changed',
-  MACHINE_STATUS_RECONCILED: 'Machine status reconciled',
+  MACHINE_STATUS_RECONCILED: 'Machine status reconciled with sensors',
   SENSOR_STATUS_UPDATED: 'Sensor status changed',
   SENSOR_MANUAL_RECOVERY_OVERRIDE: 'Manual sensor recovery override',
   ALERT_CREATED: 'Alert created',
   ALERT_ACKNOWLEDGED: 'Alert acknowledged',
   ALERT_RESOLVED: 'Alert resolved',
-  PRODUCTION_SPEC_UPDATED: 'Production spec updated',
-  PRODUCTION_SPEC_BATCH_UPDATED: 'Production specs batch updated',
+  PRODUCTION_SPEC_UPDATED: 'Pipe spec updated',
+  PRODUCTION_SPEC_BATCH_UPDATED: 'Pipe specs batch updated',
   SETTINGS_UPDATED: 'Operational settings updated',
   REPORT_EXPORTED: 'Report exported',
 }
@@ -48,7 +48,6 @@ const ACTION_GROUP_DEFINITIONS = [
   {
     label: 'User accounts',
     actions: [
-      'USER_CREATED',
       'USER_INVITED',
       'USER_INVITATION_RESENT',
       'USER_PASSWORD_RESET_REQUESTED',
@@ -63,7 +62,6 @@ const ACTION_GROUP_DEFINITIONS = [
     label: 'Sensors & downtime',
     actions: [
       'WATCHDOG_DOWNTIME_CREATED',
-      'WATCHDOG_DOWNTIME_CONFIRMED',
       'WATCHDOG_DOWNTIME_RESOLVED',
       'CONNECTIVITY_ALERT_CREATED',
       'CONNECTIVITY_ALERT_RESOLVED',
@@ -73,9 +71,7 @@ const ACTION_GROUP_DEFINITIONS = [
       'DOWNTIME_CREATED',
       'DOWNTIME_AUTO_RESOLVED',
       'DOWNTIME_UPDATED',
-      'MACHINE_STATUS_UPDATED',
       'MACHINE_STATUS_RECONCILED',
-      'SENSOR_STATUS_UPDATED',
       'SENSOR_MANUAL_RECOVERY_OVERRIDE',
     ],
   },
@@ -88,6 +84,53 @@ const ACTION_GROUP_DEFINITIONS = [
     actions: ['PRODUCTION_SPEC_UPDATED', 'PRODUCTION_SPEC_BATCH_UPDATED', 'SETTINGS_UPDATED', 'REPORT_EXPORTED'],
   },
 ]
+
+export const filterableAuditActions = new Set(
+  ACTION_GROUP_DEFINITIONS.flatMap((group) => group.actions),
+)
+
+const ACTION_ALLOWED_ENTITIES = {
+  LOGIN_SUCCESS: new Set(['auth']),
+  LOGIN_FAILED: new Set(['auth']),
+  REFRESH_TOKEN_REUSED: new Set(['auth']),
+  USER_INVITED: new Set(['user']),
+  USER_INVITATION_RESENT: new Set(['user']),
+  USER_PASSWORD_RESET_REQUESTED: new Set(['user']),
+  PASSWORD_SETUP_COMPLETED: new Set(['user']),
+  PASSWORD_CHANGED: new Set(['user']),
+  PASSWORD_RESET_COMPLETED: new Set(['user']),
+  USER_STATUS_UPDATED: new Set(['user']),
+  USER_ARCHIVED: new Set(['user']),
+  WATCHDOG_DOWNTIME_CREATED: new Set(['downtime']),
+  WATCHDOG_DOWNTIME_RESOLVED: new Set(['downtime']),
+  CONNECTIVITY_ALERT_CREATED: new Set(['sensor_connectivity']),
+  CONNECTIVITY_ALERT_RESOLVED: new Set(['sensor_connectivity']),
+  IOT_EVENT_RECEIVED: new Set(['sensor_event']),
+  IOT_DEVICE_AUTH_FAILED: new Set(['iot_device']),
+  IOT_MACHINE_STATUS_UPDATED: new Set(['machine']),
+  DOWNTIME_CREATED: new Set(['downtime']),
+  DOWNTIME_AUTO_RESOLVED: new Set(['downtime']),
+  DOWNTIME_UPDATED: new Set(['downtime']),
+  MACHINE_STATUS_RECONCILED: new Set(['machine']),
+  SENSOR_MANUAL_RECOVERY_OVERRIDE: new Set(['sensor']),
+  ALERT_CREATED: new Set(['sensor', 'sensor_connectivity', 'machine']),
+  ALERT_ACKNOWLEDGED: new Set(['sensor', 'sensor_connectivity', 'machine']),
+  ALERT_RESOLVED: new Set(['sensor', 'sensor_connectivity', 'machine']),
+  PRODUCTION_SPEC_UPDATED: new Set(['sensor_event']),
+  PRODUCTION_SPEC_BATCH_UPDATED: new Set(['sensor_event']),
+  SETTINGS_UPDATED: new Set(['machine_settings']),
+  REPORT_EXPORTED: new Set(['report']),
+}
+
+export function isEntityAllowedForAction(action, entityType) {
+  if (!action || action === 'All' || !entityType || entityType === 'All') {
+    return true
+  }
+  const allowed = Object.hasOwn(ACTION_ALLOWED_ENTITIES, action)
+    ? ACTION_ALLOWED_ENTITIES[action]
+    : null
+  return allowed ? allowed.has(entityType) : true
+}
 
 export const auditActionGroups = ACTION_GROUP_DEFINITIONS.map((group) => ({
   label: group.label,
@@ -107,7 +150,7 @@ const entityLabels = {
   sensor: 'Sensor',
   sensor_connectivity: 'Sensor connectivity',
   iot_device: 'Sensor device',
-  sensor_event: 'Sensor activity',
+  sensor_event: 'Sensor & spec activity',
   downtime: 'Downtime',
   report: 'Report',
 }
@@ -148,6 +191,7 @@ const DANGER_ACTIONS = new Set([
 ])
 
 const WARNING_ACTIONS = new Set([
+  'USER_PASSWORD_RESET_REQUESTED',
   'USER_STATUS_UPDATED',
   'DOWNTIME_UPDATED',
   'MACHINE_STATUS_RECONCILED',
@@ -162,7 +206,30 @@ const SUCCESS_ACTIONS = new Set([
   'DOWNTIME_AUTO_RESOLVED',
   'ALERT_RESOLVED',
   'PASSWORD_SETUP_COMPLETED',
+  'PASSWORD_RESET_COMPLETED',
 ])
+
+const STATUS_ACTIONS = new Set([
+  'IOT_MACHINE_STATUS_UPDATED',
+  'MACHINE_STATUS_RECONCILED',
+  'MACHINE_STATUS_UPDATED',
+  'SENSOR_STATUS_UPDATED',
+  'USER_STATUS_UPDATED',
+])
+
+function getStatusTone(status) {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : ''
+  if (['downtime', 'fault', 'archived', 'offline', 'disabled', 'rejected'].includes(normalized)) {
+    return 'danger'
+  }
+  if (['inactive', 'idle'].includes(normalized)) {
+    return 'warning'
+  }
+  if (['running', 'active', 'resolved', 'connected'].includes(normalized)) {
+    return 'success'
+  }
+  return null
+}
 
 export function formatDateTime(value, options = {}) {
   return formatSharedDateTime(value, 'Not available', {
@@ -178,6 +245,12 @@ export function formatDateTime(value, options = {}) {
 
 export function getAuditTone(log) {
   const action = log?.action
+  if (STATUS_ACTIONS.has(action)) {
+    const metadataTone = getStatusTone(log?.metadata?.newStatus)
+    if (metadataTone) {
+      return metadataTone
+    }
+  }
   if (DANGER_ACTIONS.has(action)) {
     return 'danger'
   }
@@ -194,11 +267,14 @@ export function getAuditTone(log) {
 }
 
 export function getReadableAction(log) {
-  return actionLabels[log.action] || 'System action recorded'
+  if (!log?.action) {
+    return 'System action recorded'
+  }
+  return Object.hasOwn(actionLabels, log.action) ? actionLabels[log.action] : cleanCode(log.action)
 }
 
 export function getReadableEntity(log) {
-  return entityLabels[log.entityType] || cleanCode(log.entityType)
+  return Object.hasOwn(entityLabels, log.entityType) ? entityLabels[log.entityType] : cleanCode(log.entityType)
 }
 
 export function getReadableActor(log) {
@@ -219,7 +295,7 @@ export function getReadableActor(log) {
 
 export function getReadableTarget(log) {
   if (log.entityType === 'auth') {
-    return 'Login'
+    return 'User session'
   }
 
   if (log.entityType === 'user') {
@@ -235,11 +311,15 @@ export function getReadableTarget(log) {
   }
 
   if (log.entityType === 'iot_device') {
-    return 'Sensor device'
+    return getSensorName(log.metadata?.sensorCode) || 'ESP32 gateway'
+  }
+
+  if (log.entityType === 'downtime') {
+    return getSensorName(log.metadata?.ownerSensorCode || log.metadata?.sensorCode) || getMachineName(log)
   }
 
   if (log.entityType === 'sensor_event') {
-    return getSensorName(log.metadata?.sensorCode) || 'Sensor event'
+    return getSensorName(log.metadata?.sensorCode) || 'Sensor activity'
   }
 
   if (log.entityType === 'report') {
@@ -388,6 +468,46 @@ export function getReadableSource(log) {
   return 'System'
 }
 
+function formatPipeSpecSummary(metadata) {
+  if (!metadata) {
+    return null
+  }
+  const dimensions = [
+    metadata.diameter != null && metadata.diameter !== '' ? `${metadata.diameter} mm OD` : null,
+    metadata.thickness != null && metadata.thickness !== '' ? `${metadata.thickness} mm WT` : null,
+    metadata.length != null && metadata.length !== '' ? `${metadata.length} mm L` : null,
+  ].filter(Boolean)
+
+  const parts = [
+    metadata.customer ? `Customer ${metadata.customer}` : null,
+    metadata.pipeNumber != null && metadata.pipeNumber !== '' ? `Pipe #${metadata.pipeNumber}` : null,
+    dimensions.length > 0 ? dimensions.join(' x ') : null,
+    metadata.tonnage != null && metadata.tonnage !== '' ? `${metadata.tonnage} t` : null,
+  ].filter(Boolean)
+
+  return parts.length > 0 ? parts.join(' | ') : null
+}
+
+function getExtraDetailItems(log) {
+  const metadata = log.metadata || {}
+  if (log.action === 'SENSOR_MANUAL_RECOVERY_OVERRIDE' && metadata.reason) {
+    return [{ label: 'Override reason', value: metadata.reason, fullWidth: true }]
+  }
+  if (log.action === 'PRODUCTION_SPEC_UPDATED' || log.action === 'PRODUCTION_SPEC_BATCH_UPDATED') {
+    const summary = formatPipeSpecSummary(metadata)
+    return summary ? [{ label: 'Pipe details', value: summary, fullWidth: true }] : []
+  }
+  if (log.action === 'DOWNTIME_UPDATED' && (metadata.cause || metadata.status)) {
+    const cause = metadata.cause || 'not set'
+    const status = metadata.status ? cleanCode(metadata.status) : 'Reviewed'
+    return [{ label: 'Downtime review', value: `${status} — ${cause}`, fullWidth: true }]
+  }
+  if (log.action === 'SETTINGS_UPDATED' && Array.isArray(metadata.changedSections) && metadata.changedSections.length > 0) {
+    return [{ label: 'Updated sections', value: formatSettingsSections(metadata.changedSections), fullWidth: true }]
+  }
+  return []
+}
+
 export function getReadableDetailItems(log) {
   return [
     { label: 'What happened', value: getReadableDetails(log), emphasis: 'primary', fullWidth: true },
@@ -395,9 +515,7 @@ export function getReadableDetailItems(log) {
     { label: 'Time', value: formatDateTime(log.createdAt, { second: '2-digit' }) },
     { label: 'Affected item', value: getReadableTarget(log) },
     { label: 'Source', value: getReadableSource(log) },
-    ...(log.action === 'SENSOR_MANUAL_RECOVERY_OVERRIDE' && log.metadata?.reason
-      ? [{ label: 'Override reason', value: log.metadata.reason, fullWidth: true }]
-      : []),
+    ...getExtraDetailItems(log),
   ]
 }
 

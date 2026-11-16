@@ -13,7 +13,9 @@ import {
   getAuditTone,
   getReadableAction,
   getReadableDetails,
+  getReadableEntity,
   getReadableTarget,
+  isEntityAllowedForAction,
 } from './auditFormatters.js'
 
 vi.mock('./auditService.js', () => ({
@@ -58,7 +60,7 @@ describe('AuditSection', () => {
       ['PRODUCTION_SPEC_UPDATED', 'sensor_event', { sensorCode: 'S-05', label: 'Pipe A' }],
       ['PRODUCTION_SPEC_BATCH_UPDATED', 'sensor_event', { sensorCode: 'S-05', matchedCount: 4, updatedCount: 3 }],
       ['REPORT_EXPORTED', 'report', { reportCategory: 'production', format: 'pdf' }],
-      ['WATCHDOG_DOWNTIME_CONFIRMED', 'downtime', { sensorCode: 'S-02' }],
+      ['WATCHDOG_DOWNTIME_CREATED', 'downtime', { ownerSensorCode: 'S-03', sensorCode: 'S-02' }],
       ['MACHINE_STATUS_RECONCILED', 'machine', { machineCode: 'M-01', newStatus: 'Running' }],
     ]
 
@@ -70,11 +72,27 @@ describe('AuditSection', () => {
       expect(auditActionGroups.some((group) => group.options.some((option) => option.value === action))).toBe(true)
     }
 
+    const legacyWatchdog = { action: 'WATCHDOG_DOWNTIME_CONFIRMED', entityType: 'downtime', metadata: { sensorCode: 'S-02' } }
+    expect(getReadableAction(legacyWatchdog)).not.toBe('System action recorded')
+    expect(getReadableDetails(legacyWatchdog)).not.toBe('System action was recorded.')
+    expect(getReadableAction({ action: 'constructor', entityType: 'constructor' })).toBe('Constructor')
+    expect(getReadableEntity({ action: 'constructor', entityType: 'constructor' })).toBe('Constructor')
+    expect(isEntityAllowedForAction('constructor', 'auth')).toBe(true)
+
+    const groupedLabels = auditActionGroups.flatMap((group) => group.options.map((option) => option.label))
+    expect(new Set(groupedLabels).size).toBe(groupedLabels.length)
+    const groupedValues = new Set(auditActionGroups.flatMap((group) => group.options.map((option) => option.value)))
+    for (const removed of ['WATCHDOG_DOWNTIME_CONFIRMED', 'USER_CREATED', 'MACHINE_STATUS_UPDATED', 'SENSOR_STATUS_UPDATED']) {
+      expect(groupedValues.has(removed)).toBe(false)
+    }
+
     for (const entityType of ['machine_settings', 'report', 'sensor_connectivity']) {
       expect(auditEntityOptions.some((option) => option.value === entityType)).toBe(true)
     }
 
     expect(getReadableTarget({ entityType: 'sensor_connectivity', metadata: { sensorCode: 'S-03' } }))
+      .toContain('S-03')
+    expect(getReadableTarget({ entityType: 'downtime', metadata: { ownerSensorCode: 'S-03' } }))
       .toContain('S-03')
     expect(getReadableTarget({ entityType: 'machine_settings', metadata: { machineName: 'Spiral Mill 01' } }))
       .toBe('Spiral Mill 01')
@@ -93,6 +111,12 @@ describe('AuditSection', () => {
     expect(getAuditTone({ action: 'SENSOR_MANUAL_RECOVERY_OVERRIDE' })).toBe('warning')
     expect(getAuditTone({ action: 'WATCHDOG_DOWNTIME_RESOLVED' })).toBe('success')
     expect(getAuditTone({ action: 'SETTINGS_UPDATED' })).toBe('neutral')
+    expect(getAuditTone({ action: 'IOT_MACHINE_STATUS_UPDATED', metadata: { newStatus: 'Downtime' } })).toBe('danger')
+    expect(getAuditTone({ action: 'IOT_MACHINE_STATUS_UPDATED', metadata: { newStatus: 'Running' } })).toBe('success')
+    expect(getAuditTone({ action: 'MACHINE_STATUS_RECONCILED', metadata: { newStatus: 'Running' } })).toBe('success')
+    expect(getAuditTone({ action: 'USER_STATUS_UPDATED', metadata: { newStatus: 'Active' } })).toBe('success')
+    expect(getAuditTone({ action: 'PASSWORD_RESET_COMPLETED' })).toBe('success')
+    expect(getAuditTone({ action: 'USER_PASSWORD_RESET_REQUESTED' })).toBe('warning')
   })
 
   it('formats user account audit actions and affected accounts', () => {
@@ -161,7 +185,8 @@ describe('AuditSection', () => {
       expect(getAuditLogs).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }), { signal: expect.any(AbortSignal) })
     })
     await waitFor(() => {
-      expect(screen.getAllByText(/user account created/i).length).toBeGreaterThan(1)
+      expect(screen.getByText('User account created')).toBeInTheDocument()
+      expect(screen.getByText('operator01 was created.')).toBeInTheDocument()
     })
   })
 
@@ -222,7 +247,8 @@ describe('AuditSection', () => {
     expect(within(dialog).queryByText('Action code')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('event-1')).not.toBeInTheDocument()
 
-    await user.click(within(dialog).getByRole('button', { name: /close audit details/i }))
+    expect(within(dialog).queryByRole('button', { name: /close audit details/i })).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog', { name: 'Audit details' })).not.toBeInTheDocument()
   })
 
@@ -447,6 +473,7 @@ describe('AuditSection', () => {
 
     const resetButton = await screen.findByRole('button', { name: 'Reset filters' })
     await user.click(resetButton)
+    expect(screen.getByLabelText('Activity')).toHaveFocus()
 
     await waitFor(() => {
       expect(getAuditLogs).toHaveBeenLastCalledWith(
@@ -473,6 +500,13 @@ describe('AuditSection', () => {
         }),
         { signal: expect.any(AbortSignal) },
       )
+    })
+
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /select audit date/i }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Select audit date' })).getByRole('button', { name: 'Clear' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
     })
   })
 
@@ -519,7 +553,7 @@ describe('AuditSection', () => {
     expect(detailsButton.closest('tr')).toHaveClass('audit-row-returned')
   })
 
-  it('shows inline refresh indicator, dims placeholder results, highlights newly arrived rows, and opens details on row click', async () => {
+  it('shows inline refresh indicator, dims placeholder results, highlights newly arrived rows, and opens details only via the button', async () => {
     const user = userEvent.setup()
     let resolveNextPage
 
@@ -539,7 +573,7 @@ describe('AuditSection', () => {
         logs: [
           {
             id: 'audit-2',
-            action: 'USER_CREATED',
+            action: 'USER_INVITED',
             entityType: 'user',
             createdAt: '2026-06-11T01:00:00.000Z',
             actor: { username: 'admin', role: 'Admin' },
@@ -566,14 +600,20 @@ describe('AuditSection', () => {
     expect(initialCell.closest('tr')).not.toHaveClass('audit-row-arrived')
 
     await user.click(screen.getByRole('button', { name: 'Refresh audit log' }))
-    const arrivedSummary = await screen.findByText(/operator02 was created/i)
+    const arrivedSummary = await screen.findByText(/operator02 was invited/i)
     expect(arrivedSummary.closest('tr')).toHaveClass('audit-row-arrived')
 
     await user.click(arrivedSummary)
-    expect(screen.getByRole('dialog', { name: 'Audit details' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /close audit details/i }))
+    expect(screen.queryByRole('dialog', { name: 'Audit details' })).not.toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('Activity'), 'LOGIN_FAILED')
+    const rowButtons = arrivedSummary.closest('tr').querySelectorAll('.audit-details-button')
+    await user.click(rowButtons[0])
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(dialog).toBeInTheDocument()
+    const filterByActionButton = within(dialog).getByRole('button', { name: 'Filter by this action' })
+    expect(filterByActionButton).toHaveClass('btn-secondary', 'audit-dialog-filter-btn')
+    await user.click(filterByActionButton)
+    expect(screen.queryByRole('dialog', { name: 'Audit details' })).not.toBeInTheDocument()
     expect(await screen.findByText(/loading selected filters; previous results remain visible/i)).toBeInTheDocument()
     expect(document.querySelector('.audit-table tbody')).toHaveClass('is-placeholder-fetching')
 
@@ -582,6 +622,49 @@ describe('AuditSection', () => {
         logs: [],
         pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
       })
+    })
+  })
+
+  it('disables pagination while offline and supports closing details via footer Close button', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [{
+        id: 'audit-spec-1',
+        action: 'PRODUCTION_SPEC_UPDATED',
+        entityType: 'sensor_event',
+        createdAt: '2026-06-11T00:00:00.000Z',
+        actor: { username: 'admin', role: 'Admin' },
+        metadata: {
+          sensorCode: 'S-05',
+          customer: 'MCWD',
+          pipeNumber: 12,
+          diameter: 300,
+          thickness: 10,
+          length: 6000,
+          tonnage: 1.4,
+        },
+      }],
+      pagination: { page: 1, limit: 25, total: 30, totalPages: 2, hasNextPage: true, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+    const viewButtons = await screen.findAllByRole('button', { name: 'View details' })
+    await user.click(viewButtons[0])
+
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).getByText('Pipe details')).toBeInTheDocument()
+    expect(within(dialog).getByText(/MCWD/i)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Audit details' })).not.toBeInTheDocument()
+
+    act(() => {
+      onlineManager.setOnline(false)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Refresh audit log' })).toHaveAttribute('title', 'Offline — reconnect to refresh')
     })
   })
 })

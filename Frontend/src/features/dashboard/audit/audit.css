@@ -60,11 +60,31 @@
   min-height: 44px;
 }
 
+.audit-layout .btn:hover:not(:disabled) {
+  transform: none;
+}
+
+.audit-layout .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .audit-date-clear,
 .audit-refresh-button {
   margin: 0;
   min-height: 44px;
   min-width: 44px;
+}
+
+.audit-controls-actions .reports-icon-button {
+  border: 1px solid var(--c-border);
+  background: var(--c-surface2);
+  color: var(--c-text);
+}
+
+.audit-controls-actions .reports-icon-button:hover:not(:disabled) {
+  border-color: var(--c-text-2);
+  background: var(--hover-bg);
 }
 
 .audit-reset-button {
@@ -160,9 +180,9 @@
   align-items: center;
   gap: 7px;
   padding: 4px 10px;
-  border: 1px solid var(--status-offline-border);
+  border: 1px solid var(--subtle-border);
   border-radius: 999px;
-  background: var(--status-offline-bg);
+  background: var(--c-surface2);
   color: var(--c-text);
   font-size: 0.79rem;
   font-weight: 700;
@@ -179,33 +199,27 @@
 }
 
 .audit-action-badge[data-tone='danger'] {
-  border-color: var(--status-downtime-border);
-  background: var(--status-downtime-bg);
-  color: var(--status-downtime-text);
+  border-color: color-mix(in srgb, var(--subtle-border) 72%, var(--c-danger) 28%);
 }
 
 .audit-action-badge[data-tone='danger']::before {
-  background: var(--c-danger);
+  background: color-mix(in srgb, var(--c-danger) 74%, var(--c-text-2));
 }
 
 .audit-action-badge[data-tone='warning'] {
-  border-color: var(--status-fault-border);
-  background: var(--status-fault-bg);
-  color: var(--status-fault-text);
+  border-color: color-mix(in srgb, var(--subtle-border) 72%, var(--chart-warning) 28%);
 }
 
 .audit-action-badge[data-tone='warning']::before {
-  background: var(--chart-warning);
+  background: color-mix(in srgb, var(--chart-warning) 74%, var(--c-text-2));
 }
 
 .audit-action-badge[data-tone='success'] {
-  border-color: var(--status-running-border);
-  background: var(--status-running-bg);
-  color: var(--status-running-text);
+  border-color: color-mix(in srgb, var(--subtle-border) 72%, var(--c-success) 28%);
 }
 
 .audit-action-badge[data-tone='success']::before {
-  background: var(--c-success);
+  background: color-mix(in srgb, var(--c-success) 74%, var(--c-text-2));
 }
 
 .audit-action-stack {
@@ -234,12 +248,7 @@
   opacity: 0.58;
 }
 
-.audit-table tbody tr.audit-row {
-  cursor: pointer;
-  transition: background-color 120ms ease-out;
-}
-
-.audit-table tbody tr.audit-row:hover td {
+.audit-table tbody tr.audit-row:has(.audit-details-button:focus-visible) td {
   background: var(--hover-bg);
 }
 
@@ -416,15 +425,6 @@
   font-size: 1.15rem;
 }
 
-.audit-dialog-close {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0;
-  flex: 0 0 44px;
-}
-
 .audit-dialog-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -473,6 +473,45 @@
   line-height: 1.45;
 }
 
+.audit-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--subtle-border);
+}
+
+.audit-dialog-footer .btn {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 0.88rem;
+}
+
+.audit-dialog-filter-btn {
+  margin-right: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-std),
+    border-color 140ms var(--ease-std),
+    color 140ms var(--ease-std);
+}
+
+.audit-dialog-filter-btn:hover:not(:disabled) {
+  border-color: var(--subtle-border);
+  background: var(--hover-bg);
+  color: var(--c-text);
+}
+
+.audit-dialog-filter-btn:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
 @media (min-width: 901px) {
   .audit-controls-card {
     grid-template-columns: minmax(0, 1fr);
@@ -499,6 +538,14 @@
 
   .audit-dialog-details {
     grid-template-columns: 1fr;
+  }
+
+  .audit-dialog-filter-btn {
+    margin-right: 0;
+  }
+
+  .audit-dialog-footer .btn {
+    flex: 1 1 auto;
   }
 }
 
@@ -648,7 +695,7 @@
   }
 
   .audit-table tbody,
-  .audit-table tbody tr.audit-row,
+  .audit-dialog-filter-btn,
   .audit-details-dialog,
   .audit-details-dialog::backdrop {
     transition-duration: 0.01ms !important;

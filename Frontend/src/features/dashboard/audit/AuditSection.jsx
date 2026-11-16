@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, History, RotateCw, X } from 'lucide-react'
 import { keepPreviousData } from '@tanstack/react-query'
@@ -10,6 +10,7 @@ import { getAuditLogs } from './auditService.js'
 import {
   auditActionGroups,
   auditEntityOptions,
+  filterableAuditActions,
   formatDateTime,
   getAuditTone,
   getReadableAction,
@@ -17,6 +18,7 @@ import {
   getReadableDetailItems,
   getReadableEntity,
   getReadableTarget,
+  isEntityAllowedForAction,
 } from './auditFormatters.js'
 import './audit.css'
 
@@ -99,14 +101,19 @@ export default function AuditSection() {
   const online = useNetworkOnline()
   const [searchParams, setSearchParams] = useSearchParams()
   const detailsDialogRef = useRef(null)
+  const actionSelectRef = useRef(null)
   const dateFieldRef = useRef(null)
+  const historyCardRef = useRef(null)
   const lastTriggerRef = useRef(null)
+  const skipReturnFocusRef = useRef(false)
+  const manualRefreshRef = useRef(false)
   const seenIdsRef = useRef(new Set())
   const prevFilterSignatureRef = useRef('')
 
   const [selectedLog, setSelectedLog] = useState(null)
   const [returnedLogId, setReturnedLogId] = useState(null)
   const [arrivedIds, setArrivedIds] = useState(() => new Set())
+  const [liveAnnouncement, setLiveAnnouncement] = useState('')
 
   const {
     action: actionFilter,
@@ -140,7 +147,7 @@ export default function AuditSection() {
     refetchOnWindowFocus: true,
   })
 
-  const logs = query.data?.logs || []
+  const logs = useMemo(() => query.data?.logs || [], [query.data?.logs])
   const pagination = query.data?.pagination || {
     page,
     limit: AUDIT_PAGE_SIZE,
@@ -192,6 +199,17 @@ export default function AuditSection() {
     return () => window.clearTimeout(timer)
   }, [returnedLogId])
 
+  // Announce manual refresh outcomes once the active fetch finishes.
+  useEffect(() => {
+    if (!manualRefreshRef.current || query.isFetching) return
+    manualRefreshRef.current = false
+    setLiveAnnouncement(
+      query.isError
+        ? 'Audit log refresh failed.'
+        : `Audit log refreshed. Showing page ${pagination.page} of ${pagination.totalPages}.`,
+    )
+  }, [pagination.page, pagination.totalPages, query.isError, query.isFetching])
+
   const notice = hasData && (query.isError || !online)
     ? {
       type: 'error',
@@ -221,11 +239,20 @@ export default function AuditSection() {
   }
 
   function updateActionFilter(value) {
-    commitSearchState({ action: value, page: 1 })
+    const nextEntityType = isEntityAllowedForAction(value, entityFilter) ? entityFilter : 'All'
+    commitSearchState({ action: value, entityType: nextEntityType, page: 1 })
   }
 
   function updateEntityFilter(value) {
     commitSearchState({ entityType: value, page: 1 })
+  }
+
+  function goToPage(nextPage) {
+    const clampedPage = Math.max(1, nextPage)
+    commitSearchState({ page: clampedPage })
+    setLiveAnnouncement(`Loading page ${clampedPage}.`)
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    historyCardRef.current?.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
   }
 
   function handleModeChange(nextMode) {
@@ -286,9 +313,11 @@ export default function AuditSection() {
   function resetAllFilters() {
     setDraftMode('day')
     commitSearchState({ action: 'All', entityType: 'All', mode: 'day', dateFrom: '', dateTo: '', page: 1 })
+    actionSelectRef.current?.focus({ preventScroll: true })
   }
 
   function openDetails(log, triggerElement) {
+    skipReturnFocusRef.current = false
     lastTriggerRef.current = triggerElement || null
     setSelectedLog(log)
     detailsDialogRef.current?.showModal()
@@ -298,9 +327,19 @@ export default function AuditSection() {
     detailsDialogRef.current?.close()
   }
 
+  function filterByModalAction(action) {
+    skipReturnFocusRef.current = true
+    closeDetails()
+    updateActionFilter(action)
+    actionSelectRef.current?.focus({ preventScroll: true })
+  }
+
   function handleDialogClose() {
     const closedId = selectedLog?.id || null
+    const skipReturnFocus = skipReturnFocusRef.current
+    skipReturnFocusRef.current = false
     setSelectedLog(null)
+    if (skipReturnFocus) return
     if (closedId) {
       setReturnedLogId(closedId)
     }
@@ -316,14 +355,18 @@ export default function AuditSection() {
     ? { startDate: parseAuditDate(dateFrom), endDate: parseAuditDate(dateTo) }
     : undefined
   const auditRangeLabel = formatRangeSummaryLabel(dateFrom, dateTo, urlMode)
-  const hasNonDateFilter = actionFilter !== 'All' || entityFilter !== 'All'
-  const hasAnyFilter = hasNonDateFilter || Boolean(dateFrom)
+  const hasAnyFilter = actionFilter !== 'All' || entityFilter !== 'All' || Boolean(dateFrom)
+  const isLegacySelectedAction = actionFilter !== 'All' && !filterableAuditActions.has(actionFilter)
+  const refreshButtonTitle = !online
+    ? 'Offline — reconnect to refresh'
+    : (isRefreshing ? 'Refreshing audit log...' : 'Refresh audit log')
 
   const totalChipText = isColdFailure ? 'Unavailable' : `${pagination.total} total`
   const visibleRangeText = formatVisibleRowRange(pagination)
 
   return (
     <div className="audit-layout">
+      <div className="sr-only" role="status" aria-live="polite">{liveAnnouncement}</div>
       <header className="audit-page-header">
         <h1 id="audit-title" className="audit-page-title">Audit log</h1>
         <p className="audit-page-subtitle">Recorded user, machine, sensor, and security activity.</p>
@@ -350,6 +393,7 @@ export default function AuditSection() {
             <span>Activity</span>
             <div className="custom-select-wrap">
               <select
+                ref={actionSelectRef}
                 id="audit-action-filter"
                 name="auditAction"
                 value={actionFilter}
@@ -357,6 +401,9 @@ export default function AuditSection() {
                 autoComplete="off"
               >
                 <option value="All">All actions</option>
+                {isLegacySelectedAction ? (
+                  <option value={actionFilter}>{getReadableAction({ action: actionFilter })}</option>
+                ) : null}
                 {auditActionGroups.map((group) => (
                   <optgroup key={group.label} label={group.label}>
                     {group.options.map((option) => (
@@ -380,7 +427,13 @@ export default function AuditSection() {
                 autoComplete="off"
               >
                 {auditEntityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.value !== 'All' && !isEntityAllowedForAction(actionFilter, option.value)}
+                  >
+                    {option.label}
+                  </option>
                 ))}
               </select>
               <ChevronDown className="select-chevron-icon" size={16} aria-hidden="true" />
@@ -399,6 +452,8 @@ export default function AuditSection() {
               maxDate={maxAuditDate}
               rangeLabel={auditRangeLabel || 'Any date'}
               enableCustomRange
+              canClear={Boolean(dateFrom)}
+              onClear={clearDateFilter}
               onDateChange={handleAuditDateChange}
               onRangeChange={handleAuditRangeChange}
               onModeChange={handleModeChange}
@@ -406,7 +461,7 @@ export default function AuditSection() {
           </div>
 
           <div className="audit-controls-actions">
-            {hasNonDateFilter ? (
+            {hasAnyFilter ? (
               <button
                 className="btn btn-secondary audit-reset-button"
                 type="button"
@@ -430,9 +485,13 @@ export default function AuditSection() {
               className="btn reports-icon-button audit-refresh-button"
               type="button"
               aria-label="Refresh audit log"
-              title="Refresh audit log"
+              aria-busy={isRefreshing}
+              title={refreshButtonTitle}
               disabled={!online || isRefreshing}
-              onClick={() => query.refetch()}
+              onClick={() => {
+                manualRefreshRef.current = true
+                query.refetch()
+              }}
             >
               <RotateCw className={isRefreshing ? 'spin-icon' : ''} size={16} aria-hidden="true" />
             </button>
@@ -440,7 +499,7 @@ export default function AuditSection() {
         </div>
       </section>
 
-      <section className="section-card audit-history-card" aria-labelledby="audit-table-title">
+      <section ref={historyCardRef} className="section-card audit-history-card" aria-labelledby="audit-table-title">
         <div className="section-heading">
           <div className="audit-heading-group">
             <p className="section-eyebrow">Activity history</p>
@@ -516,18 +575,9 @@ export default function AuditSection() {
             <p className="audit-empty-title">No audit records match the selected filters.</p>
             <p className="audit-empty-copy">
               {hasAnyFilter
-                ? 'Try clearing or widening one of your active filters to view older records.'
+                ? 'Try clearing one of your active filters or clicking Reset filters above to view older records.'
                 : 'System and operator actions will appear here as activity is recorded.'}
             </p>
-            {hasAnyFilter ? (
-              <button
-                className="btn btn-secondary"
-                type="button"
-                onClick={resetAllFilters}
-              >
-                {hasNonDateFilter ? 'Clear active filters' : 'Reset filters'}
-              </button>
-            ) : null}
           </div>
         ) : (
           <>
@@ -552,16 +602,7 @@ export default function AuditSection() {
                     ].filter(Boolean).join(' ')
 
                     return (
-                      <tr
-                        key={log.id}
-                        className={rowClasses}
-                        onClick={(event) => {
-                          if (event.target.closest('button')) return
-                          if (window.getSelection?.()?.toString()) return
-                          const buttonEl = event.currentTarget.querySelector('.audit-details-button')
-                          openDetails(log, buttonEl)
-                        }}
-                      >
+                      <tr key={log.id} className={rowClasses}>
                         <td className="audit-time-cell" data-label="Date/Time">
                           <time dateTime={log.createdAt || undefined}>{formatDateTime(log.createdAt)}</time>
                         </td>
@@ -602,8 +643,8 @@ export default function AuditSection() {
                     type="button"
                     aria-label="Previous page"
                     title="Previous page"
-                    disabled={!pagination.hasPreviousPage || page <= 1}
-                    onClick={() => commitSearchState({ page: Math.max(1, page - 1) })}
+                    disabled={!online || isRefreshing || !pagination.hasPreviousPage || page <= 1}
+                    onClick={() => goToPage(page - 1)}
                   >
                     <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
                   </button>
@@ -612,8 +653,8 @@ export default function AuditSection() {
                     type="button"
                     aria-label="Next page"
                     title="Next page"
-                    disabled={!pagination.hasNextPage}
-                    onClick={() => commitSearchState({ page: page + 1 })}
+                    disabled={!online || isRefreshing || !pagination.hasNextPage}
+                    onClick={() => goToPage(page + 1)}
                   >
                     <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
                   </button>
@@ -644,14 +685,6 @@ export default function AuditSection() {
                 </span>
                 <h2 id="audit-details-title">Audit details</h2>
               </div>
-              <button
-                className="btn btn-secondary audit-dialog-close"
-                type="button"
-                aria-label="Close audit details"
-                onClick={closeDetails}
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
             </div>
 
             <dl className="audit-dialog-details">
@@ -669,6 +702,25 @@ export default function AuditSection() {
                 </div>
               ))}
             </dl>
+
+            <div className="audit-dialog-footer">
+              {filterableAuditActions.has(selectedLog.action) && actionFilter !== selectedLog.action ? (
+                <button
+                  className="btn btn-secondary audit-dialog-filter-btn"
+                  type="button"
+                  onClick={() => filterByModalAction(selectedLog.action)}
+                >
+                  Filter by this action
+                </button>
+              ) : null}
+              <button
+                className="btn btn-secondary audit-dialog-close-btn"
+                type="button"
+                onClick={closeDetails}
+              >
+                Close
+              </button>
+            </div>
           </div>
         ) : null}
       </dialog>
