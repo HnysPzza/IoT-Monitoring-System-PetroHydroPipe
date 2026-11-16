@@ -279,7 +279,7 @@ test('SUITE 2: Injection Defenses — Excel Formula Injection Escaping (=, +, -,
   assert.ok(summarySheet, 'Production Summary worksheet must exist')
 
   maliciousCustomers.forEach((payload, idx) => {
-    const row = summarySheet.getRow(13 + idx)
+    const row = summarySheet.getRow(9 + idx)
     const customerCellValue = row.getCell(1).value
     assert.ok(
       typeof customerCellValue === 'string',
@@ -301,7 +301,7 @@ test('SUITE 2: Injection Defenses — Excel Formula Injection Escaping (=, +, -,
   assert.ok(logsSheet, 'Production Cut Logs worksheet must exist')
 
   maliciousCustomers.forEach((payload, idx) => {
-    const row = logsSheet.getRow(6 + idx)
+    const row = logsSheet.getRow(5 + idx)
     const customerCellValue = row.getCell(2).value
     assert.ok(
       typeof customerCellValue === 'string',
@@ -325,7 +325,7 @@ test('SUITE 2: Injection Defenses — Excel Formula Injection Escaping (=, +, -,
   const benignBuffer = await toXlsx(benignReport)
   const benignWorkbook = new ExcelJS.Workbook()
   await benignWorkbook.xlsx.load(benignBuffer)
-  const benignSummaryCell = benignWorkbook.getWorksheet('Production Summary').getRow(13).getCell(1).value
+  const benignSummaryCell = benignWorkbook.getWorksheet('Production Summary').getRow(9).getCell(1).value
   assert.equal(benignSummaryCell, 'Petro Hydro Pipes Corp', 'Benign customer should not have prepended quote')
 })
 

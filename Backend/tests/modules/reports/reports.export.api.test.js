@@ -215,8 +215,8 @@ test('Export API streams a formatted XLSX workbook and records its format in the
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()))
     const sheet = workbook.getWorksheet('Operational Report')
-    assert.equal(sheet.getCell('A20').value, 'Corrective Maintenance')
-    assert.equal(sheet.getCell('B8').value, 1250)
+    assert.equal(sheet.getCell('A14').value, 'Corrective Maintenance')
+    assert.equal(sheet.getCell('A5').value, 1250)
 
     assert.equal(auditCalls.length, 1)
     assert.equal(auditCalls[0].action, 'REPORT_EXPORTED')
@@ -260,7 +260,7 @@ test('Export API exports production report with category parameter and productio
     await workbook.xlsx.load(Buffer.from(await xlsxResponse.arrayBuffer()))
     const summarySheet = workbook.getWorksheet('Production Summary')
     assert.ok(summarySheet)
-    assert.equal(summarySheet.getCell('B8').value, 10)
+    assert.equal(summarySheet.getCell('A5').value, 10)
 
     // Verify summary calls received category: 'production'
     assert.equal(summaryCalls[0].category, 'production')

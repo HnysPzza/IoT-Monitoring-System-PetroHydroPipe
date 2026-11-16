@@ -411,42 +411,42 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
     const summarySheet = workbook.getWorksheet('Production Summary')
     assert.ok(summarySheet, 'Production Summary worksheet missing')
 
-    // Total Tonnage summary cell E8
-    const totalTonsSummaryVal = summarySheet.getCell('E8').value
+    // Total Tonnage summary cell B5
+    const totalTonsSummaryVal = summarySheet.getCell('B5').value
     assert.equal(totalTonsSummaryVal, 4.6961)
 
-    // Breakdown rows: row 13 is MCWD, row 14 is Regan, row 15 is Unspecified
-    const row13 = summarySheet.getRow(13)
-    assert.equal(row13.getCell(1).value, 'MCWD')
-    assert.equal(row13.getCell(2).value, 625.4)
-    assert.equal(row13.getCell(3).value, 10.0)
-    assert.equal(row13.getCell(4).value, 6000)
-    assert.equal(row13.getCell(5).value, 1)
-    assert.equal(row13.getCell(6).value, 0.9105)
+    // Breakdown rows: row 9 is MCWD, row 10 is Regan, row 11 is Unspecified
+    const row9 = summarySheet.getRow(9)
+    assert.equal(row9.getCell(1).value, 'MCWD')
+    assert.equal(row9.getCell(2).value, 625.4)
+    assert.equal(row9.getCell(3).value, 10.0)
+    assert.equal(row9.getCell(4).value, 6000)
+    assert.equal(row9.getCell(5).value, 1)
+    assert.equal(row9.getCell(6).value, 0.9105)
 
-    const row15 = summarySheet.getRow(15) // Unspecified
-    assert.equal(row15.getCell(1).value, 'Unspecified / Pending Tag')
-    assert.equal(row15.getCell(2).value, 'N/A')
-    assert.equal(row15.getCell(3).value, 'N/A')
-    assert.equal(row15.getCell(4).value, 'N/A')
-    assert.equal(row15.getCell(6).value, 'N/A')
+    const row11 = summarySheet.getRow(11) // Unspecified
+    assert.equal(row11.getCell(1).value, 'Unspecified / Pending Tag')
+    assert.equal(row11.getCell(2).value, '—')
+    assert.equal(row11.getCell(3).value, '—')
+    assert.equal(row11.getCell(4).value, '—')
+    assert.equal(row11.getCell(6).value, '—')
 
     const logsSheet = workbook.getWorksheet('Production Cut Logs')
     assert.ok(logsSheet, 'Production Cut Logs worksheet missing')
 
-    const logRow6 = logsSheet.getRow(6) // Log 1
-    assert.equal(logRow6.getCell(2).value, 'MCWD')
-    assert.equal(logRow6.getCell(3).value, 625.4)
-    assert.equal(logRow6.getCell(4).value, 10.0)
-    assert.equal(logRow6.getCell(5).value, 6000)
-    assert.equal(logRow6.getCell(6).value, 1)
-    assert.equal(logRow6.getCell(7).value, 0.9105)
+    const logRow5 = logsSheet.getRow(5) // Log 1
+    assert.equal(logRow5.getCell(2).value, 'MCWD')
+    assert.equal(logRow5.getCell(3).value, 625.4)
+    assert.equal(logRow5.getCell(4).value, 10.0)
+    assert.equal(logRow5.getCell(5).value, 6000)
+    assert.equal(logRow5.getCell(6).value, 1)
+    assert.equal(logRow5.getCell(7).value, 0.9105)
 
-    const logRow8 = logsSheet.getRow(8) // Unspecified Log 3
-    assert.equal(logRow8.getCell(2).value, 'Pending Tag')
-    assert.equal(logRow8.getCell(3).value, 'N/A')
-    assert.equal(logRow8.getCell(6).value, '33333333') // fallback slice id
-    assert.equal(logRow8.getCell(7).value, 'N/A')
+    const logRow7 = logsSheet.getRow(7) // Unspecified Log 3
+    assert.equal(logRow7.getCell(2).value, 'Pending Tag')
+    assert.equal(logRow7.getCell(3).value, '—')
+    assert.equal(logRow7.getCell(6).value, '33333333') // fallback slice id
+    assert.equal(logRow7.getCell(7).value, '—')
   })
 
   test('Challenge 5: Pure helper cross-layer parity (Frontend logic vs Backend logic)', () => {

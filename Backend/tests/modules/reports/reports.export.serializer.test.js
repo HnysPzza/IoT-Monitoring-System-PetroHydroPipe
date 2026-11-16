@@ -201,7 +201,11 @@ test('toPdf renders multi-page PDF with pagination when report has numerous down
   assert.ok(pageCount >= 2, `expected at least 2 pages for 45 rows, got ${pageCount}`)
 })
 
-test('toXlsx writes a styled report with typed values and a restrained palette', async () => {
+function cellResult(cell) {
+  return cell.result ?? cell.value
+}
+
+test('toXlsx writes a styled minimal slate report with typed values, formulas, and WCAG palette', async () => {
   const buffer = await toXlsx(createReport())
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
@@ -209,33 +213,66 @@ test('toXlsx writes a styled report with typed values and a restrained palette',
 
   assert.ok(Buffer.isBuffer(buffer))
   assert.equal(sheet.views[0].showGridLines, false)
-  assert.ok(sheet.getCell('B4').value instanceof Date)
-  assert.equal(sheet.getCell('B8').value, 1250)
-  assert.equal(sheet.getCell('B8').numFmt, '#,##0 "pcs"')
-  assert.equal(sheet.getCell('E8').value, 2)
-  assert.equal(sheet.getCell('E9').numFmt, '#,##0 "min"')
-  assert.equal(sheet.getCell('E10').numFmt, '#,##0 "pcs"')
-  assert.equal(sheet.getCell('A20').value, 'Corrective Maintenance')
-  assert.equal(sheet.getCell('C20').value, 2)
-  assert.equal(sheet.getCell('D20').numFmt, '#,##0')
-  assert.equal(sheet.getCell('E21').numFmt, '#,##0.##')
-  assert.equal(sheet.getCell('E20').value, 3)
-  assert.equal(sheet.getCell('B10').value, 0.9074)
-  assert.equal(sheet.getCell('B10').numFmt, '0.0%')
-  assert.equal(sheet.getCell('A19').font.color.argb, 'FFFFFFFF')
+  assert.equal(sheet.getCell('A1').value, 'Petro Hydro Pipes Corporation  ·  Operational Report')
+  assert.equal(sheet.getCell('A1').font.size, 14)
+  assert.ok(sheet.getCell('A2').value.includes('Sep 2, 2026'))
+  assert.ok(sheet.getCell('D2').value.includes('PST'))
+  assert.equal(sheet.getCell('A5').value, 1250)
+  assert.equal(sheet.getCell('A5').numFmt, '[=1]#,##0 "pc";#,##0 "pcs"')
+  assert.equal(sheet.getCell('B5').value, 0.9074)
+  assert.equal(sheet.getCell('B5').numFmt, '0.0%')
+  assert.equal(sheet.getCell('C5').value, 2)
+  assert.equal(sheet.getCell('D5').numFmt, '#,##0 "min"')
+  assert.equal(sheet.getCell('E5').numFmt, '#,##0 "pcs"')
+
+  // Process Sensor Activity (Row 7 title, Row 8 header, Row 9 S-01, Row 10 Total)
+  assert.equal(sheet.getCell('A7').value, 'Process Sensor Activity')
+  assert.equal(sheet.getCell('A9').value, 'S-01')
+  assert.equal(cellResult(sheet.getCell('C10')), 2)
+  assert.equal(sheet.getCell('C10').formula, 'SUM(C9:C9)')
+
+  // Downtime Records (Row 12 title, Row 13 header, Row 14..15 rows, Row 16 Total)
+  assert.equal(sheet.getCell('A12').value, 'Downtime Records')
+  assert.equal(sheet.autoFilter, 'A13:E15')
+  assert.equal(sheet.getCell('A14').value, 'Corrective Maintenance')
+  assert.equal(sheet.getCell('C14').value, 2)
+  assert.equal(sheet.getCell('D14').numFmt, '#,##0')
+  assert.equal(sheet.getCell('E14').value, 3)
+  assert.equal(sheet.getCell('E14').numFmt, '#,##0.00')
+  assert.equal(sheet.getCell('E15').numFmt, '#,##0.00')
+  assert.equal(sheet.getCell('A16').value, 'TOTAL ATTRIBUTED DOWNTIME')
+  assert.equal(sheet.getCell('C16').formula, 'SUM(C14:C15)')
+  assert.equal(cellResult(sheet.getCell('C16')), 3)
+  assert.equal(sheet.getCell('D16').formula, 'SUM(D14:D15)')
+  assert.equal(cellResult(sheet.getCell('D16')), 55)
+  assert.equal(sheet.getCell('E16').formula, 'SUM(E14:E15)')
+  assert.equal(cellResult(sheet.getCell('E16')), 3.5)
+  assert.equal(sheet.getCell('A13').font.color.argb, 'FF475569')
 
   const colors = new Set()
+  const nonArialCells = []
   sheet.eachRow((row) => row.eachCell((cell) => {
+    if (cell.value !== null && cell.value !== undefined && cell.value !== '' && cell.font?.name !== 'Arial') {
+      nonArialCells.push(cell.address)
+    }
     if (cell.font?.color?.argb) colors.add(cell.font.color.argb)
     if (cell.fill?.fgColor?.argb) colors.add(cell.fill.fgColor.argb)
     for (const side of Object.values(cell.border || {})) {
       if (side.color?.argb) colors.add(side.color.argb)
     }
   }))
-  assert.deepEqual([...colors].sort(), ['FFE4E9EF', 'FF1F3A5F', 'FFFFFFFF'].sort())
+  assert.deepEqual(nonArialCells, [])
+  assert.equal(colors.has('FFE4E9EF'), false)
+  assert.equal(colors.has('FF1F3A5F'), false)
+  assert.ok(colors.has('FF0F172A'))
+  assert.ok(colors.has('FFF8FAFC'))
+  assert.ok(sheet.pageSetup.horizontalCentered)
+  assert.ok(sheet.headerFooter?.oddFooter?.includes('Page &P of &N'))
+  assert.ok(sheet.headerFooter?.oddFooter?.includes('Spiral Mill 01'))
+  assert.equal(sheet.headerFooter?.oddFooter?.includes('undefined'), false)
 })
 
-test('toXlsx keeps small fractional durations and losses visible', async () => {
+test('toXlsx keeps small fractional durations and losses visible with fixed loss alignment', async () => {
   const report = createReport({
     metrics: { ...createReport().metrics, durationMinutes: 0.01, estimatedLoss: 0.01 },
     rows: [{ ...createReport().rows[0], durationMinutes: 0.01, estimatedLoss: 0.01 }],
@@ -245,16 +282,16 @@ test('toXlsx keeps small fractional durations and losses visible', async () => {
   await workbook.xlsx.load(buffer)
   const sheet = workbook.getWorksheet('Operational Report')
 
-  assert.equal(sheet.getCell('E9').value, 0.01)
-  assert.equal(sheet.getCell('E9').numFmt, '#,##0.## "min"')
-  assert.equal(sheet.getCell('E10').value, 0.01)
-  assert.equal(sheet.getCell('E10').numFmt, '#,##0.## "pcs"')
-  assert.equal(sheet.getCell('D20').numFmt, '#,##0.##')
-  assert.equal(sheet.getCell('E20').value, 0.01)
-  assert.equal(sheet.getCell('E20').numFmt, '#,##0.##')
+  assert.equal(sheet.getCell('D5').value, 0.01)
+  assert.equal(sheet.getCell('D5').numFmt, '#,##0.## "min"')
+  assert.equal(sheet.getCell('E5').value, 0.01)
+  assert.equal(sheet.getCell('E5').numFmt, '#,##0.## "pcs"')
+  assert.equal(sheet.getCell('D14').numFmt, '#,##0.##')
+  assert.equal(sheet.getCell('E14').value, 0.01)
+  assert.equal(sheet.getCell('E14').numFmt, '#,##0.00')
 })
 
-test('toXlsx preserves unobserved values as N/A instead of inventing zeros', async () => {
+test('toXlsx preserves unobserved values as muted em-dash instead of inventing zeros', async () => {
   const report = createReport({
     periodState: 'future',
     summary: [{ id: 'events', value: 'N/A' }],
@@ -267,12 +304,16 @@ test('toXlsx preserves unobserved values as N/A instead of inventing zeros', asy
   await workbook.xlsx.load(buffer)
   const sheet = workbook.getWorksheet('Operational Report')
 
-  assert.equal(sheet.getCell('B8').value, 'N/A')
-  assert.equal(sheet.getCell('E8').value, 'N/A')
-  assert.equal(sheet.getCell('B9').value, 'N/A')
-  assert.equal(sheet.getCell('A14').value, 'S-01')
-  assert.equal(sheet.getCell('C14').value, 'N/A')
-  assert.equal(sheet.getCell('A20').value, 'No downtime records for this period.')
+  assert.equal(sheet.getCell('A5').value, '—')
+  assert.equal(sheet.getCell('C5').value, '—')
+  assert.equal(sheet.getCell('D5').value, '—')
+  assert.equal(sheet.getCell('E5').value, '—')
+  assert.equal(sheet.getCell('A9').value, 'S-01')
+  assert.equal(sheet.getCell('C9').value, '—')
+  assert.equal(sheet.getCell('C9').font.color.argb, 'FF64748B')
+  assert.equal(sheet.getCell('C10').value, '—')
+  assert.equal(sheet.getCell('C10').font.color.argb, 'FF64748B')
+  assert.equal(sheet.getCell('A14').value, 'No downtime records for this period.')
 })
 
 test('buildExportFilename derives a safe deterministic filename from the request', () => {
@@ -347,7 +388,7 @@ test('toPdf renders multi-page production report with large cut log history', as
   assert.ok(pageCount >= 2, `expected at least 2 pages for 60 cut logs, got ${pageCount}`)
 })
 
-test('toXlsx writes a 2-worksheet production report with summary and cut logs', async () => {
+test('toXlsx writes a 2-worksheet production report with KPI strip, formulas, sortable cut logs, and daily rollup', async () => {
   const buffer = await toXlsx(createProductionReport())
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
@@ -355,43 +396,84 @@ test('toXlsx writes a 2-worksheet production report with summary and cut logs', 
   const summarySheet = workbook.getWorksheet('Production Summary')
   assert.ok(summarySheet, 'expected Production Summary worksheet')
   assert.equal(summarySheet.views[0].showGridLines, false)
-  assert.equal(summarySheet.getCell('A2').value, 'PETRO HYDRO PIPE CORP.  |  Production Output Report')
-  assert.equal(summarySheet.getCell('B8').value, 10)
-  assert.equal(summarySheet.getCell('B8').numFmt, '#,##0 "pcs"')
-  assert.equal(summarySheet.getCell('E8').value, 14.7196)
-  assert.equal(summarySheet.getCell('E8').numFmt, '#,##0.0000 "tons"')
-  assert.equal(summarySheet.getCell('B9').value, 8)
-  assert.equal(summarySheet.getCell('B9').numFmt, '#,##0 "pcs"')
-  assert.equal(summarySheet.getCell('E9').value, 2)
-  assert.equal(summarySheet.getCell('E9').numFmt, '#,##0 "pcs"')
-  assert.equal(summarySheet.getCell('B10').value, 2)
+  assert.equal(summarySheet.getCell('A1').value, 'Petro Hydro Pipes Corporation  ·  Production Output Report')
+  assert.equal(summarySheet.getCell('A5').value, 10)
+  assert.equal(summarySheet.getCell('A5').numFmt, '[=1]#,##0 "pc";#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('B5').value, 14.7196)
+  assert.equal(summarySheet.getCell('B5').numFmt, '#,##0.0000')
+  assert.equal(summarySheet.getCell('C5').value, 8)
+  assert.equal(summarySheet.getCell('C5').numFmt, '[=1]#,##0 "pc";#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('D5').value, 2)
+  assert.equal(summarySheet.getCell('D5').numFmt, '[=1]#,##0 "pc";#,##0 "pcs"')
+  assert.equal(summarySheet.getCell('E5').formula, 'IF(A5>0,C5/A5,0)')
+  assert.equal(cellResult(summarySheet.getCell('E5')), 0.8)
+  assert.equal(summarySheet.getCell('E5').numFmt, '0.0%')
+  assert.equal(summarySheet.getCell('F5').value, 2)
+  assert.equal(summarySheet.getCell('G5').value, 'Complete')
 
-  // Verify spec breakdown row
-  assert.equal(summarySheet.getCell('A13').value, 'MCWD')
-  assert.equal(summarySheet.getCell('B13').value, 625.4)
-  assert.equal(summarySheet.getCell('C13').value, 12.7)
-  assert.equal(summarySheet.getCell('D13').value, 6000)
-  assert.equal(summarySheet.getCell('E13').value, 5)
-  assert.equal(summarySheet.getCell('F13').value, 5.7565)
-  assert.equal(summarySheet.getCell('G13').value, 0.5)
+  // Verify spec breakdown row 9..11 and Total Row 12
+  assert.equal(summarySheet.autoFilter, 'A8:G11')
+  assert.equal(summarySheet.getCell('A9').value, 'MCWD')
+  assert.equal(summarySheet.getCell('B9').value, 625.4)
+  assert.equal(summarySheet.getCell('C9').value, 12.7)
+  assert.equal(summarySheet.getCell('D9').value, 6000)
+  assert.equal(summarySheet.getCell('E9').value, 5)
+  assert.equal(summarySheet.getCell('F9').value, 5.7565)
+  assert.equal(summarySheet.getCell('G9').formula, 'IF($E$12>0,E9/$E$12,0)')
+  assert.equal(cellResult(summarySheet.getCell('G9')), 0.5)
+  assert.equal(summarySheet.getCell('A12').value, 'TOTAL ACCEPTED OUTPUT')
+  assert.equal(summarySheet.getCell('E12').formula, 'SUM(E9:E11)')
+  assert.equal(cellResult(summarySheet.getCell('E12')), 10)
+  assert.equal(summarySheet.getCell('F12').formula, 'SUM(F9:F11)')
+  assert.equal(cellResult(summarySheet.getCell('F12')), 14.7196)
+  assert.equal(summarySheet.getCell('G12').formula, 'SUM(G9:G11)')
+  assert.equal(cellResult(summarySheet.getCell('G12')), 1)
 
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
   assert.ok(logsSheet, 'expected Production Cut Logs worksheet')
-  assert.equal(logsSheet.getCell('A2').value, 'PETRO HYDRO PIPE CORP.  |  Production Cut Logs (S-05)')
-  assert.equal(logsSheet.getCell('B6').value, 'MCWD')
-  assert.equal(logsSheet.getCell('C6').value, 625.4)
-  assert.equal(logsSheet.getCell('D6').value, 12.7)
-  assert.equal(logsSheet.getCell('E6').value, 6000)
-  assert.equal(logsSheet.getCell('F6').value, 101)
-  assert.equal(logsSheet.getCell('G6').value, 1.1513)
-  assert.equal(logsSheet.getCell('H6').value, 'Specified')
+  assert.equal(logsSheet.getCell('A1').value, 'Petro Hydro Pipes Corporation  ·  Production Cut Logs (S-05)')
+  assert.equal(logsSheet.views[0].ySplit, 4)
+  assert.equal(logsSheet.autoFilter, 'A4:H6')
+  assert.equal(logsSheet.pageSetup.printTitlesRow, '4:4')
+  assert.ok(logsSheet.getCell('A5').value instanceof Date)
+  assert.equal(logsSheet.getCell('B5').value, 'MCWD')
+  assert.equal(logsSheet.getCell('C5').value, 625.4)
+  assert.equal(logsSheet.getCell('D5').value, 12.7)
+  assert.equal(logsSheet.getCell('E5').value, 6000)
+  assert.equal(logsSheet.getCell('F5').value, 101)
+  assert.equal(logsSheet.getCell('G5').value, 1.1513)
+  assert.equal(logsSheet.getCell('H5').value, 'Specified')
 
-  // Row 2 is unassigned
-  assert.equal(logsSheet.getCell('B7').value, 'Pending Tag')
-  assert.equal(logsSheet.getCell('H7').value, 'Pending Tag')
+  // Row 6 is unassigned (row 2 of cut logs)
+  assert.equal(logsSheet.getCell('B6').value, 'Pending Tag')
+  assert.equal(logsSheet.getCell('H6').value, 'Pending Tag')
+  assert.equal(logsSheet.getCell('A7').value, 'TOTAL (VISIBLE CUTS)')
+  assert.equal(logsSheet.getCell('F7').formula, 'SUBTOTAL(3,A5:A6)')
+  assert.equal(cellResult(logsSheet.getCell('F7')), 2)
+  assert.equal(logsSheet.getCell('G7').formula, 'SUBTOTAL(9,G5:G6)')
+  assert.equal(cellResult(logsSheet.getCell('G7')), 1.1513)
 })
 
-test('toXlsx preserves unobserved production report values cleanly', async () => {
+test('toXlsx preserves exact sub-percent Tag Coverage precision without whole-percent rounding', async () => {
+  const report = createProductionReport({
+    metrics: {
+      totalProductionOutput: 3,
+      totalTonnage: 2.3026,
+      specifiedPipes: 2,
+      unspecifiedPipes: 1,
+      distinctProductSizes: 1,
+    },
+  })
+  const buffer = await toXlsx(report)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const summarySheet = workbook.getWorksheet('Production Summary')
+
+  assert.equal(summarySheet.getCell('E5').formula, 'IF(A5>0,C5/A5,0)')
+  assert.ok(Math.abs(cellResult(summarySheet.getCell('E5')) - (2 / 3)) < 1e-9)
+})
+
+test('toXlsx preserves unobserved production report values as muted em-dash cleanly', async () => {
   const report = createProductionReport({
     periodState: 'future',
     summary: [
@@ -422,11 +504,12 @@ test('toXlsx preserves unobserved production report values cleanly', async () =>
   await workbook.xlsx.load(buffer)
 
   const summarySheet = workbook.getWorksheet('Production Summary')
-  assert.equal(summarySheet.getCell('B8').value, 'N/A')
-  assert.equal(summarySheet.getCell('E8').value, 'N/A')
-  assert.equal(summarySheet.getCell('B9').value, 'N/A')
-  assert.equal(summarySheet.getCell('E9').value, 'N/A')
-  assert.equal(summarySheet.getCell('A13').value, 'No accepted pipe cutting events recorded for this period.')
+  assert.equal(summarySheet.getCell('A5').value, '—')
+  assert.equal(summarySheet.getCell('B5').value, '—')
+  assert.equal(summarySheet.getCell('C5').value, '—')
+  assert.equal(summarySheet.getCell('D5').value, '—')
+  assert.equal(summarySheet.getCell('E5').value, '—')
+  assert.equal(summarySheet.getCell('A9').value, 'No accepted pipe cutting events recorded for this period.')
 })
 
 test('toPdf renders cut logs without event ref column even when deviceEventId is 0 or fallback', async () => {
@@ -479,7 +562,7 @@ test('toXlsx renders deviceEventId 0 in cut logs correctly', async () => {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
-  assert.equal(logsSheet.getCell('F6').value, 0)
+  assert.equal(logsSheet.getCell('F5').value, 0)
 })
 
 test('toPdf handles malformed and non-finite diameter gracefully with N/A', async () => {
@@ -515,7 +598,7 @@ test('toPdf handles malformed and non-finite diameter gracefully with N/A', asyn
   assert.equal(buffer.subarray(0, 5).toString('utf8'), '%PDF-')
 })
 
-test('toXlsx regular workbook displays machine name in cell D3 for future unobserved periods', async () => {
+test('toXlsx regular workbook displays machine name in context banner for future unobserved periods', async () => {
   const report = createReport({
     periodState: 'future',
     machine: { id: 'm-01', code: 'M-01', name: 'Spiral Mill 01' },
@@ -527,7 +610,7 @@ test('toXlsx regular workbook displays machine name in cell D3 for future unobse
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
   const sheet = workbook.getWorksheet('Operational Report')
-  assert.equal(sheet.getCell('D3').value, 'Spiral Mill 01')
+  assert.ok(String(sheet.getCell('A2').value).includes('Spiral Mill 01'))
 })
 
 test('toXlsx escapes spreadsheet formula injection payloads with leading single quote', async () => {
@@ -565,11 +648,11 @@ test('toXlsx escapes spreadsheet formula injection payloads with leading single 
   await workbook.xlsx.load(buffer)
 
   const summarySheet = workbook.getWorksheet('Production Summary')
-  assert.equal(summarySheet.getCell('A13').value, "'=cmd|/C calc!A0")
+  assert.equal(summarySheet.getCell('A9').value, "'=cmd|/C calc!A0")
 
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
-  assert.equal(logsSheet.getCell('B6').value, "'-10% Discount")
-  assert.equal(logsSheet.getCell('F6').value, "'@SUM(1+1)")
+  assert.equal(logsSheet.getCell('B5').value, "'-10% Discount")
+  assert.equal(logsSheet.getCell('F5').value, "'@SUM(1+1)")
 })
 
 test('toXlsx suppresses process sensor table headers when processSensors is empty', async () => {
@@ -582,8 +665,8 @@ test('toXlsx suppresses process sensor table headers when processSensors is empt
   await workbook.xlsx.load(buffer)
   const sheet = workbook.getWorksheet('Operational Report')
 
-  assert.notEqual(sheet.getCell('A12').value, 'Process Sensor Activity')
-  assert.equal(sheet.getCell('A13').value, 'Downtime Records')
+  assert.notEqual(sheet.getCell('A7').value, 'Process Sensor Activity')
+  assert.equal(sheet.getCell('A7').value, 'Downtime Records')
 })
 
 test('buildExportFilename sanitizes path traversal, CRLF, and special characters', () => {
@@ -611,16 +694,16 @@ test('production reports completely exclude Radius and Circumference from PDF an
   const summarySheet = workbook.getWorksheet('Production Summary')
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
 
-  const summaryHeaders = summarySheet.getRow(12).values.filter(Boolean)
+  const summaryHeaders = summarySheet.getRow(8).values.filter(Boolean)
   assert.deepEqual(summaryHeaders, ['Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Quantity (pcs)', 'Total Tons', '% of Total'])
   assert.equal(summaryHeaders.some((h) => String(h).includes('Radius') || String(h).includes('Circumference')), false)
 
-  const logHeaders = logsSheet.getRow(5).values.filter(Boolean)
+  const logHeaders = logsSheet.getRow(4).values.filter(Boolean)
   assert.deepEqual(logHeaders, ['Cut Timestamp (PST)', 'Customer', 'Diameter (OD) mm', 'Thickness mm', 'Length mm', 'Pipe #', 'Tons', 'Status'])
   assert.equal(logHeaders.some((h) => String(h).includes('Radius') || String(h).includes('Circumference')), false)
 })
 
-test('production PDF and Excel exports append daily total tons subtotal rows per Manila day in Cut Logs', async () => {
+test('production export keeps Cut Logs pure/sortable and moves Manila daily totals to Summary COUNTIFS/SUMIFS rollup', async () => {
   const report = createProductionReport({
     reportType: 'weekly',
     selectedDate: '2026-09-01',
@@ -667,22 +750,75 @@ test('production PDF and Excel exports append daily total tons subtotal rows per
   const xlsxBuffer = await toXlsx(report)
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(xlsxBuffer)
+  const summarySheet = workbook.getWorksheet('Production Summary')
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
 
-  // Row 6 & 7: 2026-09-01 cuts; Row 8: Daily Total (2026-09-01)
-  assert.equal(logsSheet.getCell('A8').value, 'DAILY TOTAL (2026-09-01)')
-  assert.equal(logsSheet.getCell('F8').value, 2)
-  assert.equal(logsSheet.getCell('G8').value, 2.3028)
-  assert.equal(logsSheet.getCell('G8').numFmt, '#,##0.0000')
+  // Cut Logs stays strictly chronological/filterable: Rows 5..7 data, Row 8 live SUBTOTAL footer
+  assert.equal(logsSheet.getCell('F5').value, 1)
+  assert.equal(logsSheet.getCell('F6').value, 2)
+  assert.equal(logsSheet.getCell('F7').value, 1)
+  assert.equal(logsSheet.getCell('A8').value, 'TOTAL (VISIBLE CUTS)')
+  assert.equal(logsSheet.getCell('F8').formula, 'SUBTOTAL(3,A5:A7)')
+  assert.equal(cellResult(logsSheet.getCell('F8')), 3)
+  assert.equal(logsSheet.getCell('G8').formula, 'SUBTOTAL(9,G5:G7)')
+  assert.equal(cellResult(logsSheet.getCell('G8')), 5.2918)
 
-  // Row 9: 2026-09-02 cut; Row 10: Daily Total (2026-09-02)
-  assert.equal(logsSheet.getCell('A10').value, 'DAILY TOTAL (2026-09-02)')
-  assert.equal(logsSheet.getCell('F10').value, 1)
-  assert.equal(logsSheet.getCell('G10').value, 2.989)
-  assert.equal(logsSheet.getCell('G10').numFmt, '#,##0.0000')
+  // Daily Production Rollup starts cleanly below Spec Breakdown Total (Row 12):
+  // Row 13 spacer, Row 14 title, Row 15 headers, Row 16 (2026-09-01), Row 17 (2026-09-02), Row 18 total
+  assert.equal(summarySheet.getCell('A14').value, 'Daily Production Rollup (Manila PST)')
+  assert.ok(summarySheet.getCell('A16').value instanceof Date)
+  assert.equal(summarySheet.getCell('A16').value.toISOString().slice(0, 10), '2026-09-01')
+  assert.ok(summarySheet.getCell('B16').formula.startsWith("COUNTIFS('Production Cut Logs'!"))
+  assert.equal(cellResult(summarySheet.getCell('B16')), 2)
+  assert.equal(summarySheet.getCell('B16').numFmt, '[=1]#,##0 "pc";#,##0 "pcs"')
+  assert.ok(summarySheet.getCell('C16').formula.startsWith("SUMIFS('Production Cut Logs'!"))
+  assert.equal(cellResult(summarySheet.getCell('C16')), 2.3028)
+  assert.equal(summarySheet.getCell('C16').numFmt, '#,##0.0000')
+
+  assert.ok(summarySheet.getCell('A17').value instanceof Date)
+  assert.equal(summarySheet.getCell('A17').value.toISOString().slice(0, 10), '2026-09-02')
+  assert.equal(cellResult(summarySheet.getCell('B17')), 1)
+  assert.equal(cellResult(summarySheet.getCell('C17')), 2.989)
+  assert.equal(summarySheet.getCell('A18').value, 'TOTAL LOGGED CUTS')
+  assert.equal(cellResult(summarySheet.getCell('B18')), 3)
+  assert.equal(cellResult(summarySheet.getCell('C18')), 5.2918)
 
   const pdfBuffer = await toPdf(report)
   assert.ok(Buffer.isBuffer(pdfBuffer))
   assert.equal(pdfBuffer.subarray(0, 5).toString('utf8'), '%PDF-')
+})
+
+test('toXlsx dynamically expands row height for long wrapped Customer and Cause labels', async () => {
+  const longCause = 'Corrective Maintenance — Coil Joint Misalignment & Extended Re-threading Procedure Across Line'
+  const regWb = new ExcelJS.Workbook()
+  await regWb.xlsx.load(await toXlsx(createReport({
+    rows: [{ cause: longCause, sensor: 'S-01 Raw Material & Coil Joint', events: 1, durationMinutes: 15, estimatedLoss: 0.75 }],
+  })))
+  const regSheet = regWb.getWorksheet('Operational Report')
+  assert.ok(regSheet.getRow(14).height > 22, `Expected wrapped height > 22pt, got ${regSheet.getRow(14).height}`)
+  assert.equal(regSheet.getCell('D2').alignment.wrapText, true)
+  assert.ok(regSheet.getRow(2).height > 20, `Expected stacked Row 2 masthead height > 20pt, got ${regSheet.getRow(2).height}`)
+})
+
+test('toXlsx treats blank pipeNumber string as missing rather than inventing zero', async () => {
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(await toXlsx(createProductionReport({
+    productionLogs: [
+      {
+        id: 'log-blank-pipe',
+        deviceEventId: 42,
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeNumber: '   ',
+        tonnage: 1.1513,
+        isSpecified: true,
+        recordedAt: '2026-09-02T01:00:00.000Z',
+      },
+    ],
+  })))
+  const logsSheet = wb.getWorksheet('Production Cut Logs')
+  assert.equal(logsSheet.getCell('F5').value, 42)
 })
 

@@ -156,24 +156,24 @@ test('CHALLENGE 1A: Excel Formula Injection neutralization across =, +, -, @', a
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
 
   payloads.forEach((payload, idx) => {
-    // 1. Check Customer in Summary Breakdown (Col A, Row 13 + idx)
-    const summaryCustomer = summarySheet.getCell(13 + idx, 1).value
+    // 1. Check Customer in Summary Breakdown (Col A, Row 9 + idx)
+    const summaryCustomer = summarySheet.getCell(9 + idx, 1).value
     assert.strictEqual(
       summaryCustomer,
       `'${payload}`,
       `Expected breakdown customer for ${payload} to be escaped with leading quote, got ${summaryCustomer}`,
     )
 
-    // 2. Check Customer in Cut Logs (Col B, Row 6 + idx)
-    const logCustomer = logsSheet.getCell(6 + idx, 2).value
+    // 2. Check Customer in Cut Logs (Col B, Row 5 + idx)
+    const logCustomer = logsSheet.getCell(5 + idx, 2).value
     assert.strictEqual(
       logCustomer,
       `'${payload}`,
       `Expected log customer for ${payload} to be escaped with leading quote, got ${logCustomer}`,
     )
 
-    // 3. Check DeviceEventId (fallback for pipe #) in Cut Logs (Col F, Row 6 + idx)
-    const logPipeRef = logsSheet.getCell(6 + idx, 6).value
+    // 3. Check DeviceEventId (fallback for pipe #) in Cut Logs (Col F, Row 5 + idx)
+    const logPipeRef = logsSheet.getCell(5 + idx, 6).value
     assert.strictEqual(
       logPipeRef,
       `'${payload}`,
@@ -243,8 +243,8 @@ test('CHALLENGE 1B: Excel Formula Injection investigation for tab (\\t) and carr
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
 
   const results = whitespacePayloads.map((payload, idx) => {
-    const summaryVal = summarySheet.getCell(13 + idx, 1).value
-    const logVal = logsSheet.getCell(6 + idx, 2).value
+    const summaryVal = summarySheet.getCell(9 + idx, 1).value
+    const logVal = logsSheet.getCell(5 + idx, 2).value
     return {
       payload: JSON.stringify(payload),
       summaryVal: JSON.stringify(summaryVal),
@@ -254,14 +254,10 @@ test('CHALLENGE 1B: Excel Formula Injection investigation for tab (\\t) and carr
     }
   })
 
-  console.log('[CHALLENGE 1B FINDINGS] Tab/CR payload escaping behavior:')
   results.forEach((r) => {
-    console.log(`  Payload: ${r.payload} -> summaryVal: ${r.summaryVal} (escaped: ${r.summaryEscaped}), logVal: ${r.logVal} (escaped: ${r.logEscaped})`)
+    assert.strictEqual(r.summaryEscaped, true, `Summary payload ${r.payload} must be escaped, got ${r.summaryVal}`)
+    assert.strictEqual(r.logEscaped, true, `Cut log payload ${r.payload} must be escaped, got ${r.logVal}`)
   })
-
-  // Document whether \t and \r are escaped
-  // We record this factually for our challenge report
-  assert.ok(Array.isArray(results))
 })
 
 test('CHALLENGE 1C: Numeric columns remain strictly unescaped numbers formatted as #,##0.0000 or integer', async () => {
@@ -329,58 +325,58 @@ test('CHALLENGE 1C: Numeric columns remain strictly unescaped numbers formatted 
   const summarySheet = workbook.getWorksheet('Production Summary')
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
 
-  // In Summary Worksheet (Row 13):
-  // Col B: Diameter (OD) mm -> numeric 1020.5, numFmt '#,##0.##'
-  const diamCell = summarySheet.getCell('B13')
+  // In Summary Worksheet (Row 9):
+  // Col B: Diameter (OD) mm -> numeric 1020.5, numFmt '#,##0.00'
+  const diamCell = summarySheet.getCell('B9')
   assert.strictEqual(typeof diamCell.value, 'number')
   assert.strictEqual(diamCell.value, 1020.5)
-  assert.strictEqual(diamCell.numFmt, '#,##0.##')
+  assert.strictEqual(diamCell.numFmt, '#,##0.00')
 
-  // Col C: Thickness mm -> numeric 12.7, numFmt '#,##0.##'
-  const thickCell = summarySheet.getCell('C13')
+  // Col C: Thickness mm -> numeric 12.7, numFmt '#,##0.00'
+  const thickCell = summarySheet.getCell('C9')
   assert.strictEqual(typeof thickCell.value, 'number')
   assert.strictEqual(thickCell.value, 12.7)
-  assert.strictEqual(thickCell.numFmt, '#,##0.##')
+  assert.strictEqual(thickCell.numFmt, '#,##0.00')
 
-  // Col D: Length mm -> numeric 12000, numFmt '#,##0.##'
-  const lenCell = summarySheet.getCell('D13')
+  // Col D: Length mm -> numeric 12000, numFmt '#,##0'
+  const lenCell = summarySheet.getCell('D9')
   assert.strictEqual(typeof lenCell.value, 'number')
   assert.strictEqual(lenCell.value, 12000)
-  assert.strictEqual(lenCell.numFmt, '#,##0.##')
+  assert.strictEqual(lenCell.numFmt, '#,##0')
 
   // Col E: Quantity (pcs) -> numeric 2, numFmt '#,##0'
-  const qtyCell = summarySheet.getCell('E13')
+  const qtyCell = summarySheet.getCell('E9')
   assert.strictEqual(typeof qtyCell.value, 'number')
   assert.strictEqual(qtyCell.value, 2)
   assert.strictEqual(qtyCell.numFmt, '#,##0')
 
   // Col F: Total Tons -> numeric 1.5432, numFmt '#,##0.0000'
-  const tonsCell = summarySheet.getCell('F13')
+  const tonsCell = summarySheet.getCell('F9')
   assert.strictEqual(typeof tonsCell.value, 'number')
   assert.strictEqual(tonsCell.value, 1.5432)
   assert.strictEqual(tonsCell.numFmt, '#,##0.0000')
 
-  // In Cut Logs Worksheet (Row 6):
+  // In Cut Logs Worksheet (Row 5):
   // Col C: Diameter -> 1020.5
-  assert.strictEqual(typeof logsSheet.getCell('C6').value, 'number')
-  assert.strictEqual(logsSheet.getCell('C6').value, 1020.5)
+  assert.strictEqual(typeof logsSheet.getCell('C5').value, 'number')
+  assert.strictEqual(logsSheet.getCell('C5').value, 1020.5)
 
   // Col D: Thickness -> 12.7
-  assert.strictEqual(typeof logsSheet.getCell('D6').value, 'number')
-  assert.strictEqual(logsSheet.getCell('D6').value, 12.7)
+  assert.strictEqual(typeof logsSheet.getCell('D5').value, 'number')
+  assert.strictEqual(logsSheet.getCell('D5').value, 12.7)
 
   // Col E: Length -> 12000
-  assert.strictEqual(typeof logsSheet.getCell('E6').value, 'number')
-  assert.strictEqual(logsSheet.getCell('E6').value, 12000)
+  assert.strictEqual(typeof logsSheet.getCell('E5').value, 'number')
+  assert.strictEqual(logsSheet.getCell('E5').value, 12000)
 
   // Col F: Pipe # -> 1001 (integer)
-  const pipeNumCell = logsSheet.getCell('F6')
+  const pipeNumCell = logsSheet.getCell('F5')
   assert.strictEqual(typeof pipeNumCell.value, 'number')
   assert.strictEqual(pipeNumCell.value, 1001)
   assert.strictEqual(pipeNumCell.numFmt, '#,##0')
 
   // Col G: Tons -> 0.7716, numFmt '#,##0.0000'
-  const logTonsCell = logsSheet.getCell('G6')
+  const logTonsCell = logsSheet.getCell('G5')
   assert.strictEqual(typeof logTonsCell.value, 'number')
   assert.strictEqual(logTonsCell.value, 0.7716)
   assert.strictEqual(logTonsCell.numFmt, '#,##0.0000')
@@ -514,7 +510,7 @@ test('CHALLENGE 2B: PDF generation with extreme string lengths (100 char custome
   assert.ok(Buffer.isBuffer(xlsxBuffer), 'XLSX output must be a Buffer')
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(xlsxBuffer)
-  assert.strictEqual(workbook.getWorksheet('Production Summary').getCell('A13').value, extremeCustomer100)
+  assert.strictEqual(workbook.getWorksheet('Production Summary').getCell('A9').value, extremeCustomer100)
 })
 
 // =========================================================================
@@ -679,10 +675,10 @@ test('CHALLENGE 3: High-Volume (1,000 cuts) capping at 200 for /summary vs compl
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(exportXlsx)
   const cutLogsSheet = wb.getWorksheet('Production Cut Logs')
-  // Header is row 5, followed by 1,000 rows + 1 daily subtotal row -> total 1006 rows
+  // Header is row 4, followed by 1,000 rows + 1 SUBTOTAL footer row -> total 1005 rows
   assert.strictEqual(
     cutLogsSheet.rowCount,
-    1006,
-    `XLSX cut logs sheet must have 1006 rows (5 header rows + 1000 data rows + 1 daily subtotal row), got ${cutLogsSheet.rowCount}`,
+    1005,
+    `XLSX cut logs sheet must have 1005 rows (4 header rows + 1000 data rows + 1 SUBTOTAL footer row), got ${cutLogsSheet.rowCount}`,
   )
 })

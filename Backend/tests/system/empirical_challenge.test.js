@@ -307,11 +307,11 @@ test('CHALLENGE 3: Sequence 0 preservation across cut logs, XLSX, and PDF', asyn
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
   assert.ok(logsSheet, 'Production Cut Logs worksheet must exist')
 
+  const row5EventRef = logsSheet.getCell('F5').value
   const row6EventRef = logsSheet.getCell('F6').value
-  const row7EventRef = logsSheet.getCell('F7').value
 
-  assert.strictEqual(row6EventRef, 0, `XLSX cell F6 for numeric sequence 0 must be 0, got ${row6EventRef}`)
-  assert.strictEqual(row7EventRef, '0', `XLSX cell F7 for string sequence "0" must be "0", got ${row7EventRef}`)
+  assert.strictEqual(row5EventRef, 0, `XLSX cell F5 for numeric sequence 0 must be 0, got ${row5EventRef}`)
+  assert.strictEqual(row6EventRef, '0', `XLSX cell F6 for string sequence "0" must be "0", got ${row6EventRef}`)
 
   // 3. PDF serializer verification
   const pdfBuffer = await toPdf(report)
@@ -390,8 +390,8 @@ test('CHALLENGE 4: Formula injection defense in XLSX across all user-controlled 
   const logsSheet = workbook.getWorksheet('Production Cut Logs')
 
   injectionStrings.forEach((str, idx) => {
-    const summaryRow = summarySheet.getRow(13 + idx)
-    const logsRow = logsSheet.getRow(6 + idx)
+    const summaryRow = summarySheet.getRow(9 + idx)
+    const logsRow = logsSheet.getRow(5 + idx)
 
     const expectedEscaped = /^[=+@-]/.test(str) ? `'${str}` : str
 
