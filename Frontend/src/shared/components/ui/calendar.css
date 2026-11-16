@@ -719,3 +719,217 @@
   box-shadow: none;
   opacity: 0.78;
 }
+
+/* Base shadcn DayPicker calendar styling consumed by Calendar.jsx */
+.shadcn-calendar-root {
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.shadcn-calendar-months {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shadcn-calendar-month {
+  display: grid;
+  gap: 8px;
+}
+
+.shadcn-calendar-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.shadcn-calendar-caption-label {
+  color: var(--c-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.shadcn-calendar-dropdowns {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shadcn-calendar-dropdown-root {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.shadcn-calendar-dropdown-root > .shadcn-calendar-caption-label {
+  display: none;
+}
+
+.shadcn-calendar-dropdown {
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.shadcn-calendar-dropdown option {
+  background: var(--c-surface);
+  color: var(--c-text);
+}
+
+.shadcn-calendar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shadcn-calendar-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-std), color 140ms var(--ease-std);
+}
+
+.shadcn-calendar-nav-button:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--c-text);
+}
+
+.shadcn-calendar-nav-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.shadcn-calendar-grid {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shadcn-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-bottom: 4px;
+}
+
+.shadcn-calendar-weekday {
+  color: var(--c-text-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 24px;
+}
+
+.shadcn-calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 2px;
+}
+
+.shadcn-calendar-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.shadcn-calendar-day-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-std), color 120ms var(--ease-std), border-color 120ms var(--ease-std);
+}
+
+.shadcn-calendar-day-button:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.shadcn-calendar-day.is-today:not(.is-selected) .shadcn-calendar-day-button {
+  border-color: var(--c-border);
+  font-weight: 700;
+}
+
+.shadcn-calendar-day.is-outside .shadcn-calendar-day-button {
+  color: var(--c-text-3);
+}
+
+.shadcn-calendar-day.is-rest-day:not(.is-selected) .shadcn-calendar-day-button {
+  color: var(--c-text-2);
+  background: color-mix(in srgb, var(--c-surface2) 70%, transparent);
+}
+
+.shadcn-calendar-day.is-holiday:not(.is-selected) .shadcn-calendar-day-button {
+  box-shadow: inset 0 -2px 0 var(--status-fault-border);
+}
+
+.shadcn-calendar-day.is-exclusion:not(.is-selected) .shadcn-calendar-day-button {
+  box-shadow: inset 0 -2px 0 var(--c-primary);
+}
+
+.shadcn-calendar-day.is-range-middle:not(.is-selected) .shadcn-calendar-day-button {
+  background: color-mix(in srgb, var(--selected-control-bg) 14%, transparent);
+  color: var(--c-text);
+  border-radius: 0;
+}
+
+.shadcn-calendar-day.is-selected .shadcn-calendar-day-button,
+.shadcn-calendar-day.is-range-start .shadcn-calendar-day-button,
+.shadcn-calendar-day.is-range-end .shadcn-calendar-day-button {
+  background: var(--selected-control-bg);
+  border-color: var(--selected-control-bg);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.shadcn-calendar-day.is-disabled .shadcn-calendar-day-button,
+.shadcn-calendar-day-button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.shadcn-calendar-day.is-hidden {
+  visibility: hidden;
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+  .shadcn-calendar-nav-button,
+  .shadcn-calendar-day-button {
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .shadcn-calendar-dropdown {
+    min-height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shadcn-calendar-nav-button,
+  .shadcn-calendar-day-button {
+    transition: none;
+  }
+}
