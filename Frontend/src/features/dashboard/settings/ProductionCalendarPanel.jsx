@@ -1,7 +1,23 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Calendar, ChevronDown, Lock, Plus, RotateCw, Trash2 } from 'lucide-react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  Calendar as CalendarIcon,
+  CheckCircle2,
+  ChevronDown,
+  HelpCircle,
+  Lock,
+  Plus,
+  RotateCw,
+  Undo2,
+  X,
+} from 'lucide-react'
 import Status from '../../../shared/components/Status.jsx'
+import { AnimatedTrashButton } from '../../../shared/components/AnimatedTrashButton.jsx'
+import { Calendar } from '../../../shared/components/ui/Calendar.jsx'
+import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
+import '../../../shared/components/ui/calendar.css'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
@@ -14,14 +30,43 @@ import {
   setProductionCalendarRange,
 } from './settingsService.js'
 import {
+  WEEKDAYS,
   addBusinessDays,
   formatBusinessDateDisplay,
   getBackToWorkDate,
   getManilaToday,
+  groupCalendarEntries,
+  normalizeRestDays,
 } from './settingsUtils.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_RANGE_DAYS = 62
+const CALENDAR_REMOVE_UNDO_MS = 7000
+
+export function SettingsInfoButton({ label, content }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="settings-info-trigger"
+          aria-label={label}
+          title={label}
+        >
+          <HelpCircle size={14} aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="settings-info-popover"
+        align="start"
+        sideOffset={6}
+        aria-label={label}
+      >
+        {content}
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 function getInclusiveSpanDays(startDate, endDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '')) {
@@ -30,6 +75,20 @@ function getInclusiveSpanDays(startDate, endDate) {
   const [sY, sM, sD] = startDate.split('-').map(Number)
   const [eY, eM, eD] = endDate.split('-').map(Number)
   return Math.round((Date.UTC(eY, eM - 1, eD) - Date.UTC(sY, sM - 1, sD)) / DAY_MS) + 1
+}
+
+function parseIsoDateLocal(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) return undefined
+  const [year, month, day] = dateKey.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatIsoDateLocal(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function getDefaultEntryName(dayType, mode) {
@@ -43,17 +102,25 @@ function getDayTypeLabel(dayType) {
   return 'Day off'
 }
 
+function formatRowDateText(row) {
+  if (!row.isRangeGroup) {
+    return formatBusinessDateDisplay(row.startDate) || row.startDate
+  }
+  const startLabel = formatBusinessDateDisplay(row.startDate) || row.startDate
+  const endLabel = formatBusinessDateDisplay(row.endDate) || row.endDate
+  return `${startLabel} – ${endLabel} (${row.dayCount}d)`
+}
+
 function CalendarEntriesTable({
   rows,
   ariaLabel,
   emptyMessage,
-  manilaToday,
   isAdmin,
   online,
   isMutating,
+  mutatingKey,
   onToggleHoliday,
-  onRemoveDay,
-  onRemoveRange,
+  onRequestRemove,
 }) {
   if (rows.length === 0) {
     return (
@@ -68,79 +135,72 @@ function CalendarEntriesTable({
       <thead>
         <tr>
           <th scope="col">Date</th>
-          <th scope="col">Name & Reason</th>
+          <th scope="col">Entry</th>
           <th scope="col">Type</th>
-          <th scope="col">Schedule Status</th>
+          <th scope="col">Status</th>
           <th scope="col"><span className="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((entry) => {
-          const isLocked = entry.calendarDate <= manilaToday
-          const isHoliday = entry.dayType === 'holiday'
-          const isRange = Boolean(entry.groupId)
+        {rows.map((row) => {
+          const isHoliday = row.dayType === 'holiday'
+          const isBusyRow = isMutating && mutatingKey === row.key
+          const isUnavailable = row.isAllLocked || !isAdmin || !online
 
           return (
-            <tr key={`${entry.calendarDate}-${entry.version}`} className="settings-break-row-item">
+            <tr key={row.key} className="settings-break-row-item">
               <td data-label="Date">
-                <span className="settings-sensor-badge">{entry.calendarDate}</span>
+                <span className="settings-calendar-date-text">{formatRowDateText(row)}</span>
               </td>
-              <td data-label="Name & Reason">
+              <td data-label="Entry">
                 <div className="settings-sensor-meta">
-                  <strong className="settings-sensor-title">{entry.name}</strong>
-                  {entry.reason ? <span className="settings-field-hint">{entry.reason}</span> : null}
+                  <strong className="settings-sensor-title">{row.name}</strong>
+                  {row.reason ? <span className="settings-calendar-submeta">{row.reason}</span> : null}
                 </div>
               </td>
               <td data-label="Type">
-                <span className="break-duration-pill">
-                  {getDayTypeLabel(entry.dayType)}
-                  {isRange ? ' · Range' : ''}
+                <span className="settings-calendar-submeta">
+                  {getDayTypeLabel(row.dayType)}
+                  {row.isRangeGroup ? ' · Range' : ''}
                 </span>
               </td>
-              <td data-label="Schedule Status">
-                <Status tone={entry.isWorking ? 'active' : 'offline'}>
-                  {entry.isWorking ? 'Working' : 'Day off'}
+              <td data-label="Status">
+                <Status tone={row.isWorking ? 'active' : 'offline'}>
+                  {row.isWorking ? 'Working' : 'Day off'}
                 </Status>
               </td>
               <td data-label="Action">
                 <div className="settings-calendar-row-actions">
-                  {isLocked ? (
-                    <span className="settings-field-hint" title="Today and past dates are locked">
+                  {row.isAllLocked ? (
+                    <span className="settings-locked-tag" title="Today and past dates are locked">
                       <Lock size={12} aria-hidden="true" /> Locked
                     </span>
                   ) : null}
-                  {isHoliday ? (
+                  {isHoliday && row.entry ? (
                     <button
                       type="button"
-                      className="btn btn-secondary settings-action-btn"
-                      disabled={isLocked || !isAdmin || !online || isMutating}
-                      aria-label={`Set ${entry.name} (${entry.calendarDate}) to ${entry.isWorking ? 'Day off' : 'Working'}`}
-                      onClick={() => onToggleHoliday(entry)}
+                      className="btn btn-ghost settings-action-btn"
+                      disabled={isUnavailable}
+                      aria-disabled={isMutating ? 'true' : undefined}
+                      aria-busy={isBusyRow ? 'true' : undefined}
+                      aria-label={`Set ${row.entry.name} (${row.entry.calendarDate}) to ${row.entry.isWorking ? 'Day off' : 'Working'}`}
+                      onClick={() => {
+                        if (!isMutating) onToggleHoliday(row.entry, row.key)
+                      }}
                     >
-                      {entry.isWorking ? 'Set as Day off' : 'Set as Working'}
-                    </button>
-                  ) : isRange ? (
-                    <button
-                      type="button"
-                      className="btn btn-secondary settings-action-btn"
-                      disabled={isLocked || !isAdmin || !online || isMutating}
-                      aria-label={`Remove range ${entry.name} (${entry.calendarDate})`}
-                      onClick={() => onRemoveRange(entry)}
-                    >
-                      <Trash2 size={13} aria-hidden="true" />
-                      <span>Remove range</span>
+                      {isBusyRow ? 'Saving…' : row.entry.isWorking ? 'Set as Day off' : 'Set as Working'}
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn btn-secondary settings-action-btn"
-                      disabled={isLocked || !isAdmin || !online || isMutating}
-                      aria-label={`Remove ${entry.name} (${entry.calendarDate})`}
-                      onClick={() => onRemoveDay(entry)}
-                    >
-                      <Trash2 size={13} aria-hidden="true" />
-                      <span>Remove</span>
-                    </button>
+                    <AnimatedTrashButton
+                      title={row.isRangeGroup ? `Remove range ${row.name}` : `Remove ${row.name}`}
+                      ariaLabel={
+                        row.isRangeGroup
+                          ? `Remove range ${row.name} (${row.startDate} to ${row.endDate})`
+                          : `Remove ${row.name} (${row.startDate})`
+                      }
+                      disabled={isUnavailable || isMutating}
+                      onClick={(event) => onRequestRemove(row, event)}
+                    />
                   )}
                 </div>
               </td>
@@ -152,7 +212,26 @@ function CalendarEntriesTable({
   )
 }
 
-export default function ProductionCalendarPanel({ machine, restDays = [], timeZone = 'Asia/Manila' }) {
+function getRemovalOutcomeMessage(target, response) {
+  const result = response?.result ?? response
+  if (target.isRangeGroup && target.groupId) {
+    if (result?.lockedDates?.length > 0) {
+      return `Only remaining future dates were removed (${result.removedCount} removed, ${result.lockedDates.length} elapsed or current date(s) locked).`
+    }
+    return `Removed shutdown range (${result?.removedCount ?? 0} future date(s) cleared).`
+  }
+  if (result?.restoredHolidays?.length > 0) {
+    return `Removed override for ${target.startDate} and restored seeded holiday (${result.restoredHolidays[0].name}).`
+  }
+  return `Removed calendar entry for ${target.startDate}.`
+}
+
+export default function ProductionCalendarPanel({
+  machine,
+  restDays = [],
+  persistedRestDaysDirty = false,
+  timeZone = 'Asia/Manila',
+}) {
   const { token, user } = useAuth()
   const online = useNetworkOnline()
   const queryClient = useQueryClient()
@@ -161,6 +240,17 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
   const manilaToday = getManilaToday()
   const manilaTomorrow = addBusinessDays(manilaToday, 1)
 
+  const scheduleDialogRef = useRef(null)
+  const confirmDialogRef = useRef(null)
+  const scheduleTriggerRef = useRef(null)
+  const confirmCancelRef = useRef(null)
+  const removeTriggerRef = useRef(null)
+  const undoButtonRef = useRef(null)
+  const pendingRemovalRef = useRef(null)
+  const undoTimerRef = useRef(null)
+  const snackbarNoticeTimerRef = useRef(null)
+
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [mode, setMode] = useState('single')
   const [dayType, setDayType] = useState('day_off')
   const [name, setName] = useState('')
@@ -169,8 +259,12 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
   const [reason, setReason] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [panelNotice, setPanelNotice] = useState(null)
+  const [snackbarNotice, setSnackbarNotice] = useState(null)
   const [isMutating, setIsMutating] = useState(false)
+  const [mutatingKey, setMutatingKey] = useState(null)
   const [pendingOverwrite, setPendingOverwrite] = useState(null)
+  const [pendingRemove, setPendingRemove] = useState(null)
+  const [pendingRemoval, setPendingRemoval] = useState(null)
   const [holidaysExpanded, setHolidaysExpanded] = useState(false)
 
   const calendarQuery = useAuthenticatedQuery({
@@ -189,13 +283,37 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
     return Array.isArray(raw?.entries) ? raw.entries : []
   }, [calendarQuery.data])
 
+  const visibleEntries = useMemo(() => {
+    if (!pendingRemoval) return entries
+    return entries.filter((entry) => !pendingRemoval.dates.has(entry.calendarDate))
+  }, [entries, pendingRemoval])
+
   const holidayEntries = useMemo(
-    () => entries.filter((entry) => entry.dayType === 'holiday'),
-    [entries],
+    () => visibleEntries.filter((entry) => entry.dayType === 'holiday'),
+    [visibleEntries],
   )
   const scheduledExclusions = useMemo(
-    () => entries.filter((entry) => entry.dayType !== 'holiday'),
-    [entries],
+    () => visibleEntries.filter((entry) => entry.dayType !== 'holiday'),
+    [visibleEntries],
+  )
+
+  const groupedExclusions = useMemo(
+    () => groupCalendarEntries(scheduledExclusions, manilaToday),
+    [scheduledExclusions, manilaToday],
+  )
+  const holidayRows = useMemo(
+    () => groupCalendarEntries(holidayEntries, manilaToday),
+    [holidayEntries, manilaToday],
+  )
+
+  const normalizedRestDays = useMemo(() => new Set(normalizeRestDays(restDays)), [restDays])
+  const holidayDateSet = useMemo(
+    () => new Set(holidayEntries.map((item) => item.calendarDate)),
+    [holidayEntries],
+  )
+  const exclusionDateSet = useMemo(
+    () => new Set(scheduledExclusions.map((item) => item.calendarDate)),
+    [scheduledExclusions],
   )
 
   const backToWorkDate = useMemo(() => {
@@ -207,6 +325,72 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
     }
     return getBackToWorkDate(startDate, restDays, entries)
   }, [mode, startDate, endDate, restDays, entries])
+
+  useEffect(() => {
+    const dialog = scheduleDialogRef.current
+    if (!dialog) return
+    if (isScheduleOpen && !dialog.hasAttribute('open')) {
+      dialog.showModal?.()
+    } else if (!isScheduleOpen && dialog.hasAttribute('open')) {
+      dialog.close?.()
+    }
+  }, [isScheduleOpen])
+
+  useEffect(() => {
+    const dialog = confirmDialogRef.current
+    if (!dialog) return
+    if (pendingRemove && !dialog.hasAttribute('open')) {
+      dialog.showModal?.()
+      confirmCancelRef.current?.focus({ preventScroll: true })
+    } else if (!pendingRemove && dialog.hasAttribute('open')) {
+      dialog.close?.()
+    }
+  }, [pendingRemove])
+
+  useEffect(() => () => {
+    window.clearTimeout(undoTimerRef.current)
+    window.clearTimeout(snackbarNoticeTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (!snackbarNotice) return undefined
+    snackbarNoticeTimerRef.current = window.setTimeout(() => setSnackbarNotice(null), 5000)
+    return () => window.clearTimeout(snackbarNoticeTimerRef.current)
+  }, [snackbarNotice])
+
+  useEffect(() => {
+    if (pendingRemoval?.phase === 'undo') {
+      undoButtonRef.current?.focus({ preventScroll: true })
+    }
+  }, [pendingRemoval])
+
+  function openScheduleModal(event) {
+    if (!isAdmin || !online || isMutating || pendingRemovalRef.current) return
+    scheduleTriggerRef.current = event?.currentTarget || null
+    setFieldErrors({})
+    setPendingOverwrite(null)
+    setPanelNotice(null)
+    setIsScheduleOpen(true)
+  }
+
+  function closeScheduleModal() {
+    if (isMutating) return
+    setPendingOverwrite(null)
+    setFieldErrors({})
+    setIsScheduleOpen(false)
+    if (scheduleTriggerRef.current?.isConnected) {
+      scheduleTriggerRef.current.focus({ preventScroll: true })
+    }
+  }
+
+  function switchMode(nextMode) {
+    setMode(nextMode)
+    setPendingOverwrite(null)
+    setFieldErrors({})
+    if (nextMode === 'range' && startDate && (!endDate || endDate < startDate)) {
+      setEndDate(startDate)
+    }
+  }
 
   async function invalidateCalendarDependents() {
     if (!machine?.id) return
@@ -269,6 +453,7 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
       setFieldErrors({})
       setName('')
       setReason('')
+      setIsScheduleOpen(false)
       await invalidateCalendarDependents()
     } catch (error) {
       const conflictingDates = error?.details?.conflictingDates ?? error?.payload?.error?.details?.conflictingDates
@@ -323,9 +508,10 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
     }
   }
 
-  async function handleToggleHoliday(entry) {
-    if (!machine?.id || isMutating || !isAdmin || !online || entry.calendarDate <= manilaToday) return
+  async function handleToggleHoliday(entry, rowKey) {
+    if (!machine?.id || isMutating || pendingRemovalRef.current || !isAdmin || !online || entry.calendarDate <= manilaToday) return
     setIsMutating(true)
+    setMutatingKey(rowKey)
     setPanelNotice(null)
     try {
       await setProductionCalendarDay(token, machine.id, entry.calendarDate, {
@@ -346,79 +532,125 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
       })
     } finally {
       setIsMutating(false)
+      setMutatingKey(null)
     }
   }
 
-  async function handleRemoveDay(entry) {
-    if (!machine?.id || isMutating || !isAdmin || !online || entry.calendarDate <= manilaToday) return
-    setIsMutating(true)
+  function confirmPendingRemove() {
+    if (!pendingRemove || !machine?.id || pendingRemovalRef.current || isMutating || !isAdmin || !online) return
+    const target = pendingRemove
+    const pending = {
+      target,
+      dates: new Set(target.entries.map((entry) => entry.calendarDate)),
+      phase: 'undo',
+    }
+    pendingRemovalRef.current = pending
+    setPendingRemove(null)
+    setPendingRemoval(pending)
     setPanelNotice(null)
-    try {
-      const response = await removeProductionCalendarDay(token, machine.id, entry.calendarDate)
-      const result = response?.result ?? response
-      if (result?.restoredHolidays?.length > 0) {
-        setPanelNotice({
-          type: 'success',
-          message: `Removed override for ${entry.calendarDate} and restored seeded holiday (${result.restoredHolidays[0].name}).`,
-        })
-      } else {
-        setPanelNotice({ type: 'success', message: `Removed calendar entry for ${entry.calendarDate}.` })
+    setSnackbarNotice(null)
+    window.clearTimeout(snackbarNoticeTimerRef.current)
+
+    undoTimerRef.current = window.setTimeout(async () => {
+      undoTimerRef.current = null
+      if (pendingRemovalRef.current !== pending) return
+
+      const committing = { ...pending, phase: 'saving' }
+      pendingRemovalRef.current = committing
+      setPendingRemoval(committing)
+
+      let nextNotice
+      try {
+        const response = target.isRangeGroup && target.groupId
+          ? await removeProductionCalendarRange(token, machine.id, target.groupId)
+          : await removeProductionCalendarDay(token, machine.id, target.startDate)
+        nextNotice = { type: 'success', message: getRemovalOutcomeMessage(target, response) }
+      } catch (error) {
+        nextNotice = {
+          type: 'error',
+          message: error?.message || 'Unable to remove calendar entry.',
+        }
+      } finally {
+        if (pendingRemovalRef.current === committing) pendingRemovalRef.current = null
+        setPendingRemoval(null)
+        setSnackbarNotice(nextNotice)
+        void invalidateCalendarDependents()
       }
-      await invalidateCalendarDependents()
-    } catch (error) {
-      setPanelNotice({
-        type: 'error',
-        message: error?.message || 'Unable to remove calendar entry.',
-      })
-    } finally {
-      setIsMutating(false)
+    }, CALENDAR_REMOVE_UNDO_MS)
+  }
+
+  function undoPendingRemoval() {
+    if (pendingRemovalRef.current?.phase !== 'undo') return
+    window.clearTimeout(undoTimerRef.current)
+    undoTimerRef.current = null
+    pendingRemovalRef.current = null
+    setPendingRemoval(null)
+  }
+
+  const tomorrowDateObj = useMemo(() => parseIsoDateLocal(manilaTomorrow), [manilaTomorrow])
+  const maxYear = Number((manilaToday || '2026').slice(0, 4)) + 2
+  const calendarSelected = useMemo(() => {
+    if (mode === 'range') {
+      const from = parseIsoDateLocal(startDate)
+      const to = parseIsoDateLocal(endDate)
+      return from ? { from, to } : undefined
+    }
+    return parseIsoDateLocal(startDate)
+  }, [mode, startDate, endDate])
+
+  function handleCalendarSelect(selection) {
+    setPendingOverwrite(null)
+    if (mode === 'single') {
+      const nextKey = formatIsoDateLocal(selection)
+      if (!nextKey) return
+      setStartDate(nextKey)
+      setFieldErrors((current) => ({ ...current, startDate: undefined }))
+      return
+    }
+    const nextStart = formatIsoDateLocal(selection?.from)
+    const nextEnd = formatIsoDateLocal(selection?.to || selection?.from)
+    if (nextStart) setStartDate(nextStart)
+    if (nextEnd) setEndDate(nextEnd)
+    setFieldErrors((current) => ({ ...current, startDate: undefined, endDate: undefined }))
+  }
+
+  function closeConfirmRemove(restoreFocus = false) {
+    if (isMutating) return
+    setPendingRemove(null)
+    if (restoreFocus && removeTriggerRef.current?.isConnected) {
+      removeTriggerRef.current.focus({ preventScroll: true })
     }
   }
 
-  async function handleRemoveRange(entry) {
-    if (!machine?.id || isMutating || !isAdmin || !online || !entry.groupId || entry.calendarDate <= manilaToday) return
-    setIsMutating(true)
-    setPanelNotice(null)
-    try {
-      const response = await removeProductionCalendarRange(token, machine.id, entry.groupId)
-      const result = response?.result ?? response
-      if (result?.lockedDates?.length > 0) {
-        setPanelNotice({
-          type: 'success',
-          message: `Only remaining future dates were removed (${result.removedCount} removed, ${result.lockedDates.length} elapsed or current date(s) locked).`,
-        })
-      } else {
-        setPanelNotice({
-          type: 'success',
-          message: `Removed shutdown range (${result?.removedCount ?? 0} future date(s) cleared).`,
-        })
-      }
-      await invalidateCalendarDependents()
-    } catch (error) {
-      setPanelNotice({
-        type: 'error',
-        message: error?.message || 'Unable to remove production calendar range.',
-      })
-    } finally {
-      setIsMutating(false)
-    }
+  function requestRemoveRow(row, event) {
+    if (pendingRemovalRef.current || isMutating) return
+    removeTriggerRef.current = event?.currentTarget || null
+    setPendingRemove(row)
   }
 
   return (
     <section className="section-card settings-panel settings-calendar-panel" aria-labelledby="production-calendar-title">
       <div className="section-heading">
         <div className="section-copy">
-          <div className="settings-shift-title">
+          <div className="settings-heading-with-info">
             <h2 id="production-calendar-title">Production Calendar</h2>
-            <span className="settings-timezone">{timeZone}</span>
+            <SettingsInfoButton
+              label="Production calendar rules information"
+              content={`Dated holidays, plant closures, and unscheduled stops override weekly rest days starting tomorrow (${manilaTomorrow}, ${timeZone}).`}
+            />
           </div>
         </div>
-        <span className="shift-duration-badge">Advance edits only</span>
+        <button
+          type="button"
+          className="btn btn-outline settings-action-btn"
+          disabled={!isAdmin || !online || isMutating || Boolean(pendingRemoval)}
+          title={!isAdmin ? 'Admin role required to edit calendar' : undefined}
+          onClick={openScheduleModal}
+        >
+          <Plus size={14} aria-hidden="true" />
+          <span>Schedule exception</span>
+        </button>
       </div>
-
-      <p className="settings-field-hint">
-        Dated holidays, plant closures, and machine-unscheduled days override weekly rest days and shift hours starting tomorrow ({manilaTomorrow}).
-      </p>
 
       {panelNotice ? (
         <div
@@ -430,258 +662,59 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
         </div>
       ) : null}
 
-      {pendingOverwrite ? (
-        <div className="notice notice-error dashboard-alert settings-overwrite-dialog" role="alertdialog" aria-labelledby="calendar-overwrite-title">
-          <AlertTriangle size={16} aria-hidden="true" />
-          <div className="settings-overwrite-body">
-            <strong id="calendar-overwrite-title">Overwrite existing manual calendar entries?</strong>
-            <p className="settings-field-hint">
-              Manual entries already exist on: {pendingOverwrite.conflictingDates.join(', ')}. Confirming will replace them.
-            </p>
-            <div className="settings-overwrite-actions">
-              <button
-                type="button"
-                className="btn btn-primary settings-action-btn"
-                disabled={isMutating}
-                onClick={() => void executeAddEntry({ ...pendingOverwrite, confirmOverwrite: true })}
-              >
-                Confirm overwrite
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary settings-action-btn"
-                disabled={isMutating}
-                onClick={() => setPendingOverwrite(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+      {calendarQuery.isPending ? (
+        <div className="settings-skeleton-table" aria-busy="true" aria-label="Loading production calendar">
+          <div className="skeleton settings-skeleton-row" />
+          <div className="skeleton settings-skeleton-row" />
         </div>
-      ) : null}
-
-      <div className="settings-work-bar settings-calendar-builder">
-        <div className="break-matrix-header">
-          <strong>Schedule future day off or unscheduled stop</strong>
-          <div className="settings-calendar-mode-group" role="radiogroup" aria-label="Calendar span mode">
-            <label className={`settings-rest-day-pill ${mode === 'single' ? 'is-selected' : ''}`.trim()}>
-              <input
-                type="radio"
-                name="calendar-span-mode"
-                value="single"
-                checked={mode === 'single'}
-                disabled={!isAdmin || !online || isMutating}
-                onChange={() => {
-                  setMode('single')
-                  setPendingOverwrite(null)
-                  setFieldErrors({})
-                }}
-              />
-              <span>Single day</span>
-            </label>
-            <label className={`settings-rest-day-pill ${mode === 'range' ? 'is-selected' : ''}`.trim()}>
-              <input
-                type="radio"
-                name="calendar-span-mode"
-                value="range"
-                checked={mode === 'range'}
-                disabled={!isAdmin || !online || isMutating}
-                onChange={() => {
-                  setMode('range')
-                  setPendingOverwrite(null)
-                  setFieldErrors({})
-                }}
-              />
-              <span>Date range</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="settings-work-grid settings-calendar-grid">
-          <label className="settings-field-group">
-            <span className="field-label-text">Exclusion type</span>
-            <select
-              aria-label="Exclusion type"
-              className="settings-text-input"
-              disabled={!isAdmin || !online || isMutating}
-              value={dayType}
-              onChange={(event) => {
-                setDayType(event.target.value)
-                setPendingOverwrite(null)
-                setFieldErrors((current) => ({ ...current, reason: undefined }))
-              }}
-            >
-              <option value="day_off">Day off (plant closure)</option>
-              <option value="machine_not_scheduled">Machine not scheduled</option>
-            </select>
-          </label>
-
-          {mode === 'single' ? (
-            <label className="settings-field-group">
-              <span className="field-label-text">Exclusion date</span>
-              <input
-                aria-label="Exclusion date"
-                aria-invalid={fieldErrors.startDate ? 'true' : undefined}
-                aria-describedby={fieldErrors.startDate ? 'calendar-start-date-error' : undefined}
-                type="date"
-                className="settings-time-input"
-                min={manilaTomorrow}
-                disabled={!isAdmin || !online || isMutating}
-                value={startDate}
-                onChange={(event) => {
-                  setStartDate(event.target.value)
-                  setPendingOverwrite(null)
-                  setFieldErrors((current) => ({ ...current, startDate: undefined }))
-                }}
-              />
-              {fieldErrors.startDate ? <p id="calendar-start-date-error" className="field-error">{fieldErrors.startDate}</p> : null}
-            </label>
-          ) : (
-            <>
-              <label className="settings-field-group">
-                <span className="field-label-text">First day off</span>
-                <input
-                  aria-label="First day off"
-                  aria-invalid={fieldErrors.startDate ? 'true' : undefined}
-                  aria-describedby={fieldErrors.startDate ? 'calendar-start-date-error' : undefined}
-                  type="date"
-                  className="settings-time-input"
-                  min={manilaTomorrow}
-                  disabled={!isAdmin || !online || isMutating}
-                  value={startDate}
-                  onChange={(event) => {
-                    setStartDate(event.target.value)
-                    setPendingOverwrite(null)
-                    setFieldErrors((current) => ({ ...current, startDate: undefined }))
-                  }}
-                />
-                {fieldErrors.startDate ? <p id="calendar-start-date-error" className="field-error">{fieldErrors.startDate}</p> : null}
-              </label>
-
-              <label className="settings-field-group">
-                <span className="field-label-text">Last day off</span>
-                <input
-                  aria-label="Last day off"
-                  aria-invalid={fieldErrors.endDate ? 'true' : undefined}
-                  aria-describedby={fieldErrors.endDate ? 'calendar-end-date-error' : undefined}
-                  type="date"
-                  className="settings-time-input"
-                  min={startDate || manilaTomorrow}
-                  disabled={!isAdmin || !online || isMutating}
-                  value={endDate}
-                  onChange={(event) => {
-                    setEndDate(event.target.value)
-                    setPendingOverwrite(null)
-                    setFieldErrors((current) => ({ ...current, endDate: undefined }))
-                  }}
-                />
-                {fieldErrors.endDate ? <p id="calendar-end-date-error" className="field-error">{fieldErrors.endDate}</p> : null}
-              </label>
-            </>
-          )}
-
-          <label className="settings-field-group">
-            <span className="field-label-text">Label (optional)</span>
-            <input
-              aria-label="Entry name"
-              type="text"
-              className="settings-text-input"
-              maxLength={150}
-              placeholder={getDefaultEntryName(dayType, mode)}
-              disabled={!isAdmin || !online || isMutating}
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value)
-                setPendingOverwrite(null)
-              }}
-            />
-          </label>
-
-          {dayType === 'machine_not_scheduled' ? (
-            <label className="settings-field-group">
-              <span className="field-label-text">Reason (required)</span>
-              <input
-                aria-label="Reason"
-                aria-invalid={fieldErrors.reason ? 'true' : undefined}
-                aria-describedby={fieldErrors.reason ? 'calendar-reason-error' : undefined}
-                type="text"
-                className="settings-text-input"
-                maxLength={500}
-                placeholder="e.g. No orders, Planned maintenance"
-                disabled={!isAdmin || !online || isMutating}
-                value={reason}
-                onChange={(event) => {
-                  setReason(event.target.value)
-                  setPendingOverwrite(null)
-                  setFieldErrors((current) => ({ ...current, reason: undefined }))
-                }}
-              />
-              {fieldErrors.reason ? <p id="calendar-reason-error" className="field-error">{fieldErrors.reason}</p> : null}
-            </label>
-          ) : null}
-        </div>
-
-        <div className="break-matrix-header settings-calendar-footer">
-          <div className="settings-calendar-preview">
-            <Calendar size={14} aria-hidden="true" />
-            <span>
-              {backToWorkDate
-                ? `Back to work: ${formatBusinessDateDisplay(backToWorkDate)}`
-                : 'Select valid dates to preview return workday'}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary settings-add-break"
-            disabled={!isAdmin || !online || isMutating}
-            onClick={handleAddEntry}
-          >
-            {isMutating ? <RotateCw size={14} className="spin-icon" aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
-            <span>Add to calendar</span>
-          </button>
-        </div>
-      </div>
-
-      {calendarQuery.isError ? (
+      ) : calendarQuery.isError ? (
         <div className="notice notice-error dashboard-alert" role="alert">
           <AlertTriangle size={16} aria-hidden="true" />
           <span>{calendarQuery.error?.message || 'Unable to load production calendar.'}</span>
+          <button
+            type="button"
+            className="btn btn-outline settings-inline-retry-btn"
+            onClick={() => void calendarQuery.refetch()}
+          >
+            <RotateCw size={14} aria-hidden="true" /> Retry
+          </button>
         </div>
       ) : (
         <>
           <div className="settings-break-matrix-wrap">
             <div className="break-matrix-header">
               <div className="break-matrix-title">
-                <strong>Scheduled Exclusions</strong>
-                <span className="break-count-pill">{scheduledExclusions.length}</span>
+                <h3>
+                  Scheduled exclusions{' '}
+                  <span className="settings-inline-count">({groupedExclusions.length})</span>
+                </h3>
               </div>
             </div>
 
             <div className="settings-break-table-container">
               <CalendarEntriesTable
-                rows={scheduledExclusions}
+                rows={groupedExclusions}
                 ariaLabel="Scheduled production calendar exclusions"
                 emptyMessage="No custom days off or shutdown ranges scheduled."
-                manilaToday={manilaToday}
                 isAdmin={isAdmin}
                 online={online}
-                isMutating={isMutating}
-                onToggleHoliday={(entry) => void handleToggleHoliday(entry)}
-                onRemoveDay={(entry) => void handleRemoveDay(entry)}
-                onRemoveRange={(entry) => void handleRemoveRange(entry)}
+                isMutating={isMutating || Boolean(pendingRemoval)}
+                mutatingKey={mutatingKey}
+                onToggleHoliday={(entry, key) => void handleToggleHoliday(entry, key)}
+                onRequestRemove={requestRemoveRow}
               />
             </div>
           </div>
 
-          <div className="settings-break-matrix-wrap settings-holidays-section">
-            <div className="break-matrix-header">
-              <div className="break-matrix-title">
-                <strong>Holidays</strong>
-                <span className="break-count-pill">{holidayEntries.length}</span>
-              </div>
+          <div className="settings-holidays-section">
+            <div className="break-matrix-header settings-holidays-header">
+              <h3>
+                Holidays{' '}
+                <span className="settings-inline-count">({holidayRows.length})</span>
+              </h3>
               <button
                 type="button"
-                className="btn btn-secondary settings-holiday-toggle-btn"
+                className="btn btn-ghost settings-holiday-toggle-btn"
                 aria-expanded={holidaysExpanded}
                 aria-controls={holidaysExpanded ? 'production-calendar-holidays-panel' : undefined}
                 onClick={() => setHolidaysExpanded((current) => !current)}
@@ -698,22 +731,417 @@ export default function ProductionCalendarPanel({ machine, restDays = [], timeZo
             {holidaysExpanded ? (
               <div id="production-calendar-holidays-panel" className="settings-break-table-container">
                 <CalendarEntriesTable
-                  rows={holidayEntries}
+                  rows={holidayRows}
                   ariaLabel="Production calendar holidays"
                   emptyMessage="No holidays configured."
-                  manilaToday={manilaToday}
                   isAdmin={isAdmin}
                   online={online}
-                  isMutating={isMutating}
-                  onToggleHoliday={(entry) => void handleToggleHoliday(entry)}
-                  onRemoveDay={(entry) => void handleRemoveDay(entry)}
-                  onRemoveRange={(entry) => void handleRemoveRange(entry)}
+                  isMutating={isMutating || Boolean(pendingRemoval)}
+                  mutatingKey={mutatingKey}
+                  onToggleHoliday={(entry, key) => void handleToggleHoliday(entry, key)}
+                  onRequestRemove={requestRemoveRow}
                 />
               </div>
             ) : null}
           </div>
         </>
       )}
+
+      <dialog
+        ref={scheduleDialogRef}
+        className="settings-calendar-dialog"
+        aria-labelledby="schedule-exception-title"
+        onCancel={(event) => {
+          if (isMutating) {
+            event.preventDefault()
+          } else {
+            closeScheduleModal()
+          }
+        }}
+        onClose={() => {
+          setIsScheduleOpen(false)
+          setPendingOverwrite(null)
+          setFieldErrors({})
+        }}
+      >
+        {isScheduleOpen ? (
+          <>
+            <div className="settings-dialog-header">
+              <h3 id="schedule-exception-title">Schedule exception</h3>
+              <button
+                type="button"
+                className="btn btn-ghost settings-dialog-close-btn"
+                aria-label="Close schedule exception dialog"
+                disabled={isMutating}
+                onClick={closeScheduleModal}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="settings-dialog-body">
+              {persistedRestDaysDirty ? (
+                <p className="settings-field-hint">
+                  Using saved weekly rest days for Back to work preview until Shift changes are saved.
+                </p>
+              ) : null}
+
+              {pendingOverwrite ? (
+                <div
+                  className="notice notice-error dashboard-alert settings-overwrite-dialog"
+                  role="alertdialog"
+                  aria-labelledby="calendar-overwrite-title"
+                >
+                  <AlertTriangle size={16} aria-hidden="true" />
+                  <div className="settings-overwrite-body">
+                    <strong id="calendar-overwrite-title">Overwrite existing manual calendar entries?</strong>
+                    <p className="settings-field-hint">
+                      Manual entries already exist on: {pendingOverwrite.conflictingDates.join(', ')}. Confirming will replace them.
+                    </p>
+                    <div className="settings-overwrite-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary settings-action-btn"
+                        disabled={isMutating}
+                        onClick={() => void executeAddEntry({ ...pendingOverwrite, confirmOverwrite: true })}
+                      >
+                        Confirm overwrite
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost settings-action-btn"
+                        disabled={isMutating}
+                        onClick={() => setPendingOverwrite(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="settings-dialog-grid">
+                <div className="settings-dialog-fields">
+                  <div className="settings-segmented-control" role="radiogroup" aria-label="Calendar span mode">
+                    <label className={`settings-segmented-tab ${mode === 'single' ? 'is-selected' : ''}`.trim()}>
+                      <input
+                        type="radio"
+                        className="sr-only"
+                        name="calendar-span-mode"
+                        value="single"
+                        checked={mode === 'single'}
+                        disabled={!isAdmin || !online || isMutating}
+                        onChange={() => switchMode('single')}
+                      />
+                      <span>Single day</span>
+                    </label>
+                    <label className={`settings-segmented-tab ${mode === 'range' ? 'is-selected' : ''}`.trim()}>
+                      <input
+                        type="radio"
+                        className="sr-only"
+                        name="calendar-span-mode"
+                        value="range"
+                        checked={mode === 'range'}
+                        disabled={!isAdmin || !online || isMutating}
+                        onChange={() => switchMode('range')}
+                      />
+                      <span>Date range</span>
+                    </label>
+                  </div>
+
+                  <div className="settings-field-col">
+                    <label htmlFor="calendar-day-type" className="field-label-text">Exclusion type</label>
+                    <div className="custom-select-wrap">
+                      <select
+                        id="calendar-day-type"
+                        aria-label="Exclusion type"
+                        disabled={!isAdmin || !online || isMutating}
+                        value={dayType}
+                        onChange={(event) => {
+                          setDayType(event.target.value)
+                          setPendingOverwrite(null)
+                          setFieldErrors((current) => ({ ...current, reason: undefined }))
+                        }}
+                      >
+                        <option value="day_off">Day off (plant closure)</option>
+                        <option value="machine_not_scheduled">Machine not scheduled</option>
+                      </select>
+                      <ChevronDown className="select-chevron-icon" size={15} aria-hidden="true" />
+                    </div>
+                  </div>
+
+                  {mode === 'single' ? (
+                    <div className="settings-field-col">
+                      <label htmlFor="calendar-start-date" className="field-label-text">Exclusion date</label>
+                      <input
+                        id="calendar-start-date"
+                        aria-label="Exclusion date"
+                        aria-invalid={fieldErrors.startDate ? 'true' : undefined}
+                        aria-describedby={fieldErrors.startDate ? 'calendar-start-date-error' : undefined}
+                        type="date"
+                        className="settings-time-input"
+                        min={manilaTomorrow}
+                        disabled={!isAdmin || !online || isMutating}
+                        value={startDate}
+                        onChange={(event) => {
+                          setStartDate(event.target.value)
+                          setPendingOverwrite(null)
+                          setFieldErrors((current) => ({ ...current, startDate: undefined }))
+                        }}
+                      />
+                      {fieldErrors.startDate ? <p id="calendar-start-date-error" className="field-error">{fieldErrors.startDate}</p> : null}
+                    </div>
+                  ) : (
+                    <div className="settings-dialog-date-pair">
+                      <div className="settings-field-col">
+                        <label htmlFor="calendar-range-start" className="field-label-text">First day off</label>
+                        <input
+                          id="calendar-range-start"
+                          aria-label="First day off"
+                          aria-invalid={fieldErrors.startDate ? 'true' : undefined}
+                          aria-describedby={fieldErrors.startDate ? 'calendar-start-date-error' : undefined}
+                          type="date"
+                          className="settings-time-input"
+                          min={manilaTomorrow}
+                          disabled={!isAdmin || !online || isMutating}
+                          value={startDate}
+                          onChange={(event) => {
+                            const nextVal = event.target.value
+                            setStartDate(nextVal)
+                            if (endDate && nextVal && endDate < nextVal) {
+                              setEndDate(nextVal)
+                            }
+                            setPendingOverwrite(null)
+                            setFieldErrors((current) => ({ ...current, startDate: undefined, endDate: undefined }))
+                          }}
+                        />
+                        {fieldErrors.startDate ? <p id="calendar-start-date-error" className="field-error">{fieldErrors.startDate}</p> : null}
+                      </div>
+
+                      <div className="settings-field-col">
+                        <label htmlFor="calendar-range-end" className="field-label-text">Last day off</label>
+                        <input
+                          id="calendar-range-end"
+                          aria-label="Last day off"
+                          aria-invalid={fieldErrors.endDate ? 'true' : undefined}
+                          aria-describedby={fieldErrors.endDate ? 'calendar-end-date-error' : undefined}
+                          type="date"
+                          className="settings-time-input"
+                          min={startDate || manilaTomorrow}
+                          disabled={!isAdmin || !online || isMutating}
+                          value={endDate}
+                          onChange={(event) => {
+                            setEndDate(event.target.value)
+                            setPendingOverwrite(null)
+                            setFieldErrors((current) => ({ ...current, endDate: undefined }))
+                          }}
+                        />
+                        {fieldErrors.endDate ? <p id="calendar-end-date-error" className="field-error">{fieldErrors.endDate}</p> : null}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="settings-field-col">
+                    <label htmlFor="calendar-entry-name" className="field-label-text">Label (optional)</label>
+                    <input
+                      id="calendar-entry-name"
+                      aria-label="Entry name"
+                      type="text"
+                      className="settings-text-input"
+                      maxLength={150}
+                      placeholder={getDefaultEntryName(dayType, mode)}
+                      disabled={!isAdmin || !online || isMutating}
+                      value={name}
+                      onChange={(event) => {
+                        setName(event.target.value)
+                        setPendingOverwrite(null)
+                      }}
+                    />
+                  </div>
+
+                  {dayType === 'machine_not_scheduled' ? (
+                    <div className="settings-field-col">
+                      <label htmlFor="calendar-reason" className="field-label-text">Reason (required)</label>
+                      <input
+                        id="calendar-reason"
+                        aria-label="Reason"
+                        aria-invalid={fieldErrors.reason ? 'true' : undefined}
+                        aria-describedby={fieldErrors.reason ? 'calendar-reason-error' : undefined}
+                        type="text"
+                        className="settings-text-input"
+                        maxLength={500}
+                        placeholder="e.g. No orders, Planned maintenance"
+                        disabled={!isAdmin || !online || isMutating}
+                        value={reason}
+                        onChange={(event) => {
+                          setReason(event.target.value)
+                          setPendingOverwrite(null)
+                          setFieldErrors((current) => ({ ...current, reason: undefined }))
+                        }}
+                      />
+                      {fieldErrors.reason ? <p id="calendar-reason-error" className="field-error">{fieldErrors.reason}</p> : null}
+                    </div>
+                  ) : null}
+
+                  {backToWorkDate ? (
+                    <div className="settings-calendar-preview">
+                      <CalendarIcon size={14} aria-hidden="true" />
+                      <span>Back to work: {formatBusinessDateDisplay(backToWorkDate)}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="settings-calendar-picker-box">
+                  <Calendar
+                    mode={mode === 'range' ? 'range' : 'single'}
+                    captionLayout="dropdown"
+                    selected={calendarSelected}
+                    onSelect={handleCalendarSelect}
+                    defaultMonth={parseIsoDateLocal(startDate) || tomorrowDateObj}
+                    startMonth={tomorrowDateObj}
+                    endMonth={new Date(maxYear, 11, 31)}
+                    disabled={tomorrowDateObj ? { before: tomorrowDateObj } : undefined}
+                    modifiers={{
+                      restDay: (date) => normalizedRestDays.has(WEEKDAYS[date.getDay()]),
+                      holiday: (date) => holidayDateSet.has(formatIsoDateLocal(date)),
+                      exclusion: (date) => exclusionDateSet.has(formatIsoDateLocal(date)),
+                    }}
+                    modifiersClassNames={{
+                      restDay: 'is-rest-day',
+                      holiday: 'is-holiday',
+                      exclusion: 'is-exclusion',
+                    }}
+                  />
+                  <div className="settings-calendar-legend" aria-hidden="true">
+                    <span className="settings-legend-item"><span className="settings-legend-dot is-holiday" /> Holiday</span>
+                    <span className="settings-legend-item"><span className="settings-legend-dot is-exclusion" /> Scheduled</span>
+                    <span className="settings-legend-item"><span className="settings-legend-dot" /> Weekly rest</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-dialog-footer">
+                <button
+                  type="button"
+                  className="btn btn-ghost settings-action-btn"
+                  disabled={isMutating}
+                  onClick={closeScheduleModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary settings-action-btn"
+                  disabled={!isAdmin || !online || isMutating}
+                  onClick={handleAddEntry}
+                >
+                  {isMutating ? <RotateCw size={14} className="spin-icon" aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}
+                  <span>Add to calendar</span>
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </dialog>
+
+      <dialog
+        ref={confirmDialogRef}
+        className="confirm-dialog"
+        aria-labelledby="calendar-remove-title"
+        onCancel={(event) => {
+          if (isMutating) event.preventDefault()
+          else closeConfirmRemove(true)
+        }}
+        onClose={() => setPendingRemove(null)}
+      >
+        {pendingRemove ? (
+          <div className="confirm-dialog-content">
+            <div className="confirm-dialog-header">
+              <div className="confirm-dialog-icon danger">
+                <AlertTriangle size={17} aria-hidden="true" />
+              </div>
+              <div>
+                <h3 id="calendar-remove-title" className="confirm-dialog-title">
+                  {pendingRemove.isRangeGroup ? 'Remove shutdown range' : 'Remove calendar exclusion'}
+                </h3>
+                <p className="confirm-dialog-message">
+                  Remove <strong>{pendingRemove.name}</strong> (
+                  {pendingRemove.isRangeGroup
+                    ? `${pendingRemove.startDate} to ${pendingRemove.endDate}`
+                    : pendingRemove.startDate}
+                  )? Future dates will revert to normal shift rules.
+                </p>
+              </div>
+            </div>
+            <div className="confirm-dialog-actions">
+              <button
+                ref={confirmCancelRef}
+                type="button"
+                className="btn btn-ghost confirm-cancel-btn"
+                disabled={isMutating}
+                onClick={() => closeConfirmRemove(true)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={isMutating}
+                onClick={confirmPendingRemove}
+              >
+                {isMutating ? 'Removing…' : 'Confirm remove'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
+
+      {pendingRemoval || snackbarNotice ? (
+        <div
+          className="action-snackbar"
+          role={pendingRemoval ? 'status' : snackbarNotice.type === 'error' ? 'alert' : 'status'}
+          aria-live={snackbarNotice?.type === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
+        >
+          {pendingRemoval ? null : snackbarNotice.type === 'error'
+            ? <AlertCircle className="action-snackbar-result-error" size={16} aria-hidden="true" />
+            : <CheckCircle2 className="action-snackbar-result-success" size={16} aria-hidden="true" />}
+          <span className="action-snackbar-message">
+            {pendingRemoval
+              ? pendingRemoval.phase === 'saving'
+                ? `Removing ${pendingRemoval.target.name}…`
+                : `Removed ${pendingRemoval.target.name} (${pendingRemoval.target.isRangeGroup ? `${pendingRemoval.target.startDate} to ${pendingRemoval.target.endDate}` : pendingRemoval.target.startDate}). Undo available for 7 seconds.`
+              : snackbarNotice.message}
+          </span>
+          {pendingRemoval ? (
+            <button
+              ref={undoButtonRef}
+              type="button"
+              className="action-snackbar-undo"
+              hidden={pendingRemoval.phase === 'saving'}
+              aria-label={`Undo remove ${pendingRemoval.target.name}`}
+              onClick={undoPendingRemoval}
+            >
+              <Undo2 size={15} aria-hidden="true" />
+              <span>Undo</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="action-snackbar-dismiss"
+              aria-label="Dismiss notification"
+              onClick={() => setSnackbarNotice(null)}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          )}
+          {pendingRemoval?.phase === 'undo' ? (
+            <span className="action-snackbar-progress" aria-hidden="true">
+              <span style={{ animationDuration: `${CALENDAR_REMOVE_UNDO_MS}ms` }} />
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   )
 }

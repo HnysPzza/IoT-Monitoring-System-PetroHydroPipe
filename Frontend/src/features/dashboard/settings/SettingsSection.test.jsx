@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import { sensorIdentities } from '../../../shared/constants/sensorIdentity.js'
 import SettingsSection from './SettingsSection.jsx'
@@ -16,6 +16,24 @@ import {
   setProductionCalendarRange,
   updateOperationalSettings,
 } from './settingsService.js'
+
+const originalShowModal = HTMLDialogElement.prototype.showModal
+const originalClose = HTMLDialogElement.prototype.close
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open')
+    this.dispatchEvent(new Event('close'))
+  }
+})
+
+afterAll(() => {
+  HTMLDialogElement.prototype.showModal = originalShowModal
+  HTMLDialogElement.prototype.close = originalClose
+})
 
 vi.mock('../../../shared/hooks/useTheme.js', () => ({
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
@@ -400,6 +418,47 @@ describe('SettingsSection operational settings', () => {
     await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
   })
 
+  it('flags only invalid break rows instead of marking valid breaks as aria-invalid', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    const break1Start = await screen.findByLabelText('Break 1 start')
+    const break2Start = screen.getByLabelText('Break 2 start')
+
+    await user.clear(break2Start)
+    await user.type(break2Start, '10:20')
+
+    expect(screen.getByText(/end time must be later than start time/i)).toBeInTheDocument()
+    expect(break2Start).toHaveAttribute('aria-invalid', 'true')
+    expect(break1Start).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('moves static explanatory prose into info popovers instead of cluttering the form inline', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    expect(await screen.findByRole('heading', { name: 'Spiral Mill 01' })).toBeInTheDocument()
+    expect(screen.queryByText(/Trigger limit sets how long missing pulses are tolerated/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Applies at shift start and after each planned break/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Selected weekdays have 0 scheduled production time/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Advance edits only/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Threshold rules information/i }))
+    expect(screen.getByRole('dialog', { name: /Threshold rules information/i })).toHaveTextContent(/Trigger limit sets how long missing pulses are tolerated/i)
+  })
+
+  it('displays the grace period beside break duration as lighter secondary text', async () => {
+    renderWithAuth(<SettingsSection />)
+
+    const breaksTable = await screen.findByRole('table', { name: 'Planned breaks table' })
+    const durationHeader = within(breaksTable).getByRole('columnheader', { name: 'Duration' })
+    expect(durationHeader).toHaveTextContent(/^Duration$/i)
+
+    const graceNotes = within(breaksTable).getAllByText('+10m grace')
+    expect(graceNotes).toHaveLength(2)
+    expect(graceNotes[0]).toHaveClass('settings-break-grace-text')
+  })
+
   it('toggles weekly rest days, tracks dirty state, and saves shiftSchedule.restDays', async () => {
     const user = userEvent.setup()
     updateOperationalSettings.mockResolvedValue({
@@ -438,37 +497,32 @@ describe('SettingsSection operational settings', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
-  it('toggles a future seeded holiday without submitting or resetting unsaved operational settings', async () => {
+  it('retains focus on the holiday row toggle across version updates without resetting unsaved settings', async () => {
     const user = userEvent.setup()
-    getProductionCalendar.mockResolvedValue({
-      entries: [
-        {
-          calendarDate: '2026-12-25',
-          name: 'Christmas Day',
-          dayType: 'holiday',
-          isWorking: false,
-          reason: null,
-          source: 'seeded',
-          groupId: null,
-          version: '1',
-          updatedBy: null,
-          updatedAt: '2026-11-16T00:00:00.000Z',
-        },
-      ],
-    })
-    setProductionCalendarDay.mockResolvedValue({
-      entry: {
+    const entriesState = [
+      {
         calendarDate: '2026-12-25',
         name: 'Christmas Day',
         dayType: 'holiday',
-        isWorking: true,
+        isWorking: false,
         reason: null,
         source: 'seeded',
         groupId: null,
+        version: '1',
+        updatedBy: null,
+        updatedAt: '2026-11-16T00:00:00.000Z',
+      },
+    ]
+    getProductionCalendar.mockImplementation(async () => ({ entries: [...entriesState] }))
+    setProductionCalendarDay.mockImplementation(async () => {
+      entriesState[0] = {
+        ...entriesState[0],
+        isWorking: true,
         version: '2',
         updatedBy: 'user-1',
         updatedAt: '2026-11-16T01:00:00.000Z',
-      },
+      }
+      return { entry: entriesState[0] }
     })
     renderWithAuth(<SettingsSection />)
 
@@ -498,12 +552,45 @@ describe('SettingsSection operational settings', () => {
         expectedVersion: '1',
       }),
     )
+    const updatedToggleButton = await screen.findByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Day off/i })
+    expect(updatedToggleButton).toHaveFocus()
     expect(updateOperationalSettings).not.toHaveBeenCalled()
     expect(trigger).toHaveValue(6)
     expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
   })
 
-  it('previews Back to work across a Sunday rest day and submits a multi-day shutdown range', async () => {
+  it('shows a loading skeleton while the production calendar query is pending and a retry button on error', async () => {
+    let resolvePending
+    getProductionCalendar
+      .mockReturnValueOnce(new Promise((resolve) => { resolvePending = resolve }))
+      .mockRejectedValueOnce(new Error('Calendar service unavailable'))
+      .mockResolvedValueOnce({ entries: [] })
+
+    renderWithAuth(<SettingsSection />)
+
+    expect(await screen.findByLabelText('Loading production calendar')).toBeInTheDocument()
+    expect(screen.queryByText(/No custom days off or shutdown ranges scheduled/i)).not.toBeInTheDocument()
+
+    await act(async () => resolvePending({ entries: [] }))
+    expect(await screen.findByText(/No custom days off or shutdown ranges scheduled/i)).toBeInTheDocument()
+  })
+
+  it('renders a retry button when loading production calendar fails and recovers on click', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar
+      .mockRejectedValueOnce(new Error('Calendar service unavailable'))
+      .mockResolvedValueOnce({ entries: [] })
+
+    renderWithAuth(<SettingsSection />)
+
+    const alert = await screen.findByText(/Calendar service unavailable/i)
+    const retryBtn = within(alert.closest('[role="alert"]')).getByRole('button', { name: /Retry/i })
+    await user.click(retryBtn)
+
+    expect(await screen.findByText(/No custom days off or shutdown ranges scheduled/i)).toBeInTheDocument()
+  })
+
+  it('previews Back to work using persisted rest days inside the Schedule exception modal and submits a multi-day range', async () => {
     const user = userEvent.setup()
     getOperationalSettings.mockResolvedValue({
       settings: settingsFixture({
@@ -520,17 +607,24 @@ describe('SettingsSection operational settings', () => {
     })
     renderWithAuth(<SettingsSection />)
 
-    const rangeRadio = await screen.findByRole('radio', { name: /Date range/i })
+    await user.click(await screen.findByRole('checkbox', { name: 'Monday' }))
+    await user.click(screen.getByRole('button', { name: /Schedule exception/i }))
+
+    const dialog = await screen.findByRole('dialog', { name: /Schedule exception/i })
+    expect(dialog).toHaveAttribute('open')
+    expect(within(dialog).getByText(/Using saved weekly rest days/i)).toBeInTheDocument()
+
+    const rangeRadio = within(dialog).getByRole('radio', { name: /Date range/i })
     await user.click(rangeRadio)
 
-    const startInput = screen.getByLabelText(/First day off/i)
-    const endInput = screen.getByLabelText(/Last day off/i)
+    const startInput = within(dialog).getByLabelText(/First day off/i)
+    const endInput = within(dialog).getByLabelText(/Last day off/i)
     fireEvent.change(startInput, { target: { value: '2026-12-23' } })
     fireEvent.change(endInput, { target: { value: '2027-01-02' } })
 
-    expect(screen.getByText(/Back to work:\s*Mon, Jan 4, 2027/i)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Back to work:\s*Mon, Jan 4, 2027/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /Save calendar range|Add to calendar/i }))
+    await user.click(within(dialog).getByRole('button', { name: /Add to calendar/i }))
     await waitFor(() => expect(setProductionCalendarRange).toHaveBeenCalledTimes(1))
     expect(setProductionCalendarRange).toHaveBeenCalledWith(
       'test-token',
@@ -583,7 +677,7 @@ describe('SettingsSection operational settings', () => {
     expect(pastHolidayToggle).toBeDisabled()
   })
 
-  it('displays feedback that only remaining future dates were removed when deleting a partially elapsed range', async () => {
+  it('groups multi-day range entries into one row and requires confirmation before removing', async () => {
     const user = userEvent.setup()
     getProductionCalendar.mockResolvedValue({
       entries: [
@@ -626,31 +720,179 @@ describe('SettingsSection operational settings', () => {
     })
     renderWithAuth(<SettingsSection />)
 
-    const removeRangeBtn = await screen.findByRole('button', { name: /Remove range Holiday Shutdown \(2027-01-03\)/i })
-    await user.click(removeRangeBtn)
+    const exclusionsTable = await screen.findByRole('table', { name: 'Scheduled production calendar exclusions' })
+    expect(within(exclusionsTable).getAllByText('Holiday Shutdown')).toHaveLength(1)
 
-    await waitFor(() => expect(removeProductionCalendarRange).toHaveBeenCalledWith('test-token', machine.id, 'group-partial-1'))
-    expect(await screen.findByText(/only remaining future dates were removed/i)).toBeInTheDocument()
+    const removeRangeBtn = within(exclusionsTable).getByRole('button', { name: /Remove range Holiday Shutdown/i })
+    await user.click(removeRangeBtn)
+    expect(removeProductionCalendarRange).not.toHaveBeenCalled()
+
+    const confirmDialog = await screen.findByRole('dialog', { name: /Remove shutdown range/i })
+    expect(confirmDialog).toHaveClass('confirm-dialog')
+    expect(confirmDialog.querySelector('.confirm-dialog-icon.danger')).not.toBeNull()
+    expect(confirmDialog.querySelector('.confirm-dialog-actions')).not.toBeNull()
+    const cancelBtn = within(confirmDialog).getByRole('button', { name: /Cancel/i })
+    const removeConfirmBtn = within(confirmDialog).getByRole('button', { name: /Confirm remove/i })
+    expect(cancelBtn).toHaveClass('confirm-cancel-btn')
+    expect(removeConfirmBtn).toHaveClass('btn-danger')
+    await user.click(cancelBtn)
+    expect(removeProductionCalendarRange).not.toHaveBeenCalled()
+
+    await user.click(removeRangeBtn)
+    const confirmDialogRetry = await screen.findByRole('dialog', { name: /Remove shutdown range/i })
+
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+
+      await act(async () => {
+        fireEvent.click(within(confirmDialogRetry).getByRole('button', { name: /Confirm remove/i }))
+      })
+
+      expect(within(exclusionsTable).queryByText('Holiday Shutdown')).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent(/Undo available for 7 seconds/i)
+      expect(screen.getByRole('button', { name: /Undo remove Holiday Shutdown/i })).toHaveFocus()
+      expect(removeProductionCalendarRange).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(7000)
+      })
+
+      expect(removeProductionCalendarRange).toHaveBeenCalledWith('test-token', machine.id, 'group-partial-1')
+      expect(screen.getByText(/only remaining future dates were removed/i)).toBeInTheDocument()
+    } finally {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+    }
   })
 
-  it('validates that Machine not scheduled requires a non-empty reason before calling the API', async () => {
+  it('optimistically removes a calendar entry and restores it when Undo is clicked within 7 seconds', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2026-12-20',
+          name: 'Maintenance Day',
+          dayType: 'day_off',
+          isWorking: false,
+          reason: null,
+          source: 'manual',
+          groupId: null,
+          version: '1',
+          updatedBy: 'user-1',
+          updatedAt: '2026-11-16T00:00:00.000Z',
+        },
+      ],
+    })
+    renderWithAuth(<SettingsSection />)
+
+    const exclusionsTable = await screen.findByRole('table', { name: 'Scheduled production calendar exclusions' })
+    const removeBtn = within(exclusionsTable).getByRole('button', { name: /Remove Maintenance Day \(2026-12-20\)/i })
+    await user.click(removeBtn)
+
+    const confirmDialog = await screen.findByRole('dialog', { name: /Remove calendar exclusion/i })
+
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+
+      await act(async () => {
+        fireEvent.click(within(confirmDialog).getByRole('button', { name: /Confirm remove/i }))
+      })
+
+      expect(screen.getByText('No custom days off or shutdown ranges scheduled.')).toBeInTheDocument()
+      const undoBtn = screen.getByRole('button', { name: /Undo remove Maintenance Day/i })
+      expect(undoBtn).toHaveFocus()
+      expect(removeProductionCalendarDay).not.toHaveBeenCalled()
+
+      await act(async () => {
+        fireEvent.click(undoBtn)
+      })
+
+      const restoredTable = screen.getByRole('table', { name: 'Scheduled production calendar exclusions' })
+      expect(within(restoredTable).getByText('Maintenance Day')).toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(7000)
+      })
+      expect(removeProductionCalendarDay).not.toHaveBeenCalled()
+    } finally {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+    }
+  })
+
+  it('restores a removed calendar entry and shows an alert if delayed deletion fails after 7 seconds', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2026-12-20',
+          name: 'Maintenance Day',
+          dayType: 'day_off',
+          isWorking: false,
+          reason: null,
+          source: 'manual',
+          groupId: null,
+          version: '1',
+          updatedBy: 'user-1',
+          updatedAt: '2026-11-16T00:00:00.000Z',
+        },
+      ],
+    })
+    removeProductionCalendarDay.mockRejectedValueOnce(new Error('Network delete failed'))
+    renderWithAuth(<SettingsSection />)
+
+    const exclusionsTable = await screen.findByRole('table', { name: 'Scheduled production calendar exclusions' })
+    await user.click(within(exclusionsTable).getByRole('button', { name: /Remove Maintenance Day \(2026-12-20\)/i }))
+    const confirmDialog = await screen.findByRole('dialog', { name: /Remove calendar exclusion/i })
+
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+
+      await act(async () => {
+        fireEvent.click(within(confirmDialog).getByRole('button', { name: /Confirm remove/i }))
+      })
+
+      expect(screen.getByText('No custom days off or shutdown ranges scheduled.')).toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(7000)
+      })
+
+      expect(removeProductionCalendarDay).toHaveBeenCalledWith('test-token', machine.id, '2026-12-20')
+      const restoredTable = screen.getByRole('table', { name: 'Scheduled production calendar exclusions' })
+      expect(within(restoredTable).getByText('Maintenance Day')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(/Network delete failed/i)
+    } finally {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-16T10:00:00+08:00'))
+    }
+  })
+
+  it('validates that Machine not scheduled requires a non-empty reason inside custom-select-wrap before calling the API', async () => {
     const user = userEvent.setup()
     renderWithAuth(<SettingsSection />)
 
-    const dayTypeSelect = await screen.findByLabelText(/Exclusion type/i)
+    await user.click(await screen.findByRole('button', { name: /Schedule exception/i }))
+    const dialog = await screen.findByRole('dialog', { name: /Schedule exception/i })
+
+    const dayTypeSelect = within(dialog).getByLabelText(/Exclusion type/i)
+    expect(dayTypeSelect.closest('.custom-select-wrap')).not.toBeNull()
     await user.selectOptions(dayTypeSelect, 'machine_not_scheduled')
 
-    const dateInput = screen.getByLabelText('Exclusion date')
+    const dateInput = within(dialog).getByLabelText('Exclusion date')
     fireEvent.change(dateInput, { target: { value: '2026-12-20' } })
 
-    await user.click(screen.getByRole('button', { name: /Add to calendar/i }))
+    await user.click(within(dialog).getByRole('button', { name: /Add to calendar/i }))
 
-    expect(await screen.findByText(/reason is required/i)).toBeInTheDocument()
+    expect(await within(dialog).findByText(/reason is required/i)).toBeInTheDocument()
     expect(setProductionCalendarDay).not.toHaveBeenCalled()
     expect(setProductionCalendarRange).not.toHaveBeenCalled()
   })
 
-  it('prompts for confirmation with conflictingDates on 409 and retries with confirmOverwrite: true when confirmed', async () => {
+  it('prompts for overwrite confirmation inside the dialog with conflictingDates on 409 and retries with confirmOverwrite: true', async () => {
     const user = userEvent.setup()
     const conflictError = Object.assign(new Error('Manual entries exist'), {
       status: 409,
@@ -663,16 +905,19 @@ describe('SettingsSection operational settings', () => {
 
     renderWithAuth(<SettingsSection />)
 
-    await user.click(await screen.findByRole('radio', { name: /Date range/i }))
-    fireEvent.change(screen.getByLabelText(/First day off/i), { target: { value: '2026-12-23' } })
-    fireEvent.change(screen.getByLabelText(/Last day off/i), { target: { value: '2027-01-02' } })
-    await user.click(screen.getByRole('button', { name: /Add to calendar/i }))
+    await user.click(await screen.findByRole('button', { name: /Schedule exception/i }))
+    const dialog = await screen.findByRole('dialog', { name: /Schedule exception/i })
+
+    await user.click(within(dialog).getByRole('radio', { name: /Date range/i }))
+    fireEvent.change(within(dialog).getByLabelText(/First day off/i), { target: { value: '2026-12-23' } })
+    fireEvent.change(within(dialog).getByLabelText(/Last day off/i), { target: { value: '2027-01-02' } })
+    await user.click(within(dialog).getByRole('button', { name: /Add to calendar/i }))
 
     await waitFor(() => expect(setProductionCalendarRange).toHaveBeenCalledTimes(1))
     expect(setProductionCalendarRange.mock.calls[0][2].confirmOverwrite).toBeFalsy()
 
-    expect(await screen.findByText(/2026-12-28/)).toBeInTheDocument()
-    const confirmBtn = screen.getByRole('button', { name: /Confirm overwrite/i })
+    expect(await within(dialog).findByText(/2026-12-28/)).toBeInTheDocument()
+    const confirmBtn = within(dialog).getByRole('button', { name: /Confirm overwrite/i })
     await user.click(confirmBtn)
 
     await waitFor(() => expect(setProductionCalendarRange).toHaveBeenCalledTimes(2))
@@ -709,13 +954,15 @@ describe('SettingsSection operational settings', () => {
       },
     })
 
+    const scheduleTrigger = await screen.findByRole('button', { name: /Schedule exception/i })
+    expect(scheduleTrigger).toBeDisabled()
+
     const showHolidaysBtn = await screen.findByRole('button', { name: /Show holidays/i })
     expect(showHolidaysBtn).toBeEnabled()
     expect(showHolidaysBtn).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(showHolidaysBtn)
     expect(await screen.findByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Add to calendar/i })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: /Hide holidays/i }))
     expect(screen.queryByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).not.toBeInTheDocument()
