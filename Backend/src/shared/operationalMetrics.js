@@ -3,6 +3,7 @@ const {
   getEligibleSeconds,
   getUnionedDowntimeSeconds,
   intersectIntervals,
+  isEligibleAt,
 } = require('./operationalTime')
 
 function toMinutes(seconds) {
@@ -49,14 +50,54 @@ function getRecordsSpan(records, asOf) {
   return { start: new Date(startMs), end: new Date(Math.max(endMs, startMs + 1000)) }
 }
 
-function calculateRecordMetrics({ record, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
-  const breakdown = calculateDowntimeBreakdown({
-    record,
-    windowStart: window.start,
-    windowEnd: window.end,
-    settingsHistory,
-    asOf,
-  })
+function getRecordStartedAt(record) {
+  return record?.startedAt === undefined ? record?.started_at : record.startedAt
+}
+
+function getRecordEndedAt(record, asOf) {
+  const endedAt = record?.endedAt === undefined ? record?.ended_at : record.endedAt
+  return endedAt == null ? asOf : endedAt
+}
+
+function calculateRecordMetrics({
+  record,
+  window,
+  settingsHistory,
+  calendarDays,
+  asOf = new Date(),
+  lossRatePiecesPerMinute,
+}) {
+  if (!window || !settingsHistory) {
+    return {
+      durationSeconds: 0,
+      unplannedSeconds: 0,
+      plannedExcludedSeconds: 0,
+      durationMinutes: 0,
+      unplannedMinutes: 0,
+      plannedExcludedMinutes: 0,
+      estimatedLoss: 0,
+      outsideSchedule: false,
+    }
+  }
+
+  const startedAt = getRecordStartedAt(record)
+  const endedAt = getRecordEndedAt(record, asOf)
+  const startMs = new Date(startedAt).getTime()
+  const endMs = new Date(endedAt).getTime()
+  const breakdown = startMs === endMs
+    ? { durationSeconds: 0, unplannedSeconds: 0, plannedExcludedSeconds: 0 }
+    : calculateDowntimeBreakdown({
+      record,
+      windowStart: window.start,
+      windowEnd: window.end,
+      settingsHistory,
+      calendarDays,
+      asOf,
+    })
+  const inWindow = startMs >= window.start.getTime() && startMs < window.end.getTime()
+  const outsideSchedule = breakdown.durationSeconds > 0
+    ? breakdown.unplannedSeconds === 0
+    : inWindow && !isEligibleAt({ at: startedAt, settingsHistory, calendarDays })
 
   return {
     durationSeconds: breakdown.durationSeconds,
@@ -66,20 +107,23 @@ function calculateRecordMetrics({ record, window, settingsHistory, asOf, lossRat
     unplannedMinutes: toMinutes(breakdown.unplannedSeconds),
     plannedExcludedMinutes: toMinutes(breakdown.plannedExcludedSeconds),
     estimatedLoss: calculateEstimatedLoss(breakdown.unplannedSeconds, lossRatePiecesPerMinute),
+    outsideSchedule,
   }
 }
 
-function calculateMachineMetrics({ records, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
+function calculateMachineMetrics({ records, window, settingsHistory, calendarDays, asOf, lossRatePiecesPerMinute }) {
   const scheduledEligibleSeconds = getEligibleSeconds({
     start: window.start,
     end: window.end,
     settingsHistory,
+    calendarDays,
   })
   const downtime = getUnionedDowntimeSeconds({
     records,
     windowStart: window.start,
     windowEnd: window.end,
     settingsHistory,
+    calendarDays,
     asOf,
   })
   const availableEligibleSeconds = Math.max(0, scheduledEligibleSeconds - downtime.unplannedSeconds)
@@ -113,7 +157,7 @@ function getAttribution(record) {
   }
 }
 
-function attributeMachineDowntime({ records, window, settingsHistory, asOf, lossRatePiecesPerMinute }) {
+function attributeMachineDowntime({ records, window, settingsHistory, calendarDays, asOf, lossRatePiecesPerMinute }) {
   const clipped = records.map((record) => {
     const interval = toRecordInterval(record, asOf)
     const overlap = interval && intersectIntervals(interval, window)
@@ -139,7 +183,7 @@ function attributeMachineDowntime({ records, window, settingsHistory, asOf, loss
       : getAttribution(active[0].record)
     const key = `${attribution.cause}:${attribution.sensor}`
     const durationSeconds = Math.floor((segment.end - segment.start) / 1000)
-    const unplannedSeconds = getEligibleSeconds({ ...segment, settingsHistory })
+    const unplannedSeconds = getEligibleSeconds({ ...segment, settingsHistory, calendarDays })
     const current = grouped.get(key) || {
       ...attribution,
       eventIds: new Set(),
