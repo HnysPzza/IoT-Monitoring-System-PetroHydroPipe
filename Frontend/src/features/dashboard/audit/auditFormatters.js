@@ -37,6 +37,9 @@ const actionLabels = {
   PRODUCTION_SPEC_UPDATED: 'Pipe spec updated',
   PRODUCTION_SPEC_BATCH_UPDATED: 'Pipe specs batch updated',
   SETTINGS_UPDATED: 'Operational settings updated',
+  PRODUCTION_CALENDAR_DAY_SET: 'Production calendar day updated',
+  PRODUCTION_CALENDAR_RANGE_SET: 'Production calendar range scheduled',
+  PRODUCTION_CALENDAR_ENTRY_REMOVED: 'Production calendar entry removed',
   REPORT_EXPORTED: 'Report exported',
 }
 
@@ -81,7 +84,15 @@ const ACTION_GROUP_DEFINITIONS = [
   },
   {
     label: 'Production & settings',
-    actions: ['PRODUCTION_SPEC_UPDATED', 'PRODUCTION_SPEC_BATCH_UPDATED', 'SETTINGS_UPDATED', 'REPORT_EXPORTED'],
+    actions: [
+      'PRODUCTION_SPEC_UPDATED',
+      'PRODUCTION_SPEC_BATCH_UPDATED',
+      'SETTINGS_UPDATED',
+      'PRODUCTION_CALENDAR_DAY_SET',
+      'PRODUCTION_CALENDAR_RANGE_SET',
+      'PRODUCTION_CALENDAR_ENTRY_REMOVED',
+      'REPORT_EXPORTED',
+    ],
   },
 ]
 
@@ -119,6 +130,9 @@ const ACTION_ALLOWED_ENTITIES = {
   PRODUCTION_SPEC_UPDATED: new Set(['sensor_event']),
   PRODUCTION_SPEC_BATCH_UPDATED: new Set(['sensor_event']),
   SETTINGS_UPDATED: new Set(['machine_settings']),
+  PRODUCTION_CALENDAR_DAY_SET: new Set(['production_calendar']),
+  PRODUCTION_CALENDAR_RANGE_SET: new Set(['production_calendar']),
+  PRODUCTION_CALENDAR_ENTRY_REMOVED: new Set(['production_calendar']),
   REPORT_EXPORTED: new Set(['report']),
 }
 
@@ -147,6 +161,7 @@ const entityLabels = {
   user: 'User account',
   machine: 'Machine',
   machine_settings: 'Operational settings',
+  production_calendar: 'Production Calendar',
   sensor: 'Sensor',
   sensor_connectivity: 'Sensor connectivity',
   iot_device: 'Sensor device',
@@ -302,7 +317,11 @@ export function getReadableTarget(log) {
     return log.targetUser?.username || log.metadata?.targetUsername || 'User account'
   }
 
-  if (log.entityType === 'machine' || log.entityType === 'machine_settings') {
+  if (
+    log.entityType === 'machine'
+    || log.entityType === 'machine_settings'
+    || log.entityType === 'production_calendar'
+  ) {
     return getMachineName(log)
   }
 
@@ -332,6 +351,111 @@ export function getReadableTarget(log) {
 const settingsSectionLabels = {
   sensorThresholds: 'sensor thresholds',
   shiftSchedule: 'shift schedule',
+}
+
+const calendarDayTypeLabels = {
+  holiday: 'Holiday',
+  day_off: 'Day off',
+  machine_not_scheduled: 'Machine not scheduled',
+}
+
+function formatCalendarDayType(dayType) {
+  if (!dayType) {
+    return 'Day off'
+  }
+  return Object.hasOwn(calendarDayTypeLabels, dayType)
+    ? calendarDayTypeLabels[dayType]
+    : cleanCode(dayType)
+}
+
+function formatCalendarHolidayList(holidays, fallbackDates) {
+  if (Array.isArray(holidays) && holidays.length > 0) {
+    return holidays
+      .map((holiday) => {
+        if (typeof holiday === 'string') return holiday
+        if (!holiday || typeof holiday !== 'object') return null
+        if (holiday.name && holiday.calendarDate) {
+          return `${holiday.name} (${holiday.calendarDate})`
+        }
+        return holiday.name || holiday.calendarDate || null
+      })
+      .filter(Boolean)
+      .join(', ')
+  }
+  if (Array.isArray(fallbackDates) && fallbackDates.length > 0) {
+    return fallbackDates.filter(Boolean).join(', ')
+  }
+  return ''
+}
+
+function formatCalendarDaySetDetails(metadata) {
+  const typeLabel = formatCalendarDayType(metadata.dayType)
+  const entryName = metadata.name || typeLabel
+  const datePart = metadata.calendarDate ? ` (${metadata.calendarDate})` : ''
+  const reasonSuffix = metadata.reason ? ` Reason: ${metadata.reason}.` : ''
+
+  if (metadata.dayType === 'holiday') {
+    const statusLabel = metadata.isWorking ? 'Working' : 'Day off'
+    return `Set ${entryName}${datePart} to ${statusLabel} (Holiday).${reasonSuffix}`
+  }
+
+  if (metadata.dayType === 'machine_not_scheduled') {
+    return `Set ${entryName}${datePart} as Machine not scheduled (Day off).${reasonSuffix}`
+  }
+
+  return `Set ${entryName}${datePart} as ${typeLabel}.${reasonSuffix}`
+}
+
+function formatCalendarRangeSetDetails(metadata) {
+  const entryName = metadata.name || 'Shutdown range'
+  const typeLabel = formatCalendarDayType(metadata.dayType)
+  const spanCount = Number(metadata.dayCount)
+  const countPart = Number.isFinite(spanCount) && spanCount > 0
+    ? ` (${spanCount} ${spanCount === 1 ? 'day' : 'days'})`
+    : ''
+  const rangePart = metadata.startDate && metadata.endDate
+    ? ` from ${metadata.startDate} to ${metadata.endDate}`
+    : ''
+  const reasonSuffix = metadata.reason ? ` Reason: ${metadata.reason}.` : ''
+  const replacedList = formatCalendarHolidayList(metadata.replacedHolidays, metadata.replacedDates)
+  const replacedSuffix = replacedList ? ` Replaced holidays: ${replacedList}.` : ''
+
+  return `Scheduled ${entryName} (${typeLabel})${rangePart}${countPart}.${reasonSuffix}${replacedSuffix}`
+}
+
+function formatCalendarEntryRemovedDetails(metadata) {
+  const removedDates = Array.isArray(metadata.removedDates) ? metadata.removedDates.filter(Boolean) : []
+  const lockedDates = Array.isArray(metadata.lockedDates) ? metadata.lockedDates.filter(Boolean) : []
+  const restoredList = formatCalendarHolidayList(metadata.restoredHolidays, metadata.restoredDates)
+  const restoredSuffix = restoredList ? ` Restored holidays: ${restoredList}.` : ''
+  const isRange = metadata.mode === 'range' || removedDates.length > 1 || Boolean(metadata.groupId)
+
+  if (isRange) {
+    const entryName = metadata.name || metadata.previous?.name || 'calendar range'
+    const dayType = metadata.dayType || metadata.previous?.dayType
+    const typePart = dayType ? ` (${formatCalendarDayType(dayType)})` : ''
+    const removedCount = Number(metadata.removedCount) || removedDates.length
+    const spanPart = removedDates.length > 1
+      ? ` from ${removedDates[0]} to ${removedDates[removedDates.length - 1]} (${removedCount} days)`
+      : removedDates.length === 1
+        ? ` on ${removedDates[0]}`
+        : removedCount > 0
+          ? ` (${removedCount} ${removedCount === 1 ? 'day' : 'days'})`
+          : ''
+    const lockedSuffix = lockedDates.length > 0
+      ? ` Kept ${lockedDates.length} elapsed ${lockedDates.length === 1 ? 'date' : 'dates'} locked.`
+      : ''
+
+    return `Removed ${entryName}${typePart}${spanPart}.${lockedSuffix}${restoredSuffix}`
+  }
+
+  const entryName = metadata.previous?.name || metadata.name || 'calendar entry'
+  const dayType = metadata.previous?.dayType || metadata.dayType
+  const typePart = dayType ? ` (${formatCalendarDayType(dayType)})` : ''
+  const dateText = metadata.calendarDate || removedDates[0] || ''
+  const datePart = dateText ? ` on ${dateText}` : ''
+
+  return `Removed ${entryName}${typePart}${datePart}.${restoredSuffix}`
 }
 
 function formatSettingsSections(changedSections) {
@@ -415,6 +539,12 @@ export function getReadableDetails(log) {
       return `${sensor} was manually recovered. ${getMachineName(log)} was recalculated to ${metadata.newMachineStatus || 'its derived status'}.`
     case 'SETTINGS_UPDATED':
       return `Updated ${formatSettingsSections(metadata.changedSections)}.`
+    case 'PRODUCTION_CALENDAR_DAY_SET':
+      return formatCalendarDaySetDetails(metadata)
+    case 'PRODUCTION_CALENDAR_RANGE_SET':
+      return formatCalendarRangeSetDetails(metadata)
+    case 'PRODUCTION_CALENDAR_ENTRY_REMOVED':
+      return formatCalendarEntryRemovedDetails(metadata)
     case 'PRODUCTION_SPEC_UPDATED': {
       const labelSuffix = metadata.label ? ` (${metadata.label})` : ''
       return `${sensor} production spec${labelSuffix} was updated.`
@@ -504,6 +634,26 @@ function getExtraDetailItems(log) {
   }
   if (log.action === 'SETTINGS_UPDATED' && Array.isArray(metadata.changedSections) && metadata.changedSections.length > 0) {
     return [{ label: 'Updated sections', value: formatSettingsSections(metadata.changedSections), fullWidth: true }]
+  }
+  if (
+    log.action === 'PRODUCTION_CALENDAR_DAY_SET'
+    || log.action === 'PRODUCTION_CALENDAR_RANGE_SET'
+    || log.action === 'PRODUCTION_CALENDAR_ENTRY_REMOVED'
+  ) {
+    const items = []
+    const reason = metadata.reason || metadata.previous?.reason
+    if (reason) {
+      items.push({ label: 'Reason', value: reason, fullWidth: true })
+    }
+    const replacedList = formatCalendarHolidayList(metadata.replacedHolidays, metadata.replacedDates)
+    if (replacedList) {
+      items.push({ label: 'Replaced holidays', value: replacedList, fullWidth: true })
+    }
+    const restoredList = formatCalendarHolidayList(metadata.restoredHolidays, metadata.restoredDates)
+    if (restoredList) {
+      items.push({ label: 'Restored holidays', value: restoredList, fullWidth: true })
+    }
+    return items
   }
   return []
 }

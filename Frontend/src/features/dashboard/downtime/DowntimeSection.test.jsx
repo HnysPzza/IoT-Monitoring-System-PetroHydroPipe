@@ -541,4 +541,69 @@ describe('DowntimeSection', () => {
       expect(updateDowntimeRecord).toHaveBeenCalledWith('test-token', 'editable-1', { cause: 'Misalignment' })
     })
   })
+
+  it('renders the Outside schedule badge and detail explanation when a fault occurs outside scheduled production time', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [
+        downtimeRecord({
+          id: 'sunday-fault-1',
+          displayLabel: 'S-03 10:00 AM',
+          startedAt: '2026-11-22T02:00:00.000Z',
+          endedAt: '2026-11-22T02:45:00.000Z',
+          durationMinutes: 45,
+          unplannedMinutes: 0,
+          plannedExcludedMinutes: 45,
+          estimatedLoss: 0,
+          outsideSchedule: true,
+          status: 'Resolved',
+          isOpen: false,
+        }),
+      ],
+      summary: { open: 0, resolved: 1, minutes: 45, loss: 0 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+
+    expect(await screen.findByText('S-03 10:00 AM')).toBeInTheDocument()
+    const outsideBadge = screen.getByText('Outside schedule')
+    expect(outsideBadge.closest('.status')).toHaveClass('status-offline')
+
+    await user.click(screen.getByRole('button', { name: 'View details' }))
+    expect(screen.getByText('Schedule status')).toBeInTheDocument()
+    expect(
+      screen.getByText(/occurred outside scheduled production time.*unplanned downtime is 0 min.*estimated loss is 0 pcs/i),
+    ).toBeInTheDocument()
+  })
+
+  it('does not render the Outside schedule badge for a short working-hour downtime event that rounds to zero minutes', async () => {
+    const user = userEvent.setup()
+    getDowntimeRecords.mockResolvedValue({
+      records: [
+        downtimeRecord({
+          id: 'short-working-fault-1',
+          displayLabel: 'S-03 09:00 AM',
+          startedAt: '2026-11-23T01:00:00.000Z',
+          endedAt: null,
+          durationMinutes: 0,
+          unplannedMinutes: 0,
+          plannedExcludedMinutes: 0,
+          estimatedLoss: 0,
+          outsideSchedule: false,
+          status: 'Open',
+          isOpen: true,
+        }),
+      ],
+      summary: { open: 1, resolved: 0, minutes: 0, loss: 0 },
+    })
+
+    renderWithAuth(<DowntimeSection />)
+
+    expect(await screen.findByText('S-03 09:00 AM')).toBeInTheDocument()
+    expect(screen.queryByText('Outside schedule')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'View details' }))
+    expect(screen.queryByText('Schedule status')).not.toBeInTheDocument()
+    expect(screen.queryByText(/occurred outside scheduled production time/i)).not.toBeInTheDocument()
+  })
 })

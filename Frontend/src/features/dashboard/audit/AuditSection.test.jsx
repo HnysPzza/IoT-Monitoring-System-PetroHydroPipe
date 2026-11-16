@@ -57,6 +57,9 @@ describe('AuditSection', () => {
     const newBackendActions = [
       ['REFRESH_TOKEN_REUSED', 'auth', {}],
       ['SETTINGS_UPDATED', 'machine_settings', { changedSections: ['sensorThresholds'] }],
+      ['PRODUCTION_CALENDAR_DAY_SET', 'production_calendar', { calendarDate: '2026-12-25', name: 'Christmas Day', dayType: 'holiday', isWorking: true }],
+      ['PRODUCTION_CALENDAR_RANGE_SET', 'production_calendar', { startDate: '2026-12-23', endDate: '2027-01-03', dayCount: 12, name: 'Christmas Shutdown', dayType: 'day_off' }],
+      ['PRODUCTION_CALENDAR_ENTRY_REMOVED', 'production_calendar', { mode: 'single', calendarDate: '2026-12-24', previous: { name: 'Plant Cleaning', dayType: 'day_off' } }],
       ['PRODUCTION_SPEC_UPDATED', 'sensor_event', { sensorCode: 'S-05', label: 'Pipe A' }],
       ['PRODUCTION_SPEC_BATCH_UPDATED', 'sensor_event', { sensorCode: 'S-05', matchedCount: 4, updatedCount: 3 }],
       ['REPORT_EXPORTED', 'report', { reportCategory: 'production', format: 'pdf' }],
@@ -86,7 +89,7 @@ describe('AuditSection', () => {
       expect(groupedValues.has(removed)).toBe(false)
     }
 
-    for (const entityType of ['machine_settings', 'report', 'sensor_connectivity']) {
+    for (const entityType of ['machine_settings', 'production_calendar', 'report', 'sensor_connectivity']) {
       expect(auditEntityOptions.some((option) => option.value === entityType)).toBe(true)
     }
 
@@ -95,6 +98,8 @@ describe('AuditSection', () => {
     expect(getReadableTarget({ entityType: 'downtime', metadata: { ownerSensorCode: 'S-03' } }))
       .toContain('S-03')
     expect(getReadableTarget({ entityType: 'machine_settings', metadata: { machineName: 'Spiral Mill 01' } }))
+      .toBe('Spiral Mill 01')
+    expect(getReadableTarget({ entityType: 'production_calendar', metadata: { machineName: 'Spiral Mill 01' } }))
       .toBe('Spiral Mill 01')
 
     const createdAdmin = {
@@ -666,5 +671,192 @@ describe('AuditSection', () => {
       expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
       expect(screen.getByRole('button', { name: 'Refresh audit log' })).toHaveAttribute('title', 'Offline — reconnect to refresh')
     })
+  })
+
+  it('formats production calendar day, range, and removal audit entries in AuditSection', async () => {
+    const user = userEvent.setup()
+
+    const holidayWorkingLog = {
+      id: 'cal-1',
+      action: 'PRODUCTION_CALENDAR_DAY_SET',
+      entityType: 'production_calendar',
+      entityId: 'machine-1',
+      createdAt: '2026-11-16T02:00:00.000Z',
+      actor: { username: 'admin', role: 'Admin' },
+      metadata: {
+        calendarDate: '2026-12-25',
+        name: 'Christmas Day',
+        dayType: 'holiday',
+        isWorking: true,
+        reason: null,
+        source: 'seeded',
+        version: '2',
+      },
+    }
+
+    const manualDayOffLog = {
+      id: 'cal-2a',
+      action: 'PRODUCTION_CALENDAR_DAY_SET',
+      entityType: 'production_calendar',
+      entityId: 'machine-1',
+      createdAt: '2026-11-16T02:02:00.000Z',
+      actor: { username: 'admin', role: 'Admin' },
+      metadata: {
+        calendarDate: '2026-11-19',
+        name: 'Plant Inventory',
+        dayType: 'day_off',
+        isWorking: false,
+        reason: null,
+        source: 'manual',
+        version: '1',
+      },
+    }
+
+    const unscheduledDayLog = {
+      id: 'cal-2',
+      action: 'PRODUCTION_CALENDAR_DAY_SET',
+      entityType: 'production_calendar',
+      entityId: 'machine-1',
+      createdAt: '2026-11-16T02:05:00.000Z',
+      actor: { username: 'admin', role: 'Admin' },
+      metadata: {
+        calendarDate: '2026-11-20',
+        name: 'Spiral Mill Idle',
+        dayType: 'machine_not_scheduled',
+        isWorking: false,
+        reason: 'No orders',
+        source: 'manual',
+        version: '1',
+      },
+    }
+
+    const shutdownRangeLog = {
+      id: 'cal-3',
+      action: 'PRODUCTION_CALENDAR_RANGE_SET',
+      entityType: 'production_calendar',
+      entityId: 'machine-1',
+      createdAt: '2026-11-16T02:10:00.000Z',
+      actor: { username: 'admin', role: 'Admin' },
+      metadata: {
+        groupId: 'group-123',
+        startDate: '2026-12-23',
+        endDate: '2027-01-03',
+        dayCount: 12,
+        name: 'Christmas Shutdown',
+        dayType: 'day_off',
+        isWorking: false,
+        reason: null,
+        confirmOverwrite: false,
+        replacedDates: ['2026-12-24', '2026-12-25'],
+        replacedHolidays: [
+          { calendarDate: '2026-12-24', name: 'Christmas Eve', dayType: 'holiday', isWorking: false, source: 'seeded' },
+          { calendarDate: '2026-12-25', name: 'Christmas Day', dayType: 'holiday', isWorking: false, source: 'seeded' },
+        ],
+      },
+    }
+
+    const singleRemovalLog = {
+      id: 'cal-3b',
+      action: 'PRODUCTION_CALENDAR_ENTRY_REMOVED',
+      entityType: 'production_calendar',
+      entityId: 'machine-1',
+      createdAt: '2026-12-20T02:00:00.000Z',
+      actor: { username: 'admin', role: 'Admin' },
+      metadata: {
+        mode: 'single',
+        calendarDate: '2026-12-24',
+        removedCount: 1,
+        removedDates: ['2026-12-24'],
+        lockedDates: [],
+        previous: {
+          name: 'Plant Cleaning',
+          dayType: 'day_off',
+          isWorking: false,
+          reason: null,
+          groupId: null,
+          version: '2',
+        },
+        restoredDates: ['2026-12-24'],
+        restoredHolidays: [
+          { calendarDate: '2026-12-24', name: 'Christmas Eve', dayType: 'holiday', isWorking: false, source: 'seeded', version: 3 },
+        ],
+      },
+    }
+
+    const rangeRemovalLog = {
+      id: 'cal-4',
+      action: 'PRODUCTION_CALENDAR_ENTRY_REMOVED',
+      entityType: 'production_calendar',
+      entityId: 'machine-1',
+      createdAt: '2026-12-29T02:00:00.000Z',
+      actor: { username: 'admin', role: 'Admin' },
+      metadata: {
+        mode: 'range',
+        groupId: 'group-123',
+        name: 'Christmas Shutdown',
+        dayType: 'day_off',
+        reason: null,
+        removedCount: 5,
+        removedDates: ['2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02', '2027-01-03'],
+        lockedDates: ['2026-12-23', '2026-12-24', '2026-12-25', '2026-12-26', '2026-12-27', '2026-12-28', '2026-12-29'],
+        restoredDates: ['2026-12-30', '2026-12-31', '2027-01-01'],
+        restoredHolidays: [
+          { calendarDate: '2026-12-30', name: 'Rizal Day', dayType: 'holiday', isWorking: false, source: 'seeded', version: 1 },
+          { calendarDate: '2026-12-31', name: 'Last Day of the Year', dayType: 'holiday', isWorking: false, source: 'seeded', version: 1 },
+          { calendarDate: '2027-01-01', name: "New Year's Day", dayType: 'holiday', isWorking: false, source: 'seeded', version: 1 },
+        ],
+      },
+    }
+
+    expect(getReadableEntity(holidayWorkingLog)).toBe('Production Calendar')
+    expect(isEntityAllowedForAction('PRODUCTION_CALENDAR_DAY_SET', 'production_calendar')).toBe(true)
+    expect(isEntityAllowedForAction('PRODUCTION_CALENDAR_DAY_SET', 'auth')).toBe(false)
+    expect(isEntityAllowedForAction('PRODUCTION_CALENDAR_RANGE_SET', 'production_calendar')).toBe(true)
+    expect(isEntityAllowedForAction('PRODUCTION_CALENDAR_ENTRY_REMOVED', 'production_calendar')).toBe(true)
+
+    expect(getReadableDetails(holidayWorkingLog)).toContain('Christmas Day')
+    expect(getReadableDetails(holidayWorkingLog)).toContain('2026-12-25')
+    expect(getReadableDetails(holidayWorkingLog)).toContain('Working')
+
+    expect(getReadableDetails(manualDayOffLog)).toContain('Plant Inventory')
+    expect(getReadableDetails(manualDayOffLog)).toContain('2026-11-19')
+    expect(getReadableDetails(manualDayOffLog)).toContain('Day off')
+
+    expect(getReadableDetails(unscheduledDayLog)).toContain('Spiral Mill Idle')
+    expect(getReadableDetails(unscheduledDayLog)).toContain('2026-11-20')
+    expect(getReadableDetails(unscheduledDayLog)).toContain('Machine not scheduled')
+    expect(getReadableDetails(unscheduledDayLog)).toContain('No orders')
+
+    expect(getReadableDetails(shutdownRangeLog)).toContain('Christmas Shutdown')
+    expect(getReadableDetails(shutdownRangeLog)).toContain('2026-12-23')
+    expect(getReadableDetails(shutdownRangeLog)).toContain('2027-01-03')
+    expect(getReadableDetails(shutdownRangeLog)).toContain('Christmas Eve')
+
+    expect(getReadableDetails(singleRemovalLog)).toContain('Plant Cleaning')
+    expect(getReadableDetails(singleRemovalLog)).toContain('2026-12-24')
+    expect(getReadableDetails(singleRemovalLog)).toContain('Christmas Eve')
+
+    expect(getReadableDetails(rangeRemovalLog)).toContain('Christmas Shutdown')
+    expect(getReadableDetails(rangeRemovalLog)).toContain('2026-12-30')
+    expect(getReadableDetails(rangeRemovalLog)).toContain('2027-01-03')
+    expect(getReadableDetails(rangeRemovalLog)).toContain('Rizal Day')
+
+    getAuditLogs.mockResolvedValue({
+      logs: [holidayWorkingLog, manualDayOffLog, unscheduledDayLog, shutdownRangeLog, singleRemovalLog, rangeRemovalLog],
+      pagination: { page: 1, limit: 25, total: 6, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+
+    expect(await screen.findByText('Production calendar range scheduled', { selector: '.audit-action-badge' })).toBeInTheDocument()
+    expect(screen.getAllByText('Production Calendar', { selector: '.audit-entity-label' })).toHaveLength(6)
+    expect(screen.getAllByText('Production calendar day updated', { selector: '.audit-action-badge' })).toHaveLength(3)
+    expect(screen.getAllByText('Production calendar entry removed', { selector: '.audit-action-badge' })).toHaveLength(2)
+
+    const viewButtons = screen.getAllByRole('button', { name: 'View details' })
+    await user.click(viewButtons[2])
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(within(dialog).getByText('Reason')).toBeInTheDocument()
+    expect(within(dialog).getByText('No orders')).toBeInTheDocument()
   })
 })

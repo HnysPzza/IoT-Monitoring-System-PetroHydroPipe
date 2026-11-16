@@ -562,6 +562,7 @@ export default function DowntimeSection() {
                           <td data-label="Event">
                             <span className="audit-action-label">{getDisplayLabel(record)}</span>
                             {record.startedAt ? <span className="table-muted downtime-event-date">{formatEventDate(record.startedAt)}</span> : null}
+                            {record.outsideSchedule ? <Status tone="offline" value="Inactive" className="outside-schedule-status">Outside schedule</Status> : null}
                             {record.needsCauseReview ? <Status tone="fault" className="pending-review-status">Needs cause review</Status> : null}
                           </td>
                           <td data-label="Machine/Sensor">{record.machine}<br /><span className="table-muted">{getSensorName(record)}</span></td>
@@ -655,6 +656,12 @@ export default function DowntimeSection() {
                                       <dt>Estimated loss</dt>
                                       <dd>{record.estimatedLoss} pcs</dd>
                                     </div>
+                                    {record.outsideSchedule ? (
+                                      <div>
+                                        <dt>Schedule status</dt>
+                                        <dd>This event occurred outside scheduled production time, so unplanned downtime is 0 min and estimated loss is 0 pcs.</dd>
+                                      </div>
+                                    ) : null}
                                   </dl>
                                 </div>
                                 <div className="downtime-notes-section">
