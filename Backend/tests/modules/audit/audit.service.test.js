@@ -594,5 +594,25 @@ test('isPulseEvent accurately detects pulse variations and ignores non-pulse eve
   assert.equal(service.isPulseEvent('PRODUCTION_SPEC_UPDATED', {}), false)
 })
 
+test('listAuditLogs expands WATCHDOG_DOWNTIME_CREATED filter to include legacy WATCHDOG_DOWNTIME_CONFIRMED rows', async () => {
+  const calls = []
+  const service = loadAuditService(calls, {
+    audit_logs: { data: [], count: 0, error: null },
+  })
+
+  await service.listAuditLogs({ action: 'WATCHDOG_DOWNTIME_CREATED' })
+
+  assert.deepEqual(calls, [
+    { operation: 'in', field: 'action', values: ['WATCHDOG_DOWNTIME_CREATED', 'WATCHDOG_DOWNTIME_CONFIRMED'] },
+  ])
+
+  calls.length = 0
+  await service.listAuditLogs({ action: 'toString' })
+  assert.deepEqual(calls, [
+    { operation: 'eq', field: 'action', value: 'toString' },
+  ])
+})
+
+
 
 

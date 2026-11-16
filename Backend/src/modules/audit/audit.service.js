@@ -5,6 +5,10 @@ const logger = require('../../utils/logger')
 const DEFAULT_AUDIT_LIMIT = 25
 const MAX_AUDIT_LIMIT = 100
 
+const ACTION_FILTER_ALIASES = {
+  WATCHDOG_DOWNTIME_CREATED: ['WATCHDOG_DOWNTIME_CREATED', 'WATCHDOG_DOWNTIME_CONFIRMED'],
+}
+
 const SENSITIVE_METADATA_KEYS = new Set([
   'password',
   'passwordHash',
@@ -194,7 +198,12 @@ async function listAuditLogs(filters = {}) {
     .range(from, to)
 
   if (filters.action && filters.action !== 'All') {
-    query = query.eq('action', filters.action)
+    const aliasedActions = Object.hasOwn(ACTION_FILTER_ALIASES, filters.action)
+      ? ACTION_FILTER_ALIASES[filters.action]
+      : null
+    query = aliasedActions
+      ? query.in('action', aliasedActions)
+      : query.eq('action', filters.action)
   }
 
   if (filters.entityType && filters.entityType !== 'All') {
