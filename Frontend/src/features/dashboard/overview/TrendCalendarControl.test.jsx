@@ -412,5 +412,17 @@ describe('TrendCalendarControl', () => {
     await user.keyboard('{ArrowUp}')
     expect(jan).toHaveFocus()
   })
+
+  it('calls onClear and closes the popover when Clear is enabled and clicked', async () => {
+    const user = userEvent.setup()
+    const onClear = vi.fn()
+    renderCalendar({ enableCustomRange: true, canClear: true, onClear })
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(onClear).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })
 

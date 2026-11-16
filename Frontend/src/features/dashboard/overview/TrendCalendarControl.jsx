@@ -153,6 +153,8 @@ export default function TrendCalendarControl({
   presets: presetsProp,
   enableCustomRange = false,
   showPresets = true,
+  canClear = false,
+  onClear,
 }) {
   const presets = presetsProp ?? (enableCustomRange
     ? [...DEFAULT_PRESETS, { id: 'custom', label: 'Custom range' }]
@@ -303,6 +305,16 @@ export default function TrendCalendarControl({
     setIsSelectingRange(false)
     setHoveredDay(null)
     setIsOpen(false)
+  }
+
+  function handleClearClick() {
+    didCommitRef.current = true
+    setDraftDate(undefined)
+    setDraftRange({ startDate: null, endDate: null })
+    setIsSelectingRange(false)
+    setHoveredDay(null)
+    setIsOpen(false)
+    onClear?.()
   }
 
   const isNextYearDisabled = Boolean(maxDate && viewDate.getFullYear() >= maxDate.getFullYear())
@@ -648,6 +660,15 @@ export default function TrendCalendarControl({
               {footerSelectionLabel}
             </span>
             <div className="trend-popover-footer-actions">
+              {onClear && canClear ? (
+                <button
+                  type="button"
+                  className="trend-popover-cancel-btn"
+                  onClick={handleClearClick}
+                >
+                  Clear
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="trend-popover-cancel-btn"

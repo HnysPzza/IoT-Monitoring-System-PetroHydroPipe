@@ -413,7 +413,7 @@
 }
 
 .trend-popover-cancel-btn {
-  min-height: 32px;
+  min-height: 36px;
   font-size: 13px;
   font-weight: 500;
   color: var(--c-text-2, #475569);
@@ -432,10 +432,10 @@
 }
 
 .trend-popover-apply-btn {
-  min-height: 32px;
+  min-height: 36px;
   font-size: 13px;
   font-weight: 600;
-  background: #2563EB;
+  background: var(--selected-control-bg, #0E62E8);
   color: #FFFFFF;
   border: none;
   border-radius: 6px;
@@ -446,7 +446,7 @@
 }
 
 .trend-popover-apply-btn:hover:not(:disabled) {
-  background: #1D4ED8;
+  background: var(--c-primary, #1677FF);
 }
 
 .trend-popover-apply-btn:disabled {
@@ -690,7 +690,7 @@
 .trend-calendar-month-btn:focus-visible,
 .trend-popover-cancel-btn:focus-visible,
 .trend-popover-apply-btn:focus-visible {
-  outline: 2px solid #2563EB;
+  outline: 2px solid var(--c-primary, #1677FF);
   outline-offset: 2px;
 }
 
