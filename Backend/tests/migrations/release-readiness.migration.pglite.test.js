@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 58
+const releaseSchemaVersion = 59
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
