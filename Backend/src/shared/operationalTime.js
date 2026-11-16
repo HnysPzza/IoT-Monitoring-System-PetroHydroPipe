@@ -2,6 +2,16 @@ const { BUSINESS_TIME_ZONE, formatBusinessDate } = require('./businessTime')
 
 const BUSINESS_UTC_OFFSET = '+08:00'
 const SECOND_MS = 1000
+const WEEKDAYS = Object.freeze([
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+])
+const VALID_WEEKDAYS = new Set(WEEKDAYS)
 
 function createOperationalTimeError(code, message) {
   const error = new Error(message)
@@ -124,7 +134,20 @@ function validateSchedule(schedule) {
     }
   }
 
-  return { workStart, workEnd, breaks }
+  const rawRestDays = schedule.restDays === undefined ? [] : schedule.restDays
+  if (!Array.isArray(rawRestDays) || rawRestDays.length > 6) {
+    throw createOperationalTimeError('INVALID_SCHEDULE', 'Rest days must be an array with at most 6 weekdays.')
+  }
+
+  const restDays = new Set()
+  for (const dayName of rawRestDays) {
+    if (typeof dayName !== 'string' || !VALID_WEEKDAYS.has(dayName) || restDays.has(dayName)) {
+      throw createOperationalTimeError('INVALID_SCHEDULE', 'Rest days must contain unique lowercase weekday names.')
+    }
+    restDays.add(dayName)
+  }
+
+  return { workStart, workEnd, breaks, restDays }
 }
 
 function getHistoryValue(record, camelName, snakeName) {
@@ -193,6 +216,73 @@ function addBusinessDate(dateKey, days) {
   return value.toISOString().slice(0, 10)
 }
 
+function weekdayForBusinessDate(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const dayIndex = new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+  return WEEKDAYS[dayIndex]
+}
+
+function normalizeCalendarDateKey(value) {
+  if (value instanceof Date) {
+    return formatBusinessDate(value)
+  }
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value
+  }
+  throw createOperationalTimeError('INVALID_CALENDAR_DAY', 'Calendar date must use YYYY-MM-DD format.')
+}
+
+function normalizeCalendarDays(calendarDays, settingsHistory) {
+  const source = calendarDays === undefined ? settingsHistory?.calendarDays : calendarDays
+  const lookup = new Map()
+  if (!source) return lookup
+
+  if (source instanceof Map) {
+    for (const [key, value] of source.entries()) {
+      const dateKey = normalizeCalendarDateKey(key)
+      const isWorking = typeof value === 'boolean'
+        ? value
+        : getHistoryValue(value || {}, 'isWorking', 'is_working')
+      if (typeof isWorking !== 'boolean') {
+        throw createOperationalTimeError('INVALID_CALENDAR_DAY', 'Calendar day requires a boolean isWorking flag.')
+      }
+      lookup.set(dateKey, isWorking)
+    }
+    return lookup
+  }
+
+  if (Array.isArray(source)) {
+    for (const entry of source) {
+      if (!entry || typeof entry !== 'object') {
+        throw createOperationalTimeError('INVALID_CALENDAR_DAY', 'Calendar day entry must be an object.')
+      }
+      const rawDate = getHistoryValue(entry, 'calendarDate', 'calendar_date')
+      const isWorking = getHistoryValue(entry, 'isWorking', 'is_working')
+      if (typeof isWorking !== 'boolean') {
+        throw createOperationalTimeError('INVALID_CALENDAR_DAY', 'Calendar day requires a boolean isWorking flag.')
+      }
+      lookup.set(normalizeCalendarDateKey(rawDate), isWorking)
+    }
+    return lookup
+  }
+
+  if (typeof source === 'object') {
+    for (const [key, value] of Object.entries(source)) {
+      const dateKey = normalizeCalendarDateKey(key)
+      const isWorking = typeof value === 'boolean'
+        ? value
+        : getHistoryValue(value || {}, 'isWorking', 'is_working')
+      if (typeof isWorking !== 'boolean') {
+        throw createOperationalTimeError('INVALID_CALENDAR_DAY', 'Calendar day requires a boolean isWorking flag.')
+      }
+      lookup.set(dateKey, isWorking)
+    }
+    return lookup
+  }
+
+  throw createOperationalTimeError('INVALID_CALENDAR_DAY', 'Calendar days must be an array, Map, or object.')
+}
+
 function instantForMinute(dateKey, minuteOfDay) {
   const hours = Math.floor(minuteOfDay / 60)
   const minutes = minuteOfDay % 60
@@ -214,13 +304,20 @@ function enumerateBusinessDates(start, end) {
   return dates
 }
 
-function buildEligibleIntervals({ start, end, settingsHistory }) {
+function buildEligibleIntervals({ start, end, settingsHistory, calendarDays }) {
   const range = requireInterval(start, end, 'Requested range')
   const historySegments = normalizeSettingsHistory(settingsHistory, range)
+  const calendarLookup = normalizeCalendarDays(calendarDays, settingsHistory)
   const eligible = []
 
   historySegments.forEach((segment) => {
     enumerateBusinessDates(segment.start, segment.end).forEach((dateKey) => {
+      if (calendarLookup.has(dateKey)) {
+        if (!calendarLookup.get(dateKey)) return
+      } else if (segment.schedule.restDays.has(weekdayForBusinessDate(dateKey))) {
+        return
+      }
+
       const work = {
         start: instantForMinute(dateKey, segment.schedule.workStart),
         end: instantForMinute(dateKey, segment.schedule.workEnd),
@@ -245,17 +342,17 @@ function sumIntervalSeconds(intervals) {
   return intervals.reduce((total, interval) => total + intervalSeconds(interval), 0)
 }
 
-function getEligibleSeconds({ start, end, settingsHistory }) {
-  return sumIntervalSeconds(buildEligibleIntervals({ start, end, settingsHistory }))
+function getEligibleSeconds({ start, end, settingsHistory, calendarDays }) {
+  return sumIntervalSeconds(buildEligibleIntervals({ start, end, settingsHistory, calendarDays }))
 }
 
-function isEligibleAt({ at, settingsHistory }) {
+function isEligibleAt({ at, settingsHistory, calendarDays }) {
   const instant = toInstant(at, 'Eligibility timestamp')
   const end = new Date(instant.getTime() + SECOND_MS)
-  return getEligibleSeconds({ start: instant, end, settingsHistory }) === 1
+  return getEligibleSeconds({ start: instant, end, settingsHistory, calendarDays }) === 1
 }
 
-function advanceByEligibleSeconds({ start, end, seconds, settingsHistory }) {
+function advanceByEligibleSeconds({ start, end, seconds, settingsHistory, calendarDays }) {
   if (!Number.isInteger(seconds) || seconds < 0) {
     throw createOperationalTimeError('INVALID_DURATION', 'Eligible seconds must be a non-negative integer.')
   }
@@ -264,7 +361,7 @@ function advanceByEligibleSeconds({ start, end, seconds, settingsHistory }) {
   if (seconds === 0) return range.start
   let remaining = seconds
 
-  for (const interval of buildEligibleIntervals({ ...range, settingsHistory })) {
+  for (const interval of buildEligibleIntervals({ ...range, settingsHistory, calendarDays })) {
     const available = intervalSeconds(interval)
     if (remaining <= available) {
       return new Date(interval.start.getTime() + (remaining * SECOND_MS))
@@ -283,7 +380,7 @@ function clipDowntimeInterval(record, window, asOf) {
   return intersectIntervals(downtime, window)
 }
 
-function calculateDowntimeBreakdown({ record, windowStart, windowEnd, settingsHistory, asOf = new Date() }) {
+function calculateDowntimeBreakdown({ record, windowStart, windowEnd, settingsHistory, calendarDays, asOf = new Date() }) {
   const window = requireInterval(windowStart, windowEnd, 'Metric window')
   const clipped = clipDowntimeInterval(record, window, toInstant(asOf, 'asOf'))
 
@@ -292,7 +389,7 @@ function calculateDowntimeBreakdown({ record, windowStart, windowEnd, settingsHi
   }
 
   const durationSeconds = intervalSeconds(clipped)
-  const unplannedSeconds = getEligibleSeconds({ ...clipped, settingsHistory })
+  const unplannedSeconds = getEligibleSeconds({ ...clipped, settingsHistory, calendarDays })
   return {
     durationSeconds,
     unplannedSeconds,
@@ -300,7 +397,7 @@ function calculateDowntimeBreakdown({ record, windowStart, windowEnd, settingsHi
   }
 }
 
-function getUnionedDowntimeSeconds({ records, windowStart, windowEnd, settingsHistory, asOf = new Date() }) {
+function getUnionedDowntimeSeconds({ records, windowStart, windowEnd, settingsHistory, calendarDays, asOf = new Date() }) {
   const window = requireInterval(windowStart, windowEnd, 'Metric window')
   const effectiveAsOf = toInstant(asOf, 'asOf')
   const clipped = records
@@ -309,7 +406,7 @@ function getUnionedDowntimeSeconds({ records, windowStart, windowEnd, settingsHi
   const unioned = unionIntervals(clipped)
   const durationSeconds = sumIntervalSeconds(unioned)
   const unplannedSeconds = unioned.reduce(
-    (total, interval) => total + getEligibleSeconds({ ...interval, settingsHistory }),
+    (total, interval) => total + getEligibleSeconds({ ...interval, settingsHistory, calendarDays }),
     0,
   )
 

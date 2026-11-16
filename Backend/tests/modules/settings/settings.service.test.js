@@ -42,6 +42,7 @@ function validSchedule() {
       { name: 'Afternoon Break', startTime: '15:00', endTime: '15:15' },
     ],
     rampUpGraceMinutes: 10,
+    restDays: [],
   }
 }
 
@@ -459,4 +460,47 @@ test('settings update rejects malformed or missing RPC results', async () => {
       { status: 500, code: 'SETTINGS_UPDATE_FAILED' },
     )
   }
+})
+
+test('settings read normalizes legacy shift_schedule without restDays and update persists restDays', async () => {
+  const legacySchedule = validSchedule()
+  delete legacySchedule.restDays
+  const readService = loadService({
+    tableResults: readableTables(settingsRow({ shift_schedule: legacySchedule })),
+  })
+  const readResult = await readService.getMachineSettings(machineId)
+  assert.deepEqual(readResult.shiftSchedule.restDays, [])
+
+  const calls = []
+  const updatedSchedule = { ...validSchedule(), restDays: ['sunday'] }
+  const updateService = loadService({
+    calls,
+    tableResults: readableTables(settingsRow({ shift_schedule: legacySchedule })),
+    rpcResult: {
+      data: settingsRow({ shift_schedule: updatedSchedule, version: '2', updated_by: actorId }),
+      error: null,
+    },
+  })
+
+  const updated = await updateService.updateMachineSettings({
+    machineId,
+    expectedVersion: '1',
+    shiftSchedule: updatedSchedule,
+    actorUserId: actorId,
+  })
+  assert.deepEqual(updated.shiftSchedule.restDays, ['sunday'])
+  assert.deepEqual(calls.find((call) => call.type === 'rpc').args.p_shift_schedule.restDays, ['sunday'])
+
+  await assert.rejects(
+    () => updateService.updateMachineSettings({
+      machineId,
+      expectedVersion: '2',
+      shiftSchedule: {
+        ...validSchedule(),
+        restDays: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      },
+      actorUserId: actorId,
+    }),
+    { status: 400, code: 'VALIDATION_ERROR' },
+  )
 })

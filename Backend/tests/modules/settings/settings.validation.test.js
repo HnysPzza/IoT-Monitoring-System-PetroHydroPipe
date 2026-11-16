@@ -216,3 +216,49 @@ test('shift schedule rejects duplicate names, overlaps, grace overlaps, and grac
     assert.equal(shiftScheduleSchema.safeParse(schedule).success, false)
   }
 })
+
+test('shift schedule defaults omitted restDays to empty array and validates weekday names, uniqueness, and max 6 days', () => {
+  const legacyParsed = shiftScheduleSchema.safeParse(validSchedule())
+  assert.equal(legacyParsed.success, true)
+  assert.deepEqual(legacyParsed.data.restDays, [])
+
+  const sundayRest = shiftScheduleSchema.safeParse({
+    ...validSchedule(),
+    restDays: ['sunday'],
+  })
+  assert.equal(sundayRest.success, true)
+  assert.deepEqual(sundayRest.data.restDays, ['sunday'])
+
+  const sixDaysRest = shiftScheduleSchema.safeParse({
+    ...validSchedule(),
+    restDays: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+  })
+  assert.equal(sixDaysRest.success, true)
+  assert.equal(sixDaysRest.data.restDays.length, 6)
+
+  const invalidRestDaysCases = [
+    ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+    ['funday'],
+    ['Sunday'],
+    ['sunday', 'sunday'],
+    'sunday',
+    null,
+  ]
+
+  for (const restDays of invalidRestDaysCases) {
+    assert.equal(
+      shiftScheduleSchema.safeParse({ ...validSchedule(), restDays }).success,
+      false,
+    )
+    assert.equal(
+      patchSettingsSchema.safeParse({
+        params: { machineId },
+        body: {
+          expectedVersion: '1',
+          shiftSchedule: { ...validSchedule(), restDays },
+        },
+      }).success,
+      false,
+    )
+  }
+})
