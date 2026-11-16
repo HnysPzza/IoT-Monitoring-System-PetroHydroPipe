@@ -740,7 +740,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main className="dashboard-shell">
+    <div className="dashboard-shell">
       <aside
         ref={sidebarRef}
         className={`dashboard-sidebar ${isDesktopSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
@@ -1184,13 +1184,13 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        <section className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
+        <main className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
           {/* Nested /dashboard routes render here. */}
           <UsersActionProvider>
             <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
           </UsersActionProvider>
-        </section>
+        </main>
       </div>
-    </main>
+    </div>
   )
 }

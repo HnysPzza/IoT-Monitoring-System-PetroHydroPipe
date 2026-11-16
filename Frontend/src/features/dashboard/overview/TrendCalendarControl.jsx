@@ -112,6 +112,25 @@ const WEEKDAY_HEADERS = [
   { short: 'Su', full: 'Sunday' },
 ]
 
+function handleGridArrowNavigation(event, index, attrName, deltas) {
+  if (!(event.key in deltas)) return
+  const container = event.currentTarget.closest('[data-calendar-grid]')
+  if (!container) return
+  let nextIndex = index + deltas[event.key]
+  const step = Math.sign(deltas[event.key])
+  while (nextIndex >= 0) {
+    const candidate = container.querySelector(`button[${attrName}="${nextIndex}"]`)
+    if (!candidate) break
+    if (!candidate.disabled) {
+      event.preventDefault()
+      candidate.focus()
+      return
+    }
+    if (!step) break
+    nextIndex += step
+  }
+}
+
 const DEFAULT_PRESETS = [
   { id: 'today', label: 'Daily' },
   { id: 'week', label: 'Weekly' },
@@ -131,9 +150,13 @@ export default function TrendCalendarControl({
   triggerAriaLabel,
   triggerLabel = 'SELECTED PERIOD',
   popoverClassName,
-  presets = DEFAULT_PRESETS,
+  presets: presetsProp,
+  enableCustomRange = false,
   showPresets = true,
 }) {
+  const presets = presetsProp ?? (enableCustomRange
+    ? [...DEFAULT_PRESETS, { id: 'custom', label: 'Custom range' }]
+    : DEFAULT_PRESETS)
   const [isOpen, setIsOpen] = useState(false)
   const [draftMode, setDraftMode] = useState(mode)
   const [draftDate, setDraftDate] = useState(selectedDate)
@@ -426,8 +449,8 @@ export default function TrendCalendarControl({
                       <ChevronRight size={16} aria-hidden="true" />
                     </button>
                   </div>
-                  <div className="trend-calendar-months-grid">
-                    {monthsOfYear.map((m) => {
+                  <div className="trend-calendar-months-grid" data-calendar-grid="month">
+                    {monthsOfYear.map((m, monthIndex) => {
                       const isSelected = Boolean(activeDate &&
                         m.getFullYear() === activeDate.getFullYear() &&
                         m.getMonth() === activeDate.getMonth())
@@ -437,10 +460,19 @@ export default function TrendCalendarControl({
                         <button
                           key={m.getMonth()}
                           type="button"
+                          data-month-index={monthIndex}
                           className={`trend-calendar-month-btn ${isSelected ? 'is-selected' : ''} ${isMonthDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={monthLabel}
                           aria-pressed={isSelected}
                           disabled={isMonthDisabled}
+                          onKeyDown={(event) => handleGridArrowNavigation(event, monthIndex, 'data-month-index', {
+                            ArrowLeft: -1,
+                            ArrowRight: 1,
+                            ArrowUp: -3,
+                            ArrowDown: 3,
+                            Home: -(monthIndex % 3),
+                            End: 2 - (monthIndex % 3),
+                          })}
                           onClick={() => handleSelect(m, 'month')}
                         >
                           {m.toLocaleDateString('en-PH', { month: 'short' })}
@@ -476,8 +508,8 @@ export default function TrendCalendarControl({
                       <span key={w.short} className="trend-calendar-weekday">{w.short}</span>
                     ))}
                   </div>
-                  <div className="trend-calendar-week-grid">
-                    {monthWeeks.map((weekStart) => {
+                  <div className="trend-calendar-week-grid" data-calendar-grid="week">
+                    {monthWeeks.map((weekStart, weekIndex) => {
                       const isSelected = Boolean(activeDate && startOfWeek(activeDate).getTime() === weekStart.getTime())
                       const isWeekDisabled = Boolean(maxDate && weekStart > maxDate)
                       const weekLabel = formatWeekLabel(weekStart)
@@ -486,10 +518,17 @@ export default function TrendCalendarControl({
                         <button
                           key={weekStart.toISOString()}
                           type="button"
+                          data-week-index={weekIndex}
                           className={`trend-calendar-week-row ${isSelected ? 'is-selected' : ''} ${isWeekDisabled && !isSelected ? 'is-future' : ''}`}
                           aria-label={`Select week ${weekLabel}`}
                           aria-pressed={isSelected}
                           disabled={isWeekDisabled}
+                          onKeyDown={(event) => handleGridArrowNavigation(event, weekIndex, 'data-week-index', {
+                            ArrowUp: -1,
+                            ArrowDown: 1,
+                            Home: -weekIndex,
+                            End: monthWeeks.length - 1 - weekIndex,
+                          })}
                           onClick={() => handleSelect(weekStart, 'week')}
                         >
                           <div className="trend-calendar-week-days" aria-hidden="true">
@@ -531,6 +570,7 @@ export default function TrendCalendarControl({
                   </div>
                   <div
                     className="trend-calendar-grid-container"
+                    data-calendar-grid="day"
                     role="grid"
                     aria-label={monthHeading}
                     onMouseLeave={() => {
@@ -575,24 +615,14 @@ export default function TrendCalendarControl({
                                     aria-label={getDayAriaLabel(day)}
                                     aria-pressed={isSelected}
                                     disabled={isDisabled}
-                                    onKeyDown={(event) => {
-                                      const deltas = {
-                                        ArrowLeft: -1,
-                                        ArrowRight: 1,
-                                        ArrowUp: -7,
-                                        ArrowDown: 7,
-                                        Home: -(dayIndex % 7),
-                                        End: 6 - (dayIndex % 7),
-                                      }
-                                      if (!(event.key in deltas)) return
-                                      const nextIndex = dayIndex + deltas[event.key]
-                                      const gridEl = event.currentTarget.closest('[role="grid"]')
-                                      const targetBtn = gridEl?.querySelector(`button[data-day-index="${nextIndex}"]:not(:disabled)`)
-                                      if (targetBtn) {
-                                        event.preventDefault()
-                                        targetBtn.focus()
-                                      }
-                                    }}
+                                    onKeyDown={(event) => handleGridArrowNavigation(event, dayIndex, 'data-day-index', {
+                                      ArrowLeft: -1,
+                                      ArrowRight: 1,
+                                      ArrowUp: -7,
+                                      ArrowDown: 7,
+                                      Home: -(dayIndex % 7),
+                                      End: 6 - (dayIndex % 7),
+                                    })}
                                     onMouseEnter={() => {
                                       if (normDraftMode === 'custom' && !isDisabled) setHoveredDay(day)
                                     }}

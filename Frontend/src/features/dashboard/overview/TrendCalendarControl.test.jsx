@@ -381,5 +381,36 @@ describe('TrendCalendarControl', () => {
     await user.keyboard('{ArrowDown}')
     expect(day15).toHaveFocus()
   })
+
+  it('supports arrow-key navigation in Weekly and Monthly views and optional Custom range preset', async () => {
+    const user = userEvent.setup()
+    renderCalendar({ enableCustomRange: true })
+
+    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    expect(screen.getByRole('button', { name: 'Custom range' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+    const week1 = await screen.findByRole('button', { name: /select week jun 29, 2026 - jul 5, 2026/i })
+    const week2 = screen.getByRole('button', { name: /select week jul 6, 2026 - jul 12, 2026/i })
+    week1.focus()
+    await user.keyboard('{ArrowDown}')
+    expect(week2).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(week1).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Monthly' }))
+    const jan = await screen.findByRole('button', { name: 'Jan 2026' })
+    const feb = screen.getByRole('button', { name: 'Feb 2026' })
+    const apr = screen.getByRole('button', { name: 'Apr 2026' })
+    jan.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(feb).toHaveFocus()
+    await user.keyboard('{ArrowLeft}')
+    expect(jan).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(apr).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(jan).toHaveFocus()
+  })
 })
 

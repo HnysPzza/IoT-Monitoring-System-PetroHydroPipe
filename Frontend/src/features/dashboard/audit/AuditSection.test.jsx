@@ -1,11 +1,20 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { onlineManager } from '@tanstack/react-query'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
 import '../../../shared/components/ui/Calendar.jsx'
 import AuditSection from './AuditSection.jsx'
 import { getAuditLogs } from './auditService.js'
-import { auditActionOptions, getReadableAction, getReadableDetails, getReadableTarget } from './auditFormatters.js'
+import {
+  auditActionGroups,
+  auditActionOptions,
+  auditEntityOptions,
+  getAuditTone,
+  getReadableAction,
+  getReadableDetails,
+  getReadableTarget,
+} from './auditFormatters.js'
 
 vi.mock('./auditService.js', () => ({
   getAuditLogs: vi.fn(),
@@ -16,7 +25,11 @@ const originalClose = HTMLDialogElement.prototype.close
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
-  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  HTMLDialogElement.prototype.close = function () {
+    if (!this.hasAttribute('open')) return
+    this.removeAttribute('open')
+    this.dispatchEvent(new Event('close'))
+  }
 })
 
 afterAll(() => {
@@ -27,6 +40,59 @@ afterAll(() => {
 describe('AuditSection', () => {
   beforeEach(() => {
     getAuditLogs.mockReset()
+    act(() => {
+      onlineManager.setOnline(true)
+    })
+  })
+
+  afterEach(() => {
+    act(() => {
+      onlineManager.setOnline(true)
+    })
+  })
+
+  it('formats all backend actions, entity types, roles, and semantic tones without leaking raw role names', () => {
+    const newBackendActions = [
+      ['REFRESH_TOKEN_REUSED', 'auth', {}],
+      ['SETTINGS_UPDATED', 'machine_settings', { changedSections: ['sensorThresholds'] }],
+      ['PRODUCTION_SPEC_UPDATED', 'sensor_event', { sensorCode: 'S-05', label: 'Pipe A' }],
+      ['PRODUCTION_SPEC_BATCH_UPDATED', 'sensor_event', { sensorCode: 'S-05', matchedCount: 4, updatedCount: 3 }],
+      ['REPORT_EXPORTED', 'report', { reportCategory: 'production', format: 'pdf' }],
+      ['WATCHDOG_DOWNTIME_CONFIRMED', 'downtime', { sensorCode: 'S-02' }],
+      ['MACHINE_STATUS_RECONCILED', 'machine', { machineCode: 'M-01', newStatus: 'Running' }],
+    ]
+
+    for (const [action, entityType, metadata] of newBackendActions) {
+      const log = { action, entityType, entityId: 'id-1', metadata }
+      expect(getReadableAction(log)).not.toBe('System action recorded')
+      expect(getReadableDetails(log)).not.toBe('System action was recorded.')
+      expect(auditActionOptions.some((option) => option.value === action)).toBe(true)
+      expect(auditActionGroups.some((group) => group.options.some((option) => option.value === action))).toBe(true)
+    }
+
+    for (const entityType of ['machine_settings', 'report', 'sensor_connectivity']) {
+      expect(auditEntityOptions.some((option) => option.value === entityType)).toBe(true)
+    }
+
+    expect(getReadableTarget({ entityType: 'sensor_connectivity', metadata: { sensorCode: 'S-03' } }))
+      .toContain('S-03')
+    expect(getReadableTarget({ entityType: 'machine_settings', metadata: { machineName: 'Spiral Mill 01' } }))
+      .toBe('Spiral Mill 01')
+
+    const createdAdmin = {
+      action: 'USER_CREATED',
+      entityType: 'user',
+      targetUser: { username: 'director02' },
+      metadata: { targetRole: 'Admin' },
+    }
+    expect(getReadableDetails(createdAdmin)).toBe('director02 was created as Managing Director.')
+    expect(getReadableDetails(createdAdmin)).not.toMatch(/\bAdmin\b/)
+
+    expect(getAuditTone({ action: 'LOGIN_FAILED' })).toBe('danger')
+    expect(getAuditTone({ action: 'REFRESH_TOKEN_REUSED' })).toBe('danger')
+    expect(getAuditTone({ action: 'SENSOR_MANUAL_RECOVERY_OVERRIDE' })).toBe('warning')
+    expect(getAuditTone({ action: 'WATCHDOG_DOWNTIME_RESOLVED' })).toBe('success')
+    expect(getAuditTone({ action: 'SETTINGS_UPDATED' })).toBe('neutral')
   })
 
   it('formats user account audit actions and affected accounts', () => {
@@ -70,13 +136,26 @@ describe('AuditSection', () => {
     expect(refreshButton).toHaveClass('reports-icon-button', 'audit-refresh-button')
     expect(refreshButton).not.toHaveTextContent('Refresh')
     expect(screen.queryByText('All dates')).not.toBeInTheDocument()
+    expect(screen.queryByText('SELECTED PERIOD')).not.toBeInTheDocument()
+    expect(screen.getByText('Any date')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /audit log/i })).toBeInTheDocument()
+    expect(document.querySelector('#audit-action-filter optgroup')).toBeInTheDocument()
     expect(document.querySelector('.audit-date-field .trend-calendar-trigger')).toBeInTheDocument()
     expect(document.querySelector('.audit-history-card .audit-total-chip')).toHaveTextContent('30 total')
     expect(document.querySelector('.audit-controls-actions .audit-total-chip')).not.toBeInTheDocument()
     expect(document.querySelector('.account-table-wrap .audit-pagination')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Audit pagination')).toBeInTheDocument()
+    expect(screen.getByText(/showing 1–25 of 30/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /next/i }))
+    const previousButton = screen.getByRole('button', { name: 'Previous page' })
+    const nextButton = screen.getByRole('button', { name: 'Next page' })
+    expect(previousButton).toHaveClass('audit-pagination-btn')
+    expect(previousButton).toHaveTextContent('')
+    expect(previousButton).toBeDisabled()
+    expect(nextButton).toHaveClass('audit-pagination-btn')
+    expect(nextButton).toHaveTextContent('')
+
+    await user.click(nextButton)
 
     await waitFor(() => {
       expect(getAuditLogs).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2, limit: 25 }), { signal: expect.any(AbortSignal) })
@@ -124,13 +203,14 @@ describe('AuditSection', () => {
     expect(within(dialog).queryByText('A clear summary of this activity.')).not.toBeInTheDocument()
     const detailTerms = within(dialog).getAllByRole('term')
     expect(detailTerms.map((term) => term.textContent)).toEqual([
-      'Who did it',
       'What happened',
+      'Who did it',
       'Time',
       'Affected item',
       'Source',
     ])
     expect(detailTerms[0].closest('.audit-detail-item')).toHaveClass('audit-detail-primary', 'audit-detail-full')
+    expect(detailTerms[1].closest('.audit-detail-item')).not.toHaveClass('audit-detail-primary')
     expect(detailTerms[1].closest('.audit-detail-item')).not.toHaveClass('audit-detail-full')
     expect(detailTerms[2].closest('.audit-detail-item')).not.toHaveClass('audit-detail-full')
     expect(within(dialog).getByText('What happened')).toBeInTheDocument()
@@ -173,6 +253,9 @@ describe('AuditSection', () => {
     const dialog = screen.getByRole('dialog', { name: 'Audit details' })
     expect(within(dialog).getByText('Override reason')).toBeInTheDocument()
     expect(within(dialog).getByText('Maintenance confirmed normal operation')).toBeInTheDocument()
+    const summaryText = within(dialog).getByText(/was manually recovered/i).textContent
+    expect(summaryText).not.toContain('Maintenance confirmed normal operation')
+    expect(summaryText).not.toContain('..')
     expect(within(dialog).getByText('Managing Director')).toBeInTheDocument()
     expect(within(dialog).queryByText('Admin')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('admin')).not.toBeInTheDocument()
@@ -224,7 +307,9 @@ describe('AuditSection', () => {
     renderWithAuth(<AuditSection />)
 
     await screen.findByText('No audit records match the selected filters.')
-    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    expect(screen.queryByLabelText('Audit pagination')).not.toBeInTheDocument()
+    const dateTrigger = screen.getByRole('button', { name: /select audit date/i })
+    await user.click(dateTrigger)
 
     const calendarDialog = await screen.findByRole('dialog', { name: 'Select audit date' })
     const dayButton = (await within(calendarDialog).findAllByRole('button'))
@@ -242,9 +327,10 @@ describe('AuditSection', () => {
 
     await user.click(clearButton)
     expect(screen.queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument()
+    expect(dateTrigger).toHaveFocus()
   })
 
-  it('supports weekly audit log filtering via the calendar popover and queries with week date range', async () => {
+  it('supports weekly audit log filtering via the calendar popover and clamps future week end to today', async () => {
     const user = userEvent.setup()
 
     getAuditLogs.mockResolvedValue({
@@ -255,27 +341,37 @@ describe('AuditSection', () => {
     renderWithAuth(<AuditSection />)
     await screen.findByText('No audit records match the selected filters.')
 
-    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: /select audit date/i }))
     await user.click(screen.getByRole('button', { name: 'Weekly' }))
 
     const weekButtons = await screen.findAllByRole('button', { name: /select week/i })
     expect(weekButtons.length).toBeGreaterThan(0)
 
-    // Select the first enabled week button and commit with Apply
-    const enabledWeek = weekButtons.find((btn) => !btn.disabled)
-    await user.click(enabledWeek)
+    const enabledWeeks = weekButtons.filter((btn) => !btn.disabled)
+    await user.click(enabledWeeks[enabledWeeks.length - 1])
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
+    const todayManila = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date())
+
     await waitFor(() => {
-      expect(getAuditLogs).toHaveBeenCalledWith(
-        'test-token',
+      const lastFilters = getAuditLogs.mock.calls.at(-1)?.[1]
+      expect(lastFilters).toEqual(
         expect.objectContaining({
           dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
           dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
-        { signal: expect.any(AbortSignal) },
       )
+      expect(lastFilters.dateTo <= todayManila).toBe(true)
     })
+
+    await user.click(screen.getByRole('button', { name: 'Clear date' }))
+    await user.click(screen.getByRole('button', { name: /select audit date/i }))
+    expect(await screen.findByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('supports monthly audit log filtering via the calendar popover and queries with month date range', async () => {
@@ -289,7 +385,7 @@ describe('AuditSection', () => {
     renderWithAuth(<AuditSection />)
     await screen.findByText('No audit records match the selected filters.')
 
-    await user.click(screen.getByRole('button', { name: /selected period/i }))
+    await user.click(screen.getByRole('button', { name: /select audit date/i }))
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
 
     // Click Previous Year to guarantee enabled month buttons
@@ -307,6 +403,185 @@ describe('AuditSection', () => {
         }),
         { signal: expect.any(AbortSignal) },
       )
+    })
+  })
+
+  it('renders cold offline/error recovery state instead of false empty totals and provides a styled Retry button', async () => {
+    act(() => {
+      onlineManager.setOnline(false)
+    })
+    getAuditLogs.mockRejectedValue(new Error('Network unavailable'))
+
+    renderWithAuth(<AuditSection />)
+
+    expect(await screen.findByText(/audit history could not be loaded/i)).toBeInTheDocument()
+    expect(screen.queryByText('No audit records match the selected filters.')).not.toBeInTheDocument()
+    expect(screen.queryByText('0 total')).not.toBeInTheDocument()
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+
+    const retryButton = screen.getByRole('button', { name: /retry/i })
+    expect(retryButton).toHaveClass('btn-secondary')
+    expect(retryButton).toBeDisabled()
+  })
+
+  it('syncs filters with URL parameters and supports one-click Reset filters and Custom range selection', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 2, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />, { route: '/dashboard/audit?action=LOGIN_FAILED&entity=auth&dateFrom=2026-99-99&page=2' })
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenCalledWith(
+        'test-token',
+        expect.objectContaining({ action: 'LOGIN_FAILED', entityType: 'auth', date: '', page: 2 }),
+        { signal: expect.any(AbortSignal) },
+      )
+    })
+
+    expect(screen.getByLabelText('Activity')).toHaveValue('LOGIN_FAILED')
+    expect(screen.getByLabelText('Area')).toHaveValue('auth')
+
+    const resetButton = await screen.findByRole('button', { name: 'Reset filters' })
+    await user.click(resetButton)
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenLastCalledWith(
+        'test-token',
+        expect.objectContaining({ action: 'All', entityType: 'All', page: 1 }),
+        { signal: expect.any(AbortSignal) },
+      )
+    })
+
+    await user.click(screen.getByRole('button', { name: /select audit date/i }))
+    await user.click(screen.getByRole('button', { name: 'Custom range' }))
+    const days = (await within(screen.getByRole('dialog', { name: 'Select audit date' })).findAllByRole('button'))
+      .filter((button) => !button.disabled && /^\d+$/.test(button.textContent.trim()))
+    await user.click(days[0])
+    await user.click(days[2])
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(getAuditLogs).toHaveBeenLastCalledWith(
+        'test-token',
+        expect.objectContaining({
+          dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+        { signal: expect.any(AbortSignal) },
+      )
+    })
+  })
+
+  it('adds mobile data-labels, closes dialog on backdrop click, and restores focus to trigger button', async () => {
+    const user = userEvent.setup()
+
+    getAuditLogs.mockResolvedValue({
+      logs: [{
+        id: 'audit-modal-1',
+        action: 'SETTINGS_UPDATED',
+        entityType: 'machine_settings',
+        entityId: 'm-1',
+        createdAt: '2026-06-11T00:00:00.000Z',
+        actor: { username: 'admin', role: 'Admin' },
+        metadata: { machineName: 'Spiral Mill 01', changedSections: ['sensorThresholds'] },
+      }],
+      pagination: { page: 1, limit: 25, total: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    renderWithAuth(<AuditSection />)
+
+    const detailsButton = await screen.findByRole('button', { name: /view details/i })
+    const cells = detailsButton.closest('tr').querySelectorAll('td')
+    expect(Array.from(cells).map((cell) => cell.getAttribute('data-label'))).toEqual([
+      'Date/Time',
+      'Action',
+      'Affected item',
+      'Summary',
+      'Details',
+    ])
+    expect(document.querySelector('tbody time')).toHaveAttribute('dateTime', '2026-06-11T00:00:00.000Z')
+    expect(document.querySelector('.audit-action-badge')).toHaveAttribute('data-tone', 'neutral')
+    expect(screen.getByText('Updated sensor thresholds.')).toBeInTheDocument()
+
+    await user.click(detailsButton)
+    const dialog = screen.getByRole('dialog', { name: 'Audit details' })
+    expect(dialog).toBeInTheDocument()
+
+    fireEvent.click(dialog)
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Audit details' })).not.toBeInTheDocument()
+    })
+    expect(detailsButton).toHaveFocus()
+    expect(detailsButton.closest('tr')).toHaveClass('audit-row-returned')
+  })
+
+  it('shows inline refresh indicator, dims placeholder results, highlights newly arrived rows, and opens details on row click', async () => {
+    const user = userEvent.setup()
+    let resolveNextPage
+
+    getAuditLogs
+      .mockResolvedValueOnce({
+        logs: [{
+          id: 'audit-1',
+          action: 'LOGIN_SUCCESS',
+          entityType: 'auth',
+          createdAt: '2026-06-11T00:00:00.000Z',
+          actor: { username: 'admin', role: 'Admin' },
+          metadata: {},
+        }],
+        pagination: { page: 1, limit: 25, total: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+      })
+      .mockResolvedValueOnce({
+        logs: [
+          {
+            id: 'audit-2',
+            action: 'USER_CREATED',
+            entityType: 'user',
+            createdAt: '2026-06-11T01:00:00.000Z',
+            actor: { username: 'admin', role: 'Admin' },
+            metadata: { targetUsername: 'operator02' },
+          },
+          {
+            id: 'audit-1',
+            action: 'LOGIN_SUCCESS',
+            entityType: 'auth',
+            createdAt: '2026-06-11T00:00:00.000Z',
+            actor: { username: 'admin', role: 'Admin' },
+            metadata: {},
+          },
+        ],
+        pagination: { page: 1, limit: 25, total: 2, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveNextPage = resolve
+      }))
+
+    renderWithAuth(<AuditSection />)
+
+    const initialCell = await screen.findByText('Login was successful.')
+    expect(initialCell.closest('tr')).not.toHaveClass('audit-row-arrived')
+
+    await user.click(screen.getByRole('button', { name: 'Refresh audit log' }))
+    const arrivedSummary = await screen.findByText(/operator02 was created/i)
+    expect(arrivedSummary.closest('tr')).toHaveClass('audit-row-arrived')
+
+    await user.click(arrivedSummary)
+    expect(screen.getByRole('dialog', { name: 'Audit details' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /close audit details/i }))
+
+    await user.selectOptions(screen.getByLabelText('Activity'), 'LOGIN_FAILED')
+    expect(await screen.findByText(/loading selected filters; previous results remain visible/i)).toBeInTheDocument()
+    expect(document.querySelector('.audit-table tbody')).toHaveClass('is-placeholder-fetching')
+
+    await act(async () => {
+      resolveNextPage({
+        logs: [],
+        pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+      })
     })
   })
 })

@@ -84,8 +84,8 @@
 .shadcn-calendar-popover.trend-calendar-popover,
 .trend-calendar-popover {
   z-index: 1000;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  background: var(--c-surface, #FFFFFF);
+  border: 1px solid var(--card-border, #E2E8F0);
   border-radius: 10px;
   box-shadow: 0 12px 30px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -4px rgba(15, 23, 42, 0.04);
   display: flex;
@@ -108,9 +108,9 @@
 
 /* Left Sidebar: Quick Presets (Daily, Weekly, Monthly) */
 .trend-popover-sidebar {
-  width: 140px;
-  border-right: 1px solid #E2E8F0;
-  background: #F8FAFC;
+  width: 144px;
+  border-right: 1px solid var(--subtle-border, #E2E8F0);
+  background: var(--c-surface2, #F8FAFC);
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
@@ -120,7 +120,7 @@
 }
 
 .trend-preset-btn {
-  min-height: 38px;
+  min-height: 34px;
   font-size: 13px;
   padding: 6px 12px;
   border-radius: 6px;
@@ -182,14 +182,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  min-height: 36px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   border: 1px solid var(--card-border, #E2E8F0);
   border-radius: 6px;
   background: var(--card-bg, #FFFFFF);
-  color: var(--c-text-2, #64748B);
+  color: var(--c-text-2, #475569);
   cursor: pointer;
   padding: 0;
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
@@ -227,7 +227,7 @@
 /* Day Mode Grid */
 .trend-calendar-day-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
 }
 
@@ -238,8 +238,8 @@
 
 .trend-calendar-day-btn {
   width: 100%;
-  min-height: 32px;
-  height: 32px;
+  min-height: 30px;
+  height: 30px;
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -263,7 +263,7 @@
 }
 
 .trend-calendar-day-btn.is-outside:not(.is-selected) {
-  color: #94A3B8;
+  color: #526277;
 }
 
 .trend-calendar-day-btn.is-in-range:not(.is-selected) {
@@ -293,8 +293,8 @@
 
 .trend-calendar-week-row {
   width: 100%;
-  min-height: 40px;
-  height: 40px;
+  min-height: 34px;
+  height: 34px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -337,7 +337,7 @@
 }
 
 .trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-outside {
-  color: #94A3B8;
+  color: #526277;
 }
 
 .trend-calendar-week-row.is-selected .trend-calendar-week-day-cell {
@@ -413,12 +413,13 @@
 }
 
 .trend-popover-cancel-btn {
-  min-height: 36px;
-  font-size: 12px;
-  color: var(--c-text-2, #64748B);
+  min-height: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-2, #475569);
   background: transparent;
   border: none;
-  padding: 6px 12px;
+  padding: 6px 14px;
   cursor: pointer;
   border-radius: 6px;
   font-family: inherit;
@@ -427,18 +428,18 @@
 
 .trend-popover-cancel-btn:hover {
   color: var(--c-text, #0F172A);
-  background: #F1F5F9;
+  background: var(--hover-bg, #F1F5F9);
 }
 
 .trend-popover-apply-btn {
-  min-height: 36px;
-  font-size: 12px;
+  min-height: 32px;
+  font-size: 13px;
   font-weight: 600;
-  background: var(--c-primary, #2563EB);
+  background: #2563EB;
   color: #FFFFFF;
   border: none;
   border-radius: 6px;
-  padding: 6px 16px;
+  padding: 6px 18px;
   cursor: pointer;
   font-family: inherit;
   transition: background-color 0.15s ease;
@@ -536,7 +537,7 @@
 }
 
 :root[data-theme='dark'] .trend-calendar-day-btn.is-outside:not(.is-selected) {
-  color: #64748B;
+  color: #94A3B8;
 }
 
 :root[data-theme='dark'] .trend-calendar-day-btn.is-in-range:not(.is-selected) {
@@ -559,7 +560,7 @@
 }
 
 :root[data-theme='dark'] .trend-calendar-week-row:not(.is-selected) .trend-calendar-week-day-cell.is-outside {
-  color: #64748B;
+  color: #94A3B8;
 }
 
 :root[data-theme='dark'] .trend-calendar-month-btn {
@@ -681,6 +682,16 @@
     min-width: 44px;
     height: 44px;
   }
+}
+
+.trend-calendar-nav-btn:focus-visible,
+.trend-calendar-day-btn:focus-visible,
+.trend-calendar-week-row:focus-visible,
+.trend-calendar-month-btn:focus-visible,
+.trend-popover-cancel-btn:focus-visible,
+.trend-popover-apply-btn:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

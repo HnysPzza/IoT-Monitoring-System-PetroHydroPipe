@@ -6296,10 +6296,6 @@ button:disabled {
   min-width: 720px;
 }
 
-.audit-table {
-  min-width: 840px;
-}
-
 .downtime-table td {
   vertical-align: top;
 }
@@ -6384,86 +6380,6 @@ button:disabled {
   min-height: 44px;
 }
 
-.audit-controls {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-
-.audit-controls .filter-field {
-  min-width: 0;
-}
-
-.audit-controls .filter-field select {
-  width: 100%;
-  min-width: 0;
-}
-
-.audit-date-field .trend-calendar-control {
-  width: 100%;
-  min-width: 0;
-}
-
-.audit-date-field .trend-calendar-trigger {
-  min-height: 44px;
-  padding-block: 4px;
-}
-
-.audit-date-clear {
-  margin: 0;
-}
-
-.audit-controls-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  align-self: end;
-  justify-self: end;
-  gap: 8px;
-  min-width: 0;
-}
-
-.audit-total-chip {
-  min-height: 30px;
-  padding: 5px 9px;
-  gap: 6px;
-  font-size: 0.74rem;
-  white-space: nowrap;
-}
-
-.audit-total-chip svg {
-  width: 14px;
-  height: 14px;
-}
-
-.audit-history-card .section-heading {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 136px;
-  align-items: start;
-}
-
-.audit-history-card .audit-total-chip {
-  justify-self: start;
-}
-
-.audit-refresh-button {
-  align-self: end;
-  margin: 0;
-}
-
-@media (min-width: 901px) {
-  .audit-controls-card {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: center;
-  }
-
-  .audit-controls {
-    grid-template-columns: minmax(128px, 144px) minmax(152px, 168px) minmax(180px, 200px) auto;
-    align-items: end;
-    justify-content: end;
-  }
-}
-
 @media (min-width: 1120px) {
   .reports-controls-card {
     grid-template-columns: max-content minmax(0, 1fr);
@@ -6475,37 +6391,6 @@ button:disabled {
     justify-content: end;
     gap: 12px;
   }
-}
-
-.audit-note {
-  flex: 1 1 280px;
-  justify-content: flex-start;
-}
-
-.audit-action-label,
-.audit-entity-label {
-  display: block;
-}
-
-.audit-action-label {
-  color: var(--c-text);
-  font-weight: 700;
-}
-
-.audit-entity-label {
-  margin-top: 4px;
-  color: var(--c-text-2);
-  font-family: var(--font-sans);
-  font-size: 0.72rem;
-}
-
-.audit-details-button {
-  min-height: 36px;
-}
-
-.audit-table tbody tr.is-expanded td {
-  border-bottom-color: transparent;
-  background: color-mix(in srgb, var(--panel-bg) 88%, var(--brand-accent) 12%);
 }
 
 .downtime-table tbody tr.needs-cause-review td {
@@ -6603,107 +6488,6 @@ button:disabled {
 .downtime-detail-actions {
   display: flex;
   justify-content: flex-end;
-}
-
-.audit-pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  min-width: 0;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--subtle-border);
-}
-
-.audit-pagination span {
-  color: var(--c-text-2);
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.audit-details-dialog {
-  width: min(420px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  margin: auto;
-  padding: 0;
-  border: 1px solid var(--subtle-border);
-  border-radius: 12px;
-  color: var(--c-text);
-  background: var(--panel-bg);
-  box-shadow: 0 12px 32px rgb(15 23 42 / 16%);
-  overflow: auto;
-}
-
-.audit-details-dialog::backdrop {
-  background: rgb(15 23 42 / 42%);
-}
-
-.audit-dialog-content {
-  display: grid;
-  gap: 20px;
-  padding: 26px 28px;
-}
-
-.audit-dialog-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.audit-dialog-heading h2 {
-  margin: 0;
-  font-size: 1.15rem;
-}
-
-.audit-dialog-details {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px 28px;
-  margin: 0;
-}
-
-.audit-dialog-details .audit-detail-item {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-}
-
-.audit-dialog-details .audit-detail-full {
-  grid-column: 1 / -1;
-}
-
-.audit-dialog-details .audit-detail-primary {
-  gap: 8px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--subtle-border);
-}
-
-.audit-dialog-details dt {
-  color: var(--c-text-2);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.audit-dialog-details dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--c-text);
-  font-size: 0.92rem;
-  font-weight: 650;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.audit-dialog-details .audit-detail-primary dd {
-  font-size: 1.35rem;
-  font-weight: 700;
-  line-height: 1.25;
 }
 
 .spin-icon {
@@ -7047,22 +6831,6 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .audit-controls-card {
-    grid-template-columns: 1fr;
-  }
-
-  .audit-controls-card .section-heading {
-    margin-bottom: 16px;
-  }
-
-  .audit-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .audit-refresh-button {
-    justify-self: end;
-  }
-
   .audit-details-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7385,10 +7153,6 @@ button:disabled {
     min-width: 760px;
   }
 
-  .audit-table {
-    min-width: 760px;
-  }
-
   .audit-details-grid {
     grid-template-columns: 1fr;
   }
@@ -7541,6 +7305,8 @@ button:disabled {
   .login-page .btn,
   .login-page .btn-primary .spinner,
   .login-page .icon-button,
+  .btn,
+  .reports-icon-button,
   :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select,
   :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) .select-chevron-icon,
   :is(.custom-select-wrap, .users-select-wrap, .account-select-wrap) select option {
@@ -7558,6 +7324,8 @@ button:disabled {
   .analytics-cause-legend-item:hover,
   .analytics-cause-legend-item:focus-visible,
   .analytics-cause-legend-item.is-hovered,
+  .btn:hover:not(:disabled),
+  .btn:active:not(:disabled),
   .login-page .btn:hover:not(:disabled),
   .login-page .btn:active:not(:disabled),
   .login-page .icon-button:active:not(:disabled) {
