@@ -42,7 +42,7 @@ export function cloneSettings(settings) {
 }
 
 export function sortBreaks(breaks) {
-  return [...breaks].sort((left, right) => left.startTime.localeCompare(right.startTime))
+  return [...breaks].sort((left, right) => (left.startTime || '').localeCompare(right.startTime || ''))
 }
 
 function toMinutes(value) {
@@ -114,6 +114,74 @@ export function getRotationStallSecondsBounds(stallBounds = DEFAULT_ROTATION_STA
     minimum: Number((minimumMs / 1000).toFixed(3)),
     maximum: Number((maximumMs / 1000).toFixed(3)),
   }
+}
+
+function evaluateBreaks(schedule, constraints) {
+  const invalidIndices = new Set()
+  const maxBreaks = constraints?.breaks?.maximum ?? 10
+  const breaks = Array.isArray(schedule?.breaks) ? schedule.breaks : null
+  if (!breaks || breaks.length > maxBreaks) {
+    if (Array.isArray(breaks)) {
+      breaks.forEach((_, idx) => {
+        if (idx >= maxBreaks) invalidIndices.add(idx)
+      })
+    }
+    return {
+      errorMessage: `At most ${maxBreaks} breaks are allowed.`,
+      invalidIndices,
+    }
+  }
+
+  const workStart = toMinutes(schedule.workStart)
+  const workEnd = toMinutes(schedule.workEnd)
+  const grace = Number.isInteger(schedule.rampUpGraceMinutes) ? schedule.rampUpGraceMinutes : 0
+  const names = new Map()
+  let errorMessage = null
+
+  const sorted = breaks
+    .map((entry, originalIndex) => ({ entry, originalIndex }))
+    .sort((left, right) => (left.entry.startTime || '').localeCompare(right.entry.startTime || ''))
+
+  sorted.forEach(({ entry, originalIndex }, index) => {
+    const start = toMinutes(entry.startTime)
+    const end = toMinutes(entry.endTime)
+    const label = entry.name?.trim() || `Break ${index + 1}`
+    const name = (entry.name || '').trim().toLowerCase()
+    const previousEnd = index > 0 ? toMinutes(sorted[index - 1].entry.endTime) : null
+    const previousGraceEnd = previousEnd === null ? null : previousEnd + grace
+
+    if (!name) {
+      invalidIndices.add(originalIndex)
+      errorMessage = 'Breaks need unique names, valid times, and no overlap inside the shift.'
+    } else if (names.has(name)) {
+      invalidIndices.add(originalIndex)
+      invalidIndices.add(names.get(name))
+      errorMessage = 'Breaks need unique names, valid times, and no overlap inside the shift.'
+    } else if (start === null || end === null || start >= end) {
+      invalidIndices.add(originalIndex)
+      errorMessage = `${label} end time must be later than start time (valid times and no overlap inside the shift).`
+    } else if (workStart !== null && workEnd !== null && (start < workStart || end > workEnd)) {
+      invalidIndices.add(originalIndex)
+      errorMessage = `${label} must stay within operating hours (${schedule.workStart}–${schedule.workEnd}, no overlap inside the shift).`
+    } else if (workEnd !== null && end + grace > workEnd) {
+      invalidIndices.add(originalIndex)
+      errorMessage = `${label} plus the ${grace}m grace period exceeds work end (${schedule.workEnd}, no overlap inside the shift).`
+    } else if (previousGraceEnd !== null && start < previousGraceEnd) {
+      invalidIndices.add(originalIndex)
+      const prevLabel = sorted[index - 1].entry.name?.trim() || `Break ${index}`
+      errorMessage = `${label} overlaps ${prevLabel} plus its ${grace}m grace period (no overlap inside the shift).`
+    }
+
+    if (name && !names.has(name)) {
+      names.set(name, originalIndex)
+    }
+  })
+
+  return { errorMessage, invalidIndices }
+}
+
+export function getInvalidBreakIndices(schedule, constraints) {
+  return evaluateBreaks(schedule, constraints).invalidIndices
 }
 
 function formatMinuteRange(bounds) {
@@ -227,29 +295,10 @@ export function validateOperationalSettings(settings, constraints) {
     return errors
   }
 
-  const names = new Set()
-  const sorted = sortBreaks(schedule.breaks)
-  sorted.forEach((entry, index) => {
-    const start = toMinutes(entry.startTime)
-    const end = toMinutes(entry.endTime)
-    const label = entry.name?.trim() || `Break ${index + 1}`
-    const name = entry.name.trim().toLowerCase()
-    const previousEnd = index > 0 ? toMinutes(sorted[index - 1].endTime) : null
-    const previousGraceEnd = previousEnd === null ? null : previousEnd + schedule.rampUpGraceMinutes
-    if (!name || names.has(name)) {
-      errors.breaks = 'Breaks need unique names, valid times, and no overlap inside the shift.'
-    } else if (start === null || end === null || start >= end) {
-      errors.breaks = `${label} end time must be later than start time (valid times and no overlap inside the shift).`
-    } else if (workStart !== null && workEnd !== null && (start < workStart || end > workEnd)) {
-      errors.breaks = `${label} must stay within operating hours (${schedule.workStart}–${schedule.workEnd}, no overlap inside the shift).`
-    } else if (workEnd !== null && end + schedule.rampUpGraceMinutes > workEnd) {
-      errors.breaks = `${label} plus the ${schedule.rampUpGraceMinutes}m grace period exceeds work end (${schedule.workEnd}, no overlap inside the shift).`
-    } else if (previousGraceEnd !== null && start < previousGraceEnd) {
-      const prevLabel = sorted[index - 1].name?.trim() || `Break ${index}`
-      errors.breaks = `${label} overlaps ${prevLabel} plus its ${schedule.rampUpGraceMinutes}m grace period (no overlap inside the shift).`
-    }
-    names.add(name)
-  })
+  const breakEval = evaluateBreaks(schedule, constraints)
+  if (breakEval.errorMessage) {
+    errors.breaks = breakEval.errorMessage
+  }
   return errors
 }
 
@@ -336,4 +385,68 @@ export function getBackToWorkDate(endDate, restDays = [], calendarDays = []) {
     }
   }
   return null
+}
+
+// Group multi-day exclusions sharing a groupId so ranges display as one compact row.
+export function groupCalendarEntries(entries = [], manilaToday = getManilaToday()) {
+  if (!Array.isArray(entries) || entries.length === 0) return []
+  const groupBuckets = new Map()
+  const standaloneRows = []
+
+  for (const entry of entries) {
+    if (!entry || !entry.calendarDate) continue
+    if (entry.groupId) {
+      const bucket = groupBuckets.get(entry.groupId) || []
+      bucket.push(entry)
+      groupBuckets.set(entry.groupId, bucket)
+    } else {
+      const isFuture = entry.calendarDate > manilaToday
+      standaloneRows.push({
+        key: `day:${entry.calendarDate}`,
+        isRangeGroup: false,
+        groupId: null,
+        entry,
+        entries: [entry],
+        startDate: entry.calendarDate,
+        endDate: entry.calendarDate,
+        dayCount: 1,
+        name: entry.name,
+        dayType: entry.dayType,
+        isWorking: entry.isWorking,
+        reason: entry.reason || null,
+        source: entry.source,
+        hasFutureDates: isFuture,
+        isAllLocked: !isFuture,
+      })
+    }
+  }
+
+  const groupedRows = []
+  for (const [groupId, bucket] of groupBuckets.entries()) {
+    const sortedEntries = [...bucket].sort((left, right) => left.calendarDate.localeCompare(right.calendarDate))
+    const first = sortedEntries[0]
+    const last = sortedEntries[sortedEntries.length - 1]
+    const hasFutureDates = sortedEntries.some((item) => item.calendarDate > manilaToday)
+    groupedRows.push({
+      key: `group:${groupId}`,
+      isRangeGroup: true,
+      groupId,
+      entry: sortedEntries.find((item) => item.calendarDate > manilaToday) || first,
+      entries: sortedEntries,
+      startDate: first.calendarDate,
+      endDate: last.calendarDate,
+      dayCount: sortedEntries.length,
+      name: first.name,
+      dayType: first.dayType,
+      isWorking: first.isWorking,
+      reason: first.reason || null,
+      source: first.source,
+      hasFutureDates,
+      isAllLocked: !hasFutureDates,
+    })
+  }
+
+  return [...standaloneRows, ...groupedRows].sort((left, right) => (
+    left.startDate.localeCompare(right.startDate)
+  ))
 }
