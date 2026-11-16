@@ -285,7 +285,7 @@ describe('ReportsSection request states', () => {
     getReportSummary.mockResolvedValue(reportPayload())
     exportReport.mockResolvedValue({
       blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
-      filename: 'report-daily-2026-08-31.pdf',
+      filename: 'Operational-DailyReport-2026-08-31.pdf',
     })
 
     renderWithAuth(<ReportsSection />)
@@ -308,7 +308,7 @@ describe('ReportsSection request states', () => {
       blob: new Blob(['xlsx-binary'], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
-      filename: 'report-daily-2026-08-31.xlsx',
+      filename: 'Operational-DailyReport-2026-08-31.xlsx',
     })
 
     renderWithAuth(<ReportsSection />)
@@ -542,7 +542,7 @@ describe('ReportsSection request states', () => {
     getReportSummary.mockResolvedValue(productionReportPayload())
     exportReport.mockResolvedValue({
       blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
-      filename: 'production-report-daily-2026-08-31.pdf',
+      filename: 'Production-DailyReport-2026-08-31.pdf',
     })
 
     renderWithAuth(<ReportsSection />)
@@ -712,7 +712,7 @@ describe('ReportsSection request states', () => {
     getReportSummary.mockResolvedValue(reportPayload())
     exportReport.mockResolvedValue({
       blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
-      filename: 'report-daily-2026-08-31.pdf',
+      filename: 'Operational-DailyReport-2026-08-31.pdf',
     })
 
     const appendChildSpy = vi.spyOn(document.body, 'appendChild')
@@ -750,7 +750,7 @@ describe('ReportsSection request states', () => {
       blob: new Blob(['xlsx-binary'], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
-      filename: 'production-report-daily-2026-08-31.xlsx',
+      filename: 'Production-DailyReport-2026-08-31.xlsx',
     })
 
     renderWithAuth(<ReportsSection />)

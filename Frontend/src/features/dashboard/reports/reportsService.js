@@ -26,6 +26,21 @@ export function getReportSummary(token, { category = 'regular', reportType, sele
   return apiRequest(`/api/reports/summary?${params.toString()}`, { token, signal })
 }
 
+function sanitizeFilenameToken(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '')
+}
+
+function buildFallbackExportFilename({ category = 'regular', reportType, selectedDate, format }) {
+  const categoryLabel = category === 'production' ? 'Production' : 'Operational'
+  const cleanType = sanitizeFilenameToken(reportType)
+  const typeLabel = cleanType
+    ? `${cleanType.charAt(0).toUpperCase()}${cleanType.slice(1)}Report`
+    : 'Report'
+  const dateLabel = sanitizeFilenameToken(selectedDate) || 'undated'
+  const extLabel = sanitizeFilenameToken(format)
+  return `${categoryLabel}-${typeLabel}-${dateLabel}.${extLabel}`
+}
+
 function getExportFilename(disposition, fallback) {
   const match = disposition?.match(/filename="([^"]+)"/)
   return match?.[1] || fallback
@@ -100,10 +115,14 @@ export async function exportReport(token, { category = 'regular', reportType, se
     }
 
     const blob = await response.blob()
-    const prefix = category === 'production' ? 'production-report' : 'report'
     const filename = getExportFilename(
       response.headers.get('content-disposition'),
-      `${prefix}-${reportType}-${normalizedDate || 'undated'}.${format}`,
+      buildFallbackExportFilename({
+        category,
+        reportType,
+        selectedDate: normalizedDate,
+        format,
+      }),
     )
 
     return { blob, filename }

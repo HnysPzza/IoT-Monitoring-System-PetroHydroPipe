@@ -503,27 +503,27 @@ test('CHALLENGE 6: Filename sanitization against malicious path traversal and in
   const adversarialCases = [
     {
       input: { category: 'production', reportType: '../../etc/passwd', selectedDate: '2026-09-02', format: 'pdf' },
-      expected: 'production-report-....etcpasswd-2026-09-02.pdf',
+      expected: 'Production-EtcpasswdReport-2026-09-02.pdf',
     },
     {
       input: { category: 'regular', reportType: 'daily\r\nSet-Cookie: evil=1', selectedDate: '2026-09-02', format: 'xlsx' },
-      expected: 'report-dailySet-Cookieevil1-2026-09-02.xlsx',
+      expected: 'Operational-DailySet-Cookieevil1Report-2026-09-02.xlsx',
     },
     {
       input: { category: 'production', reportType: 'daily', selectedDate: '2026-09-02; rm -rf /', format: 'pdf' },
-      expected: 'production-report-daily-2026-09-02rm-rf.pdf',
+      expected: 'Production-DailyReport-2026-09-02rm-rf.pdf',
     },
     {
       input: { category: 'production', reportType: 'daily', selectedDate: '2026-09-02\0hidden', format: 'pdf' },
-      expected: 'production-report-daily-2026-09-02hidden.pdf',
+      expected: 'Production-DailyReport-2026-09-02hidden.pdf',
     },
     {
       input: { category: 'regular', reportType: 'weekly', selectedDate: '2026-W36', format: 'xlsx' },
-      expected: 'report-weekly-2026-W36.xlsx',
+      expected: 'Operational-WeeklyReport-2026-W36.xlsx',
     },
     {
       input: { category: 'production', reportType: 'monthly', selectedDate: '', format: 'pdf' },
-      expected: 'production-report-monthly-undated.pdf',
+      expected: 'Production-MonthlyReport-undated.pdf',
     },
   ]
 
@@ -534,8 +534,9 @@ test('CHALLENGE 6: Filename sanitization against malicious path traversal and in
       expected,
       `Sanitization for ${JSON.stringify(input)} failed: got "${sanitized}", expected "${expected}"`,
     )
-    // Check that NO prohibited characters exist: only [a-zA-Z0-9._-]
+    // Check that NO prohibited characters or parent-dir sequences exist
     assert.match(sanitized, /^[a-zA-Z0-9._-]+$/)
+    assert.doesNotMatch(sanitized, /\.\./)
   })
 })
 

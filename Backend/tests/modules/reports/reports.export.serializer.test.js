@@ -319,23 +319,23 @@ test('toXlsx preserves unobserved values as muted em-dash instead of inventing z
 test('buildExportFilename derives a safe deterministic filename from the request', () => {
   assert.equal(
     buildExportFilename({ reportType: 'monthly', selectedDate: undefined, format: 'pdf' }),
-    'report-monthly-undated.pdf',
+    'Operational-MonthlyReport-undated.pdf',
   )
   assert.equal(
     buildExportFilename({ reportType: 'weekly', selectedDate: '2026-09-02', format: 'xlsx' }),
-    'report-weekly-2026-09-02.xlsx',
+    'Operational-WeeklyReport-2026-09-02.xlsx',
   )
   assert.equal(
     buildExportFilename({ category: 'regular', reportType: 'daily', selectedDate: '2026-09-02', format: 'pdf' }),
-    'report-daily-2026-09-02.pdf',
+    'Operational-DailyReport-2026-09-02.pdf',
   )
   assert.equal(
-    buildExportFilename({ category: 'production', reportType: 'daily', selectedDate: '2026-09-02', format: 'pdf' }),
-    'production-report-daily-2026-09-02.pdf',
+    buildExportFilename({ category: 'production', reportType: 'daily', selectedDate: '2026-11-16', format: 'xlsx' }),
+    'Production-DailyReport-2026-11-16.xlsx',
   )
   assert.equal(
     buildExportFilename({ category: 'production', reportType: 'monthly', selectedDate: '2026-09', format: 'xlsx' }),
-    'production-report-monthly-2026-09.xlsx',
+    'Production-MonthlyReport-2026-09.xlsx',
   )
 })
 
@@ -677,7 +677,16 @@ test('buildExportFilename sanitizes path traversal, CRLF, and special characters
       selectedDate: '2026-09-02"; DROP TABLE--',
       format: 'xlsx',
     }),
-    'production-report-....dailySet-Cookiebad-2026-09-02DROPTABLE--.xlsx',
+    'Production-DailySet-CookiebadReport-2026-09-02DROPTABLE--.xlsx',
+  )
+  assert.equal(
+    buildExportFilename({
+      category: 'production',
+      reportType: 'daily',
+      selectedDate: '../..//',
+      format: 'xlsx',
+    }),
+    'Production-DailyReport-undated.xlsx',
   )
 })
 

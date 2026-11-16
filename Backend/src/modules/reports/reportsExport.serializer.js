@@ -637,10 +637,19 @@ function toPdf(report) {
   })
 }
 
+function sanitizeFilenameToken(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '')
+}
+
 function buildExportFilename({ category = 'regular', reportType, selectedDate, format }) {
-  const prefix = category === 'production' ? 'production-report' : 'report'
-  const raw = `${prefix}-${reportType}-${selectedDate || 'undated'}.${format}`
-  return raw.replace(/[^a-zA-Z0-9._-]/g, '')
+  const categoryLabel = category === 'production' ? 'Production' : 'Operational'
+  const cleanType = sanitizeFilenameToken(reportType)
+  const typeLabel = cleanType
+    ? `${cleanType.charAt(0).toUpperCase()}${cleanType.slice(1)}Report`
+    : 'Report'
+  const dateLabel = sanitizeFilenameToken(selectedDate) || 'undated'
+  const extLabel = sanitizeFilenameToken(format)
+  return `${categoryLabel}-${typeLabel}-${dateLabel}.${extLabel}`
 }
 
 function contentTypeFor(format) {

@@ -210,7 +210,7 @@ test('Export API streams a formatted XLSX workbook and records its format in the
 
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="report-daily-2026-09-02.xlsx"')
+    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="Operational-DailyReport-2026-09-02.xlsx"')
 
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()))
@@ -240,7 +240,7 @@ test('Export API exports production report with category parameter and productio
 
     assert.equal(pdfResponse.status, 200)
     assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf')
-    assert.equal(pdfResponse.headers.get('content-disposition'), 'attachment; filename="production-report-daily-2026-09-02.pdf"')
+    assert.equal(pdfResponse.headers.get('content-disposition'), 'attachment; filename="Production-DailyReport-2026-09-02.pdf"')
 
     const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer())
     assert.equal(pdfBuffer.subarray(0, 5).toString('utf8'), '%PDF-')
@@ -254,7 +254,7 @@ test('Export API exports production report with category parameter and productio
 
     assert.equal(xlsxResponse.status, 200)
     assert.equal(xlsxResponse.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    assert.equal(xlsxResponse.headers.get('content-disposition'), 'attachment; filename="production-report-weekly-2026-09-02.xlsx"')
+    assert.equal(xlsxResponse.headers.get('content-disposition'), 'attachment; filename="Production-WeeklyReport-2026-09-02.xlsx"')
 
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(await xlsxResponse.arrayBuffer()))
