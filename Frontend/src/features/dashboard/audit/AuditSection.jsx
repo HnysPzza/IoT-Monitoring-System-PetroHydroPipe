@@ -14,6 +14,7 @@ import {
   formatDateTime,
   getAuditTone,
   getReadableAction,
+  getReadableActor,
   getReadableDetails,
   getReadableDetailItems,
   getReadableEntity,
@@ -535,6 +536,7 @@ export default function AuditSection() {
                 <tr>
                   <th scope="col">Date/Time</th>
                   <th scope="col">Action</th>
+                  <th scope="col">Who did it</th>
                   <th scope="col">Affected item</th>
                   <th scope="col">Summary</th>
                   <th scope="col">Details</th>
@@ -545,6 +547,7 @@ export default function AuditSection() {
                   <tr key={key}>
                     <td data-label="Date/Time"><div className="skeleton audit-skeleton-cell is-medium" /></td>
                     <td data-label="Action"><div className="skeleton audit-skeleton-cell is-medium" /></td>
+                    <td data-label="Who did it"><div className="skeleton audit-skeleton-cell is-short" /></td>
                     <td data-label="Affected item"><div className="skeleton audit-skeleton-cell is-short" /></td>
                     <td data-label="Summary"><div className="skeleton audit-skeleton-cell" /></td>
                     <td data-label="Details"><div className="skeleton audit-skeleton-cell is-short" /></td>
@@ -587,6 +590,7 @@ export default function AuditSection() {
                   <tr>
                     <th scope="col">Date/Time</th>
                     <th scope="col">Action</th>
+                    <th scope="col">Who did it</th>
                     <th scope="col">Affected item</th>
                     <th scope="col">Summary</th>
                     <th scope="col">Details</th>
@@ -606,7 +610,7 @@ export default function AuditSection() {
                         <td className="audit-time-cell" data-label="Date/Time">
                           <time dateTime={log.createdAt || undefined}>{formatDateTime(log.createdAt)}</time>
                         </td>
-                        <td data-label="Action">
+                        <td className="audit-action-cell" data-label="Action">
                           <div className="audit-action-stack">
                             <span className="audit-action-badge" data-tone={tone}>
                               {getReadableAction(log)}
@@ -614,7 +618,8 @@ export default function AuditSection() {
                             <span className="audit-entity-label">{getReadableEntity(log)}</span>
                           </div>
                         </td>
-                        <td data-label="Affected item">{getReadableTarget(log)}</td>
+                        <td className="audit-actor-cell" data-label="Who did it">{getReadableActor(log)}</td>
+                        <td className="audit-target-cell" data-label="Affected item">{getReadableTarget(log)}</td>
                         <td className="audit-summary-cell" data-label="Summary">{getReadableDetails(log)}</td>
                         <td data-label="Details">
                           <button

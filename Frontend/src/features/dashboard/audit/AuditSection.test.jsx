@@ -221,8 +221,10 @@ describe('AuditSection', () => {
     renderWithAuth(<AuditSection />)
 
     expect(await screen.findByRole('columnheader', { name: 'Summary' })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: 'Who did it' })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Who did it' })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Source' })).not.toBeInTheDocument()
+    const tableRow = (await screen.findByText(/outside filler wire downtime detected was created/i)).closest('tr')
+    expect(within(tableRow).getByText('System')).toBeInTheDocument()
 
     const detailsButton = await screen.findByRole('button', { name: /view details/i })
 
@@ -538,10 +540,14 @@ describe('AuditSection', () => {
     expect(Array.from(cells).map((cell) => cell.getAttribute('data-label'))).toEqual([
       'Date/Time',
       'Action',
+      'Who did it',
       'Affected item',
       'Summary',
       'Details',
     ])
+    expect(cells[2]).toHaveTextContent('Managing Director')
+    expect(cells[2]).not.toHaveTextContent('Admin')
+    expect(cells[2]).not.toHaveTextContent('admin')
     expect(document.querySelector('tbody time')).toHaveAttribute('dateTime', '2026-06-11T00:00:00.000Z')
     expect(document.querySelector('.audit-action-badge')).toHaveAttribute('data-tone', 'neutral')
     expect(screen.getByText('Updated sensor thresholds.')).toBeInTheDocument()
@@ -858,5 +864,81 @@ describe('AuditSection', () => {
     const dialog = screen.getByRole('dialog', { name: 'Audit details' })
     expect(within(dialog).getByText('Reason')).toBeInTheDocument()
     expect(within(dialog).getByText('No orders')).toBeInTheDocument()
+  })
+
+  it('keeps Who did it column aligned between loading skeletons and rendered rows across actor types', async () => {
+    let resolveLogs
+    getAuditLogs.mockImplementation(() => new Promise((resolve) => {
+      resolveLogs = resolve
+    }))
+
+    renderWithAuth(<AuditSection />)
+
+    const loadingWrap = await screen.findByLabelText('Loading audit history')
+    const skeletonHeaders = within(loadingWrap).getAllByRole('columnheader')
+    expect(skeletonHeaders.map((header) => header.textContent)).toEqual([
+      'Date/Time',
+      'Action',
+      'Who did it',
+      'Affected item',
+      'Summary',
+      'Details',
+    ])
+    const firstSkeletonRowCells = within(loadingWrap).getAllByRole('row')[1].querySelectorAll('td')
+    expect(Array.from(firstSkeletonRowCells).map((cell) => cell.getAttribute('data-label'))).toEqual([
+      'Date/Time',
+      'Action',
+      'Who did it',
+      'Affected item',
+      'Summary',
+      'Details',
+    ])
+
+    await act(async () => {
+      resolveLogs({
+        logs: [
+          {
+            id: 'actor-role',
+            action: 'SETTINGS_UPDATED',
+            entityType: 'machine_settings',
+            createdAt: '2026-06-11T00:00:00.000Z',
+            actor: { username: 'admin', role: 'Admin' },
+            metadata: { machineName: 'Spiral Mill 01', changedSections: ['shiftSchedule'] },
+          },
+          {
+            id: 'actor-sensor',
+            action: 'WATCHDOG_DOWNTIME_CREATED',
+            entityType: 'downtime',
+            createdAt: '2026-06-11T00:05:00.000Z',
+            actor: null,
+            metadata: { ownerSensorCode: 'S-03', sensorCode: 'S-02' },
+          },
+          {
+            id: 'actor-auth',
+            action: 'LOGIN_FAILED',
+            entityType: 'auth',
+            createdAt: '2026-06-11T00:10:00.000Z',
+            actor: null,
+            metadata: { reason: 'invalid_credentials' },
+          },
+        ],
+        pagination: { page: 1, limit: 25, total: 3, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+      })
+    })
+
+    const tableHeaders = await screen.findAllByRole('columnheader')
+    expect(tableHeaders.map((header) => header.textContent)).toEqual([
+      'Date/Time',
+      'Action',
+      'Who did it',
+      'Affected item',
+      'Summary',
+      'Details',
+    ])
+
+    const rows = document.querySelectorAll('.audit-table tbody tr')
+    expect(rows[0].querySelector('.audit-actor-cell')).toHaveTextContent('Managing Director')
+    expect(rows[1].querySelector('.audit-actor-cell')).toHaveTextContent('Sensors')
+    expect(rows[2].querySelector('.audit-actor-cell')).toHaveTextContent('User')
   })
 })
