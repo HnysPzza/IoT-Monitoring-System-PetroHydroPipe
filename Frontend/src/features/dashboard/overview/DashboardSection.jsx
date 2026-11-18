@@ -134,6 +134,16 @@ function getRequestDisplayState({ state, hasCurrentData, errorKey, currentKey })
   return hasCurrentData ? state : 'loading'
 }
 
+const MAIN_SENSOR_CODE = 'S-03'
+
+function isSensorReporting(sensor) {
+  return Boolean(sensor)
+    && sensor.status !== 'Unavailable'
+    && sensor.status !== 'Offline'
+    && sensor.monitoring?.connectivityState !== 'offline'
+    && !String(sensor.status).startsWith('Last:')
+}
+
 function isRecoveryPendingAlert(alert) {
   return alert?.status === 'Active' && alert.metadata?.recoveryPending === true
 }
@@ -350,12 +360,8 @@ export default function DashboardSection() {
       status: sensor?.status || 'Unavailable',
     }
   })
-  const reportingSensorCount = sensorHealth.filter((sensor) => (
-    sensor.status !== 'Unavailable'
-    && sensor.status !== 'Offline'
-    && sensor.monitoring?.connectivityState !== 'offline'
-    && !String(sensor.status).startsWith('Last:')
-  )).length
+  const reportingSensorCount = sensorHealth.filter(isSensorReporting).length
+  const mainSensor = sensorHealth.find((sensor) => sensor.code === MAIN_SENSOR_CODE)
   const machineKpi = (() => {
     if (liveDisplayState === 'success' && hasCurrentLive && liveData.machine) {
       const machineName = liveData.machine.name || 'Spiral Mill 01'
@@ -367,6 +373,10 @@ export default function DashboardSection() {
 
       if (reportingSensorCount === 0) {
         return { value: '0 / 1', helper: `${machineName} · Sensors offline`, tone: 'warning' }
+      }
+
+      if (!isSensorReporting(mainSensor)) {
+        return { value: '0 / 1', helper: `${machineName} · Main sensor offline`, tone: 'warning' }
       }
 
       if (machineStatus === 'Idle') {
