@@ -987,4 +987,20 @@ describe('SettingsSection operational settings', () => {
       'shadcn-calendar-grid',
     ])
   })
+
+  it('keeps Operating hours columns in a two-row label-and-control structure for grid alignment', async () => {
+    renderWithAuth(<SettingsSection />)
+
+    await screen.findByLabelText('Work start')
+    const workGrid = document.querySelector('.settings-work-grid')
+    expect(workGrid).not.toBeNull()
+
+    const columns = Array.from(workGrid.children)
+    expect(columns).toHaveLength(3)
+    for (const column of columns) {
+      expect(column).toHaveClass('settings-field-col')
+      expect(column.children).toHaveLength(2)
+    }
+    expect(columns[2].firstElementChild).toHaveClass('settings-field-label-row')
+  })
 })

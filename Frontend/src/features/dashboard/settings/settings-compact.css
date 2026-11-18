@@ -347,7 +347,7 @@
 }
 
 .settings-work-grid {
-  align-items: start;
+  align-items: stretch;
 }
 
 .settings-field-col {
@@ -355,6 +355,16 @@
   align-content: start;
   gap: 4px;
   min-width: 0;
+}
+
+.settings-work-grid > .settings-field-col {
+  grid-template-rows: 1fr auto;
+  align-content: stretch;
+}
+
+.settings-work-grid > .settings-field-col > .field-label-text,
+.settings-work-grid > .settings-field-col > .settings-field-label-row {
+  align-self: center;
 }
 
 .settings-field-label-row {
