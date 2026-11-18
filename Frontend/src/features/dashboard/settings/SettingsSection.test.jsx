@@ -967,4 +967,24 @@ describe('SettingsSection operational settings', () => {
     await user.click(screen.getByRole('button', { name: /Hide holidays/i }))
     expect(screen.queryByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).not.toBeInTheDocument()
   })
+
+  it('places calendar caption and nav side-by-side inside the month container in the Schedule exception modal', async () => {
+    const user = userEvent.setup()
+    renderWithAuth(<SettingsSection />)
+
+    await user.click(await screen.findByRole('button', { name: /Schedule exception/i }))
+    const dialog = await screen.findByRole('dialog', { name: /Schedule exception/i })
+
+    const root = dialog.querySelector('.shadcn-calendar-root')
+    const month = dialog.querySelector('.shadcn-calendar-month')
+    expect(root).toHaveAttribute('data-nav-layout', 'after')
+    expect(month).not.toBeNull()
+
+    const directChildClasses = Array.from(month.children).map((node) => node.className)
+    expect(directChildClasses).toEqual([
+      'shadcn-calendar-caption',
+      'shadcn-calendar-nav',
+      'shadcn-calendar-grid',
+    ])
+  })
 })

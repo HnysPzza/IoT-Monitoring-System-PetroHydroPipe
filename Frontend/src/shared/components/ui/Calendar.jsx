@@ -6,6 +6,7 @@ export function Calendar({
   classNames = {},
   showOutsideDays = true,
   captionLayout = 'label',
+  navLayout = 'after',
   components = {},
   formatters,
   ...props
@@ -16,6 +17,7 @@ export function Calendar({
     <DayPicker
       showOutsideDays={showOutsideDays}
       captionLayout={captionLayout}
+      navLayout={navLayout}
       className={`shadcn-calendar ${className}`.trim()}
       formatters={{
         formatMonthDropdown: (date) => date.toLocaleString('en-PH', { month: 'short' }),

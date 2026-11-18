@@ -738,6 +738,25 @@
   gap: 8px;
 }
 
+.shadcn-calendar-month:has(> .shadcn-calendar-nav) {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.shadcn-calendar-month:has(> .shadcn-calendar-nav) > .shadcn-calendar-caption {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.shadcn-calendar-month:has(> .shadcn-calendar-nav) > .shadcn-calendar-nav {
+  grid-column: 2;
+  justify-self: end;
+}
+
+.shadcn-calendar-month:has(> .shadcn-calendar-nav) > .shadcn-calendar-grid {
+  grid-column: 1 / -1;
+}
+
 .shadcn-calendar-caption {
   display: flex;
   align-items: center;
@@ -753,6 +772,7 @@
 }
 
 .shadcn-calendar-dropdowns {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -916,6 +936,10 @@
 }
 
 @media (max-width: 760px), (pointer: coarse) {
+  .shadcn-calendar-caption {
+    min-height: 38px;
+  }
+
   .shadcn-calendar-nav-button,
   .shadcn-calendar-day-button {
     min-width: 38px;
