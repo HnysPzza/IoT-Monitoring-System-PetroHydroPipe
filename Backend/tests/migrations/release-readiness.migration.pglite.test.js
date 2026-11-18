@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 59
+const releaseSchemaVersion = 61
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -804,6 +804,844 @@ test('migration 058 creates query optimization indexes and preserves get_analyti
   assert.equal(new Date(downtimeFirst).toISOString(), '2026-06-01T03:00:00.000Z')
   await db.exec('reset role;')
 })
+
+test('migration 060 rejects S-05 output pulses when S-03 is offline without downtime and accepts when S-03 is online', async (t) => {
+  const db = await database(t)
+
+  async function ingest(sensorCode, eventType, recordedAt) {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from sensors sensor
+      cross join lateral ingest_iot_sensor_event(
+        $1,
+        sensor.id,
+        sensor.machine_id,
+        $2,
+        $3::jsonb,
+        $4
+      ) result
+      where sensor.sensor_code = $5
+    `, [randomUUID(), eventType, JSON.stringify({ signal, metadata: {} }), recordedAt, sensorCode])).rows[0]
+  }
+
+  async function acceptedS05Count() {
+    const { rows } = await db.query(`
+      select count(*)::int as count
+      from sensor_events event
+      join sensors sensor on sensor.id = event.sensor_id
+      where sensor.sensor_code = 'S-05'
+        and event.event_type = 'pulse'
+        and event.output_accepted is true
+    `)
+    return rows[0].count
+  }
+
+  // 1. Fresh state: S-03 has never connected (connectivity_state = 'unknown', no heartbeat/event) -> S-05 pulse rejected as machine_offline
+  const unconnectedPulse = await ingest('S-05', 'pulse', '2026-08-21T16:49:00+08:00')
+  assert.equal(unconnectedPulse.state_applied, false)
+  assert.equal(unconnectedPulse.event_value.metadata.outputAccepted, false)
+  assert.equal(unconnectedPulse.event_value.metadata.outputRejectionReason, 'machine_offline')
+  assert.equal(await acceptedS05Count(), 0)
+  const s05AfterUnconnected = (await db.query("select last_applied_recorded_at from sensors where sensor_code = 'S-05'")).rows[0]
+  assert.equal(s05AfterUnconnected.last_applied_recorded_at, null)
+
+  // 2. S-03 sends a heartbeat -> S-03 is online (even while machine is Idle) -> S-05 pulse accepted
+  const bootId = randomUUID()
+  await db.query(`
+    select result.*
+    from sensors sensor
+    cross join lateral ingest_iot_heartbeat($1, sensor.id, sensor.machine_id, 1, $2, 1, '2026-08-21T16:50:00+08:00', false) result
+    where sensor.sensor_code = 'S-03'
+  `, [randomUUID(), bootId])
+  const onlineHeartbeatPulse = await ingest('S-05', 'pulse', '2026-08-21T16:50:05+08:00')
+  assert.equal(onlineHeartbeatPulse.state_applied, true)
+  assert.equal(onlineHeartbeatPulse.event_value.metadata.outputAccepted, true)
+  assert.equal(onlineHeartbeatPulse.event_value.metadata.outputRejectionReason, null)
+  assert.equal(await acceptedS05Count(), 1)
+
+  // 3. S-03 heartbeat becomes stale (> 30s) and watchdog marks S-03 offline (no downtime, detection suspended) -> S-05 pulse rejected as machine_offline
+  await db.query(`
+    update sensor_watchdog_state
+    set last_heartbeat_received_at = clock_timestamp() - interval '60 seconds'
+    where sensor_id = (select id from sensors where sensor_code = 'S-03')
+  `)
+  const s03Id = (await db.query("select id from sensors where sensor_code = 'S-03'")).rows[0].id
+  const watchdogEval = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, clock_timestamp(), 'enforce', 30)",
+    [s03Id],
+  )).rows[0]
+  assert.equal(watchdogEval.connectivity_state, 'offline')
+  assert.equal((await db.query("select count(*)::int as count from downtime_events where status = 'Open'")).rows[0].count, 0)
+
+  const offlineWatchdogPulse = await ingest('S-05', 'pulse', '2026-08-21T16:51:10+08:00')
+  assert.equal(offlineWatchdogPulse.state_applied, false)
+  assert.equal(offlineWatchdogPulse.event_value.metadata.outputAccepted, false)
+  assert.equal(offlineWatchdogPulse.event_value.metadata.outputRejectionReason, 'machine_offline')
+  assert.equal(await acceptedS05Count(), 1)
+
+  // 4. Even when watchdog is disabled (connectivity_state still 'online'), stale S-03 heartbeat + stale event (> 30s) -> rejected as machine_offline
+  await db.query(`
+    update sensor_watchdog_state
+    set connectivity_state = 'online',
+      last_heartbeat_received_at = clock_timestamp() - interval '60 seconds',
+      last_activity_received_at = clock_timestamp() - interval '60 seconds'
+    where sensor_id = $1
+  `, [s03Id])
+  const staleDisabledWatchdogPulse = await ingest('S-05', 'pulse', '2026-08-21T16:52:00+08:00')
+  assert.equal(staleDisabledWatchdogPulse.state_applied, false)
+  assert.equal(staleDisabledWatchdogPulse.event_value.metadata.outputAccepted, false)
+  assert.equal(staleDisabledWatchdogPulse.event_value.metadata.outputRejectionReason, 'machine_offline')
+  assert.equal(await acceptedS05Count(), 1)
+
+  // 5. When S-03 is in Downtime AND goes offline, machine_downtime takes precedence over machine_offline
+  await ingest('S-03', 'fault', '2026-08-21T16:53:00+08:00')
+  await db.query(`
+    update sensor_watchdog_state
+    set connectivity_state = 'offline',
+      last_evaluated_at = clock_timestamp()
+    where sensor_id = $1
+  `, [s03Id])
+  const downtimeAndOfflinePulse = await ingest('S-05', 'pulse', '2026-08-21T16:53:05+08:00')
+  assert.equal(downtimeAndOfflinePulse.state_applied, false)
+  assert.equal(downtimeAndOfflinePulse.event_value.metadata.outputAccepted, false)
+  assert.equal(downtimeAndOfflinePulse.event_value.metadata.outputRejectionReason, 'machine_downtime')
+  assert.equal(await acceptedS05Count(), 1)
+
+  // 6. S-03 recovers from fault -> S-03 is online again -> S-05 pulse accepted
+  await ingest('S-03', 'recovered', '2026-08-21T16:54:00+08:00')
+  const recoveredPulse = await ingest('S-05', 'pulse', '2026-08-21T16:54:05+08:00')
+  assert.equal(recoveredPulse.state_applied, true)
+  assert.equal(recoveredPulse.event_value.metadata.outputAccepted, true)
+  assert.equal(recoveredPulse.event_value.metadata.outputRejectionReason, null)
+  assert.equal(await acceptedS05Count(), 2)
+
+  // 7. Reapplying migration 060 is idempotent and keeps readiness at 60
+  const migration060 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '060_reject_s05_output_when_s03_offline.sql'),
+    'utf8',
+  )
+  await db.exec(migration060)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 60)
+})
+
+test('migration 060 prevents after-hours ESP32 absence fault downtime and clears stuck after-hours fault via watchdog or device activity', async (t) => {
+  const db = await database(t)
+
+  async function ingest(sensorCode, eventType, recordedAt, metadata = {}) {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_sensor_event(
+        $1::uuid,
+        sensor.id,
+        sensor.machine_id,
+        $2::text,
+        $3::jsonb,
+        $4::timestamptz
+      ) result
+      where sensor.sensor_code = $5
+    `, [randomUUID(), eventType, JSON.stringify({ signal, metadata }), recordedAt, sensorCode])).rows[0]
+  }
+
+  await db.query(`
+    update public.machine_operational_settings
+    set sensor_thresholds = jsonb_set(
+      sensor_thresholds,
+      '{S-03}',
+      '{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60,"rotationStallMs":3000}'::jsonb
+    )
+  `)
+
+  // 1. After working hours (21:11:40 Manila, past workEnd): ESP32 on-device absence timeout fault (detectionState='FAULT') stays Inactive/Idle and does NOT open downtime
+  const afterHoursAbsenceFault = await ingest('S-03', 'fault', '2026-11-18T13:11:40+00:00', {
+    spindleState: 'CONSTANT_NO_METAL_DOWNTIME',
+    detectionState: 'FAULT',
+    rotationStallMs: 3000,
+  })
+  assert.equal(afterHoursAbsenceFault.state_applied, true)
+  assert.equal(afterHoursAbsenceFault.new_machine_status, 'Idle')
+  assert.equal(afterHoursAbsenceFault.downtime_action, null)
+  const s03AfterHours = (await db.query("select status, fault_source from public.sensors where sensor_code = 'S-03'")).rows[0]
+  assert.deepEqual(s03AfterHours, { status: 'Inactive', fault_source: null })
+  assert.equal((await db.query("select count(*)::int as count from public.downtime_events where status = 'Open'")).rows[0].count, 0)
+
+  // 2. If S-03 had an after-hours fault/downtime opened while watchdog was disabled, switching watchdog to enforce after hours (detection_state='suspended') auto-clears Fault and resolves downtime
+  const s03Row = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'explicit' where id = $1", [s03Row.id])
+  await db.query("update public.machines set status = 'Downtime' where id = $1", [s03Row.machine_id])
+  await db.query(`
+    insert into public.downtime_events (machine_id, sensor_id, started_at, cause, status, detection_source)
+    values ($1, $2, '2026-11-18T13:11:40+00:00'::timestamptz, 'Pending Cause Review', 'Open', 'sensor_event')
+  `, [s03Row.machine_id, s03Row.id])
+
+  const evalAfterHours = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-11-18T13:14:55+00:00'::timestamptz, 'enforce', 30)",
+    [s03Row.id],
+  )).rows[0]
+  assert.equal(evalAfterHours.detection_state, 'suspended')
+  const s03ReleasedByWatchdog = (await db.query("select status, fault_source from public.sensors where id = $1", [s03Row.id])).rows[0]
+  assert.deepEqual(s03ReleasedByWatchdog, { status: 'Inactive', fault_source: null })
+  assert.equal((await db.query("select status from public.machines where id = $1", [s03Row.machine_id])).rows[0].status, 'Idle')
+  assert.equal((await db.query("select count(*)::int as count from public.downtime_events where status = 'Open'")).rows[0].count, 0)
+
+  // 3. If S-03 faulted via absence_watchdog during work hours (16:58 Manila) and user pulses S-03 after work hours (21:16 Manila), pulse with detectionState='RUNNING' immediately clears Fault and resolves downtime
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'absence_watchdog' where id = $1", [s03Row.id])
+  await db.query("update public.sensor_watchdog_state set detection_state = 'downtime' where sensor_id = $1", [s03Row.id])
+  await db.query("update public.machines set status = 'Downtime' where id = $1", [s03Row.machine_id])
+  await db.query(`
+    insert into public.downtime_events (machine_id, sensor_id, started_at, cause, status, detection_source)
+    values ($1, $2, '2026-11-18T08:58:00+00:00'::timestamptz, 'Pending Cause Review', 'Open', 'absence_watchdog')
+  `, [s03Row.machine_id, s03Row.id])
+
+  const afterHoursPulse = await ingest('S-03', 'pulse', '2026-11-18T13:16:00+00:00', {
+    spindleState: 'ROTATING_ON_OFF',
+    detectionState: 'RUNNING',
+    rotationStallMs: 3000,
+  })
+  assert.equal(afterHoursPulse.state_applied, true)
+  assert.equal(afterHoursPulse.new_machine_status, 'Running')
+  assert.equal(afterHoursPulse.downtime_action, 'resolved')
+  const s03RecoveredAfterHours = (await db.query("select status, fault_source from public.sensors where id = $1", [s03Row.id])).rows[0]
+  assert.deepEqual(s03RecoveredAfterHours, { status: 'Active', fault_source: null })
+  assert.equal((await db.query("select count(*)::int as count from public.downtime_events where status = 'Open'")).rows[0].count, 0)
+
+  // 4. Genuine explicit hardware fault (without detectionState='FAULT') outside working hours stays Fault/Downtime across watchdog enforce ticks
+  const explicitHardwareFault = await ingest('S-03', 'fault', '2026-11-18T13:17:00+00:00', {
+    reason: 'wiring_short',
+  })
+  assert.equal(explicitHardwareFault.new_machine_status, 'Downtime')
+  assert.equal(explicitHardwareFault.downtime_action, 'created')
+  const evalDuringExplicitAfterHours = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-11-18T13:17:05+00:00'::timestamptz, 'enforce', 30)",
+    [s03Row.id],
+  )).rows[0]
+  assert.equal(evalDuringExplicitAfterHours.detection_state, 'suspended')
+  const s03StillExplicitFault = (await db.query("select status, fault_source from public.sensors where id = $1", [s03Row.id])).rows[0]
+  assert.deepEqual(s03StillExplicitFault, { status: 'Fault', fault_source: 'explicit' })
+  assert.equal((await db.query("select count(*)::int as count from public.downtime_events where status = 'Open'")).rows[0].count, 1)
+  await ingest('S-03', 'recovered', '2026-11-18T13:17:10+00:00', { reason: 'wiring_restored' })
+  assert.equal((await db.query("select count(*)::int as count from public.downtime_events where status = 'Open'")).rows[0].count, 0)
+
+  // 5. Working-hour S-01 absence_watchdog fault survives lunch break (suspended) evaluation instead of disappearing at break start
+  await db.query(`
+    update public.machine_operational_settings
+    set sensor_thresholds = jsonb_set(
+      sensor_thresholds,
+      '{S-01}',
+      '{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60}'::jsonb
+    )
+  `)
+  const s01Row = (await db.query("select id from public.sensors where sensor_code = 'S-01'")).rows[0]
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'absence_watchdog' where id = $1", [s01Row.id])
+  await db.query("update public.sensor_watchdog_state set detection_state = 'downtime' where sensor_id = $1", [s01Row.id])
+  const evalDuringLunch = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-11-18T04:15:00+00:00'::timestamptz, 'enforce', 30)",
+    [s01Row.id],
+  )).rows[0]
+  assert.equal(evalDuringLunch.detection_state, 'downtime')
+  assert.deepEqual(
+    (await db.query("select status, fault_source from public.sensors where id = $1", [s01Row.id])).rows[0],
+    { status: 'Fault', fault_source: 'absence_watchdog' },
+  )
+})
+
+test('migration 061 rejects S-05 output outside schedule, during breaks, on rest days, and on non-working calendar days while accepting early post-break starts', async (t) => {
+  const db = await database(t)
+  const machineId = (await db.query("select id from public.machines where machine_code = 'M-01'")).rows[0].id
+  const adminId = (await db.query("select id from users where username = 'release-admin'")).rows[0].id
+  const s03Id = (await db.query("select id from sensors where sensor_code = 'S-03'")).rows[0].id
+  const bootId = randomUUID()
+  let heartbeatSequence = 1
+
+  async function refreshS03Heartbeat(recordedAt) {
+    await db.query(`
+      select result.*
+      from sensors sensor
+      cross join lateral ingest_iot_heartbeat($1, sensor.id, sensor.machine_id, 1, $2, $3, $4, false) result
+      where sensor.sensor_code = 'S-03'
+    `, [randomUUID(), bootId, heartbeatSequence++, recordedAt])
+  }
+
+  async function ingestS05(recordedAt) {
+    return (await db.query(`
+      select result.*
+      from sensors sensor
+      cross join lateral ingest_iot_sensor_event(
+        $1::uuid,
+        sensor.id,
+        sensor.machine_id,
+        'pulse',
+        '{"signal":"active","metadata":{}}'::jsonb,
+        $2::timestamptz
+      ) result
+      where sensor.sensor_code = 'S-05'
+    `, [randomUUID(), recordedAt])).rows[0]
+  }
+
+  async function acceptedS05Count() {
+    const { rows } = await db.query(`
+      select count(*)::int as count
+      from sensor_events event
+      join sensors sensor on sensor.id = event.sensor_id
+      where sensor.sensor_code = 'S-05'
+        and event.event_type = 'pulse'
+        and event.output_accepted is true
+    `)
+    return rows[0].count
+  }
+
+  // Anchor migration 059 restDays history boundary to 2026-08-16 so August 2026 schedule scenarios use version 2 while keeping S-03 online
+  await db.query(`
+    update public.machine_operational_settings_history
+    set effective_to = '2026-08-16T00:00:00+08:00'::timestamptz
+    where machine_id = $1 and version = 1
+  `, [machineId])
+  await db.query(`
+    update public.machine_operational_settings_history
+    set effective_from = '2026-08-16T00:00:00+08:00'::timestamptz
+    where machine_id = $1 and version = 2
+  `, [machineId])
+  await refreshS03Heartbeat('2026-08-16T08:00:00+08:00')
+
+  // 1. Weekly rest day (default restDays=['sunday']): Sunday 2026-08-16 during 08:00-17:00 -> outside_schedule
+  const sundayRestDay = await ingestS05('2026-08-16T10:30:00+08:00')
+  assert.equal(sundayRestDay.state_applied, false)
+  assert.equal(sundayRestDay.event_value.metadata.outputAccepted, false)
+  assert.equal(sundayRestDay.event_value.metadata.outputRejectionReason, 'outside_schedule')
+  assert.equal((await db.query("select last_applied_recorded_at from sensors where sensor_code = 'S-05'")).rows[0].last_applied_recorded_at, null)
+
+  // 2. Before workStart (07:59:59+08:00) on working Friday 2026-08-21 -> outside_schedule; exact workStart (08:00:00) -> accepted
+  const beforeStart = await ingestS05('2026-08-21T07:59:59+08:00')
+  assert.equal(beforeStart.state_applied, false)
+  assert.equal(beforeStart.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  const atStart = await ingestS05('2026-08-21T08:00:00+08:00')
+  assert.equal(atStart.state_applied, true)
+  assert.equal(atStart.event_value.metadata.outputAccepted, true)
+  assert.equal(atStart.event_value.metadata.outputRejectionReason, null)
+  assert.equal(await acceptedS05Count(), 1)
+
+  // 3. During Lunch Break (12:00:00 and 12:30:00+08:00) -> outside_schedule
+  const atBreakStart = await ingestS05('2026-08-21T12:00:00+08:00')
+  assert.equal(atBreakStart.state_applied, false)
+  assert.equal(atBreakStart.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  const midBreak = await ingestS05('2026-08-21T12:30:00+08:00')
+  assert.equal(midBreak.state_applied, false)
+  assert.equal(midBreak.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  // 4. Early machine start right after break during rampUpGraceMinutes (13:00..13:10) -> accepted
+  const earlyAfterBreak = await ingestS05('2026-08-21T13:00:00+08:00')
+  assert.equal(earlyAfterBreak.state_applied, true)
+  assert.equal(earlyAfterBreak.event_value.metadata.outputAccepted, true)
+
+  const midGrace = await ingestS05('2026-08-21T13:05:00+08:00')
+  assert.equal(midGrace.state_applied, true)
+  assert.equal(midGrace.event_value.metadata.outputAccepted, true)
+  assert.equal(await acceptedS05Count(), 3)
+
+  // 5. Sub-second right before workEnd (16:59:59.500) -> accepted; exact workEnd (17:00:00) & after workEnd -> outside_schedule
+  const rightBeforeEnd = await ingestS05('2026-08-21T16:59:59.500+08:00')
+  assert.equal(rightBeforeEnd.state_applied, true)
+  assert.equal(rightBeforeEnd.event_value.metadata.outputAccepted, true)
+
+  const atWorkEnd = await ingestS05('2026-08-21T17:00:00+08:00')
+  assert.equal(atWorkEnd.state_applied, false)
+  assert.equal(atWorkEnd.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  const afterWorkEnd = await ingestS05('2026-08-21T18:30:00+08:00')
+  assert.equal(afterWorkEnd.state_applied, false)
+  assert.equal(afterWorkEnd.event_value.metadata.outputRejectionReason, 'outside_schedule')
+  assert.equal(await acceptedS05Count(), 4)
+
+  // 6. Calendar entries for 2026-08-23..2026-08-26:
+  //    - 2026-08-23 (Sun): working holiday override (is_working = true) -> accepted in shift, rejected after workEnd
+  //    - 2026-08-24 (Mon): day_off (is_working = false) -> outside_schedule
+  //    - 2026-08-25 (Tue): machine_not_scheduled (is_working = false) -> outside_schedule
+  //    - 2026-08-26 (Wed): non-working holiday (is_working = false) -> outside_schedule
+  await db.query(`
+    insert into public.production_calendar_days (
+      machine_id, calendar_date, name, day_type, is_working, reason, source, version, updated_by
+    ) values
+      ($1, '2026-08-23', 'Special Working Sunday', 'holiday', true, null, 'manual', 1, $2),
+      ($1, '2026-08-24', 'Plant Day Off', 'day_off', false, 'Scheduled shutdown', 'manual', 1, $2),
+      ($1, '2026-08-25', 'No Mill Run', 'machine_not_scheduled', false, 'No orders', 'manual', 1, $2),
+      ($1, '2026-08-26', 'Special Non-Working Holiday', 'holiday', false, null, 'manual', 1, $2)
+  `, [machineId, adminId])
+
+  const workingHolidayOnSunday = await ingestS05('2026-08-23T09:00:00+08:00')
+  assert.equal(workingHolidayOnSunday.state_applied, true)
+  assert.equal(workingHolidayOnSunday.event_value.metadata.outputAccepted, true)
+
+  const workingHolidayAfterWorkEnd = await ingestS05('2026-08-23T17:00:00+08:00')
+  assert.equal(workingHolidayAfterWorkEnd.state_applied, false)
+  assert.equal(workingHolidayAfterWorkEnd.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  const manualDayOff = await ingestS05('2026-08-24T09:00:00+08:00')
+  assert.equal(manualDayOff.state_applied, false)
+  assert.equal(manualDayOff.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  const machineNotScheduled = await ingestS05('2026-08-25T09:00:00+08:00')
+  assert.equal(machineNotScheduled.state_applied, false)
+  assert.equal(machineNotScheduled.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  const nonWorkingHoliday = await ingestS05('2026-08-26T09:00:00+08:00')
+  assert.equal(nonWorkingHoliday.state_applied, false)
+  assert.equal(nonWorkingHoliday.event_value.metadata.outputRejectionReason, 'outside_schedule')
+  assert.equal(await acceptedS05Count(), 5)
+
+  // 7. Future production calendar RPCs (day + range) drive is_machine_output_schedule_eligible
+  await db.query(`
+    select public.set_production_calendar_day($1, '2027-08-22', 'holiday', 'Working Sunday Override', true, null, null, true, $2)
+  `, [machineId, adminId])
+  await db.query(`
+    select * from public.set_production_calendar_range($1, '2027-08-24', '2027-08-25', 'machine_not_scheduled', 'Future Shutdown', 'Planned overhaul', true, null, $2)
+  `, [machineId, adminId])
+  assert.equal(
+    (await db.query("select public.is_machine_output_schedule_eligible($1, '2027-08-22T09:00:00+08:00'::timestamptz) as eligible", [machineId])).rows[0].eligible,
+    true,
+  )
+  assert.equal(
+    (await db.query("select public.is_machine_output_schedule_eligible($1, '2027-08-24T09:00:00+08:00'::timestamptz) as eligible", [machineId])).rows[0].eligible,
+    false,
+  )
+
+  // 8. Precedence: outside_schedule rejects even if S-03 is offline; machine_downtime still wins over outside_schedule
+  await db.query(`
+    update sensor_watchdog_state
+    set connectivity_state = 'offline',
+      last_heartbeat_received_at = clock_timestamp() - interval '60 seconds',
+      last_activity_received_at = clock_timestamp() - interval '60 seconds',
+      last_evaluated_at = clock_timestamp()
+    where sensor_id = $1
+  `, [s03Id])
+  const offAndOffline = await ingestS05('2026-08-26T09:05:00+08:00')
+  assert.equal(offAndOffline.state_applied, false)
+  assert.equal(offAndOffline.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  await db.query("update machines set status = 'Downtime' where id = $1", [machineId])
+  const offAndDowntime = await ingestS05('2026-08-26T09:10:00+08:00')
+  assert.equal(offAndDowntime.state_applied, false)
+  assert.equal(offAndDowntime.event_value.metadata.outputRejectionReason, 'machine_downtime')
+
+  // 9. Analytics only counts accepted pulses (excludes all rejected outside_schedule pulses)
+  const analyticsRows = (await db.query(`
+    select coalesce(sum(event_count), 0)::bigint as count
+    from aggregate_analytics_sensor_events($1, '2026-08-16T00:00:00+08:00', '2026-08-27T00:00:00+08:00', 86400)
+    where sensor_code = 'S-05'
+  `, [machineId])).rows[0]
+  assert.equal(Number(analyticsRows.count), 5)
+
+  // 10. Live update_machine_operational_settings (restDays + work window) takes effect immediately on subsequent pulses
+  await db.query("update machines set status = 'Running' where id = $1", [machineId])
+  await refreshS03Heartbeat('2026-08-26T09:15:00+08:00')
+  await refreshS03Heartbeat('2026-08-26T09:15:10+08:00')
+  const settingsRow = (await db.query(
+    'select sensor_thresholds, shift_schedule, version from public.machine_operational_settings where machine_id = $1',
+    [machineId],
+  )).rows[0]
+  const manilaClock = (await db.query(`
+    select
+      extract(hour from (clock_timestamp() at time zone 'Asia/Manila'))::int as hour,
+      extract(minute from (clock_timestamp() at time zone 'Asia/Manila'))::int as minute,
+      case extract(isodow from (clock_timestamp() at time zone 'Asia/Manila')::date)::integer
+        when 1 then 'monday' when 2 then 'tuesday' when 3 then 'wednesday'
+        when 4 then 'thursday' when 5 then 'friday' when 6 then 'saturday' when 7 then 'sunday'
+      end as weekday
+  `)).rows[0]
+
+  const updatedRest = (await db.query(`
+    select * from public.update_machine_operational_settings($1, $2, $3::jsonb, $4::jsonb, $5)
+  `, [
+    machineId,
+    settingsRow.version,
+    JSON.stringify(settingsRow.sensor_thresholds),
+    JSON.stringify({ ...settingsRow.shift_schedule, restDays: [manilaClock.weekday] }),
+    adminId,
+  ])).rows[0]
+
+  const nowTs = (await db.query('select clock_timestamp() as ts')).rows[0].ts
+  const rejectedOnRestDay = await ingestS05(nowTs)
+  assert.equal(rejectedOnRestDay.state_applied, false)
+  assert.equal(rejectedOnRestDay.event_value.metadata.outputRejectionReason, 'outside_schedule')
+
+  await db.query(`
+    select * from public.update_machine_operational_settings($1, $2, $3::jsonb, $4::jsonb, $5)
+  `, [
+    machineId,
+    updatedRest.version,
+    JSON.stringify(updatedRest.sensor_thresholds),
+    JSON.stringify({ workStart: '00:00', workEnd: '23:59', breaks: [], rampUpGraceMinutes: 0, restDays: [] }),
+    adminId,
+  ])
+
+  if (manilaClock.hour < 23 || manilaClock.minute < 59) {
+    const nowTs2 = (await db.query('select clock_timestamp() as ts')).rows[0].ts
+    const acceptedAfterSettingsReopen = await ingestS05(nowTs2)
+    assert.equal(acceptedAfterSettingsReopen.state_applied, true)
+    assert.equal(acceptedAfterSettingsReopen.event_value.metadata.outputAccepted, true)
+    assert.equal(await acceptedS05Count(), 6)
+  }
+
+  // 11. Privilege check: anon/authenticated cannot invoke is_machine_output_schedule_eligible
+  for (const role of ['anon', 'authenticated']) {
+    await db.exec(`set role ${role};`)
+    await assert.rejects(
+      db.query('select public.is_machine_output_schedule_eligible($1, now())', [machineId]),
+      /permission denied/i,
+    )
+    await db.exec('reset role;')
+  }
+
+  // 12. Idempotent reapply
+  const migration061 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '061_reject_s05_output_outside_schedule.sql'),
+    'utf8',
+  )
+  await db.exec(migration061)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 61)
+})
+
+test('S-01, S-02, S-04 preserve working-hour faults across breaks/after-hours idle, clear off-schedule faults with unrelated S-03 downtime, and recover cleanly in observe/disabled modes', async (t) => {
+  const db = await database(t)
+
+  async function ingest(sensorCode, eventType, recordedAt, metadata = {}) {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_sensor_event(
+        $1::uuid,
+        sensor.id,
+        sensor.machine_id,
+        $2::text,
+        $3::jsonb,
+        $4::timestamptz
+      ) result
+      where sensor.sensor_code = $5
+    `, [randomUUID(), eventType, JSON.stringify({ signal, metadata }), recordedAt, sensorCode])).rows[0]
+  }
+
+  async function sensorRow(sensorCode) {
+    return (await db.query('select id, machine_id, status, fault_source from public.sensors where sensor_code = $1', [sensorCode])).rows[0]
+  }
+
+  async function watchdogRow(sensorCode) {
+    return (await db.query(`
+      select state.detection_state, state.recovery_started_at, state.recovery_observation_count
+      from public.sensor_watchdog_state state
+      join public.sensors sensor on sensor.id = state.sensor_id
+      where sensor.sensor_code = $1
+    `, [sensorCode])).rows[0]
+  }
+
+  async function activeProcessAlert(sensorCode) {
+    return (await db.query(`
+      select alert.status, alert.metadata
+      from public.alerts alert
+      join public.sensors sensor on sensor.id = alert.sensor_id
+      where sensor.sensor_code = $1
+        and alert.source_type = 'sensor'
+        and alert.status in ('Active', 'Acknowledged')
+      order by alert.created_at desc
+      limit 1
+    `, [sensorCode])).rows[0]
+  }
+
+  await db.query(`
+    update public.machine_operational_settings
+    set sensor_thresholds = sensor_thresholds
+      || '{"S-01":{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60},"S-02":{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60},"S-03":{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60,"rotationStallMs":3000},"S-04":{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60}}'::jsonb
+  `)
+
+  // Default shift on working Friday 2026-11-13: 08:00-17:00 Manila, Lunch Break 12:00-13:00 (+10m ramp-up)
+  // 1. Bug 1: Working-hour faults on S-01 (absence_watchdog) and S-02 + S-04 (explicit ESP32 absence fault opening grouped downtime)
+  //    MUST survive lunch break ESP32 idle(detectionState='IDLE') instead of clearing Fault or resolving downtime
+  const s01 = await sensorRow('S-01')
+  const s02 = await sensorRow('S-02')
+  const s04 = await sensorRow('S-04')
+  const s03 = await sensorRow('S-03')
+
+  await db.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'online',
+      detection_state = 'healthy',
+      last_heartbeat_id = gen_random_uuid(),
+      last_heartbeat_payload_hash = 'process-tdd-fixture',
+      last_heartbeat_received_at = '2026-11-13T03:55:00Z'::timestamptz,
+      last_activity_received_at = '2026-11-13T03:54:00Z'::timestamptz,
+      absence_baseline_at = '2026-11-13T03:54:00Z'::timestamptz
+    where sensor_id = any($1::uuid[])
+  `, [[s01.id, s02.id, s03.id, s04.id]])
+
+  // 11:55 Manila (03:55 UTC): S-01 reaches absence_watchdog fault
+  await db.query("select * from public.evaluate_sensor_watchdog($1, '2026-11-13T03:55:00Z'::timestamptz, 'enforce', 300)", [s01.id])
+  assert.deepEqual(
+    { status: (await sensorRow('S-01')).status, fault_source: (await sensorRow('S-01')).fault_source },
+    { status: 'Fault', fault_source: 'absence_watchdog' },
+  )
+
+  // 11:56 Manila (03:56 UTC): S-02 and S-04 report working-hour explicit ESP32 absence faults -> grouped downtime opens!
+  await ingest('S-02', 'fault', '2026-11-13T03:56:00Z', { wireState: 'ABSENT', detectionState: 'FAULT' })
+  const groupedOpened = await ingest('S-04', 'fault', '2026-11-13T03:56:05Z', { wireState: 'ABSENT', detectionState: 'FAULT' })
+  assert.equal(groupedOpened.downtime_action, 'created')
+  assert.equal(groupedOpened.new_machine_status, 'Downtime')
+
+  // 12:05 Manila (04:05 UTC, lunch break -> not v_is_eligible): ESP32 receives x-absence-enabled=false and sends idle(IDLE)
+  const s01LunchIdle = await ingest('S-01', 'idle', '2026-11-13T04:05:00Z', { coilState: 'ABSENT', detectionState: 'IDLE' })
+  const s02LunchIdle = await ingest('S-02', 'idle', '2026-11-13T04:05:01Z', { wireState: 'ABSENT', detectionState: 'IDLE' })
+  const s04LunchIdle = await ingest('S-04', 'idle', '2026-11-13T04:05:02Z', { wireState: 'ABSENT', detectionState: 'IDLE' })
+
+  assert.equal((await sensorRow('S-01')).status, 'Fault', 'S-01 working-hour absence_watchdog fault must survive lunch idle')
+  assert.equal((await sensorRow('S-02')).status, 'Fault', 'S-02 working-hour explicit fault must survive lunch idle')
+  assert.equal((await sensorRow('S-04')).status, 'Fault', 'S-04 working-hour explicit fault must survive lunch idle')
+  assert.equal(s04LunchIdle.new_machine_status, 'Downtime', 'Grouped working-hour downtime must stay Open during lunch idle')
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 1)
+  assert.equal((await activeProcessAlert('S-01')).metadata.recoveryPending, undefined)
+  assert.equal((await activeProcessAlert('S-02')).metadata.recoveryPending, undefined)
+  assert.equal(s01LunchIdle.state_applied, true)
+  assert.equal(s02LunchIdle.state_applied, true)
+
+  // Material returns during lunch / work -> clear working-hour faults cleanly for subsequent checks
+  const s01Recovered = await ingest('S-01', 'recovered', '2026-11-13T04:06:00Z', { coilState: 'PRESENT', detectionState: 'RUNNING', recoveryConfirmed: true })
+  assert.equal(s01Recovered.downtime_action, 'resolved')
+  await ingest('S-02', 'recovered', '2026-11-13T04:06:01Z', { wireState: 'PRESENT', detectionState: 'RUNNING', recoveryConfirmed: true })
+  await ingest('S-04', 'recovered', '2026-11-13T04:06:02Z', { wireState: 'PRESENT', detectionState: 'RUNNING', recoveryConfirmed: true })
+  assert.equal((await sensorRow('S-01')).status, 'Active')
+
+  // 2. Off-schedule false ESP32 fault clears cleanly on watchdog evaluate after hours (within 5s cycle)
+  await db.query(`
+    insert into public.sensor_events (sensor_id, machine_id, device_event_id, event_type, event_value, recorded_at)
+    values ($1, $2, $3, 'fault', '{"signal":"fault","metadata":{"coilState":"ABSENT","detectionState":"FAULT"}}'::jsonb, '2026-11-13T13:10:00Z'::timestamptz)
+  `, [s01.id, s01.machine_id, randomUUID()])
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'explicit', last_applied_recorded_at = '2026-11-13T13:10:00Z'::timestamptz where id = $1", [s01.id])
+  await db.query(`
+    update public.alerts set status = 'Resolved', resolved_at = clock_timestamp() where sensor_id = $1 and status in ('Active', 'Acknowledged')
+  `, [s01.id])
+  await ingest('S-01', 'idle', '2026-11-13T13:11:00Z', { coilState: 'ABSENT', detectionState: 'IDLE' })
+  await db.query("select * from public.evaluate_sensor_watchdog($1, '2026-11-13T13:11:05Z'::timestamptz, 'enforce', 300)", [s01.id])
+  assert.deepEqual(
+    { status: (await sensorRow('S-01')).status, fault_source: (await sensorRow('S-01')).fault_source },
+    { status: 'Inactive', fault_source: null },
+  )
+
+  // 3. Bug 3: Unrelated working-hour S-03 downtime must NOT block S-01/S-02/S-04 off-schedule false fault auto-clear
+  await ingest('S-03', 'fault', '2026-11-13T01:00:00Z', { reason: 'spindle_jam' })
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 1)
+
+  for (const [code, row] of [['S-01', s01], ['S-02', s02], ['S-04', s04]]) {
+    await db.query(`
+      insert into public.sensor_events (sensor_id, machine_id, device_event_id, event_type, event_value, recorded_at)
+      values ($1, $2, $3, 'fault', '{"signal":"fault","metadata":{"detectionState":"FAULT"}}'::jsonb, '2026-11-13T13:15:00Z'::timestamptz)
+    `, [row.id, row.machine_id, randomUUID()])
+    await db.query("update public.sensors set status = 'Fault', fault_source = 'explicit', last_applied_recorded_at = '2026-11-13T13:15:00Z'::timestamptz where id = $1", [row.id])
+    const evalSuspended = (await db.query(
+      "select * from public.evaluate_sensor_watchdog($1, '2026-11-13T13:16:00Z'::timestamptz, 'enforce', 300)",
+      [row.id],
+    )).rows[0]
+    assert.equal(evalSuspended.detection_state, 'suspended', `Expected ${code} suspended after hours`)
+    assert.deepEqual(
+      { status: (await sensorRow(code)).status, fault_source: (await sensorRow(code)).fault_source },
+      { status: 'Inactive', fault_source: null },
+      `Expected ${code} off-schedule fault to auto-clear even while S-03 holds an open working-hour downtime`,
+    )
+  }
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 1)
+  await ingest('S-03', 'recovered', '2026-11-13T13:17:00Z', { reason: 'spindle_cleared' })
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 0)
+
+  // 4. Bug 2: Working-hour absence_watchdog faults on S-01, S-02, S-04 must clear both via confirmed pulse
+  //    AND when watchdog runs in observe mode and finishes recoverySeconds (timestamps advance monotonically to Monday 2026-11-16)
+  //    Subcase 4a: pulse with recoveryConfirmed=true (emitted when WATCHDOG_MODE=disabled/observe)
+  await db.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'online',
+      detection_state = 'downtime',
+      last_heartbeat_received_at = '2026-11-16T01:30:00Z'::timestamptz,
+      last_activity_received_at = '2026-11-16T01:28:00Z'::timestamptz,
+      absence_baseline_at = '2026-11-16T01:28:00Z'::timestamptz
+    where sensor_id = $1
+  `, [s02.id])
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'absence_watchdog' where id = $1", [s02.id])
+
+  const confirmedPulse = await ingest('S-02', 'pulse', '2026-11-16T01:30:05Z', {
+    wireState: 'PRESENT',
+    detectionState: 'RUNNING',
+    recoveryConfirmed: true,
+  })
+  assert.equal(confirmedPulse.state_applied, true)
+  assert.deepEqual(
+    { status: (await sensorRow('S-02')).status, fault_source: (await sensorRow('S-02')).fault_source },
+    { status: 'Active', fault_source: null },
+  )
+  assert.equal((await watchdogRow('S-02')).detection_state, 'healthy')
+
+  //    Subcase 4b: observe-mode evaluate_sensor_watchdog completing recovery clears prior absence_watchdog Fault + alert + downtime
+  //    Seed Active process alert for S-01 and Acknowledged alert for S-04 so both alert resolution paths are verified
+  for (const row of [s01, s02, s04]) {
+    await db.query("update public.sensors set status = 'Fault', fault_source = 'absence_watchdog' where id = $1", [row.id])
+    await db.query(`
+      update public.sensor_watchdog_state
+      set connectivity_state = 'online',
+        detection_state = 'recovering',
+        recovery_started_at = '2026-11-16T01:35:00Z'::timestamptz,
+        recovery_observation_count = 2,
+        last_heartbeat_received_at = '2026-11-16T01:36:05Z'::timestamptz,
+        last_activity_received_at = '2026-11-16T01:36:00Z'::timestamptz
+      where sensor_id = $1
+    `, [row.id])
+  }
+  await db.query("update public.alerts set status = 'Resolved', resolved_at = clock_timestamp() where status in ('Active', 'Acknowledged')")
+  await db.query(`
+    insert into public.alerts (source_type, source_id, machine_id, sensor_id, severity, status, title, message, metadata)
+    values
+      ('sensor', $1, $3, $1, 'Warning', 'Active', 'Raw Material & Coil Joint process issue detected', 'S-01 sustained activity is absent.', '{"sensorCode":"S-01","processFault":true}'::jsonb),
+      ('sensor', $2, $3, $2, 'Warning', 'Acknowledged', 'Outside Filler Wire process issue detected', 'S-04 sustained activity is absent.', '{"sensorCode":"S-04","processFault":true}'::jsonb)
+  `, [s01.id, s04.id, s03.machine_id])
+  await db.query(`
+    insert into public.downtime_events (machine_id, sensor_id, started_at, cause, status, detection_source)
+    values ($1, $2, '2026-11-16T01:34:00Z'::timestamptz, 'Pending Cause Review', 'Open', 'absence_watchdog')
+  `, [s03.machine_id, s03.id])
+  await db.query("update public.machines set status = 'Downtime' where id = $1", [s03.machine_id])
+
+  for (const code of ['S-01', 'S-02', 'S-04']) {
+    const id = (await sensorRow(code)).id
+    const evalObserve = (await db.query(
+      "select * from public.evaluate_sensor_watchdog($1, '2026-11-16T01:36:05Z'::timestamptz, 'observe', 300)",
+      [id],
+    )).rows[0]
+    assert.equal(evalObserve.detection_state, 'healthy')
+    assert.deepEqual(
+      { status: (await sensorRow(code)).status, fault_source: (await sensorRow(code)).fault_source },
+      { status: 'Active', fault_source: null },
+      `Expected ${code} stale absence_watchdog Fault to clear once observe watchdog completes recovery`,
+    )
+  }
+  assert.equal((await activeProcessAlert('S-01')).metadata.recoveryPending, true)
+  assert.equal(
+    (await db.query("select status from public.alerts where sensor_id = $1 and source_type = 'sensor' order by created_at desc limit 1", [s04.id])).rows[0].status,
+    'Resolved',
+  )
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 0)
+  assert.equal((await db.query("select status from public.machines where id = $1", [s03.machine_id])).rows[0].status, 'Running')
+
+  //    Subcase 4c: observe-mode recovery also clears stale absence_watchdog Fault when absenceDetectionEnabled was turned off in Settings
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'absence_watchdog' where id = $1", [s03.id])
+  await db.query(`
+    insert into public.downtime_events (machine_id, sensor_id, started_at, cause, status, detection_source)
+    values ($1, $2, '2026-11-16T01:40:00Z'::timestamptz, 'Pending Cause Review', 'Open', 'absence_watchdog')
+  `, [s03.machine_id, s03.id])
+  await db.query("update public.machines set status = 'Downtime' where id = $1", [s03.machine_id])
+  const currentSettings = (await db.query('select version, sensor_thresholds, shift_schedule from public.machine_operational_settings limit 1')).rows[0]
+  await db.query('select * from public.update_machine_operational_settings($1, $2, $3::jsonb, $4::jsonb, null)', [
+    s03.machine_id,
+    currentSettings.version,
+    JSON.stringify({
+      ...currentSettings.sensor_thresholds,
+      'S-03': { ...currentSettings.sensor_thresholds['S-03'], absenceDetectionEnabled: false },
+    }),
+    JSON.stringify(currentSettings.shift_schedule),
+  ])
+  const evalDisabledObserve = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-11-16T01:41:00Z'::timestamptz, 'observe', 300)",
+    [s03.id],
+  )).rows[0]
+  assert.equal(evalDisabledObserve.detection_state, 'disabled')
+  assert.deepEqual(
+    { status: (await sensorRow('S-03')).status, fault_source: (await sensorRow('S-03')).fault_source },
+    { status: 'Inactive', fault_source: null },
+  )
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 0)
+  assert.equal((await db.query("select status from public.machines where id = $1", [s03.machine_id])).rows[0].status, 'Idle')
+
+  //    Subcase 4d: normal observe-mode evaluation without prior absence_watchdog fault still leaves sensor status untouched
+  await db.query("update public.sensors set status = 'Active', fault_source = null where id = $1", [s01.id])
+  await db.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'online',
+      detection_state = 'healthy',
+      last_heartbeat_received_at = '2026-11-16T02:32:00Z'::timestamptz,
+      last_activity_received_at = '2026-11-16T02:30:00Z'::timestamptz,
+      absence_baseline_at = '2026-11-16T02:30:00Z'::timestamptz
+    where sensor_id = $1
+  `, [s01.id])
+  const normalObserve = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-11-16T02:32:00Z'::timestamptz, 'observe', 300)",
+    [s01.id],
+  )).rows[0]
+  assert.equal(normalObserve.detection_state, 'downtime')
+  assert.deepEqual(normalObserve.transition_descriptors.filter((d) => d.kind === 'alert' || d.kind === 'downtime'), [])
+  assert.deepEqual(
+    { status: (await sensorRow('S-01')).status, fault_source: (await sensorRow('S-01')).fault_source },
+    { status: 'Active', fault_source: null },
+  )
+})
+
+test('migration 060 standalone shares confirmed-pulse and unrelated S-03 downtime auto-clear fixes for S-01, S-02, S-04', async (t) => {
+  const db = await database(t, 60)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 60)
+
+  const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+  const s04 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-04'")).rows[0]
+
+  await db.query(`
+    update public.machine_operational_settings
+    set sensor_thresholds = sensor_thresholds
+      || '{"S-03":{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60,"rotationStallMs":3000},"S-04":{"absenceDetectionEnabled":true,"triggerSeconds":60,"recoverySeconds":60}}'::jsonb
+  `)
+  await db.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'online',
+      detection_state = 'healthy',
+      last_heartbeat_id = gen_random_uuid(),
+      last_heartbeat_payload_hash = 'standalone-060',
+      last_heartbeat_received_at = '2026-11-16T01:00:00Z'::timestamptz,
+      last_activity_received_at = '2026-11-16T01:00:00Z'::timestamptz
+    where sensor_id = any($1::uuid[])
+  `, [[s03.id, s04.id]])
+
+  await db.query(`
+    select * from public.ingest_iot_sensor_event($1, $2, $3, 'fault', '{"signal":"fault","metadata":{"reason":"spindle"}}'::jsonb, '2026-11-16T01:00:00Z'::timestamptz)
+  `, [randomUUID(), s03.id, s03.machine_id])
+  await db.query(`
+    insert into public.sensor_events (sensor_id, machine_id, device_event_id, event_type, event_value, recorded_at)
+    values ($1, $2, $3, 'fault', '{"signal":"fault","metadata":{"detectionState":"FAULT"}}'::jsonb, '2026-11-16T13:05:00Z'::timestamptz)
+  `, [s04.id, s04.machine_id, randomUUID()])
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'explicit', last_applied_recorded_at = '2026-11-16T13:05:00Z'::timestamptz where id = $1", [s04.id])
+
+  const evalS04 = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-11-16T13:06:00Z'::timestamptz, 'enforce', 300)",
+    [s04.id],
+  )).rows[0]
+  assert.equal(evalS04.detection_state, 'suspended')
+  assert.equal((await db.query('select status from public.sensors where id = $1', [s04.id])).rows[0].status, 'Inactive')
+  assert.equal((await db.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 1)
+
+  await db.query("update public.sensors set status = 'Fault', fault_source = 'absence_watchdog' where id = $1", [s04.id])
+  await db.query("update public.sensor_watchdog_state set detection_state = 'downtime', connectivity_state = 'online' where sensor_id = $1", [s04.id])
+  await db.query(`
+    select * from public.ingest_iot_sensor_event($1, $2, $3, 'pulse', '{"signal":"active","metadata":{"wireState":"PRESENT","detectionState":"RUNNING","recoveryConfirmed":true}}'::jsonb, '2026-11-16T13:07:00Z'::timestamptz)
+  `, [randomUUID(), s04.id, s04.machine_id])
+  assert.deepEqual(
+    (await db.query('select status, fault_source from public.sensors where id = $1', [s04.id])).rows[0],
+    { status: 'Active', fault_source: null },
+  )
+  assert.equal(
+    (await db.query('select detection_state from public.sensor_watchdog_state where sensor_id = $1', [s04.id])).rows[0].detection_state,
+    'suspended',
+  )
+
+  const migration060 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '060_reject_s05_output_when_s03_offline.sql'),
+    'utf8',
+  )
+  await db.exec(migration060)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 60)
+})
+
+
 
 
 
