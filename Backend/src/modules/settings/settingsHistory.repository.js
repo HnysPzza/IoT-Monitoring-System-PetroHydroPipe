@@ -1,5 +1,6 @@
 const { z } = require('zod')
 const { getSupabaseClient } = require('../../database/client')
+const { formatBusinessDate } = require('../../shared/businessTime')
 const { shiftScheduleSchema } = require('./settings.model')
 
 const PAGE_SIZE = 500
@@ -10,6 +11,20 @@ const historyRecordSchema = z.strictObject({
   effective_from: z.string().datetime({ offset: true }).nullable(),
   effective_to: z.string().datetime({ offset: true }).nullable(),
 })
+const calendarDateStringSchema = z.union([
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  z.instanceof(Date).transform((value) => formatBusinessDate(value)),
+])
+const calendarRecordSchema = z.union([
+  z.object({
+    calendar_date: calendarDateStringSchema,
+    is_working: z.boolean(),
+  }).passthrough(),
+  z.object({
+    calendarDate: calendarDateStringSchema,
+    isWorking: z.boolean(),
+  }).passthrough(),
+])
 
 function createHistoryError(code, message) {
   const error = new Error(message)
@@ -46,6 +61,42 @@ async function getSettingsHistory(machineId, window, suppliedClient) {
   if (!parsed.success) {
     throw createHistoryError('SETTINGS_HISTORY_INVALID', 'Operational settings history is invalid.')
   }
+
+  const startDate = formatBusinessDate(window.start)
+  const endDate = formatBusinessDate(window.end)
+  const calendarRecords = []
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let query = supabase
+      .from('production_calendar_days')
+      .select('calendar_date, is_working')
+      .eq('machine_id', machineId)
+    if (typeof query.gte === 'function') query = query.gte('calendar_date', startDate)
+    if (typeof query.lte === 'function') query = query.lte('calendar_date', endDate)
+    const { data, error } = await query
+      .order('calendar_date', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) {
+      throw createHistoryError('SETTINGS_HISTORY_QUERY_FAILED', 'Unable to load operational settings history.')
+    }
+
+    const page = data || []
+    calendarRecords.push(...page)
+    if (page.length < PAGE_SIZE) break
+  }
+
+  const parsedCalendar = z.array(calendarRecordSchema).safeParse(calendarRecords)
+  if (!parsedCalendar.success) {
+    throw createHistoryError('SETTINGS_HISTORY_INVALID', 'Operational settings history is invalid.')
+  }
+
+  Object.defineProperty(parsed.data, 'calendarDays', {
+    value: parsedCalendar.data,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
 
   return parsed.data
 }

@@ -31,6 +31,8 @@ function createPagedClient(pagesByTable) {
       return {
         select() { return this },
         eq(column, value) { record.filters.push({ type: 'eq', column, value }); return this },
+        gte(column, value) { record.filters.push({ type: 'gte', column, value }); return this },
+        lte(column, value) { record.filters.push({ type: 'lte', column, value }); return this },
         lt(column, value) { record.filters.push({ type: 'lt', column, value }); return this },
         or(expression) { record.filters.push({ type: 'or', expression }); return this },
         order(column, options) { record.orders.push({ column, options }); return this },
@@ -106,4 +108,44 @@ test('settings history repository fails closed on malformed stored schedules', a
     () => getSettingsHistory(MACHINE_ID, window),
     { code: 'SETTINGS_HISTORY_INVALID', status: 500 },
   )
+})
+
+test('settings history repository loads production calendar days and attaches non-enumerable calendarDays', async () => {
+  clearSourceCache()
+  const history = [{
+    machine_id: MACHINE_ID,
+    version: '1',
+    shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0, restDays: ['sunday'] },
+    effective_from: null,
+    effective_to: null,
+  }]
+  const calendarDays = [
+    { calendar_date: '2026-11-22', is_working: true },
+    { calendar_date: '2026-11-23', is_working: false },
+  ]
+  const fakeSupabase = createPagedClient({
+    machine_operational_settings_history: history,
+    production_calendar_days: calendarDays,
+  })
+  mockClient(fakeSupabase)
+  const { getSettingsHistory } = require('../../../src/modules/settings/settingsHistory.repository')
+  const window = {
+    start: new Date('2026-11-21T16:00:00.000Z'),
+    end: new Date('2026-11-24T16:00:00.000Z'),
+  }
+
+  const result = await getSettingsHistory(MACHINE_ID, window)
+
+  assert.equal(Array.isArray(result), true)
+  assert.deepEqual(result, history)
+  assert.equal(Object.prototype.propertyIsEnumerable.call(result, 'calendarDays'), false)
+  assert.deepEqual(result.calendarDays, calendarDays)
+  const calendarQuery = fakeSupabase.queries.find((query) => query.tableName === 'production_calendar_days')
+  assert.ok(calendarQuery)
+  assert.deepEqual(calendarQuery.filters, [
+    { type: 'eq', column: 'machine_id', value: MACHINE_ID },
+    { type: 'gte', column: 'calendar_date', value: '2026-11-22' },
+    { type: 'lte', column: 'calendar_date', value: '2026-11-25' },
+  ])
+  assert.deepEqual(calendarQuery.orders.map((order) => order.column), ['calendar_date'])
 })

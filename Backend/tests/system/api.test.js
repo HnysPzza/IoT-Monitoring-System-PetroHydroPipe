@@ -107,6 +107,11 @@ test('GET /api/operations/sse exposes aggregate diagnostics only to admins', asy
     })
     assert.equal(forbidden.response.status, 403)
 
+    const forbiddenEngineering = await requestJson(baseUrl, '/api/operations/sse', {
+      headers: authHeader('Engineering Supervisor'),
+    })
+    assert.equal(forbiddenEngineering.response.status, 403)
+
     const allowed = await requestJson(baseUrl, '/api/operations/sse', {
       headers: authHeader('Admin'),
     })
@@ -124,6 +129,10 @@ test('GET /api/operations/sse exposes aggregate diagnostics only to admins', asy
       headers: authHeader('Production Supervisor'),
     })
     assert.equal(watchdogForbidden.response.status, 403)
+    const watchdogEngineering = await requestJson(baseUrl, '/api/operations/watchdog', {
+      headers: authHeader('Engineering Supervisor'),
+    })
+    assert.equal(watchdogEngineering.response.status, 200)
     const watchdogAllowed = await requestJson(baseUrl, '/api/operations/watchdog', {
       headers: authHeader('Admin'),
     })
@@ -562,7 +571,7 @@ test('machine settings GET supports all dashboard roles and validates machine id
   })
 })
 
-test('machine settings PATCH is Admin-only and forwards validated partial updates', async () => {
+test('machine settings PATCH allows Admin and Engineering Supervisor and forwards validated partial updates', async () => {
   const calls = []
   const settings = {
     machineId,
@@ -590,29 +599,42 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
   }
 
   await withTestServer(app, async (baseUrl) => {
-    const forbidden = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
-      method: 'PATCH',
-      headers: authHeader('Engineering Supervisor'),
-      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
-    })
-    assert.equal(forbidden.response.status, 403)
-    assertError(forbidden.body, 'FORBIDDEN')
+    for (const deniedRole of ['Operation Manager', 'Production Supervisor', 'Quality Control']) {
+      const forbidden = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+        method: 'PATCH',
+        headers: authHeader(deniedRole),
+        body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+      })
+      assert.equal(forbidden.response.status, 403, deniedRole)
+      assertError(forbidden.body, 'FORBIDDEN')
+    }
 
-    const updated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
-      method: 'PATCH',
-      headers: authHeader('Admin'),
-      body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
-    })
-    assert.equal(updated.response.status, 200)
-    assert.deepEqual(updated.body, { settings })
-    assert.equal(updated.response.headers.get('cache-control'), 'no-store')
-    assert.deepEqual(calls, [{
-      machineId,
-      expectedVersion: '1',
-      sensorThresholds: { 'S-03': sensorThreshold },
-      shiftSchedule: undefined,
-      actorUserId: userId,
-    }])
+    for (const allowedRole of ['Admin', 'Engineering Supervisor']) {
+      const updated = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
+        method: 'PATCH',
+        headers: authHeader(allowedRole),
+        body: { expectedVersion: '1', sensorThresholds: { 'S-03': sensorThreshold } },
+      })
+      assert.equal(updated.response.status, 200, allowedRole)
+      assert.deepEqual(updated.body, { settings })
+      assert.equal(updated.response.headers.get('cache-control'), 'no-store')
+    }
+    assert.deepEqual(calls, [
+      {
+        machineId,
+        expectedVersion: '1',
+        sensorThresholds: { 'S-03': sensorThreshold },
+        shiftSchedule: undefined,
+        actorUserId: userId,
+      },
+      {
+        machineId,
+        expectedVersion: '1',
+        sensorThresholds: { 'S-03': sensorThreshold },
+        shiftSchedule: undefined,
+        actorUserId: userId,
+      },
+    ])
 
     const invalid = await requestJson(baseUrl, `/api/machines/${machineId}/settings`, {
       method: 'PATCH',
@@ -621,7 +643,7 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
     })
     assert.equal(invalid.response.status, 400)
     assertError(invalid.body, 'VALIDATION_ERROR')
-    assert.equal(calls.length, 1)
+    assert.equal(calls.length, 2)
 
     const unexpectedQuery = await requestJson(baseUrl, `/api/machines/${machineId}/settings?force=true`, {
       method: 'PATCH',
@@ -630,7 +652,7 @@ test('machine settings PATCH is Admin-only and forwards validated partial update
     })
     assert.equal(unexpectedQuery.response.status, 400)
     assertError(unexpectedQuery.body, 'VALIDATION_ERROR')
-    assert.equal(calls.length, 1)
+    assert.equal(calls.length, 2)
   })
 })
 
@@ -964,6 +986,12 @@ test('reports summary is restricted to management roles', async () => {
       headers: authHeader('Admin'),
     })
     assert.equal(admin.response.status, 200)
+
+    const engineeringSupervisor = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
+      headers: authHeader('Engineering Supervisor'),
+    })
+    assert.equal(engineeringSupervisor.response.status, 200)
+
     const retiredRole = await requestJson(baseUrl, '/api/reports/summary?type=daily', {
       headers: authHeader('Managing Director'),
     })

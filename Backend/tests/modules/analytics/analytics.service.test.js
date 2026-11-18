@@ -303,3 +303,37 @@ test('Analytics all-time range starts on the first contributing record when on o
   assert.equal(postMayResult.selected.range.requestedEndDate, '2026-08-03')
   assert.equal(postMayResult.selected.range.daysInclusive, 50)
 })
+
+test('Analytics excludes non-working calendarDays from scheduled eligible time and reports null availability when all dates are non-working', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const historyWithCalendar = [{
+    machine_id: MACHINE_ID,
+    version: '1',
+    shift_schedule: { workStart: '08:00', workEnd: '17:00', breaks: [], rampUpGraceMinutes: 0, restDays: ['sunday'] },
+    effective_from: null,
+    effective_to: null,
+  }]
+  Object.defineProperty(historyWithCalendar, 'calendarDays', {
+    value: [
+      { calendar_date: '2026-08-01', is_working: false },
+    ],
+    enumerable: false,
+  })
+  const { dependencies } = createDependencies({
+    downtimeRows: [
+      { id: 'd-mon', started_at: '2026-08-03T00:00:00.000Z', ended_at: '2026-08-03T01:00:00.000Z', cause: 'Flux Refill', sensors: { sensor_code: 'S-01' } },
+    ],
+  })
+  dependencies.getSettingsHistory = async () => historyWithCalendar
+
+  const nonWorkingWindow = await getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-02' }, dependencies)
+  assert.equal(nonWorkingWindow.selected.summary.availabilityPercent, null)
+  assert.equal(nonWorkingWindow.selected.trends[0].metrics.availabilityPercent, null)
+  assert.equal(nonWorkingWindow.selected.trends[1].metrics.availabilityPercent, null)
+
+  const mixedWindow = await getAnalytics({ startDate: '2026-08-01', endDate: '2026-08-03' }, dependencies)
+  assert.equal(mixedWindow.selected.trends[0].metrics.availabilityPercent, null)
+  assert.equal(mixedWindow.selected.trends[1].metrics.availabilityPercent, null)
+  assert.equal(mixedWindow.selected.trends[2].metrics.availabilityPercent, 75)
+  assert.equal(mixedWindow.selected.summary.availabilityPercent, 75)
+})

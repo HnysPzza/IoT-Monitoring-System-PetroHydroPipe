@@ -2205,4 +2205,51 @@ describe('UX & Accessibility Audit Regression Contracts', () => {
     expect(screen.getByRole('button', { name: 'Filter by cut status' })).toHaveTextContent('Accepted')
     expect(screen.getByRole('button', { name: 'Filter by specification status' })).not.toBeDisabled()
   })
+
+  it('provides mobile data-label attributes across view, inline edit, and read-only rows', async () => {
+    const user = userEvent.setup()
+    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
+    const expectedEditableLabels = [
+      'Select',
+      'Status',
+      'Cut Time',
+      'Customer',
+      'Diameter (OD mm)',
+      'Thickness (mm)',
+      'Length (mm)',
+      'Pipe #',
+      'Tons',
+      'Action',
+    ]
+
+    const { unmount } = renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
+    await screen.findByText('Maynilad Water')
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit specification' })
+    const firstRow = editButtons[0].closest('tr')
+    expect(Array.from(firstRow.querySelectorAll('td')).map((cell) => cell.getAttribute('data-label'))).toEqual(expectedEditableLabels)
+
+    await user.click(editButtons[0])
+    expect(Array.from(firstRow.querySelectorAll('td')).map((cell) => cell.getAttribute('data-label'))).toEqual(expectedEditableLabels)
+
+    unmount()
+
+    renderWithAuth(<ProductionSection loadProduction={mockLoad} />, {
+      authValue: { user: { role: 'Operator' } },
+    })
+    await screen.findByText('Maynilad Water')
+
+    const readOnlyRows = screen.getAllByRole('row')
+    const firstReadOnlyCells = Array.from(readOnlyRows[1].querySelectorAll('td'))
+    expect(firstReadOnlyCells.map((cell) => cell.getAttribute('data-label'))).toEqual([
+      'Status',
+      'Cut Time',
+      'Customer',
+      'Diameter (OD mm)',
+      'Thickness (mm)',
+      'Length (mm)',
+      'Pipe #',
+      'Tons',
+    ])
+  })
 })

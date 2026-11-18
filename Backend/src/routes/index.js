@@ -5,6 +5,7 @@ const routeConfig = [
     { path: '/alerts', module: 'alerts' },
     { path: '/users', module: 'users' },
     { path: '/machines/:machineId/settings', module: 'settings' },
+    { path: '/machines/:machineId/calendar', module: 'calendar' },
     { path: '/machines', module: 'machines' },
     { path: '/operations', module: 'operations' },
     { path: '/iot', module: 'iot' },

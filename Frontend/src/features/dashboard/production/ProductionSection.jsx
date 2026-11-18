@@ -1409,7 +1409,7 @@ export default function ProductionSection({
                   return (
                     <tr key={rowId} className={rowClass || undefined}>
                       {canEdit && (
-                        <td className="production-col-select">
+                        <td className="production-col-select" data-label="Select">
                           <input
                             type="checkbox"
                             className="production-checkbox"
@@ -1421,10 +1421,10 @@ export default function ProductionSection({
                           />
                         </td>
                       )}
-                      <td className="production-col-status">
+                      <td className="production-col-status" data-label="Status">
                         <div className="production-status-cell">{statusBadge}</div>
                       </td>
-                      <td className="production-col-timestamp tabular-data">
+                      <td className="production-col-timestamp tabular-data" data-label="Cut Time">
                         {(() => {
                           const formatted = formatManilaDateTime(record.recordedAt || record.timestamp)
                           return formatted === '—' ? (
@@ -1436,7 +1436,7 @@ export default function ProductionSection({
                       </td>
                       {isEditing ? (
                         <>
-                          <td>
+                          <td data-label="Customer">
                             <input
                               type="text"
                               className="production-inline-input"
@@ -1449,7 +1449,7 @@ export default function ProductionSection({
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Diameter (OD mm)">
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
@@ -1462,7 +1462,7 @@ export default function ProductionSection({
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Thickness (mm)">
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
@@ -1475,7 +1475,7 @@ export default function ProductionSection({
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Length (mm)">
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
@@ -1488,7 +1488,7 @@ export default function ProductionSection({
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Pipe #">
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
@@ -1501,7 +1501,7 @@ export default function ProductionSection({
                               onKeyDown={(e) => handleInputKeyDown(e, record)}
                             />
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Tons">
                             <input
                               type="number"
                               className="production-inline-input production-inline-num tabular-data"
@@ -1517,36 +1517,36 @@ export default function ProductionSection({
                         </>
                       ) : (
                         <>
-                          <td>{record.customer || <span className="production-placeholder">—</span>}</td>
-                          <td className="production-col-num tabular-data">
+                          <td data-label="Customer">{record.customer || <span className="production-placeholder">—</span>}</td>
+                          <td className="production-col-num tabular-data" data-label="Diameter (OD mm)">
                             {record.diameter !== null && record.diameter !== undefined ? (
                               formatDimension(record.diameter)
                             ) : (
                               <span className="production-placeholder">—</span>
                             )}
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Thickness (mm)">
                             {record.thickness !== null && record.thickness !== undefined ? (
                               formatDimension(record.thickness)
                             ) : (
                               <span className="production-placeholder">—</span>
                             )}
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Length (mm)">
                             {record.length !== null && record.length !== undefined ? (
                               formatDimension(record.length)
                             ) : (
                               <span className="production-placeholder">—</span>
                             )}
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Pipe #">
                             {record.pipeNumber !== null && record.pipeNumber !== undefined ? (
                               record.pipeNumber
                             ) : (
                               <span className="production-placeholder">—</span>
                             )}
                           </td>
-                          <td className="production-col-num tabular-data">
+                          <td className="production-col-num tabular-data" data-label="Tons">
                             {record.tonnage !== null && record.tonnage !== undefined ? (
                               formatTonnage(record.tonnage)
                             ) : (
@@ -1556,7 +1556,7 @@ export default function ProductionSection({
                         </>
                       )}
                       {canEdit && (
-                        <td className="production-col-action">
+                        <td className="production-col-action" data-label="Action">
                           {isEditing ? (
                             <div className="production-inline-actions">
                               <button

@@ -804,6 +804,244 @@ button:disabled {
   transform: scale(0.985);
 }
 
+.btn-danger {
+  background: #DC2626;
+  color: #FFFFFF;
+  border: 1px solid #B91C1C;
+  font-weight: 600;
+  padding: 0 1rem;
+  border-radius: 7px;
+  min-height: 38px;
+  font-size: 0.82rem;
+  transition: background-color 150ms var(--ease-std), border-color 150ms var(--ease-std);
+  cursor: pointer;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #B91C1C;
+  border-color: #991B1B;
+  color: #FFFFFF;
+}
+
+.confirm-dialog {
+  width: min(440px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  padding: 20px 22px;
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.26), 0 2px 6px rgba(2, 6, 23, 0.16);
+}
+
+:root[data-theme='light'] .confirm-dialog {
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 60%);
+  backdrop-filter: blur(2px);
+}
+
+.confirm-dialog-content {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.confirm-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.confirm-dialog-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.confirm-dialog-icon.danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--c-danger);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--c-text);
+}
+
+.confirm-dialog-message {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--c-text-2);
+  line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.2rem;
+}
+
+.confirm-dialog-actions .confirm-cancel-btn {
+  min-height: 38px;
+  padding: 0 0.9rem;
+  font-size: 0.82rem;
+  border-radius: 7px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--c-text-2);
+  box-shadow: none;
+}
+
+.confirm-dialog-actions .confirm-cancel-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  border-color: transparent;
+  color: var(--c-text);
+}
+
+.confirm-dialog .btn:hover:not(:disabled) {
+  transform: none;
+}
+
+:is(.action-snackbar, .users-action-snackbar) {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  left: auto;
+  z-index: 60;
+  display: flex;
+  width: min(460px, calc(100vw - 32px));
+  min-height: 60px;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 14px 16px 16px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  animation: action-snackbar-enter 160ms ease-out both;
+}
+
+:is(.action-snackbar-message, .users-action-snackbar-message) {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+:is(.action-snackbar-undo, .users-action-undo, .action-snackbar-dismiss, .users-action-dismiss) {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 7px;
+  background: var(--c-surface2);
+  color: var(--c-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+:is(.action-snackbar-dismiss, .users-action-dismiss) {
+  width: 36px;
+  padding: 0;
+}
+
+:is(.action-snackbar-undo, .users-action-undo, .action-snackbar-dismiss, .users-action-dismiss):hover {
+  background: var(--hover-bg);
+}
+
+:is(.action-snackbar-undo, .users-action-undo, .action-snackbar-dismiss, .users-action-dismiss):focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+:is(.action-snackbar-undo, .users-action-undo)[hidden] {
+  display: none;
+}
+
+:is(.action-snackbar-result-error, .users-action-result-error) {
+  flex: 0 0 auto;
+  color: var(--c-danger);
+}
+
+:is(.action-snackbar-result-success, .users-action-result-success) {
+  flex: 0 0 auto;
+  color: var(--c-text-2);
+}
+
+:is(.action-snackbar-progress, .users-action-progress) {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  background: var(--c-surface2);
+}
+
+:is(.action-snackbar-progress, .users-action-progress) > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left;
+  animation: action-snackbar-progress-countdown linear forwards;
+  background: var(--c-text-3);
+}
+
+@keyframes action-snackbar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes action-snackbar-progress-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (max-width: 560px) {
+  :is(.action-snackbar, .users-action-snackbar) {
+    right: 12px;
+    left: auto;
+    width: min(460px, calc(100vw - 24px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.action-snackbar, .users-action-snackbar),
+  :is(.action-snackbar-progress, .users-action-progress) > span {
+    animation: none;
+  }
+}
+
 .spinner {
   width: 18px;
   height: 18px;
@@ -3466,29 +3704,6 @@ button:disabled {
   line-height: 1.4;
 }
 
-.settings-profile-card {
-  display: grid;
-  gap: 8px;
-  min-height: 96px;
-  padding: 14px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  background: var(--panel-bg);
-}
-
-.settings-profile-card p {
-  margin: 0;
-  color: var(--c-text-2);
-  font-family: var(--font-sans);
-  font-size: 0.74rem;
-  text-transform: uppercase;
-}
-
-.settings-profile-card strong {
-  color: var(--c-text);
-  font-size: 0.98rem;
-}
-
 .admin-sensor-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(180px, 1fr));
@@ -5588,7 +5803,7 @@ button:disabled {
 }
 
 .settings-sensor-badge.is-locked {
-  color: var(--c-text-3);
+  color: var(--c-text-2);
 }
 
 .settings-sensor-title {
@@ -6494,66 +6709,6 @@ button:disabled {
   animation: spin 760ms linear infinite;
 }
 
-.settings-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 24px;
-  padding: 18px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 10px;
-  background: var(--panel-bg);
-}
-
-.settings-copy {
-  display: grid;
-  gap: 8px;
-}
-
-.settings-copy h3,
-.settings-copy p {
-  margin: 0;
-}
-
-.settings-copy h3 {
-  color: var(--c-text);
-  font-size: 1rem;
-}
-
-.settings-copy p {
-  color: var(--c-text-2);
-  line-height: 1.5;
-}
-
-.theme-toggle {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(96px, 1fr));
-  gap: 8px;
-  padding: 6px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 8px;
-  background: var(--c-surface2);
-}
-
-.theme-option {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--c-text-2);
-  background: transparent;
-  font-weight: 600;
-}
-
-.theme-option.is-selected {
-  color: var(--c-text);
-  border-color: var(--card-border);
-  background: var(--hover-bg);
-}
-
 .skeleton {
   border-radius: 8px;
   background: var(--skeleton-bg);
@@ -7069,7 +7224,6 @@ button:disabled {
   .overview-sensor-grid,
   .live-machine-grid,
   .admin-sensor-grid,
-  .settings-profile-grid,
   .analytics-summary-row,
   .machine-meta {
     grid-template-columns: 1fr;
@@ -7133,14 +7287,6 @@ button:disabled {
   }
 
   .account-submit {
-    width: 100%;
-  }
-
-  .settings-row {
-    grid-template-columns: 1fr;
-  }
-
-  .theme-toggle {
     width: 100%;
   }
 
@@ -7283,6 +7429,7 @@ button:disabled {
   .overview-sensor-card,
   .settings-matrix-row,
   .settings-break-row-item,
+  .settings-holiday-chevron,
   .animated-trash-btn,
   .animated-trash-btn .trash-lid,
   .sidebar-link::before,

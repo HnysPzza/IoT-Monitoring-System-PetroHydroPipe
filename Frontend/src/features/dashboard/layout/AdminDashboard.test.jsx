@@ -1493,4 +1493,20 @@ describe('AdminDashboard alerts', () => {
     expect(logoutTooltip).toHaveStyle({ top: '642px' })
     expect(logoutBtn).toHaveAttribute('aria-describedby', 'sidebar-collapsed-tooltip')
   })
+
+  it('shows Reports and Settings in sidebar navigation for Engineering Supervisor while hiding Admin-only routes', () => {
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    renderWithAuth(<AdminDashboard />, {
+      route: '/dashboard',
+      authValue: { user: { id: 'eng-1', name: 'Nico Peralta', role: 'Engineering Supervisor' } },
+    })
+
+    const nav = screen.getByRole('navigation', { name: 'Dashboard sections' })
+    expect(nav.querySelector('a[href="/dashboard/reports"]')).toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard/settings"]')).toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard/machines"]')).toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard/users"]')).not.toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard/audit"]')).not.toBeInTheDocument()
+  })
 })

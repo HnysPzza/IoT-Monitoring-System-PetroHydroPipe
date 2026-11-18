@@ -59,11 +59,15 @@ function attachRelations(record) {
   }
 }
 
-function createFakeSupabase(records, calls, settingsHistory) {
+function createFakeSupabase(records, calls, settingsHistory, calendarDays = []) {
   return {
     from(tableName) {
-      assert.ok(['downtime_events', 'machine_operational_settings_history'].includes(tableName))
-      const sourceRecords = tableName === 'downtime_events' ? records : settingsHistory
+      assert.ok(['downtime_events', 'machine_operational_settings_history', 'production_calendar_days'].includes(tableName))
+      const sourceRecords = tableName === 'downtime_events'
+        ? records
+        : tableName === 'machine_operational_settings_history'
+          ? settingsHistory
+          : calendarDays
       const query = {
         filters: {},
         predicates: [],
@@ -72,7 +76,20 @@ function createFakeSupabase(records, calls, settingsHistory) {
         select() { return this },
         order() { return this },
         eq(field, value) { this.filters[field] = value; return this },
-        gte(field, value) { calls.push({ operation: 'gte', field, value }); return this },
+        gte(field, value) {
+          calls.push({ operation: 'gte', field, value })
+          if (tableName === 'production_calendar_days') {
+            this.predicates.push((record) => record[field] >= value)
+          }
+          return this
+        },
+        lte(field, value) {
+          calls.push({ operation: 'lte', field, value })
+          if (tableName === 'production_calendar_days') {
+            this.predicates.push((record) => record[field] <= value)
+          }
+          return this
+        },
         lt(field, value) {
           calls.push({ operation: 'lt', field, value })
           this.predicates.push((record) => new Date(record[field]) < new Date(value))
@@ -141,9 +158,9 @@ function createFakeSupabase(records, calls, settingsHistory) {
   }
 }
 
-function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [], calculatedRecords = [], settingsHistory = SETTINGS_HISTORY } = {}) {
+function loadDowntimeService({ records = [], auditLogs = [], calls = [], logs = [], calculatedRecords = [], settingsHistory = SETTINGS_HISTORY, calendarDays = [] } = {}) {
   clearSourceCache()
-  const fakeSupabase = createFakeSupabase(records, calls, settingsHistory)
+  const fakeSupabase = createFakeSupabase(records, calls, settingsHistory, calendarDays)
   mockModule('src/database/client.js', { getSupabaseClient: () => fakeSupabase })
   mockModule('src/shared/outputLossBasis.js', {
     getOutputLossBasis: async () => LOSS_BASIS,
@@ -500,4 +517,91 @@ test('dateFrom and dateTo span inclusive Manila business days and reject inverte
     () => service.listDowntime({ dateFrom: '2026-07-13', dateTo: '2026-07-06' }),
     { code: 'INVALID_DOWNTIME_DATE_RANGE', status: 400 },
   )
+})
+
+test('non-working Sunday and holiday faults return outsideSchedule true while sub-minute working-hour faults return outsideSchedule false across list and update', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-23T09:00:20+08:00') })
+  const settingsHistory = [{
+    ...SETTINGS_HISTORY[0],
+    shift_schedule: {
+      workStart: '08:00',
+      workEnd: '17:00',
+      breaks: [],
+      rampUpGraceMinutes: 0,
+      restDays: ['sunday'],
+    },
+  }]
+  const calendarDays = [
+    { machine_id: MACHINE_ID, calendar_date: '2026-11-20', is_working: false },
+  ]
+  const records = [
+    attachRelations({
+      id: 'holiday-fault',
+      machine_id: MACHINE_ID,
+      sensor_id: 'sensor-3',
+      started_at: '2026-11-20T09:00:00+08:00',
+      ended_at: '2026-11-20T09:45:00+08:00',
+      cause: 'Pending Cause Review',
+      status: 'Resolved',
+    }),
+    attachRelations({
+      id: 'sunday-fault',
+      machine_id: MACHINE_ID,
+      sensor_id: 'sensor-3',
+      started_at: '2026-11-22T09:00:00+08:00',
+      ended_at: '2026-11-22T09:45:00+08:00',
+      cause: 'Pending Cause Review',
+      status: 'Resolved',
+    }),
+    attachRelations({
+      id: 'short-working-fault',
+      machine_id: MACHINE_ID,
+      sensor_id: 'sensor-3',
+      started_at: '2026-11-23T09:00:00+08:00',
+      ended_at: null,
+      cause: 'Pending Cause Review',
+      status: 'Open',
+    }),
+  ]
+  const service = loadDowntimeService({ records, settingsHistory, calendarDays })
+
+  const listResult = await service.listDowntime({ dateFrom: '2026-11-20', dateTo: '2026-11-23' })
+  const byId = new Map(listResult.records.map((record) => [record.id, record]))
+
+  assert.equal(byId.get('sunday-fault').durationMinutes, 45)
+  assert.equal(byId.get('sunday-fault').unplannedMinutes, 0)
+  assert.equal(byId.get('sunday-fault').plannedExcludedMinutes, 45)
+  assert.equal(byId.get('sunday-fault').estimatedLoss, 0)
+  assert.equal(byId.get('sunday-fault').outsideSchedule, true)
+
+  assert.equal(byId.get('holiday-fault').durationMinutes, 45)
+  assert.equal(byId.get('holiday-fault').unplannedMinutes, 0)
+  assert.equal(byId.get('holiday-fault').plannedExcludedMinutes, 45)
+  assert.equal(byId.get('holiday-fault').estimatedLoss, 0)
+  assert.equal(byId.get('holiday-fault').outsideSchedule, true)
+
+  assert.equal(byId.get('short-working-fault').durationMinutes, 0)
+  assert.equal(byId.get('short-working-fault').unplannedMinutes, 0)
+  assert.equal(byId.get('short-working-fault').plannedExcludedMinutes, 0)
+  assert.equal(byId.get('short-working-fault').outsideSchedule, false)
+
+  const updatedSunday = await service.updateDowntime({
+    downtimeId: 'sunday-fault',
+    values: { cause: 'Corrective Maintenance', notes: 'Weekend inspection test' },
+    actorUserId: 'user-1',
+  })
+  assert.equal(updatedSunday.record.durationMinutes, 45)
+  assert.equal(updatedSunday.record.unplannedMinutes, 0)
+  assert.equal(updatedSunday.record.plannedExcludedMinutes, 45)
+  assert.equal(updatedSunday.record.estimatedLoss, 0)
+  assert.equal(updatedSunday.record.outsideSchedule, true)
+
+  const updatedWorking = await service.updateDowntime({
+    downtimeId: 'short-working-fault',
+    values: { notes: 'Brief working-hour stop' },
+    actorUserId: 'user-1',
+  })
+  assert.equal(updatedWorking.record.durationMinutes, 0)
+  assert.equal(updatedWorking.record.plannedExcludedMinutes, 0)
+  assert.equal(updatedWorking.record.outsideSchedule, false)
 })

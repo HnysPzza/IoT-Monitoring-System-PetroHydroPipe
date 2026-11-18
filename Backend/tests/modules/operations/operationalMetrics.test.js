@@ -45,6 +45,7 @@ test('record metrics preserve raw time while excluding breaks and grace from los
     unplannedMinutes: 50,
     plannedExcludedMinutes: 70,
     estimatedLoss: 2.5,
+    outsideSchedule: false,
   })
 })
 
@@ -69,7 +70,105 @@ test('explicit break-time fault remains raw history but contributes no unplanned
     unplannedMinutes: 0,
     plannedExcludedMinutes: 50,
     estimatedLoss: 0,
+    outsideSchedule: true,
   })
+})
+
+test('record metrics mark non-working Sunday and holiday faults as outsideSchedule while keeping sub-minute working-hour faults inside schedule', () => {
+  const scheduleWithSundayRest = [{
+    version: '1',
+    effective_from: null,
+    effective_to: null,
+    shift_schedule: {
+      workStart: '08:00',
+      workEnd: '17:00',
+      breaks: [],
+      rampUpGraceMinutes: 0,
+      restDays: ['sunday'],
+    },
+  }]
+  Object.defineProperty(scheduleWithSundayRest, 'calendarDays', {
+    value: [{ calendar_date: '2026-11-24', is_working: false }],
+    enumerable: false,
+  })
+
+  const sundayFault = calculateRecordMetrics({
+    record: {
+      started_at: '2026-11-22T09:00:00+08:00',
+      ended_at: '2026-11-22T09:45:00+08:00',
+    },
+    window: {
+      start: new Date('2026-11-21T16:00:00.000Z'),
+      end: new Date('2026-11-22T16:00:00.000Z'),
+    },
+    settingsHistory: scheduleWithSundayRest,
+    asOf: new Date('2026-11-22T12:00:00+08:00'),
+    lossRatePiecesPerMinute: 0.05,
+  })
+  assert.equal(sundayFault.durationMinutes, 45)
+  assert.equal(sundayFault.unplannedMinutes, 0)
+  assert.equal(sundayFault.plannedExcludedMinutes, 45)
+  assert.equal(sundayFault.estimatedLoss, 0)
+  assert.equal(sundayFault.outsideSchedule, true)
+
+  const holidayFault = calculateRecordMetrics({
+    record: {
+      started_at: '2026-11-24T09:00:00+08:00',
+      ended_at: '2026-11-24T09:45:00+08:00',
+    },
+    window: {
+      start: new Date('2026-11-23T16:00:00.000Z'),
+      end: new Date('2026-11-24T16:00:00.000Z'),
+    },
+    settingsHistory: scheduleWithSundayRest,
+    asOf: new Date('2026-11-24T12:00:00+08:00'),
+    lossRatePiecesPerMinute: 0.05,
+  })
+  assert.equal(holidayFault.unplannedMinutes, 0)
+  assert.equal(holidayFault.plannedExcludedMinutes, 45)
+  assert.equal(holidayFault.estimatedLoss, 0)
+  assert.equal(holidayFault.outsideSchedule, true)
+
+  const twentySecondWorkingFault = calculateRecordMetrics({
+    record: {
+      started_at: '2026-11-23T09:00:00+08:00',
+      ended_at: null,
+    },
+    window: {
+      start: new Date('2026-11-22T16:00:00.000Z'),
+      end: new Date('2026-11-23T16:00:00.000Z'),
+    },
+    settingsHistory: scheduleWithSundayRest,
+    asOf: new Date('2026-11-23T09:00:20+08:00'),
+    lossRatePiecesPerMinute: 0.05,
+  })
+  assert.equal(twentySecondWorkingFault.durationSeconds, 20)
+  assert.equal(twentySecondWorkingFault.unplannedSeconds, 20)
+  assert.equal(twentySecondWorkingFault.durationMinutes, 0)
+  assert.equal(twentySecondWorkingFault.unplannedMinutes, 0)
+  assert.equal(twentySecondWorkingFault.plannedExcludedMinutes, 0)
+  assert.equal(twentySecondWorkingFault.outsideSchedule, false)
+
+  const outOfWindowHistory = [{
+    machine_id: 'machine-1',
+    version: 1,
+    effective_from: window.start.toISOString(),
+    effective_to: window.end.toISOString(),
+    shift_schedule: settingsHistory[0].shift_schedule,
+  }]
+  const nonOverlapping = calculateRecordMetrics({
+    record: {
+      id: 'earlier-event',
+      started_at: '2026-08-23T01:00:00.000Z',
+      ended_at: '2026-08-23T02:00:00.000Z',
+    },
+    window,
+    settingsHistory: outOfWindowHistory,
+    asOf: window.end,
+    lossRatePiecesPerMinute: 0.05,
+  })
+  assert.equal(nonOverlapping.durationSeconds, 0)
+  assert.equal(nonOverlapping.outsideSchedule, false)
 })
 
 test('machine metrics union overlapping sensors and use eligible schedule as denominator', () => {

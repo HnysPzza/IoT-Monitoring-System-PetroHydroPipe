@@ -5,13 +5,24 @@ const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const SENSOR_CODES = Object.freeze(registry.sensors.map((sensor) => sensor.code))
 const SPINDLE_SENSOR_CODE = 'S-03'
+const WEEKDAYS = Object.freeze([
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+])
 const SETTINGS_LIMITS = Object.freeze({
   triggerSeconds: Object.freeze({ minimum: 1, maximum: 3600 }),
   recoverySeconds: Object.freeze({ minimum: 1, maximum: 300 }),
   rotationStallMs: Object.freeze({ minimum: 500, maximum: 30000, default: 3000 }),
   breaks: Object.freeze({ maximum: 10 }),
   rampUpGraceMinutes: Object.freeze({ minimum: 0, maximum: 30 }),
+  restDays: Object.freeze({ maximum: 6 }),
 })
+const weekdaySchema = z.enum(WEEKDAYS)
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Time must use 24-hour HH:MM format.')
 const MAX_SETTINGS_VERSION = 9223372036854775807n
 const positiveVersionSchema = z.string().superRefine((value, context) => {
@@ -156,7 +167,24 @@ const shiftScheduleSchema = z.strictObject({
   workEnd: timeSchema,
   breaks: z.array(breakSchema).max(SETTINGS_LIMITS.breaks.maximum, 'At most 10 breaks are allowed.'),
   rampUpGraceMinutes: z.number().int().min(SETTINGS_LIMITS.rampUpGraceMinutes.minimum).max(SETTINGS_LIMITS.rampUpGraceMinutes.maximum),
+  restDays: z
+    .array(weekdaySchema)
+    .max(SETTINGS_LIMITS.restDays.maximum, 'At least one working day per week is required.')
+    .default([]),
 }).superRefine((schedule, context) => {
+  const seenRestDays = new Set()
+  for (let index = 0; index < schedule.restDays.length; index += 1) {
+    const weekday = schedule.restDays[index]
+    if (seenRestDays.has(weekday)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['restDays', index],
+        message: 'Rest days must be unique.',
+      })
+    }
+    seenRestDays.add(weekday)
+  }
+
   const workStart = toMinutes(schedule.workStart)
   const workEnd = toMinutes(schedule.workEnd)
 
@@ -273,6 +301,7 @@ module.exports = {
   SENSOR_CODES,
   SETTINGS_LIMITS,
   SPINDLE_SENSOR_CODE,
+  WEEKDAYS,
   completeSensorThresholdsSchema,
   completeSettingsSchema,
   patchSettingsSchema,
@@ -282,4 +311,5 @@ module.exports = {
   shiftScheduleSchema,
   spindleThresholdSchema,
   storedSettingsRecordSchema,
+  weekdaySchema,
 }

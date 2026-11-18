@@ -3,6 +3,7 @@ const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
 const { addBusinessDays, formatBusinessTime, getBusinessDayRange, startOfBusinessDay } = require('../../shared/businessTime')
 const { calculateMachineMetrics, calculateRecordMetrics, getRecordsSpan } = require('../../shared/operationalMetrics')
+const { isEligibleAt } = require('../../shared/operationalTime')
 const logger = require('../../utils/logger')
 const { getSettingsHistory } = require('../settings/settingsHistory.repository')
 const { getOutputLossBasis } = require('../../shared/outputLossBasis')
@@ -93,6 +94,7 @@ function toDowntimeRecord(record, operationalMetrics) {
     durationMinutes: operationalMetrics?.durationMinutes ?? durationMinutes,
     unplannedMinutes: operationalMetrics?.unplannedMinutes ?? durationMinutes,
     plannedExcludedMinutes: operationalMetrics?.plannedExcludedMinutes ?? 0,
+    outsideSchedule: Boolean(operationalMetrics?.outsideSchedule),
     status: record.status,
     isOpen: record.status === 'Open',
     isCauseEditable,
@@ -200,6 +202,7 @@ async function calculateListMetrics(records, pageRecords, dateRange, asOf, lossB
           unplannedMinutes: 0,
           plannedExcludedMinutes: 0,
           estimatedLoss: 0,
+          outsideSchedule: !isEligibleAt({ at: record.started_at, settingsHistory }),
         })
       } else {
         recordMetrics.set(record.id, calculateRecordMetrics({
@@ -318,6 +321,42 @@ async function fetchDowntimeById(downtimeId) {
   return data
 }
 
+async function calculateSingleRecordMetrics(record, asOf = new Date()) {
+  if (!record?.machine_id || !record?.started_at) return null
+
+  const recordWindow = getRecordsSpan([record], asOf)
+  const [lossEstimateBasis, settingsHistory] = await Promise.all([
+    getOutputLossBasis({
+      machineId: record.machine_id,
+      asOf,
+      fallbackRatePiecesPerMinute: env.OUTPUT_LOSS_FALLBACK_PIECES_PER_MINUTE,
+    }),
+    getSettingsHistory(record.machine_id, recordWindow),
+  ])
+  if (!Array.isArray(settingsHistory) || settingsHistory.length === 0 || !lossEstimateBasis) {
+    return null
+  }
+
+  const endedAt = record.ended_at ? new Date(record.ended_at) : asOf
+  if (new Date(record.started_at) >= endedAt) {
+    return {
+      durationMinutes: 0,
+      unplannedMinutes: 0,
+      plannedExcludedMinutes: 0,
+      estimatedLoss: 0,
+      outsideSchedule: !isEligibleAt({ at: record.started_at, settingsHistory }),
+    }
+  }
+
+  return calculateRecordMetrics({
+    record,
+    window: recordWindow,
+    settingsHistory,
+    asOf,
+    lossRatePiecesPerMinute: lossEstimateBasis.ratePiecesPerMinute,
+  })
+}
+
 async function updateDowntime({ downtimeId, values, actorUserId }) {
   if (values.status !== undefined) {
     throw createDowntimeError(400, 'DOWNTIME_SENSOR_MANAGED', 'Downtime is resolved only by accepted sensor recovery.')
@@ -359,7 +398,9 @@ async function updateDowntime({ downtimeId, values, actorUserId }) {
     throw createDowntimeError(500, 'DOWNTIME_UPDATE_FAILED', 'Unable to update downtime record.')
   }
 
-  const record = toDowntimeRecord(await fetchDowntimeById(downtimeId))
+  const updated = await fetchDowntimeById(downtimeId)
+  const operationalMetrics = await calculateSingleRecordMetrics(updated)
+  const record = toDowntimeRecord(updated, operationalMetrics)
 
   publishDowntimeEvent('downtime.updated', {
     id: record.id,

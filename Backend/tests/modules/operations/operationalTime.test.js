@@ -252,4 +252,147 @@ test('invalid intervals and schedules are rejected before calculation', () => {
     }),
     { code: 'INVALID_SCHEDULE' },
   )
+  assert.throws(
+    () => getEligibleSeconds({
+      start: manila('08:00'),
+      end: manila('17:00'),
+      settingsHistory: baseline({ ...defaultSchedule, restDays: ['funday'] }),
+    }),
+    { code: 'INVALID_SCHEDULE' },
+  )
+  assert.throws(
+    () => getEligibleSeconds({
+      start: manila('08:00'),
+      end: manila('17:00'),
+      settingsHistory: baseline({
+        ...defaultSchedule,
+        restDays: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      }),
+    }),
+    { code: 'INVALID_SCHEDULE' },
+  )
+})
+
+test('versioned weekly restDays yield 0 eligible seconds on active Sunday while preserving historical Sundays', () => {
+  const settingsHistory = [
+    {
+      version: '1',
+      effectiveFrom: null,
+      effectiveTo: '2026-11-16T10:00:00+08:00',
+      shiftSchedule: defaultSchedule,
+    },
+    {
+      version: '2',
+      effectiveFrom: '2026-11-16T10:00:00+08:00',
+      effectiveTo: null,
+      shiftSchedule: {
+        ...defaultSchedule,
+        restDays: ['sunday'],
+      },
+    },
+  ]
+
+  const pastSundaySeconds = getEligibleSeconds({
+    start: '2026-11-15T00:00:00+08:00',
+    end: '2026-11-16T00:00:00+08:00',
+    settingsHistory,
+  })
+  assert.equal(pastSundaySeconds, 420 * 60)
+
+  const futureSundaySeconds = getEligibleSeconds({
+    start: '2026-11-22T00:00:00+08:00',
+    end: '2026-11-23T00:00:00+08:00',
+    settingsHistory,
+  })
+  assert.equal(futureSundaySeconds, 0)
+})
+
+test('dated calendarDays override weekly restDays and normal workdays across parameter and settingsHistory forms', () => {
+  const settingsHistory = baseline({
+    ...defaultSchedule,
+    restDays: ['sunday'],
+  })
+
+  const overtimeSundaySeconds = getEligibleSeconds({
+    start: '2026-11-22T00:00:00+08:00',
+    end: '2026-11-23T00:00:00+08:00',
+    settingsHistory,
+    calendarDays: [{ calendarDate: '2026-11-22', isWorking: true }],
+  })
+  assert.equal(overtimeSundaySeconds, 420 * 60)
+
+  const holidayMondaySeconds = getEligibleSeconds({
+    start: '2026-11-23T00:00:00+08:00',
+    end: '2026-11-24T00:00:00+08:00',
+    settingsHistory,
+    calendarDays: [{ calendarDate: '2026-11-23', isWorking: false }],
+  })
+  assert.equal(holidayMondaySeconds, 0)
+
+  const attachedHistory = baseline({
+    ...defaultSchedule,
+    restDays: ['sunday'],
+  })
+  attachedHistory.calendarDays = [
+    { calendar_date: '2026-11-22', is_working: true },
+    { calendar_date: '2026-11-23', is_working: false },
+  ]
+
+  assert.equal(
+    isEligibleAt({ at: '2026-11-22T09:00:00+08:00', settingsHistory: attachedHistory }),
+    true,
+  )
+  assert.equal(
+    isEligibleAt({ at: '2026-11-23T09:00:00+08:00', settingsHistory: attachedHistory }),
+    false,
+  )
+
+  const breakdown = calculateDowntimeBreakdown({
+    record: {
+      started_at: '2026-11-23T09:00:00+08:00',
+      ended_at: '2026-11-23T09:45:00+08:00',
+    },
+    windowStart: '2026-11-23T00:00:00+08:00',
+    windowEnd: '2026-11-24T00:00:00+08:00',
+    settingsHistory: attachedHistory,
+  })
+  assert.deepEqual(breakdown, {
+    durationSeconds: 45 * 60,
+    unplannedSeconds: 0,
+    plannedExcludedSeconds: 45 * 60,
+  })
+
+  const unioned = getUnionedDowntimeSeconds({
+    records: [
+      {
+        started_at: '2026-11-23T09:00:00+08:00',
+        ended_at: '2026-11-23T09:30:00+08:00',
+      },
+    ],
+    windowStart: '2026-11-23T00:00:00+08:00',
+    windowEnd: '2026-11-24T00:00:00+08:00',
+    settingsHistory,
+    calendarDays: new Map([['2026-11-23', false]]),
+  })
+  assert.equal(unioned.durationSeconds, 30 * 60)
+  assert.equal(unioned.unplannedSeconds, 0)
+  assert.equal(unioned.plannedExcludedSeconds, 30 * 60)
+})
+
+test('advanceByEligibleSeconds skips post-shift Saturday, Sunday rest day, and non-working Monday holiday', () => {
+  const settingsHistory = baseline({
+    ...defaultSchedule,
+    restDays: ['sunday'],
+  })
+  const reachedAt = advanceByEligibleSeconds({
+    start: '2026-11-21T16:50:00+08:00',
+    end: '2026-11-25T00:00:00+08:00',
+    seconds: 20 * 60,
+    settingsHistory,
+    calendarDays: [{ calendarDate: '2026-11-23', isWorking: false }],
+  })
+  assert.equal(
+    reachedAt.toISOString(),
+    new Date('2026-11-24T08:10:00+08:00').toISOString(),
+  )
 })

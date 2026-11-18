@@ -397,8 +397,7 @@
 }
 
 /* Dialogs & Confirmation Modal */
-.users-dialog,
-.confirm-dialog {
+.users-dialog {
   width: min(600px, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
   padding: 1.5rem;
@@ -409,8 +408,7 @@
   box-shadow: 0 10px 28px rgba(2, 6, 23, 0.26), 0 2px 6px rgba(2, 6, 23, 0.16);
 }
 
-:root[data-theme='light'] .users-dialog,
-:root[data-theme='light'] .confirm-dialog {
+:root[data-theme='light'] .users-dialog {
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 
@@ -600,8 +598,7 @@
   width: 100%;
 }
 
-.account-cancel-btn,
-.confirm-cancel-btn {
+.account-cancel-btn {
   min-height: 42px;
   padding: 0 1rem;
   border-radius: 8px;
@@ -611,8 +608,7 @@
   box-shadow: none;
 }
 
-.account-cancel-btn:hover:not(:disabled),
-.confirm-cancel-btn:hover:not(:disabled) {
+.account-cancel-btn:hover:not(:disabled) {
   background: var(--hover-bg);
   border-color: transparent;
   color: var(--c-text);
@@ -694,89 +690,9 @@
   }
 }
 
-.users-dialog::backdrop,
-.confirm-dialog::backdrop {
+.users-dialog::backdrop {
   background: rgb(0 0 0 / 60%);
   backdrop-filter: blur(2px);
-}
-
-.confirm-dialog {
-  width: min(360px, calc(100vw - 2rem));
-  padding: 16px 18px;
-}
-
-.confirm-dialog-content {
-  display: grid;
-  gap: 0.9rem;
-}
-
-.confirm-dialog-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
-}
-
-.confirm-dialog-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.confirm-dialog-icon.danger {
-  background: rgba(239, 68, 68, 0.15);
-  color: #EF4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.confirm-dialog-title {
-  margin: 0;
-  font-size: 0.96rem;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--c-text);
-}
-
-.confirm-dialog-message {
-  margin: 0.25rem 0 0 0;
-  font-size: 0.8rem;
-  color: var(--c-text-2);
-  line-height: 1.45;
-}
-
-.confirm-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.15rem;
-}
-
-.confirm-dialog-actions .confirm-cancel-btn {
-  min-height: 36px;
-  padding: 0 0.85rem;
-  font-size: 0.8rem;
-  border-radius: 7px;
-}
-
-.btn-danger {
-  background: #DC2626;
-  color: #FFFFFF;
-  border: 1px solid #B91C1C;
-  font-weight: 600;
-  padding: 0 0.9rem;
-  border-radius: 7px;
-  min-height: 36px;
-  font-size: 0.8rem;
-  transition: all 0.15s ease;
-  cursor: pointer;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #B91C1C;
 }
 
 .users-table-content .table-empty-message {

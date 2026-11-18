@@ -49,6 +49,7 @@ function createFakeSupabase({
   aggregateError = null,
   downtimeEvents = [],
   settingsHistory = DEFAULT_HISTORY,
+  calendarDays = [],
   sensorEvents = [],
   productionSpecs = [],
   eventsError = null,
@@ -79,6 +80,10 @@ function createFakeSupabase({
       },
       gte(column, value) {
         queryRecord.filters.push({ operator: 'gte', column, value })
+        return this
+      },
+      lte(column, value) {
+        queryRecord.filters.push({ operator: 'lte', column, value })
         return this
       },
       lt(column, value) {
@@ -116,6 +121,8 @@ function createFakeSupabase({
           result = { data: downtimeEvents.slice(queryRecord.from, queryRecord.to + 1), error: null }
         } else if (tableName === 'machine_operational_settings_history') {
           result = { data: settingsHistory.slice(queryRecord.from, queryRecord.to + 1), error: null }
+        } else if (tableName === 'production_calendar_days') {
+          result = { data: calendarDays.slice(queryRecord.from, queryRecord.to + 1), error: null }
         } else if (tableName === 'sensor_events') {
           if (eventsError) {
             result = { data: null, error: eventsError }
@@ -915,5 +922,44 @@ test('findAcceptedCuttingEvents throws REPORT_PRODUCTION_EVENT_LIMIT_EXCEEDED wh
     }, fakeClient),
     (err) => err.code === 'REPORT_PRODUCTION_EVENT_LIMIT_EXCEEDED' && err.status === 500,
   )
+})
+
+test('report window excludes non-working calendarDays and returns null availability when all dates in window are non-working', async () => {
+  const settingsHistory = [{
+    machine_id: MACHINE_ID,
+    version: '1',
+    shift_schedule: {
+      workStart: '08:00',
+      workEnd: '17:00',
+      breaks: [],
+      rampUpGraceMinutes: 0,
+      restDays: ['sunday'],
+    },
+    effective_from: null,
+    effective_to: null,
+  }]
+  const calendarDays = [
+    { calendar_date: '2026-08-08', is_working: false },
+  ]
+  const fakeSupabase = createFakeSupabase({
+    settingsHistory,
+    calendarDays,
+  })
+  const reportsService = loadReportsService(fakeSupabase)
+
+  const saturdayHolidayReport = await reportsService.getSummary(
+    { type: 'daily', date: '2026-08-08' },
+    { asOf: new Date('2026-08-10T00:00:00.000Z') },
+  )
+  assert.equal(saturdayHolidayReport.metrics.scheduledEligibleMinutes, 0)
+  assert.equal(saturdayHolidayReport.metrics.availabilityPercent, null)
+  assert.equal(saturdayHolidayReport.summary.find((item) => item.id === 'availability').value, 'N/A')
+
+  const weeklyReport = await reportsService.getSummary(
+    { type: 'weekly', date: '2026-08-08' },
+    { asOf: new Date('2026-08-10T00:00:00.000Z') },
+  )
+  assert.equal(weeklyReport.metrics.scheduledEligibleMinutes, 5 * 540)
+  assert.equal(weeklyReport.metrics.availabilityPercent, 100)
 })
 
