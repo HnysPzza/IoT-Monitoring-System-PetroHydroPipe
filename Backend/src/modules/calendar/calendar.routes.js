@@ -21,6 +21,8 @@ const dashboardRoles = [
   'Production Supervisor',
 ]
 
+const calendarEditRoles = ['Admin', 'Engineering Supervisor']
+
 router.use(authenticate)
 
 router.get(
@@ -32,28 +34,28 @@ router.get(
 
 router.put(
   '/days/:calendarDate',
-  authorizeRole('Admin'),
+  authorizeRole(calendarEditRoles),
   validateRequest(putCalendarDaySchema),
   asyncHandler(calendarController.setProductionCalendarDay),
 )
 
 router.post(
   ['/ranges', '/range'],
-  authorizeRole('Admin'),
+  authorizeRole(calendarEditRoles),
   validateRequest(postCalendarRangeSchema),
   asyncHandler(calendarController.setProductionCalendarRange),
 )
 
 router.delete(
   '/days/:calendarDate',
-  authorizeRole('Admin'),
+  authorizeRole(calendarEditRoles),
   validateRequest(deleteCalendarDaySchema),
   asyncHandler(calendarController.removeProductionCalendarDay),
 )
 
 router.delete(
   ['/groups/:groupId', '/ranges/:groupId'],
-  authorizeRole('Admin'),
+  authorizeRole(calendarEditRoles),
   validateRequest(deleteCalendarRangeSchema),
   asyncHandler(calendarController.removeProductionCalendarRange),
 )

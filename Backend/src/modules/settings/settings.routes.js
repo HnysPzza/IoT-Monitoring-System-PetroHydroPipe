@@ -15,6 +15,8 @@ const dashboardRoles = [
   'Production Supervisor',
 ]
 
+const settingsEditRoles = ['Admin', 'Engineering Supervisor']
+
 router.use(authenticate)
 router.get(
   '/',
@@ -24,7 +26,7 @@ router.get(
 )
 router.patch(
   '/',
-  authorizeRole('Admin'),
+  authorizeRole(settingsEditRoles),
   validateRequest(patchSettingsSchema),
   asyncHandler(settingsController.updateMachineSettings),
 )

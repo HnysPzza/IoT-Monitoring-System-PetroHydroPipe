@@ -22,10 +22,14 @@ const dashboardRoles = [
   'Engineering Supervisor',
 ]
 
-const nonAdminRoles = [
+const nonCalendarEditRoles = [
   'Operation Manager',
   'Production Supervisor',
   'Quality Control',
+]
+
+const calendarEditRoles = [
+  'Admin',
   'Engineering Supervisor',
 ]
 
@@ -428,15 +432,68 @@ test('DELETE calendar day and group endpoints invoke removal RPCs and return rem
   })
 })
 
-test('non-Admin roles receive 403 on PUT, POST, and DELETE calendar endpoints', async () => {
+test('calendar write endpoints allow Admin and Engineering Supervisor and return 403 for other roles', async () => {
   const calls = []
-  const client = createSupabaseMock({ calls })
+  const client = createSupabaseMock({
+    calls,
+    rpcHandler: async (functionName, args) => {
+      if (functionName === 'set_production_calendar_day') {
+        return {
+          data: [
+            sampleDbEntry({
+              calendar_date: args.p_calendar_date,
+              name: args.p_name,
+              day_type: args.p_day_type,
+              is_working: args.p_is_working,
+              reason: args.p_reason,
+              source: args.p_day_type === 'holiday' ? 'seeded' : 'manual',
+              version: 2,
+              updated_by: args.p_actor_id,
+            }),
+          ],
+          error: null,
+        }
+      }
+      if (functionName === 'set_production_calendar_range') {
+        return {
+          data: [
+            sampleDbEntry({
+              calendar_date: args.p_start_date,
+              name: args.p_name,
+              day_type: args.p_day_type,
+              is_working: false,
+              reason: args.p_reason,
+              source: 'manual',
+              group_id: groupId,
+              version: 1,
+              updated_by: args.p_actor_id,
+            }),
+          ],
+          error: null,
+        }
+      }
+      if (functionName === 'remove_production_calendar_day' || functionName === 'remove_production_calendar_range') {
+        return {
+          data: {
+            machineId: args.p_machine_id,
+            removedCount: 1,
+            removedDates: ['2026-12-25'],
+            lockedDates: [],
+            restoredDates: [],
+            restoredHolidays: [],
+          },
+          error: null,
+        }
+      }
+      return { data: null, error: null }
+    },
+  })
   const app = loadAppWithMocks({
     'src/database/client.js': { getSupabaseClient: () => client },
   })
 
   await withTestServer(app, async (baseUrl) => {
-    for (const role of nonAdminRoles) {
+    for (const role of nonCalendarEditRoles) {
       const putRes = await requestJson(
         baseUrl,
         `/api/machines/${machineId}/calendar/days/2026-12-25`,
@@ -490,6 +547,55 @@ test('non-Admin roles receive 403 on PUT, POST, and DELETE calendar endpoints', 
     }
 
     assert.equal(calls.some((call) => call.type === 'rpc'), false)
+
+    for (const role of calendarEditRoles) {
+      const putRes = await requestJson(
+        baseUrl,
+        `/api/machines/${machineId}/calendar/days/2026-12-25`,
+        {
+          method: 'PUT',
+          headers: authHeader(role),
+          body: { dayType: 'holiday', name: 'Christmas Day', isWorking: true },
+        },
+      )
+      assert.equal(putRes.response.status, 200, role)
+
+      const postRes = await requestJson(
+        baseUrl,
+        `/api/machines/${machineId}/calendar/ranges`,
+        {
+          method: 'POST',
+          headers: authHeader(role),
+          body: {
+            startDate: '2026-12-23',
+            endDate: '2026-12-23',
+            dayType: 'day_off',
+            name: 'Holiday Shutdown',
+          },
+        },
+      )
+      assert.equal(postRes.response.status, 200, role)
+
+      const deleteDayRes = await requestJson(
+        baseUrl,
+        `/api/machines/${machineId}/calendar/days/2026-12-25`,
+        {
+          method: 'DELETE',
+          headers: authHeader(role),
+        },
+      )
+      assert.equal(deleteDayRes.response.status, 200, role)
+
+      const deleteGroupRes = await requestJson(
+        baseUrl,
+        `/api/machines/${machineId}/calendar/groups/${groupId}`,
+        {
+          method: 'DELETE',
+          headers: authHeader(role),
+        },
+      )
+      assert.equal(deleteGroupRes.response.status, 200, role)
+    }
   })
 })
 

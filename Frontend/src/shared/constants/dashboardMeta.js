@@ -44,7 +44,7 @@ export const navItems = [
     to: '/dashboard/reports',
     icon: 'bar-chart-3',
     group: 'analyze',
-    roles: ['Admin', 'Operation Manager', 'Quality Control'],
+    roles: ['Admin', 'Operation Manager', 'Quality Control', 'Engineering Supervisor'],
     subtitle: 'Generate and export production summaries.',
   },
   {
@@ -76,7 +76,7 @@ export const navItems = [
     to: '/dashboard/settings',
     icon: 'settings',
     group: 'admin',
-    roles: ['Admin'],
+    roles: ['Admin', 'Engineering Supervisor'],
     subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 ]

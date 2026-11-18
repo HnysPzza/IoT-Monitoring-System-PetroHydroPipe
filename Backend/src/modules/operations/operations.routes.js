@@ -11,7 +11,7 @@ router.get('/sse', authenticate, authorizeRole('Admin'), operationsController.ge
 router.get(
   '/watchdog',
   authenticate,
-  authorizeRole('Admin'),
+  authorizeRole(['Admin', 'Engineering Supervisor']),
   validateRequest(watchdogDiagnosticsSchema),
   operationsController.getWatchdogStatus,
 )

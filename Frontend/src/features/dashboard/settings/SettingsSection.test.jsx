@@ -930,7 +930,7 @@ describe('SettingsSection operational settings', () => {
     )
   })
 
-  it('disables production calendar mutation controls for non-Admin roles while allowing holiday list expand and collapse', async () => {
+  it('disables production calendar mutation controls for unauthorized roles while allowing holiday list expand and collapse', async () => {
     const user = userEvent.setup()
     getProductionCalendar.mockResolvedValue({
       entries: [
@@ -1002,5 +1002,45 @@ describe('SettingsSection operational settings', () => {
       expect(column.children).toHaveLength(2)
     }
     expect(columns[2].firstElementChild).toHaveClass('settings-field-label-row')
+  })
+
+  it('allows Engineering Supervisor to edit operational settings and production calendar controls', async () => {
+    const user = userEvent.setup()
+    getProductionCalendar.mockResolvedValue({
+      entries: [
+        {
+          calendarDate: '2026-12-25',
+          name: 'Christmas Day',
+          dayType: 'holiday',
+          isWorking: false,
+          reason: null,
+          source: 'seeded',
+          groupId: null,
+          version: '1',
+          updatedBy: null,
+          updatedAt: '2026-11-16T00:00:00.000Z',
+        },
+      ],
+    })
+    updateOperationalSettings.mockResolvedValue({ settings: settingsFixture({ version: '2' }) })
+    renderWithAuth(<SettingsSection />, {
+      authValue: {
+        user: { id: 'user-eng', name: 'Nico Peralta', username: 'engsupervisor', role: 'Engineering Supervisor' },
+      },
+    })
+
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    expect(trigger).toBeEnabled()
+
+    const scheduleTrigger = await screen.findByRole('button', { name: /Schedule exception/i })
+    expect(scheduleTrigger).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: /Show holidays/i }))
+    expect(await screen.findByRole('button', { name: /Set Christmas Day \(2026-12-25\) to Working/i })).toBeEnabled()
+
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
   })
 })

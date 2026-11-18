@@ -154,7 +154,7 @@ export default function SettingsSection() {
       setDraft(toDraft(latest, latestConstraints))
     } else if (settings && latest.version !== settings.version) {
       setConflict(true)
-      setNotice({ type: 'error', message: 'Another Admin changed these settings. Your draft was kept; reload the latest version before saving.' })
+      setNotice({ type: 'error', message: 'Another user changed these settings. Your draft was kept; reload the latest version before saving.' })
     }
   }, [settingsQuery.data, isSaving])
 
@@ -345,7 +345,7 @@ export default function SettingsSection() {
     } catch (error) {
       if (error.code === 'SETTINGS_VERSION_CONFLICT') {
         setConflict(true)
-        setNotice({ type: 'error', message: 'Another Admin changed these settings. Your draft was kept; reload the latest version before saving.' })
+        setNotice({ type: 'error', message: 'Another user changed these settings. Your draft was kept; reload the latest version before saving.' })
       } else if (error.code === 'SETTINGS_ENFORCEMENT_ACTIVE') {
         setEnforcementBlocked(true)
         setConflict(true)

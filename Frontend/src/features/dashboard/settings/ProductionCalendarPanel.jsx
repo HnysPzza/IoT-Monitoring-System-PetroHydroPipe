@@ -42,6 +42,7 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_RANGE_DAYS = 62
 const CALENDAR_REMOVE_UNDO_MS = 7000
+const CALENDAR_EDIT_ROLES = new Set(['Admin', 'Engineering Supervisor'])
 
 export function SettingsInfoButton({ label, content }) {
   return (
@@ -115,7 +116,7 @@ function CalendarEntriesTable({
   rows,
   ariaLabel,
   emptyMessage,
-  isAdmin,
+  canEditCalendar,
   online,
   isMutating,
   mutatingKey,
@@ -145,7 +146,7 @@ function CalendarEntriesTable({
         {rows.map((row) => {
           const isHoliday = row.dayType === 'holiday'
           const isBusyRow = isMutating && mutatingKey === row.key
-          const isUnavailable = row.isAllLocked || !isAdmin || !online
+          const isUnavailable = row.isAllLocked || !canEditCalendar || !online
 
           return (
             <tr key={row.key} className="settings-break-row-item">
@@ -235,7 +236,7 @@ export default function ProductionCalendarPanel({
   const { token, user } = useAuth()
   const online = useNetworkOnline()
   const queryClient = useQueryClient()
-  const isAdmin = user?.role === 'Admin'
+  const canEditCalendar = CALENDAR_EDIT_ROLES.has(user?.role)
 
   const manilaToday = getManilaToday()
   const manilaTomorrow = addBusinessDays(manilaToday, 1)
@@ -365,7 +366,7 @@ export default function ProductionCalendarPanel({
   }, [pendingRemoval])
 
   function openScheduleModal(event) {
-    if (!isAdmin || !online || isMutating || pendingRemovalRef.current) return
+    if (!canEditCalendar || !online || isMutating || pendingRemovalRef.current) return
     scheduleTriggerRef.current = event?.currentTarget || null
     setFieldErrors({})
     setPendingOverwrite(null)
@@ -479,7 +480,7 @@ export default function ProductionCalendarPanel({
   }
 
   function handleAddEntry() {
-    if (!validateForm() || isMutating || !isAdmin || !online) return
+    if (!validateForm() || isMutating || !canEditCalendar || !online) return
     const resolvedName = name.trim() || getDefaultEntryName(dayType, mode)
     const resolvedReason = reason.trim() ? reason.trim() : null
 
@@ -509,7 +510,7 @@ export default function ProductionCalendarPanel({
   }
 
   async function handleToggleHoliday(entry, rowKey) {
-    if (!machine?.id || isMutating || pendingRemovalRef.current || !isAdmin || !online || entry.calendarDate <= manilaToday) return
+    if (!machine?.id || isMutating || pendingRemovalRef.current || !canEditCalendar || !online || entry.calendarDate <= manilaToday) return
     setIsMutating(true)
     setMutatingKey(rowKey)
     setPanelNotice(null)
@@ -537,7 +538,7 @@ export default function ProductionCalendarPanel({
   }
 
   function confirmPendingRemove() {
-    if (!pendingRemove || !machine?.id || pendingRemovalRef.current || isMutating || !isAdmin || !online) return
+    if (!pendingRemove || !machine?.id || pendingRemovalRef.current || isMutating || !canEditCalendar || !online) return
     const target = pendingRemove
     const pending = {
       target,
@@ -643,8 +644,8 @@ export default function ProductionCalendarPanel({
         <button
           type="button"
           className="btn btn-outline settings-action-btn"
-          disabled={!isAdmin || !online || isMutating || Boolean(pendingRemoval)}
-          title={!isAdmin ? 'Admin role required to edit calendar' : undefined}
+          disabled={!canEditCalendar || !online || isMutating || Boolean(pendingRemoval)}
+          title={!canEditCalendar ? 'Engineering Supervisor or Admin role required to edit calendar' : undefined}
           onClick={openScheduleModal}
         >
           <Plus size={14} aria-hidden="true" />
@@ -696,7 +697,7 @@ export default function ProductionCalendarPanel({
                 rows={groupedExclusions}
                 ariaLabel="Scheduled production calendar exclusions"
                 emptyMessage="No custom days off or shutdown ranges scheduled."
-                isAdmin={isAdmin}
+                canEditCalendar={canEditCalendar}
                 online={online}
                 isMutating={isMutating || Boolean(pendingRemoval)}
                 mutatingKey={mutatingKey}
@@ -734,7 +735,7 @@ export default function ProductionCalendarPanel({
                   rows={holidayRows}
                   ariaLabel="Production calendar holidays"
                   emptyMessage="No holidays configured."
-                  isAdmin={isAdmin}
+                  canEditCalendar={canEditCalendar}
                   online={online}
                   isMutating={isMutating || Boolean(pendingRemoval)}
                   mutatingKey={mutatingKey}
@@ -830,7 +831,7 @@ export default function ProductionCalendarPanel({
                         name="calendar-span-mode"
                         value="single"
                         checked={mode === 'single'}
-                        disabled={!isAdmin || !online || isMutating}
+                        disabled={!canEditCalendar || !online || isMutating}
                         onChange={() => switchMode('single')}
                       />
                       <span>Single day</span>
@@ -842,7 +843,7 @@ export default function ProductionCalendarPanel({
                         name="calendar-span-mode"
                         value="range"
                         checked={mode === 'range'}
-                        disabled={!isAdmin || !online || isMutating}
+                        disabled={!canEditCalendar || !online || isMutating}
                         onChange={() => switchMode('range')}
                       />
                       <span>Date range</span>
@@ -855,7 +856,7 @@ export default function ProductionCalendarPanel({
                       <select
                         id="calendar-day-type"
                         aria-label="Exclusion type"
-                        disabled={!isAdmin || !online || isMutating}
+                        disabled={!canEditCalendar || !online || isMutating}
                         value={dayType}
                         onChange={(event) => {
                           setDayType(event.target.value)
@@ -881,7 +882,7 @@ export default function ProductionCalendarPanel({
                         type="date"
                         className="settings-time-input"
                         min={manilaTomorrow}
-                        disabled={!isAdmin || !online || isMutating}
+                        disabled={!canEditCalendar || !online || isMutating}
                         value={startDate}
                         onChange={(event) => {
                           setStartDate(event.target.value)
@@ -903,7 +904,7 @@ export default function ProductionCalendarPanel({
                           type="date"
                           className="settings-time-input"
                           min={manilaTomorrow}
-                          disabled={!isAdmin || !online || isMutating}
+                          disabled={!canEditCalendar || !online || isMutating}
                           value={startDate}
                           onChange={(event) => {
                             const nextVal = event.target.value
@@ -928,7 +929,7 @@ export default function ProductionCalendarPanel({
                           type="date"
                           className="settings-time-input"
                           min={startDate || manilaTomorrow}
-                          disabled={!isAdmin || !online || isMutating}
+                          disabled={!canEditCalendar || !online || isMutating}
                           value={endDate}
                           onChange={(event) => {
                             setEndDate(event.target.value)
@@ -950,7 +951,7 @@ export default function ProductionCalendarPanel({
                       className="settings-text-input"
                       maxLength={150}
                       placeholder={getDefaultEntryName(dayType, mode)}
-                      disabled={!isAdmin || !online || isMutating}
+                      disabled={!canEditCalendar || !online || isMutating}
                       value={name}
                       onChange={(event) => {
                         setName(event.target.value)
@@ -971,7 +972,7 @@ export default function ProductionCalendarPanel({
                         className="settings-text-input"
                         maxLength={500}
                         placeholder="e.g. No orders, Planned maintenance"
-                        disabled={!isAdmin || !online || isMutating}
+                        disabled={!canEditCalendar || !online || isMutating}
                         value={reason}
                         onChange={(event) => {
                           setReason(event.target.value)
@@ -1032,7 +1033,7 @@ export default function ProductionCalendarPanel({
                 <button
                   type="button"
                   className="btn btn-primary settings-action-btn"
-                  disabled={!isAdmin || !online || isMutating}
+                  disabled={!canEditCalendar || !online || isMutating}
                   onClick={handleAddEntry}
                 >
                   {isMutating ? <RotateCw size={14} className="spin-icon" aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}

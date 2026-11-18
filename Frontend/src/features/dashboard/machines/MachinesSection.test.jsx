@@ -115,14 +115,16 @@ describe('MachinesSection live snapshot', () => {
     expect(getOperationalSettings).toHaveBeenCalledWith('test-token', 'machine-1', expect.anything())
   })
 
-  it('shows a Settings threshold link for Admin and hides it for Engineering Supervisor', async () => {
+  it('shows a Settings threshold link for Admin and Engineering Supervisor and hides it for other roles', async () => {
     getLiveFeed.mockResolvedValue(livePayload())
-    const adminView = renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-1', role: 'Admin' } } })
-    const settingsLink = await screen.findByRole('link', { name: /Configure thresholds/i })
-    expect(settingsLink).toHaveAttribute('href', '/dashboard/settings')
-    adminView.unmount()
+    for (const role of ['Admin', 'Engineering Supervisor']) {
+      const view = renderWithAuth(<MachinesSection />, { authValue: { user: { id: `u-${role}`, role } } })
+      const settingsLink = await screen.findByRole('link', { name: /Configure thresholds/i })
+      expect(settingsLink).toHaveAttribute('href', '/dashboard/settings')
+      view.unmount()
+    }
 
-    renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-2', role: 'Engineering Supervisor' } } })
+    renderWithAuth(<MachinesSection />, { authValue: { user: { id: 'u-3', role: 'Operation Manager' } } })
     await screen.findByRole('heading', { name: 'Spiral Mill 01' })
     expect(screen.queryByRole('link', { name: /Configure thresholds/i })).not.toBeInTheDocument()
   })

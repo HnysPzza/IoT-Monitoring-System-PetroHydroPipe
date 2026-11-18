@@ -7,6 +7,7 @@ import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, Ro
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
+import { canAccessDashboardRoute } from '../../../shared/constants/dashboardMeta.js'
 import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sensorIdentity.js'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { formatShortDateTime } from '../../../shared/utils/formatters.js'
@@ -75,7 +76,7 @@ export default function MachinesSection() {
   const [sensorView, setSensorView] = useState('grid')
   const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('machines-header-controls'))
   const { token, user } = useAuth()
-  const isAdmin = user?.role === 'Admin'
+  const canConfigureSettings = canAccessDashboardRoute(user?.role, '/dashboard/settings')
   const outlet = useOutletContext()
   const fallbackStream = useLiveFeedStream(outlet?.liveFeed ? null : token)
   const liveFeed = outlet?.liveFeed || fallbackStream
@@ -229,7 +230,7 @@ export default function MachinesSection() {
         <div className="machines-section-heading">
           <h2 id="sensor-admin-title">Inductive proximity sensors <span className="machines-count">{sensors.length} configured</span></h2>
           <div className="machines-section-actions">
-            {isAdmin ? (
+            {canConfigureSettings ? (
               <Link className="btn btn-secondary machines-settings-link" to="/dashboard/settings">
                 <SlidersHorizontal size={15} aria-hidden="true" />
                 <span>Configure thresholds</span>
