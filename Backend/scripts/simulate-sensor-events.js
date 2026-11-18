@@ -316,6 +316,23 @@ function assertRejectedS05DowntimePulse(event) {
   if (failedCheck) throw new Error(`S-05 downtime pulse verification ${failedCheck[1]}.`)
 }
 
+function assertRejectedS05Pulse(event, expectedReason, label) {
+  const checks = [
+    [event.sensorCode === 'S-05', 'returned the wrong sensor'],
+    [event.eventType === 'pulse', 'returned the wrong event type'],
+    [event.outputAccepted === false, 'was not rejected as output'],
+    [event.outputRejectionReason === expectedReason, `used rejection reason ${event.outputRejectionReason || 'missing'}`],
+    [event.stateApplied === false, 'was unexpectedly applied'],
+    [event.duplicate === false, 'was unexpectedly duplicate'],
+    [event.stale === false, 'was unexpectedly stale'],
+    [event.downtimeAction === null, `returned downtime action ${event.downtimeAction || 'missing'}`],
+    [event.downtimeId === null, 'returned a downtime ID'],
+    [event.downtimeSensorCode === null, 'returned a downtime owner'],
+  ]
+  const failedCheck = checks.find(([passed]) => !passed)
+  if (failedCheck) throw new Error(`S-05 ${label} pulse verification ${failedCheck[1]}.`)
+}
+
 function assertAcceptedS05Pulse(event) {
   const checks = [
     [event.sensorCode === 'S-05', 'returned the wrong sensor'],
@@ -375,7 +392,9 @@ async function readS05PulseContext(token) {
   if (!openDowntime && live.machine.status === 'Downtime') {
     throw new Error(`S-05 pulse preflight failed: machine is ${live.machine.status || 'unknown'} without open downtime.`)
   }
-  return openDowntime
+  const s03Offline = s03Sensor.monitoring?.connectivityState === 'offline'
+  const outsideSchedule = !s03Offline && s03Sensor.monitoring?.detectionState === 'suspended'
+  return { openDowntime, s03Offline, outsideSchedule }
 }
 
 async function assertNormalS05PulseState(pulseEvent, token) {
@@ -517,14 +536,24 @@ async function runS05PulseVerification() {
   const pulse = { eventType: 'pulse', signal: 'active' }
   const token = liveReadToken()
 
-  const openDowntime = await readS05PulseContext(token)
-  console.log(`Sending S-05 pulse against ${BASE_URL} (${openDowntime ? 'S-03 downtime open' : 'no open downtime'})`)
+  const { openDowntime, s03Offline, outsideSchedule } = await readS05PulseContext(token)
+  console.log(`Sending S-05 pulse against ${BASE_URL} (${openDowntime ? 'S-03 downtime open' : outsideSchedule ? 'outside scheduled working hours' : s03Offline ? 'S-03 offline' : 'no open downtime'})`)
 
   const normalEvent = await postEvent(s05Device, pulse, 1)
   if (openDowntime) {
     assertRejectedS05DowntimePulse(normalEvent)
     await assertDowntimeStillOpen(openDowntime.id, normalEvent, token)
     console.log('S-05 pulse was rejected during S-03 downtime; downtime remains open. Run recover-active-faults when ready.')
+    return
+  }
+  if (outsideSchedule) {
+    assertRejectedS05Pulse(normalEvent, 'outside_schedule', 'outside-schedule')
+    console.log('S-05 pulse was rejected outside scheduled working hours.')
+    return
+  }
+  if (s03Offline) {
+    assertRejectedS05Pulse(normalEvent, 'machine_offline', 'offline')
+    console.log('S-05 pulse was rejected while S-03 is offline.')
     return
   }
 
