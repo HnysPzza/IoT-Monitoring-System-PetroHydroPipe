@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs')
 const { z } = require('zod')
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
+const { isEligibleAt } = require('../../shared/operationalTime')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
 const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
@@ -29,6 +30,8 @@ const OUTPUT_REJECTION_REASONS = new Set([
   'stale_event',
   'machine_stationary',
   'machine_downtime',
+  'machine_offline',
+  'outside_schedule',
   'server_debounce',
 ])
 
@@ -537,19 +540,81 @@ function assertAllowedEventMetadata(metadata) {
   }
 }
 
+async function normalizeScheduleAwareEventPayload({ sensor, machine, payload, recordedAt }) {
+  const metadata = payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+    ? payload.metadata
+    : {}
+  const isDeviceAbsenceFault = sensor.sensor_code !== 'S-05'
+    && payload.eventType === 'fault'
+    && metadata.detectionState === 'FAULT'
+  const isUnconfirmedDeviceRecovery = sensor.sensor_code !== 'S-05'
+    && (payload.eventType === 'recovered' || payload.eventType === 'pulse')
+    && payload.signal === 'active'
+    && metadata.detectionState === 'RUNNING'
+    && metadata.recoveryConfirmed !== true
+
+  if (!isDeviceAbsenceFault && !isUnconfirmedDeviceRecovery) {
+    return {
+      eventType: payload.eventType,
+      signal: payload.signal,
+      metadata,
+    }
+  }
+
+  if (env.WATCHDOG_MODE === 'enforce') {
+    const thresholds = await getDeviceOperationalThresholds(
+      { ...sensor, machines: machine },
+      { useCache: true, asOf: new Date(recordedAt) },
+    )
+    if (!thresholds || thresholds.absenceDetectionEnabled !== false) {
+      return {
+        eventType: payload.eventType,
+        signal: payload.signal,
+        metadata,
+      }
+    }
+  }
+
+  if (isDeviceAbsenceFault) {
+    return {
+      eventType: 'idle',
+      signal: 'idle',
+      metadata: {
+        ...metadata,
+        detectionState: 'IDLE',
+      },
+    }
+  }
+
+  return {
+    eventType: payload.eventType,
+    signal: payload.signal,
+    metadata: {
+      ...metadata,
+      recoveryConfirmed: true,
+    },
+  }
+}
+
 async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
   assertAllowedEventMetadata(payload.metadata)
   const supabase = getSupabaseClient()
+  const normalized = await normalizeScheduleAwareEventPayload({
+    sensor,
+    machine,
+    payload,
+    recordedAt,
+  })
 
   const { data, error } = await supabase
     .rpc('ingest_iot_sensor_event', {
       p_device_event_id: payload.eventId,
       p_sensor_id: sensor.id,
       p_machine_id: machine.id,
-      p_event_type: payload.eventType,
+      p_event_type: normalized.eventType,
       p_event_value: {
-        signal: payload.signal,
-        metadata: payload.metadata || {},
+        signal: normalized.signal,
+        metadata: normalized.metadata,
       },
       p_recorded_at: recordedAt,
     })
@@ -688,7 +753,7 @@ function invalidateDeviceThresholdsCache(machineId) {
   deviceThresholdsCache.clear()
 }
 
-async function getDeviceOperationalThresholds(sensor, { useCache = false } = {}) {
+async function getDeviceOperationalThresholds(sensor, { useCache = false, asOf = new Date() } = {}) {
   const supabase = getSupabaseClient()
   if (!sensor || typeof supabase?.from !== 'function') return null
   const machine = getMachineRecord(sensor)
@@ -710,17 +775,43 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false } = {})
     if (!data) {
       const { data: queriedData, error } = await supabase
         .from('machine_operational_settings')
-        .select('sensor_thresholds, version')
+        .select('sensor_thresholds, shift_schedule, version')
         .eq('machine_id', machineId)
         .maybeSingle()
 
       if (error || !queriedData?.sensor_thresholds) return null
-      data = queriedData
-      pruneExpiredMapEntries(deviceThresholdsCache, now, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
-      deviceThresholdsCache.set(machineId, {
-        data: queriedData,
-        expiresAt: now + DEVICE_THRESHOLDS_CACHE_TTL_MS,
-      })
+
+      let calendarDays = []
+      let calendarErrorFlag = false
+      if (queriedData.shift_schedule && typeof queriedData.shift_schedule === 'object') {
+        try {
+          const { data: calendarData, error: calendarError } = await supabase
+            .from('production_calendar_days')
+            .select('calendar_date, is_working')
+            .eq('machine_id', machineId)
+          if (calendarError) {
+            calendarErrorFlag = true
+          } else if (Array.isArray(calendarData)) {
+            calendarDays = calendarData
+          }
+        } catch {
+          calendarDays = []
+          calendarErrorFlag = true
+        }
+      }
+
+      data = {
+        ...queriedData,
+        calendar_days: calendarDays,
+        calendar_error: calendarErrorFlag,
+      }
+      if (!calendarErrorFlag) {
+        pruneExpiredMapEntries(deviceThresholdsCache, now, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
+        deviceThresholdsCache.set(machineId, {
+          data,
+          expiresAt: now + DEVICE_THRESHOLDS_CACHE_TTL_MS,
+        })
+      }
     }
 
     const threshold = data.sensor_thresholds[sensor.sensor_code]
@@ -736,7 +827,22 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false } = {})
       && threshold.recoverySeconds <= 300
       ? threshold.recoverySeconds
       : null
-    const absenceDetectionEnabled = Boolean(threshold.absenceDetectionEnabled)
+    const scheduleEligible = data.shift_schedule && typeof data.shift_schedule === 'object'
+      ? isEligibleAt({
+        at: asOf,
+        settingsHistory: [{
+          version: data.version ?? 1,
+          shift_schedule: data.shift_schedule,
+          effective_from: null,
+          effective_to: null,
+        }],
+        calendarDays: data.calendar_days || [],
+      })
+      : true
+    const absenceDetectionEnabled = env.WATCHDOG_MODE === 'enforce'
+      && !data.calendar_error
+      && scheduleEligible
+      && Boolean(threshold.absenceDetectionEnabled)
       && sensor.sensor_code !== 'S-05'
       && triggerSeconds !== null
       && recoverySeconds !== null

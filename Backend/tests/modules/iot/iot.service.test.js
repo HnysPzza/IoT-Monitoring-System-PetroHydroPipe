@@ -275,6 +275,48 @@ test('rejected S-05 output is returned without publishing transitions', async ()
   assert.equal(result.downtimeEvents.length, 0)
 })
 
+test('rejected S-05 output for machine_offline is returned without publishing transitions', async () => {
+  const result = await createTestEvent('pulse', 'active', {
+    sensorOverrides: { sensor_code: 'S-05' },
+    processingOverrides: {
+      state_applied: false,
+      event_value: {
+        signal: 'active',
+        metadata: {
+          outputAccepted: false,
+          outputRejectionReason: 'machine_offline',
+        },
+      },
+    },
+  })
+
+  assert.equal(result.event.outputAccepted, false)
+  assert.equal(result.event.outputRejectionReason, 'machine_offline')
+  assert.equal(result.alertEvents.length, 0)
+  assert.equal(result.downtimeEvents.length, 0)
+})
+
+test('rejected S-05 output for outside_schedule is returned without publishing transitions', async () => {
+  const result = await createTestEvent('pulse', 'active', {
+    sensorOverrides: { sensor_code: 'S-05' },
+    processingOverrides: {
+      state_applied: false,
+      event_value: {
+        signal: 'active',
+        metadata: {
+          outputAccepted: false,
+          outputRejectionReason: 'outside_schedule',
+        },
+      },
+    },
+  })
+
+  assert.equal(result.event.outputAccepted, false)
+  assert.equal(result.event.outputRejectionReason, 'outside_schedule')
+  assert.equal(result.alertEvents.length, 0)
+  assert.equal(result.downtimeEvents.length, 0)
+})
+
 test('reserved output metadata keys are rejected before calling the ingestion RPC', async () => {
   for (const key of ['outputAccepted', 'outputRejectionReason']) {
     const rpcCalls = []
@@ -1338,5 +1380,402 @@ test('getDeviceOperationalThresholds reuses bounded cache when useCache is true 
   assert.equal(refreshedS03.version, '11')
   assert.equal(refreshedS03.rotationStallMs, 5000)
 })
+
+test('getDeviceOperationalThresholds disables absenceDetectionEnabled outside working hours, during breaks, on rest or calendar days off, and when watchdog mode is not enforce', async () => {
+  const shiftSchedule = {
+    workStart: '08:00',
+    workEnd: '17:30',
+    rampUpGraceMinutes: 10,
+    restDays: ['sunday'],
+    breaks: [
+      { name: 'Morning Break', startTime: '10:00', endTime: '10:15' },
+      { name: 'Lunch Break', startTime: '12:00', endTime: '13:00' },
+    ],
+  }
+  const settingsRowData = {
+    version: 21,
+    shift_schedule: shiftSchedule,
+    sensor_thresholds: {
+      'S-03': {
+        absenceDetectionEnabled: true,
+        triggerSeconds: 60,
+        recoverySeconds: 60,
+        rotationStallMs: 2900,
+      },
+    },
+  }
+  const calendarRows = [
+    { calendar_date: '2026-12-25', is_working: false },
+  ]
+
+  function loadThresholdsService(watchdogMode) {
+    clearSourceCache()
+    const currentEnv = require(path.join(backendRoot, 'src', 'config', 'env.js'))
+    mockModule('src/config/env.js', { ...currentEnv, WATCHDOG_MODE: watchdogMode })
+    mockModule('src/database/client.js', {
+      getSupabaseClient: () => ({
+        from(table) {
+          if (table === 'machine_operational_settings') {
+            return {
+              select() { return this },
+              eq() { return this },
+              async maybeSingle() { return { data: settingsRowData, error: null } },
+            }
+          }
+          if (table === 'production_calendar_days') {
+            return {
+              select() { return this },
+              eq() { return Promise.resolve({ data: calendarRows, error: null }) },
+            }
+          }
+          throw new Error(`Unexpected table ${table}`)
+        },
+      }),
+    })
+    return require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  }
+
+  const baseSensor = { ...createSensorRecord(), sensor_code: 'S-03' }
+  const enforceService = loadThresholdsService('enforce')
+
+  const duringWorkHours = await enforceService.getDeviceOperationalThresholds(baseSensor, {
+    asOf: new Date('2026-11-18T09:00:00+08:00'),
+  })
+  assert.equal(duringWorkHours.absenceDetectionEnabled, true)
+
+  const pastWorkHours = await enforceService.getDeviceOperationalThresholds(baseSensor, {
+    asOf: new Date('2026-11-18T21:11:40+08:00'),
+  })
+  assert.equal(pastWorkHours.absenceDetectionEnabled, false)
+
+  const duringBreakGrace = await enforceService.getDeviceOperationalThresholds(baseSensor, {
+    asOf: new Date('2026-11-18T13:05:00+08:00'),
+  })
+  assert.equal(duringBreakGrace.absenceDetectionEnabled, false)
+
+  const onSundayRestDay = await enforceService.getDeviceOperationalThresholds(baseSensor, {
+    asOf: new Date('2026-11-22T09:00:00+08:00'),
+  })
+  assert.equal(onSundayRestDay.absenceDetectionEnabled, false)
+
+  const onCalendarHolidayOff = await enforceService.getDeviceOperationalThresholds(baseSensor, {
+    asOf: new Date('2026-12-25T09:00:00+08:00'),
+  })
+  assert.equal(onCalendarHolidayOff.absenceDetectionEnabled, false)
+
+  for (const nonEnforceMode of ['disabled', 'observe']) {
+    const nonEnforceService = loadThresholdsService(nonEnforceMode)
+    const duringWorkButNotEnforced = await nonEnforceService.getDeviceOperationalThresholds(baseSensor, {
+      asOf: new Date('2026-11-18T09:00:00+08:00'),
+    })
+    assert.equal(duringWorkButNotEnforced.absenceDetectionEnabled, false, `Expected false in ${nonEnforceMode} mode`)
+  }
+
+  // Calendar query returning an error fails closed on absenceDetectionEnabled
+  clearSourceCache()
+  const currentEnv = require(path.join(backendRoot, 'src', 'config', 'env.js'))
+  mockModule('src/config/env.js', { ...currentEnv, WATCHDOG_MODE: 'enforce' })
+  mockModule('src/database/client.js', {
+    getSupabaseClient: () => ({
+      from(table) {
+        if (table === 'machine_operational_settings') {
+          return {
+            select() { return this },
+            eq() { return this },
+            async maybeSingle() { return { data: settingsRowData, error: null } },
+          }
+        }
+        if (table === 'production_calendar_days') {
+          return {
+            select() { return this },
+            eq() { return Promise.resolve({ data: null, error: { message: 'calendar read failed' } }) },
+          }
+        }
+        throw new Error(`Unexpected table ${table}`)
+      },
+    }),
+  })
+  const calendarErrorService = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  const onCalendarError = await calendarErrorService.getDeviceOperationalThresholds(baseSensor, {
+    asOf: new Date('2026-11-18T09:00:00+08:00'),
+  })
+  assert.equal(onCalendarError.absenceDetectionEnabled, false)
+  assert.equal(onCalendarError.rotationStallMs, 2900)
+
+  // Thrown exception from calendar query also fails closed and is never cached
+  clearSourceCache()
+  let throwCalendar = true
+  mockModule('src/config/env.js', { ...currentEnv, WATCHDOG_MODE: 'enforce' })
+  mockModule('src/database/client.js', {
+    getSupabaseClient: () => ({
+      from(table) {
+        if (table === 'machine_operational_settings') {
+          return {
+            select() { return this },
+            eq() { return this },
+            async maybeSingle() {
+              return {
+                data: {
+                  ...settingsRowData,
+                  sensor_thresholds: {
+                    ...settingsRowData.sensor_thresholds,
+                    'S-01': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 300 },
+                    'S-02': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 60 },
+                    'S-04': { absenceDetectionEnabled: true, triggerSeconds: 300, recoverySeconds: 60 },
+                  },
+                },
+                error: null,
+              }
+            },
+          }
+        }
+        if (table === 'production_calendar_days') {
+          return {
+            select() { return this },
+            eq() {
+              if (throwCalendar) return Promise.reject(new Error('calendar connection reset'))
+              return Promise.resolve({ data: calendarRows, error: null })
+            },
+          }
+        }
+        throw new Error(`Unexpected table ${table}`)
+      },
+    }),
+  })
+  const thrownCalendarService = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  for (const sensorCode of ['S-01', 'S-02', 'S-04', 'S-03']) {
+    const failed = await thrownCalendarService.getDeviceOperationalThresholds(
+      { ...createSensorRecord(), sensor_code: sensorCode },
+      { useCache: true, asOf: new Date('2026-11-18T09:00:00+08:00') },
+    )
+    assert.equal(failed.absenceDetectionEnabled, false, `Expected thrown calendar query to fail closed for ${sensorCode}`)
+  }
+  throwCalendar = false
+  const recoveredFromCacheBypass = await thrownCalendarService.getDeviceOperationalThresholds(
+    { ...createSensorRecord(), sensor_code: 'S-01' },
+    { useCache: true, asOf: new Date('2026-11-18T09:00:00+08:00') },
+  )
+  assert.equal(recoveredFromCacheBypass.absenceDetectionEnabled, true)
+})
+
+test('createSensorEvent downgrades ESP32 on-device absence fault to idle and confirms recovery outside working hours or when watchdog is not enforced', async () => {
+  const shiftSchedule = {
+    workStart: '08:00',
+    workEnd: '17:30',
+    rampUpGraceMinutes: 10,
+    restDays: ['sunday'],
+    breaks: [],
+  }
+  const settingsRowData = {
+    version: 21,
+    shift_schedule: shiftSchedule,
+    sensor_thresholds: {
+      'S-03': {
+        absenceDetectionEnabled: true,
+        triggerSeconds: 60,
+        recoverySeconds: 60,
+        rotationStallMs: 3000,
+      },
+    },
+  }
+
+  function loadScheduleAwareEventService(watchdogMode) {
+    clearSourceCache()
+    const rpcCalls = []
+    const currentEnv = require(path.join(backendRoot, 'src', 'config', 'env.js'))
+    mockModule('src/config/env.js', { ...currentEnv, WATCHDOG_MODE: watchdogMode })
+    mockModule('src/database/client.js', {
+      getSupabaseClient: () => ({
+        from(table) {
+          if (table === 'machine_operational_settings') {
+            return {
+              select() { return this },
+              eq() { return this },
+              async maybeSingle() { return { data: settingsRowData, error: null } },
+            }
+          }
+          if (table === 'production_calendar_days') {
+            return {
+              select() { return this },
+              eq() { return Promise.resolve({ data: [], error: null }) },
+            }
+          }
+          throw new Error(`Unexpected table ${table}`)
+        },
+        rpc(functionName, args) {
+          rpcCalls.push({ functionName, args })
+          return {
+            async single() {
+              return {
+                data: createProcessingResult(args.p_event_type, args.p_event_value.signal, {
+                  recorded_at: args.p_recorded_at,
+                  event_value: args.p_event_value,
+                }),
+                error: null,
+              }
+            },
+          }
+        },
+      }),
+    })
+    mockModule('src/modules/audit/audit.service.js', { recordAuditLog: async () => null })
+    mockModule('src/modules/alerts/alerts.service.js', { publishAlertAction: () => true })
+    mockModule('src/modules/downtime/downtime.service.js', { publishDowntimeEvent: () => true })
+    mockModule('src/modules/iot/liveStatusPublisher.js', { requestLiveStatusPublish: () => null })
+    return {
+      iotService: require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js')),
+      rpcCalls,
+    }
+  }
+
+  const s03Sensor = { ...createSensorRecord(), sensor_code: 'S-03' }
+
+  // 1. After working hours (21:11:40 Manila, past 17:30 workEnd): ESP32 absence fault is downgraded to idle so no open downtime is created
+  const afterHours = loadScheduleAwareEventService('enforce')
+  await afterHours.iotService.createSensorEvent({
+    sensor: s03Sensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'fault',
+      signal: 'fault',
+      recordedAt: '2026-11-18T13:11:39.743+00:00',
+      metadata: {
+        spindleState: 'CONSTANT_NO_METAL_DOWNTIME',
+        detectionState: 'FAULT',
+        rotationStallMs: 3000,
+      },
+    },
+  })
+  assert.equal(afterHours.rpcCalls.length, 1)
+  assert.equal(afterHours.rpcCalls[0].args.p_event_type, 'idle')
+  assert.equal(afterHours.rpcCalls[0].args.p_event_value.signal, 'idle')
+  assert.equal(afterHours.rpcCalls[0].args.p_event_value.metadata.detectionState, 'IDLE')
+
+  // 2. During working hours (09:11:40 Manila) but watchdog is disabled: ESP32 absence fault is downgraded to idle
+  const disabledWatchdog = loadScheduleAwareEventService('disabled')
+  await disabledWatchdog.iotService.createSensorEvent({
+    sensor: s03Sensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'fault',
+      signal: 'fault',
+      recordedAt: '2026-11-18T01:11:39.743+00:00',
+      metadata: {
+        spindleState: 'CONSTANT_NO_METAL_DOWNTIME',
+        detectionState: 'FAULT',
+        rotationStallMs: 3000,
+      },
+    },
+  })
+  assert.equal(disabledWatchdog.rpcCalls[0].args.p_event_type, 'idle')
+  assert.equal(disabledWatchdog.rpcCalls[0].args.p_event_value.signal, 'idle')
+
+  // 3. During working hours (09:11:40 Manila) with watchdog in enforce mode: ESP32 absence fault stays fault
+  const enforceDuringShift = loadScheduleAwareEventService('enforce')
+  await enforceDuringShift.iotService.createSensorEvent({
+    sensor: s03Sensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'fault',
+      signal: 'fault',
+      recordedAt: '2026-11-18T01:11:39.743+00:00',
+      metadata: {
+        spindleState: 'CONSTANT_NO_METAL_DOWNTIME',
+        detectionState: 'FAULT',
+        rotationStallMs: 3000,
+      },
+    },
+  })
+  assert.equal(enforceDuringShift.rpcCalls[0].args.p_event_type, 'fault')
+  assert.equal(enforceDuringShift.rpcCalls[0].args.p_event_value.signal, 'fault')
+
+  // 4. After working hours (21:15:00 Manila): unconfirmed recovery from ESP32 gets recoveryConfirmed=true so stuck downtime resolves immediately
+  await afterHours.iotService.createSensorEvent({
+    sensor: s03Sensor,
+    payload: {
+      eventId: EVENT_ID,
+      eventType: 'recovered',
+      signal: 'active',
+      recordedAt: '2026-11-18T13:15:00.000+00:00',
+      metadata: {
+        spindleState: 'ROTATING_ON_OFF',
+        detectionState: 'RUNNING',
+      },
+    },
+  })
+  assert.equal(afterHours.rpcCalls[1].args.p_event_type, 'recovered')
+  assert.equal(afterHours.rpcCalls[1].args.p_event_value.metadata.recoveryConfirmed, true)
+
+  // 5. Process sensors S-01, S-02, S-04: active pulse (detectionState=RUNNING) in disabled/observe mode during working hours
+  //    gets recoveryConfirmed=true so absence_watchdog Fault is not trapped in watchdog observation, while enforce mode preserves watchdog confirmation
+  settingsRowData.sensor_thresholds['S-01'] = { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 300 }
+  settingsRowData.sensor_thresholds['S-02'] = { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 60 }
+  settingsRowData.sensor_thresholds['S-04'] = { absenceDetectionEnabled: true, triggerSeconds: 300, recoverySeconds: 60 }
+
+  for (const sensorCode of ['S-01', 'S-02', 'S-04']) {
+    const processSensor = {
+      ...createSensorRecord(),
+      id: `sensor-${sensorCode}`,
+      sensor_code: sensorCode,
+      esp32_device_id: `esp32-m01-${sensorCode.toLowerCase()}`,
+    }
+
+    for (const nonEnforceMode of ['disabled', 'observe']) {
+      const nonEnforce = loadScheduleAwareEventService(nonEnforceMode)
+      await nonEnforce.iotService.createSensorEvent({
+        sensor: processSensor,
+        payload: {
+          eventId: EVENT_ID,
+          eventType: 'pulse',
+          signal: 'active',
+          recordedAt: '2026-11-18T01:12:00.000+00:00',
+          metadata: {
+            coilState: 'PRESENT',
+            detectionState: 'RUNNING',
+          },
+        },
+      })
+      assert.equal(nonEnforce.rpcCalls[0].args.p_event_type, 'pulse')
+      assert.equal(
+        nonEnforce.rpcCalls[0].args.p_event_value.metadata.recoveryConfirmed,
+        true,
+        `Expected ${sensorCode} pulse in ${nonEnforceMode} mode to set recoveryConfirmed=true`,
+      )
+    }
+
+    const enforceShift = loadScheduleAwareEventService('enforce')
+    await enforceShift.iotService.createSensorEvent({
+      sensor: processSensor,
+      payload: {
+        eventId: EVENT_ID,
+        eventType: 'pulse',
+        signal: 'active',
+        recordedAt: '2026-11-18T01:12:00.000+00:00',
+        metadata: {
+          coilState: 'PRESENT',
+          detectionState: 'RUNNING',
+        },
+      },
+    })
+    assert.equal(enforceShift.rpcCalls[0].args.p_event_type, 'pulse')
+    assert.equal(enforceShift.rpcCalls[0].args.p_event_value.metadata.recoveryConfirmed, undefined)
+
+    const afterHoursProcess = loadScheduleAwareEventService('enforce')
+    await afterHoursProcess.iotService.createSensorEvent({
+      sensor: processSensor,
+      payload: {
+        eventId: EVENT_ID,
+        eventType: 'fault',
+        signal: 'fault',
+        recordedAt: '2026-11-18T13:11:40.000+00:00',
+        metadata: { detectionState: 'FAULT' },
+      },
+    })
+    assert.equal(afterHoursProcess.rpcCalls[0].args.p_event_type, 'idle')
+    assert.equal(afterHoursProcess.rpcCalls[0].args.p_event_value.metadata.detectionState, 'IDLE')
+  }
+})
+
+
 
 
