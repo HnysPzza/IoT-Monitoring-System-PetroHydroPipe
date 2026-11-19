@@ -1,9 +1,9 @@
-import { act, fireEvent, render as baseRender, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render as baseRender, screen, waitFor, within } from '@testing-library/react'
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../auth/authSession.jsx'
 import { ThemeContext } from '../../../shared/context/ThemeContext.jsx'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
@@ -93,6 +93,23 @@ function createControllableMatchMedia(initialMatches = false) {
   }
 }
 
+const originalShowModal = HTMLDialogElement.prototype.showModal
+const originalClose = HTMLDialogElement.prototype.close
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () {
+    if (!this.hasAttribute('open')) return
+    this.removeAttribute('open')
+    this.dispatchEvent(new Event('close'))
+  }
+})
+
+afterAll(() => {
+  HTMLDialogElement.prototype.showModal = originalShowModal
+  HTMLDialogElement.prototype.close = originalClose
+})
+
 describe('AdminDashboard alerts', () => {
   beforeEach(() => {
     acknowledgeAlert.mockReset()
@@ -148,7 +165,7 @@ describe('AdminDashboard alerts', () => {
     expect(document.querySelector('.topbar-label')).not.toBeInTheDocument()
   })
 
-  it('sets Overview as the post-login destination after explicit logout', async () => {
+  it('confirms logout before clearing session and setting Overview as post-login destination', async () => {
     const user = userEvent.setup()
     getAlerts.mockReturnValue(new Promise(() => { }))
     const logout = vi.fn()
@@ -168,12 +185,72 @@ describe('AdminDashboard alerts', () => {
       </AuthContext.Provider>,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Logout' }))
+    const logoutButton = screen.getByRole('button', { name: 'Logout' })
+    await user.click(logoutButton)
+
+    expect(logout).not.toHaveBeenCalled()
+    expect(screen.getByTestId('logout-location')).toHaveTextContent(
+      JSON.stringify({ pathname: '/dashboard/reports', state: null }),
+    )
+
+    const confirmDialog = await screen.findByRole('dialog', { name: /Log out/i })
+    expect(confirmDialog).toHaveClass('confirm-dialog')
+    expect(within(confirmDialog).getByText('Are you sure you want to logout?')).toBeInTheDocument()
+
+    const cancelButton = within(confirmDialog).getByRole('button', { name: 'Cancel' })
+    const yesButton = within(confirmDialog).getByRole('button', { name: 'Yes' })
+    expect(cancelButton).toHaveClass('btn', 'btn-secondary', 'confirm-cancel-btn')
+    expect(yesButton).toHaveClass('btn', 'btn-danger')
+    expect(cancelButton).toHaveFocus()
+
+    await user.click(cancelButton)
+    expect(logout).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: /Log out/i })).not.toBeInTheDocument()
+    expect(logoutButton).toHaveFocus()
+    expect(screen.getByTestId('logout-location')).toHaveTextContent(
+      JSON.stringify({ pathname: '/dashboard/reports', state: null }),
+    )
+
+    await user.click(logoutButton)
+    const reopenedDialog = await screen.findByRole('dialog', { name: /Log out/i })
+    await user.click(within(reopenedDialog).getByRole('button', { name: 'Yes' }))
 
     expect(logout).toHaveBeenCalledOnce()
     expect(screen.getByTestId('logout-location')).toHaveTextContent(
       JSON.stringify({ pathname: '/login', state: { from: '/dashboard' } }),
     )
+  })
+
+  it('closes only the logout dialog on Escape without closing an open mobile drawer', async () => {
+    const user = userEvent.setup()
+    const matchMediaController = createControllableMatchMedia(true)
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = matchMediaController.matchMedia
+    getAlerts.mockReturnValue(new Promise(() => { }))
+
+    try {
+      renderWithAuth(<AdminDashboard />, { route: '/dashboard' })
+
+      await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+      const sidebar = document.querySelector('.dashboard-sidebar')
+      expect(sidebar).toHaveClass('is-open')
+
+      const logoutButton = screen.getByRole('button', { name: 'Logout' })
+      await user.click(logoutButton)
+
+      const confirmDialog = await screen.findByRole('dialog', { name: /Log out/i })
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(sidebar).toHaveClass('is-open')
+
+      act(() => {
+        confirmDialog.close()
+      })
+      expect(screen.queryByRole('dialog', { name: /Log out/i })).not.toBeInTheDocument()
+      expect(sidebar).toHaveClass('is-open')
+      expect(logoutButton).toHaveFocus()
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
   })
 
   it('labels the reporting navigation group as Analytics', () => {

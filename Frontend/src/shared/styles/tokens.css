@@ -915,6 +915,12 @@ button:disabled {
   transform: none;
 }
 
+@media (max-width: 760px), (pointer: coarse) {
+  .confirm-dialog .btn {
+    min-height: 44px;
+  }
+}
+
 :is(.action-snackbar, .users-action-snackbar) {
   position: fixed;
   right: 16px;

@@ -132,12 +132,17 @@ export default function AdminDashboard() {
   const [hoveredTooltip, setHoveredTooltip] = useState(null)
   const [focusedTooltip, setFocusedTooltip] = useState(null)
   const [ackStatusMessage, setAckStatusMessage] = useState('')
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const pointerFocusedToRef = useRef(null)
   const collapsedTooltip = hoveredTooltip || focusedTooltip
   const topbarRef = useRef(null)
   const alertsButtonRef = useRef(null)
   const alertsPopoverRef = useRef(null)
   const sidebarRef = useRef(null)
+  const logoutButtonRef = useRef(null)
+  const logoutDialogRef = useRef(null)
+  const logoutCancelButtonRef = useRef(null)
+  const shouldRestoreLogoutFocusRef = useRef(false)
   const desktopSidebarToggleRef = useRef(null)
   const mobileMenuButtonRef = useRef(null)
   const mobileCloseButtonRef = useRef(null)
@@ -216,7 +221,25 @@ export default function AdminDashboard() {
     }
     setIsDrawerOpen(false)
     setIsAlertsOpen(false)
+    shouldRestoreLogoutFocusRef.current = false
+    setIsLogoutConfirmOpen(false)
   }, [location.pathname])
+
+  useLayoutEffect(() => {
+    const dialog = logoutDialogRef.current
+    if (!dialog) return
+
+    if (isLogoutConfirmOpen) {
+      if (!dialog.hasAttribute('open')) {
+        if (typeof dialog.showModal === 'function') dialog.showModal()
+        else dialog.setAttribute('open', '')
+      }
+      logoutCancelButtonRef.current?.focus({ preventScroll: true })
+    } else if (dialog.hasAttribute('open')) {
+      if (typeof dialog.close === 'function') dialog.close()
+      else dialog.removeAttribute('open')
+    }
+  }, [isLogoutConfirmOpen])
 
   useEffect(() => {
     if (!isMobileViewport || isDrawerOpen) return
@@ -384,6 +407,7 @@ export default function AdminDashboard() {
 
     function handleEscape(event) {
       if (event.key !== 'Escape') return
+      if (isLogoutConfirmOpen) return
 
       if (isAlertsOpen) {
         setIsAlertsOpen(false)
@@ -406,7 +430,7 @@ export default function AdminDashboard() {
     return () => {
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [collapsedTooltip, isAlertsOpen, isDrawerOpen])
+  }, [collapsedTooltip, isAlertsOpen, isDrawerOpen, isLogoutConfirmOpen])
 
   useEffect(() => () => {
     if (sidebarScrollTimerRef.current !== null) {
@@ -709,7 +733,41 @@ export default function AdminDashboard() {
     }
   }
 
-  function handleLogout() {
+  function openLogoutConfirm() {
+    setHoveredTooltip(null)
+    setFocusedTooltip(null)
+    pointerFocusedToRef.current = null
+    setIsAlertsOpen(false)
+    shouldRestoreLogoutFocusRef.current = true
+    setIsLogoutConfirmOpen(true)
+  }
+
+  function handleLogoutDialogClose() {
+    setIsLogoutConfirmOpen(false)
+    if (!shouldRestoreLogoutFocusRef.current) return
+    shouldRestoreLogoutFocusRef.current = false
+    if (logoutButtonRef.current?.isConnected) {
+      logoutButtonRef.current.focus({ preventScroll: true })
+    }
+  }
+
+  function closeLogoutConfirm() {
+    const dialog = logoutDialogRef.current
+    if (dialog?.hasAttribute('open') && typeof dialog.close === 'function') {
+      dialog.close()
+      return
+    }
+    handleLogoutDialogClose()
+  }
+
+  function confirmLogout() {
+    shouldRestoreLogoutFocusRef.current = false
+    const dialog = logoutDialogRef.current
+    if (dialog?.hasAttribute('open') && typeof dialog.close === 'function') {
+      dialog.close()
+    } else {
+      setIsLogoutConfirmOpen(false)
+    }
     // Clears local auth, then returns the user to the login page.
     logout()
     navigate('/login', { replace: true, state: { from: '/dashboard' } })
@@ -852,6 +910,7 @@ export default function AdminDashboard() {
               <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
             </div>
             <button
+              ref={logoutButtonRef}
               className="sidebar-logout"
               type="button"
               aria-label="Logout"
@@ -883,7 +942,7 @@ export default function AdminDashboard() {
                 pointerFocusedToRef.current = null
                 setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
               }}
-              onClick={handleLogout}
+              onClick={openLogoutConfirm}
             >
               <LogOut className="sidebar-logout-icon" size={16} strokeWidth={1.85} aria-hidden="true" />
             </button>
@@ -1191,6 +1250,47 @@ export default function AdminDashboard() {
           </UsersActionProvider>
         </main>
       </div>
+
+      <dialog
+        ref={logoutDialogRef}
+        className="confirm-dialog"
+        aria-labelledby="logout-confirm-title"
+        aria-describedby="logout-confirm-message"
+        onClose={handleLogoutDialogClose}
+      >
+        {isLogoutConfirmOpen ? (
+          <div className="confirm-dialog-content">
+            <div className="confirm-dialog-header">
+              <div className="confirm-dialog-icon danger">
+                <LogOut size={17} aria-hidden="true" />
+              </div>
+              <div>
+                <h3 id="logout-confirm-title" className="confirm-dialog-title">Log out</h3>
+                <p id="logout-confirm-message" className="confirm-dialog-message">
+                  Are you sure you want to logout?
+                </p>
+              </div>
+            </div>
+            <div className="confirm-dialog-actions">
+              <button
+                ref={logoutCancelButtonRef}
+                type="button"
+                className="btn btn-secondary confirm-cancel-btn"
+                onClick={closeLogoutConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={confirmLogout}
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
     </div>
   )
 }
