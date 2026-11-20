@@ -20,7 +20,6 @@ const DEVICE_THRESHOLDS_CACHE_TTL_MS = 5_000
 const verifiedDeviceCache = new Map()
 const failedAuthBuckets = new Map()
 const failedAuthAuditCooldowns = new Map()
-const recentDeviceHeartbeats = new Map()
 const deviceBootCounterOverrides = new Map()
 const deviceThresholdsCache = new Map()
 
@@ -206,52 +205,13 @@ function isMonitoringStateFresh(snapshotAt, lastEvaluatedAt) {
   return age >= -MAX_EVALUATION_CLOCK_SKEW_MS && age <= maximumAge
 }
 
-function getLatestTimestampMs(timestamps) {
-  let latestMs = null
-  for (const value of timestamps) {
-    if (!value) continue
-    const parsedMs = new Date(value).getTime()
-    if (!Number.isFinite(parsedMs)) continue
-    if (latestMs === null || parsedMs > latestMs) {
-      latestMs = parsedMs
-    }
-  }
-  return latestMs
-}
-
-function resolveLastHeartbeatAt(sensorRecord) {
-  const recentHeartbeatAt = recentDeviceHeartbeats.get(sensorRecord.id) || null
-  const dbHeartbeatAt = sensorRecord.watchdog?.last_heartbeat_received_at || null
-  if (!recentHeartbeatAt) return dbHeartbeatAt
-  if (!dbHeartbeatAt) return recentHeartbeatAt
-  return new Date(recentHeartbeatAt).getTime() > new Date(dbHeartbeatAt).getTime()
-    ? recentHeartbeatAt
-    : dbHeartbeatAt
-}
-
 function resolveConnectivityState(snapshotAt, sensorRecord) {
-  const watchdog = sensorRecord?.watchdog
-  if (!watchdog) return null
-
-  const latestContactMs = getLatestTimestampMs([
-    recentDeviceHeartbeats.get(sensorRecord.id),
-    watchdog.last_heartbeat_received_at,
-    watchdog.last_activity_received_at,
-    sensorRecord.latest_event?.recorded_at,
-  ])
-
-  if (latestContactMs === null) {
-    return watchdog.connectivity_state === 'online' || watchdog.connectivity_state === 'offline'
-      ? watchdog.connectivity_state
-      : null
-  }
-
-  const snapshotMs = new Date(snapshotAt).getTime()
-  if (!Number.isFinite(snapshotMs)) return null
-
-  const age = snapshotMs - latestContactMs
+  const watchdog = sensorRecord.watchdog
+  if (!watchdog?.last_heartbeat_received_at) return null
+  const age = Date.parse(snapshotAt) - Date.parse(watchdog.last_heartbeat_received_at)
+  if (!Number.isFinite(age)) return null
   if (age > env.IOT_HEARTBEAT_STALE_AFTER_MS) return 'offline'
-  return 'online'
+  return watchdog.connectivity_state === 'unknown' ? null : watchdog.connectivity_state
 }
 
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
@@ -309,7 +269,7 @@ function toLiveSensorResponse(sensorRecord, snapshotAt, machineStatus) {
       stateFresh,
       connectivityState,
       detectionState,
-      lastHeartbeatAt: resolveLastHeartbeatAt(sensorRecord),
+      lastHeartbeatAt: sensorRecord.watchdog?.last_heartbeat_received_at || null,
       lastActivityAt: sensorRecord.watchdog?.last_activity_received_at || null,
       lastEvaluatedAt: sensorRecord.watchdog?.last_evaluated_at || null,
     },
@@ -886,7 +846,6 @@ async function createSensorEvent({ sensor, payload }) {
   }
 
   if (processing.state_applied) {
-    recentDeviceHeartbeats.set(sensor.id, processing.recorded_at)
     publishIngestionTransitions({ sensor, machine, processing })
     requestLiveStatusPublish()
   }
@@ -902,9 +861,6 @@ async function createHeartbeat({ sensor, payload }) {
   }
 
   const processing = await processHeartbeat({ sensor, machine, payload })
-  if (!processing.duplicate) {
-    recentDeviceHeartbeats.set(sensor.id, processing.received_at)
-  }
   if (processing.state_applied || (!processing.duplicate && processing.connectivity_state === 'offline')) {
     requestLiveStatusPublish()
   }

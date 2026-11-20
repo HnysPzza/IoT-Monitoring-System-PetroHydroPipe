@@ -12,6 +12,7 @@ function toStatusKey(live) {
       sensor.lastEventAt ?? null,
       sensor.monitoring?.connectivityState ?? null,
       sensor.monitoring?.detectionState ?? null,
+      sensor.monitoring?.lastHeartbeatAt ?? null,
     ]),
   ])
 }

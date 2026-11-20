@@ -1082,7 +1082,7 @@ test('live feed derives heartbeat connectivity independently of watchdog mode wh
   staleHbFreshEventSnapshot.sensors[0].watchdog.connectivity_state = 'offline'
   staleHbFreshEventSnapshot.sensors[0].watchdog.last_heartbeat_received_at = '2026-08-22T00:01:00.000Z'
   const staleHbFreshEvent = await loadLiveFeedService({ data: staleHbFreshEventSnapshot, mode: 'disabled' }).getLiveFeed()
-  assert.equal(staleHbFreshEvent.sensors[0].monitoring.connectivityState, 'online')
+  assert.equal(staleHbFreshEvent.sensors[0].monitoring.connectivityState, 'offline')
 
   const staleHbSnapshot = liveSnapshot()
   staleHbSnapshot.sensors[0].watchdog.last_heartbeat_received_at = '2026-08-22T00:01:00.000Z'
@@ -1105,6 +1105,23 @@ test('live feed derives heartbeat connectivity independently of watchdog mode wh
   assert.equal(stale.sensors[0].monitoring.stateFresh, false)
   assert.equal(stale.sensors[0].monitoring.connectivityState, 'online')
   assert.equal(stale.sensors[0].monitoring.detectionState, null)
+})
+
+test('live connectivity uses the heartbeat receipt boundary and honors database recovery', async () => {
+  for (const [age, stored, expected] of [
+    [30000, 'online', 'online'],
+    [30001, 'online', 'offline'],
+    [0, 'offline', 'offline'],
+    [0, 'online', 'online'],
+  ]) {
+    const snapshot = liveSnapshot()
+    const watchdog = snapshot.sensors[0].watchdog
+    watchdog.connectivity_state = stored
+    watchdog.last_heartbeat_received_at = new Date(Date.parse(snapshot.snapshot_at) - age).toISOString()
+    const feed = await loadLiveFeedService({ data: snapshot }).getLiveFeed()
+    assert.equal(feed.sensors[0].monitoring.connectivityState, expected)
+    assert.equal(feed.sensors[0].monitoring.lastHeartbeatAt, watchdog.last_heartbeat_received_at)
+  }
 })
 
 test('live feed keeps a single process sensor fault distinct from downtime', async () => {
