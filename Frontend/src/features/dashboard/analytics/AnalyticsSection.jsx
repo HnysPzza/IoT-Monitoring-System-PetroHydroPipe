@@ -12,6 +12,7 @@ import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsDateRangePicker from './AnalyticsDateRangePicker.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 import AnalyticsKpiCard from './AnalyticsKpiCard.jsx'
+import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 
 const AUTO_REFRESH_MS = 60 * 1000
@@ -139,12 +140,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     <div className="reports-layout analytics-layout">
       {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
 
-      {loadState === 'refreshing' ? (
-        <div className="notice dashboard-alert" role="status" aria-live="polite">
-          <RotateCw className="spin-icon" size={16} aria-hidden="true" />
-          <span>{isShowingPreviousRange ? 'Loading selected period; previous results remain visible.' : 'Refreshing Analytics...'}</span>
-        </div>
-      ) : null}
+      <RefreshStatus active={loadState === 'refreshing'} isPlaceholder={isShowingPreviousRange} message="Refreshing Analytics..." placeholderMessage="Loading selected period; previous results remain visible." />
 
       {loadState === 'stale' ? (
         <div className="notice notice-error dashboard-alert" role="alert">

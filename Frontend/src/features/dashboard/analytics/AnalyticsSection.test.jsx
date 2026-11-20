@@ -48,6 +48,22 @@ describe('AnalyticsSection recorded-data states', () => {
     }
   })
 
+  it('keeps analytics cards in place during a same-period refresh', async () => {
+    const user = userEvent.setup()
+    const refreshRequest = createDeferred()
+    const loadAnalytics = vi.fn().mockResolvedValueOnce(analyticsTestFixture).mockReturnValueOnce(refreshRequest.promise)
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+
+    const summary = await screen.findByRole('region', { name: 'Analytics summary' })
+    await user.click(screen.getByRole('button', { name: 'Refresh data' }))
+
+    expect(screen.getByRole('region', { name: 'Analytics summary' })).toBe(summary)
+    expect(screen.getByText('Refreshing Analytics...').parentElement).toHaveClass('refresh-status-slot')
+    expect(screen.getByRole('button', { name: 'Refresh data' }).querySelector('svg')).toHaveClass('spin-icon')
+    await act(async () => refreshRequest.resolve(analyticsTestFixture))
+    await waitFor(() => expect(screen.queryByText('Refreshing Analytics...')).not.toBeInTheDocument())
+  })
+
   it('moves the backend data-coverage caveat into the Analytics info popover', async () => {
     const user = userEvent.setup()
     const deferred = createDeferred()
