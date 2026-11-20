@@ -1,4 +1,5 @@
 import Status from '../../../shared/components/Status.jsx'
+import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
@@ -1157,13 +1158,7 @@ export default function ProductionSection({
         </div>
       ) : null}
 
-      {isRefreshing ? (
-        <div className="production-refresh-notice" role="status">
-          {query.isPlaceholderData
-            ? 'Refreshing production logs for the selected filters; previous results remain visible.'
-            : 'Refreshing production logs...'}
-        </div>
-      ) : null}
+      <RefreshStatus active={isRefreshing} isPlaceholder={query.isPlaceholderData} message="Refreshing production logs..." placeholderMessage="Refreshing production logs for the selected filters; previous results remain visible." />
       {query.isError || (!online && query.data) ? (
         <div className="notice notice-error dashboard-alert production-notice" role="alert">
           <div className="production-notice-content">
