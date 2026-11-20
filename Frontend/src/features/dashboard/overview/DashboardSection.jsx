@@ -363,7 +363,7 @@ export default function DashboardSection() {
   const reportingSensorCount = sensorHealth.filter(isSensorReporting).length
   const mainSensor = sensorHealth.find((sensor) => sensor.code === MAIN_SENSOR_CODE)
   const machineKpi = (() => {
-    if (liveDisplayState === 'success' && hasCurrentLive && liveData.machine) {
+    if ((liveDisplayState === 'success' || liveDisplayState === 'loading') && hasCurrentLive && liveData.machine) {
       const machineName = liveData.machine.name || 'Spiral Mill 01'
       const machineStatus = liveData.machine.status
 
@@ -636,12 +636,15 @@ export default function DashboardSection() {
 
         <section className="section-card downtime-chart-card">
           <div className="section-heading">
-            <div>
+            <div className="overview-chart-heading">
               {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
                 <SkeletonBlock className="overview-skeleton-chart-title" />
               ) : (
                 <h2>Downtime by Period</h2>
               )}
+              <span className="overview-refresh-status" role="status" aria-live={isOverviewAnnouncing ? 'off' : 'polite'}>
+                {chartDisplayState === 'loading' && hasCurrentDowntimeChart ? 'Refreshing...' : ''}
+              </span>
             </div>
             {chartDisplayState === 'loading' && !hasLoadedInitialChart ? (
               <div className="trend-controls-skeleton" aria-hidden="true">
@@ -675,11 +678,6 @@ export default function DashboardSection() {
               <button className="btn btn-secondary table-action-button" type="button" onClick={() => chartQuery.refetch()}>
                 Retry chart
               </button>
-            </div>
-          ) : null}
-          {chartDisplayState === 'loading' && hasCurrentDowntimeChart ? (
-            <div className="notice dashboard-alert" role="status" aria-live={isOverviewAnnouncing ? 'off' : 'polite'}>
-              Refreshing downtime chart...
             </div>
           ) : null}
           {chartDisplayState === 'error' ? (
@@ -752,7 +750,7 @@ export default function DashboardSection() {
             <h2 id="live-source-empty-title">No live machine is available</h2>
             <p>No monitored machine was returned by the last successful live-status request.</p>
             {liveState === 'loading' ? (
-              <div className="notice dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>Refreshing live status...</div>
+              <div className="sr-only" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>Refreshing live status...</div>
             ) : null}
             {liveState === 'stale' ? (
               <div className="notice notice-error dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>
@@ -778,6 +776,9 @@ export default function DashboardSection() {
               <h2 id="machine-health-title">Machine Health · {liveData.machine?.name || 'Spiral Mill 01'}</h2>
             </div>
             <div className="live-refresh">
+              <span className="overview-refresh-status" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>
+                {liveState === 'loading' ? 'Refreshing...' : ''}
+              </span>
               <Status
                 value={reportingSensorCount === 5 ? 'active' : ''}
                 tone={reportingSensorCount === 5 ? undefined : reportingSensorCount === 0 ? 'danger' : 'fault'}
@@ -786,10 +787,6 @@ export default function DashboardSection() {
               </Status>
             </div>
           </div>
-
-          {liveState === 'loading' ? (
-            <div className="notice dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>Refreshing live status...</div>
-          ) : null}
 
           {liveState === 'stale' ? (
             <div className="notice notice-error dashboard-alert" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>

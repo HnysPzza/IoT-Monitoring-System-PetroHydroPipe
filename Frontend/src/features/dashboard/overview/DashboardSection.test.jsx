@@ -718,8 +718,9 @@ describe('DashboardSection', () => {
   it('announces a same-range chart refresh while preserving cached points', async () => {
     const user = userEvent.setup()
     const refreshRequest = deferred()
+    const liveRefreshRequest = deferred()
     getDashboardOverview.mockResolvedValue(overviewPayload())
-    getLiveFeed.mockResolvedValue(livePayload())
+    getLiveFeed.mockResolvedValueOnce(livePayload()).mockReturnValueOnce(liveRefreshRequest.promise)
     getDashboardDowntimeImpact
       .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Cached chart point', minutes: 10 }] } })
       .mockReturnValueOnce(refreshRequest.promise)
@@ -727,12 +728,23 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Cached chart point/)).toBeInTheDocument()
+    await screen.findByRole('heading', { name: /Machine Health/ })
+    const machineCard = screen.getByText('Machine Online').closest('article')
+    const machineCardText = machineCard.textContent
     await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(screen.getByText(/Cached chart point/)).toBeInTheDocument()
-    const refreshStatus = screen.getByText('Refreshing downtime chart...')
+    expect(machineCard).toHaveTextContent(machineCardText)
+    const refreshStatus = screen.getByText('Downtime by Period').parentElement.querySelector('[role="status"]')
     expect(refreshStatus).toHaveAttribute('role', 'status')
     expect(refreshStatus).toHaveAttribute('aria-live', 'polite')
+    expect(refreshStatus).toHaveTextContent('Refreshing...')
+    expect(refreshStatus).toHaveClass('overview-refresh-status')
+    expect(screen.getByRole('heading', { name: /Machine Health/ }).closest('section').querySelector('.overview-refresh-status')).toHaveTextContent('Refreshing...')
+    expect(screen.getByRole('button', { name: /refresh overview data/i }).querySelector('svg')).toHaveClass('spin-icon')
+    refreshRequest.resolve({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Updated chart point', minutes: 15 }] } })
+    liveRefreshRequest.resolve(livePayload())
+    expect(await screen.findByText(/Updated chart point/)).toBeInTheDocument()
   })
 
   it('stacks the fault alert banner and the idle material changeover banner when one sensor has an alert and another is idle', async () => {
@@ -1051,7 +1063,7 @@ describe('DashboardSection', () => {
     const retryOverviewButton = screen.getByRole('button', { name: /retry overview/i })
     expect(retryOverviewButton).toHaveClass('btn', 'btn-secondary', 'overview-retry-button')
 
-    const chartRefreshing = screen.getByText('Refreshing downtime chart...').closest('[role="status"]')
+    const chartRefreshing = screen.getByText('Downtime by Period').parentElement.querySelector('[role="status"]')
     expect(overviewStale).toHaveAttribute('aria-live', 'polite')
     expect(chartRefreshing).toHaveAttribute('aria-live', 'off')
 
