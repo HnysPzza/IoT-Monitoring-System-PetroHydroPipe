@@ -227,6 +227,22 @@ describe('ReportsSection request states', () => {
     exportReport.mockReset()
   })
 
+  it('keeps report cards in place during a same-period refresh', async () => {
+    const user = userEvent.setup()
+    const refreshRequest = deferred()
+    getReportSummary.mockResolvedValueOnce(reportPayload()).mockReturnValueOnce(refreshRequest.promise)
+    renderWithAuth(<ReportsSection />)
+
+    const summary = await screen.findByRole('region', { name: 'Report summary' })
+    await user.click(screen.getByRole('button', { name: 'Refresh report' }))
+
+    expect(screen.getByRole('region', { name: 'Report summary' })).toBe(summary)
+    expect(screen.getByText('Refreshing report...').closest('[role="status"]')).toHaveClass('sr-only')
+    expect(screen.getByRole('button', { name: 'Refresh report' }).querySelector('svg')).toHaveClass('spin-icon')
+    refreshRequest.resolve(reportPayload())
+    await waitFor(() => expect(screen.queryByText('Refreshing report...')).not.toBeInTheDocument())
+  })
+
   it('shows the process-event breakdown returned by the report API', async () => {
     getReportSummary.mockResolvedValue(reportPayload({
       processSensors: [{ sensorCode: 'S-01', eventCount: 7 }],
