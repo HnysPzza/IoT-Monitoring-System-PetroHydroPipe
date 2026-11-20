@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { useSearchParams } from 'react-router'
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, History, RotateCw, X } from 'lucide-react'
 import { keepPreviousData } from '@tanstack/react-query'
@@ -511,16 +512,6 @@ export default function AuditSection() {
                   Page {pagination.page} of {pagination.totalPages}, showing up to {pagination.limit} records per page.
                 </p>
               ) : null}
-              {isRefreshing ? (
-                <span className="audit-refresh-status" role="status">
-                  <RotateCw className="spin-icon" size={14} aria-hidden="true" />
-                  <span>
-                    {query.isPlaceholderData
-                      ? 'Loading selected filters; previous results remain visible.'
-                      : 'Refreshing audit log...'}
-                  </span>
-                </span>
-              ) : null}
             </div>
           </div>
           <span className="section-chip audit-total-chip">
@@ -528,6 +519,8 @@ export default function AuditSection() {
             {totalChipText}
           </span>
         </div>
+
+        <RefreshStatus active={isRefreshing} isPlaceholder={query.isPlaceholderData} message="Refreshing audit log..." placeholderMessage="Loading selected filters; previous results remain visible." />
 
         {isLoading ? (
           <div className="account-table-wrap" aria-busy="true" aria-label="Loading audit history">

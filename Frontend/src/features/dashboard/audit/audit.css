@@ -128,20 +128,6 @@
   min-height: 26px;
 }
 
-.audit-refresh-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 999px;
-  background: var(--c-surface2);
-  color: var(--c-text-2);
-  font-size: 0.78rem;
-  font-weight: 600;
-  animation: audit-fade-slide-in 160ms var(--ease-out);
-}
-
 .audit-total-chip {
   min-height: 32px;
   padding: 5px 10px;
@@ -733,7 +719,6 @@
 @media (prefers-reduced-motion: reduce) {
   .audit-date-clear,
   .audit-reset-button,
-  .audit-refresh-status,
   .audit-table tbody tr.audit-row-arrived td,
   .audit-table tbody tr.audit-row-returned td {
     animation-duration: 0.01ms !important;
