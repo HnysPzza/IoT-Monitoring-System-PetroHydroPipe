@@ -103,6 +103,8 @@ export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {
   const points = Array.from({ length: pointCount }, (_, index) => {
     const selectedPoint = selectedTrends[index]
     const comparisonPoint = comparisonTrends[index]
+    const previousDowntime = selectedTrends[index - 1]?.metrics?.downtimeMinutes
+    const currentDowntime = selectedPoint?.metrics?.downtimeMinutes
     return {
       ...(selectedPoint || {}),
       key: selectedPoint?.key || `comparison-only-${comparisonPoint?.key || index}`,
@@ -112,6 +114,7 @@ export function buildAnalyticsTrend(snapshot, metricId = 'downtime') {
       hasSelectedSegment: Boolean(selectedPoint),
       hasComparisonSegment: Boolean(comparisonPoint),
       value: selectedPoint?.metrics?.[metric.metricKey] ?? null,
+      downtimeIncreased: metric.id === 'downtime' && Number.isFinite(previousDowntime) && currentDowntime > previousDowntime,
       comparisonValue: comparisonPoint?.metrics?.[metric.metricKey] ?? null,
     }
   })
@@ -176,7 +179,7 @@ export function getTrendEvaluation(trend) {
   if (observedPoints.length === 1) return neutralEvaluation('Insufficient observations')
 
   let activePoints = observedPoints
-  if (['downtime', 'production', 'process-events', 'estimated-loss'].includes(trend.metric.id)) {
+  if (['production', 'process-events', 'estimated-loss'].includes(trend.metric.id)) {
     const firstActive = observedPoints.findIndex((point) => Number(point.value) > 0)
     if (firstActive === -1) return neutralEvaluation()
     activePoints = observedPoints.slice(firstActive)
@@ -185,10 +188,10 @@ export function getTrendEvaluation(trend) {
 
   const firstValue = Number(activePoints[0].value)
   const lastValue = Number(activePoints.at(-1).value)
-  if (firstValue === 0) return neutralEvaluation('No baseline')
+  if (firstValue === 0 && trend.metric.id !== 'downtime') return neutralEvaluation('No baseline')
 
   const delta = lastValue - firstValue
-  const deltaPercent = (delta / Math.abs(firstValue)) * 100
+  const deltaPercent = firstValue === 0 ? null : (delta / Math.abs(firstValue)) * 100
   const direction = delta > 0.001 ? 'up' : delta < -0.001 ? 'down' : 'flat'
   if (direction === 'flat') return neutralEvaluation()
 
@@ -196,9 +199,11 @@ export function getTrendEvaluation(trend) {
   const positive = positiveIncrease ? direction === 'up' : trend.metric.id === 'downtime' || trend.metric.id === 'estimated-loss' ? direction === 'down' : null
   const sentiment = positive === null ? `neutral-${direction}` : positive ? 'positive' : 'negative'
   const strokeColor = positive === null ? 'var(--chart-current)' : positive ? 'var(--chart-target)' : 'var(--chart-danger)'
-  const sign = deltaPercent > 0 ? '+' : ''
+  const change = deltaPercent === null
+    ? `+${formatNumber(delta)} min`
+    : `${deltaPercent > 0 ? '+' : ''}${deltaPercent.toFixed(1)}%`
 
-  return { direction, delta, deltaPercent, strokeColor, sentiment, label: `Trending ${direction} (${sign}${deltaPercent.toFixed(1)}%)` }
+  return { direction, delta, deltaPercent, strokeColor, sentiment, label: `Trending ${direction} (${change})` }
 }
 
 export function formatAnalyticsDateTime(value, timeZone = 'Asia/Manila') {
