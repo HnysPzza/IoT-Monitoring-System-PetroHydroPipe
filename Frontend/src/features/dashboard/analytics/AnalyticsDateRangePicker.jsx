@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 import '../../../shared/components/ui/calendar.css'
+import { getManilaDateInputValue } from './analyticsService.js'
 import './analytics-date-range-picker.css'
 
 export function getMondayToSundaySpan(selectedDate) {
@@ -79,6 +80,7 @@ export function isDateInRange(date, start, end) {
 }
 
 export const PRESETS = [
+  { id: 'day', label: 'Daily', eyebrow: 'DAILY' },
   { id: 'week', label: 'Weekly', eyebrow: 'WEEKLY' },
   { id: 'month', label: 'Monthly', eyebrow: 'MONTHLY' },
   { id: 'all', label: 'All time', eyebrow: 'ALL TIME' },
@@ -105,6 +107,7 @@ function getFooterText(preset, start, end) {
   if (preset === 'all') return 'All Time'
   if (!start && !end) return 'Select date range'
   if (start && !end) return 'Select end date'
+  if (preset === 'day') return formatDateRange(start)
   const rangeStr = formatDateRange(start, end)
   const duration = getDurationText(start, end, preset)
   return `${rangeStr} \u00b7 ${duration}`
@@ -114,6 +117,7 @@ function getTriggerValueText(period, startDate, endDate) {
   if (period === 'all') return 'All Time'
   const start = parseDateInput(startDate)
   if (!start) return 'Choose a period'
+  if (period === 'day') return formatDateRange(start)
   if (period === 'month') {
     return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   }
@@ -149,8 +153,17 @@ function getCalendarWeeksForMonth(viewDate) {
   return weeks
 }
 
+function getAppliedRange(period, startDate, endDate) {
+  const start = parseDateInput(startDate) || new Date()
+  if (period === 'all') return { start: null, end: null }
+  if (period === 'day') return { start, end: start }
+  if (period === 'month') return getMonthSpan(start)
+  if (period === 'custom' && startDate && endDate) return { start, end: parseDateInput(endDate) }
+  return getMondayToSundaySpan(start)
+}
+
 export default function AnalyticsDateRangePicker({
-  period = 'week',
+  period = 'day',
   startDate,
   endDate,
   maxDate,
@@ -158,19 +171,8 @@ export default function AnalyticsDateRangePicker({
 }) {
   const maxDateValue = parseDateInput(maxDate)
   const [isOpen, setIsOpen] = useState(false)
-  const [pendingPreset, setPendingPreset] = useState(period || 'week')
-  const [pendingRange, setPendingRange] = useState(() => {
-    if (period === 'all') return { start: null, end: null }
-    if (period === 'month') {
-      const d = parseDateInput(startDate) || new Date()
-      return getMonthSpan(d)
-    }
-    if (period === 'custom' && startDate && endDate) {
-      return { start: parseDateInput(startDate), end: parseDateInput(endDate) }
-    }
-    const d = parseDateInput(startDate) || new Date()
-    return getMondayToSundaySpan(d)
-  })
+  const [pendingPreset, setPendingPreset] = useState(period)
+  const [pendingRange, setPendingRange] = useState(() => getAppliedRange(period, startDate, endDate))
   const [viewDate, setViewDate] = useState(() => parseDateInput(startDate) || new Date())
   const [hoveredDay, setHoveredDay] = useState(null)
   const [isCustomSelecting, setIsCustomSelecting] = useState(false)
@@ -178,19 +180,8 @@ export default function AnalyticsDateRangePicker({
   function handleOpenChange(nextOpen) {
     setIsOpen(nextOpen)
     if (nextOpen) {
-      setPendingPreset(period || 'week')
-      let initialRange
-      if (period === 'all') {
-        initialRange = { start: null, end: null }
-      } else if (period === 'month') {
-        const d = parseDateInput(startDate) || new Date()
-        initialRange = getMonthSpan(d)
-      } else if (period === 'custom' && startDate && endDate) {
-        initialRange = { start: parseDateInput(startDate), end: parseDateInput(endDate) }
-      } else {
-        const d = parseDateInput(startDate) || new Date()
-        initialRange = getMondayToSundaySpan(d)
-      }
+      setPendingPreset(period)
+      const initialRange = getAppliedRange(period, startDate, endDate)
       setPendingRange(initialRange)
       setViewDate(initialRange.start || parseDateInput(startDate) || new Date())
       setHoveredDay(null)
@@ -205,6 +196,10 @@ export default function AnalyticsDateRangePicker({
 
     if (presetId === 'all') {
       setPendingRange({ start: null, end: null })
+    } else if (presetId === 'day') {
+      const day = maxDateValue || parseDateInput(getManilaDateInputValue())
+      setViewDate(day)
+      setPendingRange({ start: day, end: day })
     } else if (presetId === 'month') {
       const span = getMonthSpan(viewDate)
       setPendingRange(span)
@@ -221,6 +216,11 @@ export default function AnalyticsDateRangePicker({
 
   function handleDayClick(day) {
     if (pendingPreset === 'all' || (maxDateValue && !isCustomSelecting && day > maxDateValue)) return
+
+    if (pendingPreset === 'day') {
+      setPendingRange({ start: day, end: day })
+      return
+    }
 
     if (pendingPreset === 'week') {
       const span = getMondayToSundaySpan(day)
@@ -295,21 +295,9 @@ export default function AnalyticsDateRangePicker({
     setIsOpen(false)
     if (pendingPreset === 'all') {
       onChange?.({ period: 'all' })
-    } else if (pendingPreset === 'month') {
-      onChange?.({
-        period: 'month',
-        startDate: formatDateInput(pendingRange.start),
-        endDate: formatDateInput(pendingRange.end),
-      })
-    } else if (pendingPreset === 'custom') {
-      onChange?.({
-        period: 'custom',
-        startDate: formatDateInput(pendingRange.start),
-        endDate: formatDateInput(pendingRange.end),
-      })
     } else {
       onChange?.({
-        period: 'week',
+        period: pendingPreset,
         startDate: formatDateInput(pendingRange.start),
         endDate: formatDateInput(pendingRange.end),
       })
@@ -326,7 +314,7 @@ export default function AnalyticsDateRangePicker({
       }
       return pendingRange
     }
-    if (pendingPreset === 'month') {
+    if (pendingPreset === 'day' || pendingPreset === 'month') {
       return pendingRange
     }
     if (pendingPreset === 'custom') {
@@ -469,6 +457,7 @@ export default function AnalyticsDateRangePicker({
                           type="button"
                           className={`analytics-calendar-day-btn ${cellClass} ${isSelectingStart ? 'is-selecting-start' : ''} ${maxDateValue && day > maxDateValue ? 'is-future' : ''}`.replace(/\s+/g, ' ').trim()}
                           disabled={pendingPreset === 'all' || Boolean(maxDateValue && !isCustomSelecting && day > maxDateValue)}
+                          aria-pressed={pendingPreset === 'day' ? isSingle : undefined}
                           aria-label={`Select date ${dayLabel}`}
                           onClick={() => handleDayClick(day)}
                           onMouseEnter={() => handleDayHover(day)}

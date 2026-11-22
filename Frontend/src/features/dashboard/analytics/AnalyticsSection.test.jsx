@@ -26,7 +26,7 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(container.querySelector('.analytics-header-row')).toBeInTheDocument()
     const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
-    expect(trigger).toHaveTextContent('WEEKLY')
+    expect(trigger).toHaveTextContent('DAILY')
     expect(screen.queryByRole('group', { name: 'Analytics date range' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh data' })).toHaveTextContent('')
     expect(screen.getByRole('button', { name: 'Analytics data coverage information' })).toBeInTheDocument()
@@ -81,7 +81,7 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
     expect(loadAnalytics).toHaveBeenCalledWith(
       'test-token',
-      { period: 'this-week', referenceDate: getManilaDateInputValue() },
+      { period: 'day', referenceDate: getManilaDateInputValue() },
       { signal: expect.any(AbortSignal) },
     )
   }, 15000)
@@ -289,11 +289,53 @@ describe('AnalyticsSection recorded-data states', () => {
   })
 })
 
-describe('Analytics weekly and monthly selection', () => {
+describe('Analytics period selection', () => {
   const originalTime = Date.now()
 
   beforeEach(() => vi.setSystemTime(new Date('2026-10-22T04:00:00.000Z')))
   afterEach(() => vi.setSystemTime(originalTime))
+
+  it('opens on today in Manila and returns there when Daily is selected from an earlier month', async () => {
+    vi.setSystemTime(new Date('2026-10-31T16:05:00Z'))
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    expect(trigger).toHaveTextContent('Nov 1, 2026')
+    await waitFor(() => expect(loadAnalytics).toHaveBeenCalledWith(
+      'test-token', { period: 'day', referenceDate: '2026-11-01' }, { signal: expect.any(AbortSignal) },
+    ))
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
+    await user.click(screen.getByRole('button', { name: 'Previous month' }))
+    await user.click(screen.getByRole('button', { name: 'Select date Oct 14, 2026' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Daily' }))
+    expect(screen.getByRole('button', { name: 'Select date Nov 1, 2026', pressed: true })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(trigger).toHaveTextContent('DAILY')
+    expect(trigger).toHaveTextContent('Nov 1, 2026')
+  })
+
+  it('applies one Daily date and restores it when the calendar reopens', async () => {
+    const user = userEvent.setup()
+    const loadAnalytics = vi.fn().mockResolvedValue(analyticsTestFixture)
+    renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
+    const trigger = screen.getByRole('button', { name: 'Select Analytics date range' })
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Daily' }))
+    expect(screen.getByRole('button', { name: 'Select date Oct 23, 2026' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Select date Oct 14, 2026' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(loadAnalytics).toHaveBeenLastCalledWith(
+      'test-token', { period: 'day', referenceDate: '2026-10-14' }, { signal: expect.any(AbortSignal) },
+    ))
+    expect(trigger).toHaveTextContent('DAILY')
+    expect(trigger).toHaveTextContent('Oct 14, 2026')
+    await user.click(trigger)
+    expect(screen.getByRole('button', { name: 'Select date Oct 14, 2026', pressed: true })).toBeInTheDocument()
+  })
 
   it('selects only whole Monday-to-Sunday weeks in Weekly mode', async () => {
     const user = userEvent.setup()
@@ -305,6 +347,7 @@ describe('Analytics weekly and monthly selection', () => {
     await user.click(trigger)
     expect(screen.getByRole('dialog', { name: 'Select Analytics date range' })).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Weekly' }))
     // Click Wednesday Oct 14 in the calendar
     await user.click(screen.getByRole('button', { name: 'Select date Oct 14, 2026' }))
     expect(screen.getByText(/Oct 12 \u2013 Oct 18, 2026 \u00b7 1 week/)).toBeInTheDocument()

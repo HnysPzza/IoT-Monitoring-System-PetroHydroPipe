@@ -2,7 +2,7 @@ import { apiRequest } from '../../../shared/services/apiClient.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const ANALYTICS_TIME_ZONE = 'Asia/Manila'
-const BUCKETS = new Set(['four-hour', 'daily', 'weekly', 'monthly'])
+const BUCKETS = new Set(['hourly', 'four-hour', 'daily', 'weekly', 'monthly'])
 const PERIOD_STATES = new Set(['future', 'partial', 'complete'])
 const ALIGNMENT_MODES = new Set(['ordinal-equal-duration-buckets', 'ordinal-calendar-segments'])
 const LOSS_BASIS_SOURCES = new Set(['trailing-7-days', 'trailing-30-days', 'configured-fallback'])
@@ -48,6 +48,7 @@ function getMondayStart(date) {
 }
 
 function getAutomaticBucket(daysInclusive) {
+  if (daysInclusive === 1) return 'hourly'
   if (daysInclusive <= 2) return 'four-hour'
   if (daysInclusive <= 14) return 'daily'
   if (daysInclusive <= 93) return 'weekly'
@@ -66,7 +67,7 @@ export function getManilaDateInputValue(date = new Date()) {
 }
 
 export function resolveAnalyticsRange({
-  period = 'this-week',
+  period = 'day',
   startDate,
   endDate,
   referenceDate = getManilaDateInputValue(),
@@ -75,7 +76,10 @@ export function resolveAnalyticsRange({
   let start
   let end
 
-  if (period === 'this-week') {
+  if (period === 'day') {
+    start = reference
+    end = reference
+  } else if (period === 'this-week') {
     start = getMondayStart(reference)
     end = addUtcDays(start, 6)
   } else if (period === 'this-month') {

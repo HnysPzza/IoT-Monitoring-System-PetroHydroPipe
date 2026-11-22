@@ -31,7 +31,7 @@ function getRangeValidation(options) {
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
   const online = useNetworkOnline()
   const currentManilaDate = getManilaDateInputValue()
-  const [period, setPeriod] = useState('week')
+  const [period, setPeriod] = useState('day')
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
   const [customRange, setCustomRange] = useState(null)
   const [trendMetric, setTrendMetric] = useState('downtime')
@@ -40,6 +40,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     if (period === 'all') {
       return { period: 'all' }
     }
+    if (period === 'day') return { period, referenceDate: selectedDate }
     if (period === 'month') {
       return { period: 'this-month', referenceDate: selectedDate }
     }
@@ -79,7 +80,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     setPeriod(nextPeriod)
     if (nextPeriod === 'custom') {
       setCustomRange({ startDate: nextStartDate, endDate: nextEndDate })
-    } else if (nextPeriod === 'week' || nextPeriod === 'month') {
+    } else if (nextPeriod === 'day' || nextPeriod === 'week' || nextPeriod === 'month') {
       setSelectedDate(nextStartDate)
     }
   }, [])
