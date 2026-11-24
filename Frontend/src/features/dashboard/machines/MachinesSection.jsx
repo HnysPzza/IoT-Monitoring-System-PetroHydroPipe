@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Link, useOutletContext } from 'react-router'
 import { Activity, AlertTriangle, CircleCheck, Cpu, LayoutGrid, List, MapPin, RotateCw, SlidersHorizontal, WifiOff } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
+import { useMobileViewport } from '../../../shared/hooks/useMobileViewport.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
 import { canAccessDashboardRoute } from '../../../shared/constants/dashboardMeta.js'
@@ -75,6 +76,7 @@ function formatSuccessfulUpdate(date) {
 export default function MachinesSection() {
   const [sensorView, setSensorView] = useState('grid')
   const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('machines-header-controls'))
+  const isMobileHeader = useMobileViewport('(max-width: 680px)')
   const { token, user } = useAuth()
   const canConfigureSettings = canAccessDashboardRoute(user?.role, '/dashboard/settings')
   const outlet = useOutletContext()
@@ -180,10 +182,15 @@ export default function MachinesSection() {
   }
 
   const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('machines-header-controls')
-  const headerControls = (
-    <div className="machines-header-controls">
+  const machineIdentity = (
+    <>
       <h2 id="machine-admin-title">{machine.name}</h2>
       <Status>{machine.status}</Status>
+    </>
+  )
+  const headerControls = (
+    <div className="machines-header-controls">
+      {!isMobileHeader ? machineIdentity : null}
       <button
         className="icon-button machines-refresh"
         type="button"
@@ -219,6 +226,7 @@ export default function MachinesSection() {
       ) : null}
 
       {resolvedHeaderSlot ? createPortal(headerControls, resolvedHeaderSlot) : headerControls}
+      {isMobileHeader ? <div className="machines-mobile-meta">{machineIdentity}</div> : null}
       <section className="machines-telemetry-strip" aria-label="Machine status summary">
         <div><div><span>Machine code</span><strong className="machines-mono">{machine.machineCode}</strong></div><Cpu size={16} aria-hidden="true" /></div>
         <div><div><span>Location</span><strong>{machine.location || 'Not set'}</strong></div><MapPin size={16} aria-hidden="true" /></div>
@@ -236,7 +244,7 @@ export default function MachinesSection() {
                 <span>Configure thresholds</span>
               </Link>
             ) : null}
-            <div className="machines-view-toggle" role="group" aria-label="Sensor view">
+            <div className="machines-view-toggle" role="group" aria-label="Sensor view" data-active-view={sensorView}>
               <button type="button" aria-label="Grid view" aria-pressed={sensorView === 'grid'} onClick={() => setSensorView('grid')}><LayoutGrid size={16} aria-hidden="true" /></button>
               <button type="button" aria-label="Table view" aria-pressed={sensorView === 'table'} onClick={() => setSensorView('table')}><List size={16} aria-hidden="true" /></button>
             </div>
