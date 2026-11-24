@@ -8,7 +8,6 @@ import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getSessionGeneration } from '../../../shared/services/sessionRefresh.js'
 import {
   AlertTriangle,
-  Ban,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -124,12 +123,6 @@ export function hasInformation(record) {
 }
 
 const PRODUCTION_EDIT_ROLES = new Set(['Admin', 'Operation Manager', 'Production Supervisor', 'Quality Control'])
-
-const CUT_STATUS_OPTIONS = [
-  { value: 'accepted', label: 'Accepted' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'all', label: 'All Statuses' },
-]
 
 const SPEC_STATUS_OPTIONS = [
   { value: 'all', label: 'All Specifications' },
@@ -314,7 +307,6 @@ export default function ProductionSection({
   }, [])
 
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
-  const [statusFilter, setStatusFilter] = useState('accepted')
   const [specStatusFilter, setSpecStatusFilter] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -333,7 +325,7 @@ export default function ProductionSection({
     date: oneDay ? start : undefined,
     dateFrom: !oneDay && normFilter?.type !== 'all' && start && end ? start : undefined,
     dateTo: !oneDay && normFilter?.type !== 'all' && start && end ? end : undefined,
-    status: statusFilter, specStatus: specStatusFilter, search: debouncedSearch || undefined, page, pageSize,
+    status: 'accepted', specStatus: specStatusFilter, search: debouncedSearch || undefined, page, pageSize,
   }
   const key = queryKeys.production.list(filters)
   const query = useAuthenticatedQuery({
@@ -345,7 +337,7 @@ export default function ProductionSection({
   })
   const canEdit = PRODUCTION_EDIT_ROLES.has(user?.role) && !query.isPlaceholderData
   const records = query.data?.records || []
-  const summary = query.data?.summary || { totalAccepted: 0, specifiedCount: 0, unspecifiedCount: 0, rejectedCount: 0 }
+  const summary = query.data?.summary || { totalAccepted: 0, specifiedCount: 0, unspecifiedCount: 0, rejectedCount: 0, totalTonnage: 0 }
   const pagination = query.data?.pagination || { page: 1, pageSize: 25, total: 0, totalPages: 1 }
   const setRecords = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, records: typeof update === 'function' ? update(current.records || []) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
   const setSummary = (update) => queryClient.setQueryData(key, (current) => current ? { ...current, summary: typeof update === 'function' ? update(current.summary || {}) : update } : current, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt })
@@ -405,7 +397,7 @@ export default function ProductionSection({
     lastClickedIndexRef.current = null
     setSelectedIds((prev) => (prev.size > 0 ? new Set() : prev))
     setIsConfirmingBulk(false)
-  }, [dateFilter, statusFilter, specStatusFilter, debouncedSearch, page])
+  }, [dateFilter, specStatusFilter, debouncedSearch, page])
 
   // Clamp requested page within available pages when filtered counts shrink.
   useEffect(() => {
@@ -694,29 +686,9 @@ export default function ProductionSection({
     }
   }
 
-  const isRejectedStatus = statusFilter === 'rejected'
-
-  const handleStatusFilterChange = (nextStatus) => {
-    setStatusFilter(nextStatus)
-    // Spec filters apply only to accepted cuts, so reset to avoid guaranteed empty tables.
-    if (nextStatus === 'rejected') {
-      setSpecStatusFilter('all')
-    }
-    setPage(1)
-  }
-
   const handleSpecStatusToggle = (targetSpecStatus) => {
-    if (statusFilter === 'rejected') {
-      setStatusFilter('accepted')
-      setSpecStatusFilter(targetSpecStatus)
-    } else {
-      setSpecStatusFilter((prev) => (prev === targetSpecStatus ? 'all' : targetSpecStatus))
-    }
+    setSpecStatusFilter((prev) => (prev === targetSpecStatus ? 'all' : targetSpecStatus))
     setPage(1)
-  }
-
-  const handleToggleRejected = () => {
-    handleStatusFilterChange(isRejectedStatus ? 'accepted' : 'rejected')
   }
 
   // Debounce search input changes without resetting page on initial mount.
@@ -1004,7 +976,7 @@ export default function ProductionSection({
       </div>
 
       {/* Header Strip with Eyebrow, Main Heading, and Clean Unified KPI Pills */}
-      <header className="production-header-strip"><div className="production-title-group sr-only"><p className="production-eyebrow">{`S-05 · ${getSensorLabel('S-05', 'Production Output Cutting').toUpperCase()} · SPIRAL MILL 01`}</p><h1 className="production-title">Production Logs</h1></div>
+      <header className="production-header-strip"><div className="production-title-group sr-only"><p className="production-eyebrow">{`S-05 · ${getSensorLabel('S-05', 'Production Output Cutting').toUpperCase()} · SPIRAL MILL 01`}</p><h1 className="production-title">Production Output</h1></div>
         <div className="production-kpi-strip" role="region" aria-label="Production Summary Metrics">
           <button
             type="button"
@@ -1012,7 +984,6 @@ export default function ProductionSection({
             title="Total Accepted Cuts"
             aria-label="Total accepted cuts"
             onClick={() => {
-              setStatusFilter('accepted')
               setSpecStatusFilter('all')
               setPage(1)
             }}
@@ -1022,12 +993,23 @@ export default function ProductionSection({
             <span className="production-kpi-label">Accepted</span>
           </button>
 
+          <div
+            className="production-kpi-pill tonnage"
+            title="Total Production Tonnage"
+            aria-label="Total production tonnage"
+          >
+            <strong className="production-kpi-value tabular-data">
+              {formatTonnage(summary.totalTonnage ?? 0) ?? '0.0000'}
+            </strong>
+            <span className="production-kpi-label">Total Tons</span>
+          </div>
+
           <button
             type="button"
-            className={`production-kpi-pill specified ${!isRejectedStatus && specStatusFilter === 'specified' ? 'production-kpi-active' : ''}`}
+            className={`production-kpi-pill specified ${specStatusFilter === 'specified' ? 'production-kpi-active' : ''}`}
             title="Specified Cuts"
             aria-label="Filter specified cuts"
-            aria-pressed={!isRejectedStatus && specStatusFilter === 'specified'}
+            aria-pressed={specStatusFilter === 'specified'}
             onClick={() => handleSpecStatusToggle('specified')}
           >
             <Tag size={14} strokeWidth={2} aria-hidden="true" />
@@ -1037,36 +1019,21 @@ export default function ProductionSection({
 
           <button
             type="button"
-            className={`production-kpi-pill unspecified ${!isRejectedStatus && specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
-            title={!isRejectedStatus && specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
+            className={`production-kpi-pill unspecified ${specStatusFilter === 'unspecified' ? 'production-kpi-active' : ''}`}
+            title={specStatusFilter === 'unspecified' ? 'Show all cuts' : 'Filter unspecified cuts'}
             aria-label="Filter unspecified cuts"
-            aria-pressed={!isRejectedStatus && specStatusFilter === 'unspecified'}
+            aria-pressed={specStatusFilter === 'unspecified'}
             onClick={() => handleSpecStatusToggle('unspecified')}
           >
             <CircleDashed size={14} strokeWidth={2} aria-hidden="true" />
             <strong className="production-kpi-value tabular-data">{summary.unspecifiedCount ?? 0}</strong>
             <span className="production-kpi-label">Unspecified</span>
           </button>
-
-          {(Number(summary.rejectedCount ?? 0) > 0 || isRejectedStatus) && (
-            <button
-              type="button"
-              className={`production-kpi-pill rejected ${isRejectedStatus ? 'production-kpi-active' : ''}`}
-              title={isRejectedStatus ? 'Show accepted cuts' : 'Filter rejected cuts'}
-              aria-label="Filter rejected cuts"
-              aria-pressed={isRejectedStatus}
-              onClick={handleToggleRejected}
-            >
-              <Ban size={14} strokeWidth={2} aria-hidden="true" />
-              <strong className="production-kpi-value tabular-data">{summary.rejectedCount ?? 0}</strong>
-              <span className="production-kpi-label">Rejected</span>
-            </button>
-          )}
         </div>
       </header>
 
       {/* Filter & Search Toolbar (Uniform 38px Height) */}
-      <section className="production-filter-strip" aria-label="Production Log Filters">
+      <section className="production-filter-strip" aria-label="Production Output Filters">
         <div className="production-search-wrapper">
           <Search size={15} strokeWidth={1.75} className="production-search-icon" aria-hidden="true" />
           <input
@@ -1105,15 +1072,6 @@ export default function ProductionSection({
         />
 
         <CustomDropdown
-          id="production-status-filter"
-          label="Filter by cut status"
-          value={statusFilter}
-          options={CUT_STATUS_OPTIONS}
-          onChange={handleStatusFilterChange}
-          isActive={statusFilter !== 'accepted'}
-        />
-
-        <CustomDropdown
           id="production-spec-status-filter"
           label="Filter by specification status"
           value={specStatusFilter}
@@ -1122,16 +1080,14 @@ export default function ProductionSection({
             setSpecStatusFilter(newVal)
             setPage(1)
           }}
-          isActive={!isRejectedStatus && specStatusFilter !== 'all'}
-          disabled={isRejectedStatus}
-          title={isRejectedStatus ? 'Specification filter applies to accepted cuts only' : undefined}
+          isActive={specStatusFilter !== 'all'}
         />
 
         <button
           type="button"
           className="production-square-btn"
-          aria-label="Refresh production logs"
-          title="Refresh production logs"
+          aria-label="Refresh production output"
+          title="Refresh production output"
           disabled={isLoading}
           onClick={() => loadData({ silent: true })}
         >
@@ -1158,7 +1114,7 @@ export default function ProductionSection({
         </div>
       ) : null}
 
-      <RefreshStatus active={isRefreshing} isPlaceholder={query.isPlaceholderData} message="Refreshing production logs..." placeholderMessage="Refreshing production logs for the selected filters; previous results remain visible." />
+      <RefreshStatus active={isRefreshing} isPlaceholder={query.isPlaceholderData} message="Refreshing production output..." placeholderMessage="Refreshing production output for the selected filters; previous results remain visible." />
       {query.isError || (!online && query.data) ? (
         <div className="notice notice-error dashboard-alert production-notice" role="alert">
           <div className="production-notice-content">

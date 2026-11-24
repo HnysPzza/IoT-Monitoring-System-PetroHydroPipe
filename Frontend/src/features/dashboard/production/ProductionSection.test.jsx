@@ -510,7 +510,7 @@ describe('ProductionSection component', () => {
     renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
 
     // Heading and station prefix eyebrow
-    expect(await screen.findByRole('heading', { level: 1, name: 'Production Logs' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Production Output' })).toBeInTheDocument()
     expect(screen.getByText(/S-05 · PRODUCTION OUTPUT CUTTING · SPIRAL MILL 01/i)).toBeInTheDocument()
     expect(screen.queryByText(/cuts and product specifications/i)).not.toBeInTheDocument()
 
@@ -519,10 +519,13 @@ describe('ProductionSection component', () => {
     await within(kpiRegion).findByText('42')
     expect(within(kpiRegion).getByText('42')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('Accepted')).toBeInTheDocument()
+    expect(within(kpiRegion).getByText('Total Tons')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('30')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('Specified')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('12')).toBeInTheDocument()
     expect(within(kpiRegion).getByText('Unspecified')).toBeInTheDocument()
+    expect(within(kpiRegion).queryByText('Rejected')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Filter by cut status')).not.toBeInTheDocument()
   })
 
   it('renders table rows with formatted timestamps, labels, dimensions, and status icons', async () => {
@@ -624,26 +627,6 @@ describe('ProductionSection component', () => {
       }))
     })
     expect(screen.queryByRole('button', { name: 'Clear date filter' })).not.toBeInTheDocument()
-  })
-
-  it('handles cut status filter changes', async () => {
-    const user = userEvent.setup()
-    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
-
-    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
-
-    await screen.findByText('Maynilad Water')
-
-    const statusSelect = screen.getByLabelText('Filter by cut status')
-    await user.click(statusSelect)
-    await user.click(screen.getByRole('option', { name: 'Rejected' }))
-
-    await waitFor(() => {
-      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-        status: 'rejected',
-        page: 1,
-      }))
-    })
   })
 
   it('handles specification status filter changes', async () => {
@@ -1395,33 +1378,30 @@ describe('ProductionSection component', () => {
 
       await screen.findByText('Maynilad Water')
 
-      const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
-      expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
-
-      // Open status dropdown
-      await user.click(statusTrigger)
-      expect(screen.getByRole('listbox', { name: 'Filter by cut status' })).toBeInTheDocument()
-
-      // Close via Escape key and ensure focus returns to trigger
-      await user.keyboard('{Escape}')
-      expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
-      expect(statusTrigger).toHaveFocus()
-
-      // Open spec status dropdown
       const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+      expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
+
+      // Open spec dropdown
       await user.click(specTrigger)
       expect(screen.getByRole('listbox', { name: 'Filter by specification status' })).toBeInTheDocument()
 
-      // Close via outside pointer down
+      // Close via Escape key and ensure focus returns to trigger
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
+      expect(specTrigger).toHaveFocus()
+
+      // Open spec status dropdown and close via outside pointer down
+      await user.click(specTrigger)
+      expect(screen.getByRole('listbox', { name: 'Filter by specification status' })).toBeInTheDocument()
       await user.pointer({ target: document.body, keys: '[MouseLeft]' })
       expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
 
-      // Open status dropdown, select option, and verify focus returns to trigger
-      await user.click(statusTrigger)
-      expect(screen.getByRole('listbox', { name: 'Filter by cut status' })).toBeInTheDocument()
-      await user.click(screen.getByRole('option', { name: 'All Statuses' }))
-      expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
-      expect(statusTrigger).toHaveFocus()
+      // Open spec dropdown, select option, and verify focus returns to trigger
+      await user.click(specTrigger)
+      expect(screen.getByRole('listbox', { name: 'Filter by specification status' })).toBeInTheDocument()
+      await user.click(screen.getByRole('option', { name: 'Specified' }))
+      expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
+      expect(specTrigger).toHaveFocus()
 
       // Open spec dropdown and close via tab away (focusout)
       await user.click(specTrigger)
@@ -1456,7 +1436,7 @@ describe('ProductionSection component', () => {
       expect(acceptedBtn).not.toHaveClass('production-kpi-active')
     })
 
-    it('renders status filter dropdown in inactive state on load and activates when non-default option is selected', async () => {
+    it('renders spec filter dropdown in inactive state on load and activates when non-default option is selected', async () => {
       const user = userEvent.setup()
       const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
 
@@ -1464,13 +1444,13 @@ describe('ProductionSection component', () => {
 
       await screen.findByText('Maynilad Water')
 
-      const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
-      expect(statusTrigger).not.toHaveClass('production-filter-btn-active')
+      const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+      expect(specTrigger).not.toHaveClass('production-filter-btn-active')
 
-      await user.click(statusTrigger)
-      await user.click(screen.getByRole('option', { name: 'Rejected' }))
+      await user.click(specTrigger)
+      await user.click(screen.getByRole('option', { name: 'Unspecified' }))
 
-      expect(statusTrigger).toHaveClass('production-filter-btn-active')
+      expect(specTrigger).toHaveClass('production-filter-btn-active')
     })
 
     it('renders tabular-data class on timestamps and formats empty values with production-placeholder', async () => {
@@ -1846,25 +1826,25 @@ describe('UX & Accessibility Audit Regression Contracts', () => {
     await screen.findByText('Maynilad Water')
     const initialCalls = mockLoad.mock.calls.length
 
-    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
-    statusTrigger.focus()
+    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
+    specTrigger.focus()
 
     await user.keyboard('{ArrowDown}')
-    const listbox = screen.getByRole('listbox', { name: 'Filter by cut status' })
+    const listbox = screen.getByRole('listbox', { name: 'Filter by specification status' })
     expect(listbox).toBeInTheDocument()
     expect(mockLoad).toHaveBeenCalledTimes(initialCalls)
 
     await user.keyboard('{ArrowDown}')
-    expect(statusTrigger).toHaveAttribute('aria-activedescendant', 'production-status-filter-opt-rejected')
+    expect(specTrigger).toHaveAttribute('aria-activedescendant', 'production-spec-status-filter-opt-specified')
     expect(mockLoad).toHaveBeenCalledTimes(initialCalls)
 
     await user.keyboard('{Enter}')
-    expect(screen.queryByRole('listbox', { name: 'Filter by cut status' })).not.toBeInTheDocument()
-    expect(statusTrigger).toHaveFocus()
+    expect(screen.queryByRole('listbox', { name: 'Filter by specification status' })).not.toBeInTheDocument()
+    expect(specTrigger).toHaveFocus()
 
     await waitFor(() => {
       expect(mockLoad).toHaveBeenCalledTimes(initialCalls + 1)
-      expect(mockLoad.mock.calls.at(-1)[1]).toMatchObject({ status: 'rejected' })
+      expect(mockLoad.mock.calls.at(-1)[1]).toMatchObject({ specStatus: 'specified' })
     })
   })
 
@@ -2103,107 +2083,12 @@ describe('UX & Accessibility Audit Regression Contracts', () => {
     expect(await screen.findByText('Page 2 of 2 · 42 records')).toBeInTheDocument()
 
     shrinkToOnePage = true
-    await user.click(screen.getByRole('button', { name: 'Refresh production logs' }))
+    await user.click(screen.getByRole('button', { name: 'Refresh production output' }))
 
     await waitFor(() => {
       expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 1 }))
     })
     expect(screen.getByText('Page 1 of 1 · 1 records')).toBeInTheDocument()
-  })
-
-  it('resets and disables specification filter when Rejected status is selected', async () => {
-    const user = userEvent.setup()
-    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
-
-    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
-
-    await screen.findByText('Maynilad Water')
-
-    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
-    await user.click(specTrigger)
-    await user.click(screen.getByRole('option', { name: 'Unspecified' }))
-    expect(specTrigger).not.toBeDisabled()
-
-    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
-    await user.click(statusTrigger)
-    await user.click(screen.getByRole('option', { name: 'Rejected' }))
-
-    await waitFor(() => {
-      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-        status: 'rejected',
-        specStatus: 'all',
-        page: 1,
-      }))
-    })
-    expect(specTrigger).toBeDisabled()
-    expect(specTrigger).toHaveAttribute('title', 'Specification filter applies to accepted cuts only')
-  })
-
-  it('switches back to Accepted cuts when clicking Specified or Unspecified KPI while viewing Rejected', async () => {
-    const user = userEvent.setup()
-    const mockLoad = vi.fn().mockResolvedValue(mockProductionPayload)
-
-    renderWithAuth(<ProductionSection loadProduction={mockLoad} />)
-
-    await screen.findByText('Maynilad Water')
-
-    const statusTrigger = screen.getByRole('button', { name: 'Filter by cut status' })
-    const specTrigger = screen.getByRole('button', { name: 'Filter by specification status' })
-    const unspecifiedKpi = screen.getByRole('button', { name: 'Filter unspecified cuts' })
-    const specifiedKpi = screen.getByRole('button', { name: 'Filter specified cuts' })
-
-    await user.click(statusTrigger)
-    await user.click(screen.getByRole('option', { name: 'Rejected' }))
-    expect(specTrigger).toBeDisabled()
-
-    await user.click(unspecifiedKpi)
-    await waitFor(() => {
-      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-        status: 'accepted',
-        specStatus: 'unspecified',
-        page: 1,
-      }))
-    })
-    expect(specTrigger).not.toBeDisabled()
-    expect(unspecifiedKpi).toHaveAttribute('aria-pressed', 'true')
-
-    await user.click(screen.getByRole('button', { name: 'Filter rejected cuts' }))
-    await user.click(specifiedKpi)
-    await waitFor(() => {
-      expect(mockLoad).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
-        status: 'accepted',
-        specStatus: 'specified',
-        page: 1,
-      }))
-    })
-    expect(specifiedKpi).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  it('discloses Rejected KPI pill when rejectedCount > 0 or status is rejected, and hides it at zero on default view', async () => {
-    const user = userEvent.setup()
-    const zeroRejectedPayload = {
-      ...mockProductionPayload,
-      summary: { totalAccepted: 3, specifiedCount: 2, unspecifiedCount: 1, rejectedCount: 0 },
-    }
-    const mockLoadZero = vi.fn().mockResolvedValue(zeroRejectedPayload)
-
-    renderWithAuth(<ProductionSection loadProduction={mockLoadZero} />)
-
-    await screen.findByText('Maynilad Water')
-    expect(screen.queryByRole('button', { name: 'Filter rejected cuts' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Filter by cut status' }))
-    await user.click(screen.getByRole('option', { name: 'Rejected' }))
-
-    const disclosedRejectedBtn = await screen.findByRole('button', { name: 'Filter rejected cuts' })
-    expect(disclosedRejectedBtn).toHaveAttribute('aria-pressed', 'true')
-
-    await user.click(disclosedRejectedBtn)
-    await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'Filter rejected cuts' })).not.toBeInTheDocument()
-    })
-    expect(screen.getByRole('button', { name: 'Filter by cut status' })).toHaveTextContent('Accepted')
-    expect(screen.getByRole('button', { name: 'Filter by specification status' })).not.toBeDisabled()
   })
 
   it('provides mobile data-label attributes across view, inline edit, and read-only rows', async () => {

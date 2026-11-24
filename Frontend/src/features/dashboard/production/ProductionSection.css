@@ -185,6 +185,7 @@
 }
 
 .production-kpi-pill.accepted,
+.production-kpi-pill.tonnage,
 .production-kpi-pill.specified,
 .production-kpi-pill.unspecified,
 .production-kpi-pill.rejected {
@@ -193,7 +194,11 @@
   color: var(--c-text-2, var(--prod-text-secondary));
 }
 
-.production-kpi-pill:hover:not(.production-kpi-active) {
+.production-kpi-pill.tonnage {
+  cursor: default;
+}
+
+button.production-kpi-pill:hover:not(.production-kpi-active) {
   background: var(--prod-hover);
   border-color: var(--prod-border-strong);
   color: var(--prod-text-primary);

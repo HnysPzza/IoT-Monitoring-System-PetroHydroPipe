@@ -25,7 +25,7 @@ export const navItems = [
     subtitle: 'Review stoppages, causes, and intervention history.',
   },
   {
-    label: 'Production Logs',
+    label: 'Production Output',
     to: '/dashboard/production',
     icon: 'notebook-dot',
     group: 'monitor',
@@ -103,7 +103,7 @@ export const dashboardPageMeta = {
     title: 'Downtime Records',
   },
   '/dashboard/production': {
-    title: 'Production Logs',
+    title: 'Production Output',
   },
   '/dashboard/reports': {
     title: 'Reports',

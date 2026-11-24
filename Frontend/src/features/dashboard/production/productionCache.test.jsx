@@ -42,7 +42,7 @@ it('shows stale cached rows immediately while refetching once', async () => {
   const second = render(view())
   expect(screen.getByText('Previous customer')).toBeInTheDocument()
   await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
-  expect(screen.getByText('Refreshing production logs...')).toBeInTheDocument()
+  expect(screen.getByText('Refreshing production output...')).toBeInTheDocument()
   await act(async () => resolveRefresh({ ...payload, records: [{ ...payload.records[0], customer: 'Fresh customer' }] }))
   expect(await screen.findByText('Fresh customer')).toBeInTheDocument()
   expect(load).toHaveBeenCalledTimes(2)
