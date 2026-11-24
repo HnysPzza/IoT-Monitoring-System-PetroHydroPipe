@@ -676,3 +676,138 @@ function isSensorActivity(log) {
     || log.metadata?.deviceId
     || log.metadata?.source === 'esp32_event'
 }
+
+export const PRODUCTION_CUT_STATUS_OPTIONS = [
+  { value: 'all', label: 'All cuts' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'rejected', label: 'Rejected' },
+]
+
+export const PRODUCTION_SPEC_STATUS_OPTIONS = [
+  { value: 'all', label: 'All specifications' },
+  { value: 'specified', label: 'Specified' },
+  { value: 'unspecified', label: 'Unspecified' },
+]
+
+export function getProductionLogEvent(record) {
+  const sensorLabel = formatSensorName(record?.sensorCode || 'S-05')
+  if (!record?.outputAccepted) {
+    return { label: 'Pulse rejected', tone: 'danger', sensorLabel }
+  }
+  if (record?.isSpecified) {
+    return { label: 'Output specified', tone: 'success', sensorLabel }
+  }
+  return { label: 'Output recorded', tone: 'warning', sensorLabel }
+}
+
+export function getProductionLogPipeLabel(record) {
+  if (!record?.outputAccepted) {
+    return 'Rejected pulse'
+  }
+  if (record?.pipeNumber != null) {
+    return `Pipe #${record.pipeNumber}`
+  }
+  return 'Unnumbered cut'
+}
+
+export function getProductionLogCustomer(record) {
+  if (!record?.outputAccepted) {
+    return '—'
+  }
+  return record?.customer || 'Unspecified'
+}
+
+function formatProductionSpecMeasure(record) {
+  const toFixedOrNull = (value, decimals) => {
+    if (value === null || value === undefined || value === '') return null
+    const num = Number(value)
+    return Number.isFinite(num) ? num.toFixed(decimals) : null
+  }
+  const d = toFixedOrNull(record?.diameter, 2)
+  const t = toFixedOrNull(record?.thickness, 2)
+  const l = toFixedOrNull(record?.length, 2)
+  const tonsValue = toFixedOrNull(record?.tonnage, 4)
+  const tons = tonsValue ? `${tonsValue} t` : null
+
+  const compactDims = d && t && l
+    ? `${d} × ${t} × ${l} mm`
+    : [d && `${d} mm OD`, t && `${t} mm WT`, l && `${l} mm L`].filter(Boolean).join(' × ')
+  const detailDims = [d && `${d} mm OD`, t && `${t} mm WT`, l && `${l} mm L`].filter(Boolean).join(' × ')
+
+  return { compactDims, detailDims, tons }
+}
+
+const PRODUCTION_REJECTION_REASONS = {
+  stale_event: 'Stale or out-of-order timestamp',
+  machine_stationary: 'Machine stationary',
+  machine_downtime: 'Machine in downtime',
+  machine_offline: `${formatSensorName('S-03')} offline`,
+  outside_schedule: 'Outside scheduled working hours',
+  server_debounce: 'Duplicate pulse within debounce window',
+}
+
+function formatProductionRejectionReason(reason) {
+  if (!reason) return ''
+  const trimmed = String(reason).trim().replace(/\.+$/, '')
+  if (PRODUCTION_REJECTION_REASONS[trimmed]) return PRODUCTION_REJECTION_REASONS[trimmed]
+  return /^[a-z0-9_]+$/.test(trimmed) ? cleanCode(trimmed) : trimmed
+}
+
+export function getProductionLogSummary(record) {
+  if (!record?.outputAccepted) {
+    const reason = formatProductionRejectionReason(record?.rejectionReason)
+    if (reason) {
+      return `Cut pulse rejected: ${reason}.`
+    }
+    return 'Cut pulse rejected by validation rules.'
+  }
+
+  const { compactDims, tons } = formatProductionSpecMeasure(record)
+  if (compactDims && tons) {
+    return `Recorded ${compactDims} pipe (${tons}).`
+  }
+  if (compactDims) {
+    return `Recorded ${compactDims} pipe.`
+  }
+  if (tons) {
+    return `Recorded pipe output (${tons}).`
+  }
+  if (record?.isSpecified) {
+    if (record?.customer) {
+      return `Assigned output to ${record.customer}; dimensions pending.`
+    }
+    if (record?.label || record?.size) {
+      return `Recorded ${record.label || record.size} pipe output.`
+    }
+    return 'Accepted cut recorded; specifications tagged.'
+  }
+  return 'Accepted cut recorded; specification pending.'
+}
+
+export function getProductionLogDetailItems(record) {
+  const { detailDims, tons } = formatProductionSpecMeasure(record)
+  const specText = !record?.outputAccepted
+    ? 'Not applicable'
+    : ([detailDims, tons].filter(Boolean).join(' · ') || 'Pending specification')
+
+  const items = [
+    { label: 'What happened', value: getProductionLogSummary(record), emphasis: 'primary', fullWidth: true },
+    { label: 'Cut time', value: formatDateTime(record?.recordedAt, { second: '2-digit' }) },
+    { label: 'Pipe / Cut', value: getProductionLogPipeLabel(record) },
+    { label: 'Customer', value: !record?.outputAccepted ? 'Not applicable' : (record?.customer || 'Unspecified') },
+    { label: 'Dimensions & tonnage', value: specText },
+    { label: 'Sensor', value: formatSensorName(record?.sensorCode || 'S-05') },
+  ]
+
+  if (record?.deviceEventId != null) {
+    items.push({ label: 'Pulse sequence', value: `#${record.deviceEventId}` })
+  }
+  if (record?.updatedAt) {
+    items.push({ label: 'Spec updated', value: formatDateTime(record.updatedAt, { second: '2-digit' }) })
+  }
+  if (!record?.outputAccepted && record?.rejectionReason) {
+    items.push({ label: 'Rejection reason', value: formatProductionRejectionReason(record.rejectionReason), fullWidth: true })
+  }
+
+  return items
+}

@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithAuth } from '../../../test/renderWithAuth.jsx'
+import { formatSensorName } from '../../../shared/constants/sensorIdentity.js'
 import '../../../shared/components/ui/Calendar.jsx'
 import AuditSection from './AuditSection.jsx'
 import { getAuditLogs } from './auditService.js'
@@ -11,6 +12,11 @@ import {
   auditActionOptions,
   auditEntityOptions,
   getAuditTone,
+  getProductionLogCustomer,
+  getProductionLogDetailItems,
+  getProductionLogEvent,
+  getProductionLogPipeLabel,
+  getProductionLogSummary,
   getReadableAction,
   getReadableDetails,
   getReadableEntity,
@@ -940,5 +946,274 @@ describe('AuditSection', () => {
     expect(rows[0].querySelector('.audit-actor-cell')).toHaveTextContent('Managing Director')
     expect(rows[1].querySelector('.audit-actor-cell')).toHaveTextContent('Sensors')
     expect(rows[2].querySelector('.audit-actor-cell')).toHaveTextContent('User')
+  })
+
+  it('formats production log events, pipe labels, summaries, and detail items across specified, unspecified, and rejected cuts', () => {
+    const specified = {
+      sensorCode: 'S-05',
+      outputAccepted: true,
+      isSpecified: true,
+      pipeNumber: 12,
+      customer: 'Maynilad Water',
+      diameter: 625.4,
+      thickness: 12.7,
+      length: 6000,
+      tonnage: 1.1513,
+      recordedAt: '2026-10-30T06:30:00.000Z',
+      updatedAt: '2026-10-30T06:45:00.000Z',
+      deviceEventId: 101,
+    }
+    expect(getProductionLogEvent(specified)).toEqual({
+      label: 'Output specified',
+      tone: 'success',
+      sensorLabel: 'S-05 - Production Output Cutting',
+    })
+    expect(getProductionLogPipeLabel(specified)).toBe('Pipe #12')
+    expect(getProductionLogCustomer(specified)).toBe('Maynilad Water')
+    expect(getProductionLogSummary(specified)).toBe('Recorded 625.40 × 12.70 × 6000.00 mm pipe (1.1513 t).')
+    expect(getProductionLogDetailItems(specified).map((item) => item.label)).toEqual([
+      'What happened',
+      'Cut time',
+      'Pipe / Cut',
+      'Customer',
+      'Dimensions & tonnage',
+      'Sensor',
+      'Pulse sequence',
+      'Spec updated',
+    ])
+
+    const unspecified = {
+      sensorCode: 'S-05',
+      outputAccepted: true,
+      isSpecified: false,
+      pipeNumber: null,
+      customer: null,
+      recordedAt: '2026-10-30T07:15:00.000Z',
+    }
+    expect(getProductionLogEvent(unspecified).tone).toBe('warning')
+    expect(getProductionLogEvent(unspecified).label).toBe('Output recorded')
+    expect(getProductionLogPipeLabel(unspecified)).toBe('Unnumbered cut')
+    expect(getProductionLogCustomer(unspecified)).toBe('Unspecified')
+    expect(getProductionLogSummary(unspecified)).toBe('Accepted cut recorded; specification pending.')
+
+    const rejected = {
+      sensorCode: 'S-05',
+      outputAccepted: false,
+      isSpecified: false,
+      rejectionReason: 'Debounce window violated.',
+      recordedAt: '2026-10-30T08:00:00.000Z',
+    }
+    expect(getProductionLogEvent(rejected)).toEqual({
+      label: 'Pulse rejected',
+      tone: 'danger',
+      sensorLabel: 'S-05 - Production Output Cutting',
+    })
+    expect(getProductionLogPipeLabel(rejected)).toBe('Rejected pulse')
+    expect(getProductionLogCustomer(rejected)).toBe('—')
+    expect(getProductionLogSummary(rejected)).toBe('Cut pulse rejected: Debounce window violated.')
+    expect(getProductionLogDetailItems(rejected).some((item) => item.label === 'Rejection reason')).toBe(true)
+
+    const rejectedCode = {
+      sensorCode: 'S-05',
+      outputAccepted: false,
+      isSpecified: false,
+      rejectionReason: 'outside_schedule',
+      recordedAt: '2026-10-30T08:05:00.000Z',
+    }
+    expect(getProductionLogSummary(rejectedCode)).toBe('Cut pulse rejected: Outside scheduled working hours.')
+    expect(getProductionLogDetailItems(rejectedCode).find((item) => item.label === 'Rejection reason')?.value)
+      .toBe('Outside scheduled working hours')
+
+    const rejectedOffline = {
+      sensorCode: 'S-05',
+      outputAccepted: false,
+      rejectionReason: 'machine_offline',
+      recordedAt: '2026-10-30T08:06:00.000Z',
+    }
+    expect(getProductionLogSummary(rejectedOffline)).toBe(`Cut pulse rejected: ${formatSensorName('S-03')} offline.`)
+  })
+
+  it('switches between System Activity and read-only audit-styled Production Log for Admin, and locks Engineering Supervisor to Production Log', async () => {
+    const user = userEvent.setup()
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+    const mockLoadProduction = vi.fn().mockResolvedValue({
+      summary: { totalAccepted: 2, specifiedCount: 1, unspecifiedCount: 1, rejectedCount: 1 },
+      records: [
+        {
+          id: 'prod-1',
+          sensorEventId: 'prod-1',
+          deviceEventId: 101,
+          sensorCode: 'S-05',
+          recordedAt: '2026-10-30T06:30:00.000Z',
+          outputAccepted: true,
+          status: 'accepted',
+          isSpecified: true,
+          customer: 'Maynilad Water',
+          diameter: 625.4,
+          thickness: 12.7,
+          length: 6000,
+          pipeNumber: 1001,
+          tonnage: 1.1513,
+          updatedAt: '2026-10-30T06:35:00.000Z',
+        },
+        {
+          id: 'prod-2',
+          sensorEventId: 'prod-2',
+          deviceEventId: 102,
+          sensorCode: 'S-05',
+          recordedAt: '2026-10-30T07:00:00.000Z',
+          outputAccepted: true,
+          status: 'accepted',
+          isSpecified: false,
+          customer: null,
+          pipeNumber: 1002,
+        },
+        {
+          id: 'prod-3',
+          sensorEventId: 'prod-3',
+          deviceEventId: 103,
+          sensorCode: 'S-05',
+          recordedAt: '2026-10-30T08:00:00.000Z',
+          outputAccepted: false,
+          status: 'rejected',
+          rejectionReason: 'Debounce window violated.',
+        },
+      ],
+      pagination: { page: 1, pageSize: 25, total: 3, totalPages: 2, hasNextPage: true, hasPreviousPage: false },
+    })
+
+    const { unmount } = renderWithAuth(<AuditSection loadProduction={mockLoadProduction} />)
+    await screen.findByText('No audit records match the selected filters.')
+
+    const tablist = screen.getByRole('tablist', { name: 'Audit log views' })
+    expect(tablist).toHaveAttribute('data-active-tab', 'system')
+
+    await user.click(screen.getByRole('tab', { name: 'Production Log' }))
+    expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
+    expect(tablist).toHaveAttribute('data-active-tab', 'production')
+
+    // Arrow key navigation moves both active tab and focus back to System Activity and back to Production Log
+    const productionTab = screen.getByRole('tab', { name: 'Production Log' })
+    productionTab.focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('tab', { name: 'System Activity' })).toHaveFocus()
+    expect(tablist).toHaveAttribute('data-active-tab', 'system')
+    await user.keyboard('{ArrowRight}')
+    expect(productionTab).toHaveFocus()
+    expect(tablist).toHaveAttribute('data-active-tab', 'production')
+
+    // Audit-log table columns and badges (no edit controls)
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent)
+    expect(headers).toEqual(['Date/Time', 'Event', 'Pipe / Cut', 'Customer', 'Output summary', 'Details'])
+    expect(screen.getByText('Output specified')).toHaveAttribute('data-tone', 'success')
+    expect(screen.getByText('Output recorded')).toHaveAttribute('data-tone', 'warning')
+    expect(screen.getByText('Pulse rejected')).toHaveAttribute('data-tone', 'danger')
+    expect(screen.getAllByText('S-05 - Production Output Cutting')).toHaveLength(3)
+    expect(screen.getByText('Pipe #1001')).toBeInTheDocument()
+    expect(screen.getByText('Rejected pulse')).toBeInTheDocument()
+    expect(screen.getByText('Recorded 625.40 × 12.70 × 6000.00 mm pipe (1.1513 t).')).toBeInTheDocument()
+    expect(screen.getByText('Cut pulse rejected: Debounce window violated.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument()
+    expect(document.querySelector('.audit-total-chip')).toHaveTextContent('3 total')
+    expect(screen.getByLabelText('Production log pagination')).toBeInTheDocument()
+
+    // Open details modal and verify fields + focus return
+    const viewButtons = screen.getAllByRole('button', { name: 'View details' })
+    await user.click(viewButtons[0])
+    const dialog = screen.getByRole('dialog', { name: 'Production log details' })
+    expect(within(dialog).getByText('625.40 mm OD × 12.70 mm WT × 6000.00 mm L · 1.1513 t')).toBeInTheDocument()
+    expect(within(dialog).getByText('#101')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Production log details' })).not.toBeInTheDocument()
+    expect(viewButtons[0]).toHaveFocus()
+
+    // Cut status and Specification filters (Specification disabled when Rejected)
+    const specSelect = screen.getByLabelText('Specification')
+    await user.selectOptions(specSelect, 'specified')
+    await waitFor(() => {
+      expect(mockLoadProduction).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'all',
+        specStatus: 'specified',
+        page: 1,
+      }))
+    })
+
+    const cutSelect = screen.getByLabelText('Cut status')
+    await user.selectOptions(cutSelect, 'rejected')
+    expect(specSelect).toBeDisabled()
+    await waitFor(() => {
+      expect(mockLoadProduction).toHaveBeenLastCalledWith('test-token', expect.objectContaining({
+        status: 'rejected',
+        specStatus: 'all',
+        page: 1,
+      }))
+    })
+
+    // Pagination Next page
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    await waitFor(() => {
+      expect(mockLoadProduction).toHaveBeenLastCalledWith('test-token', expect.objectContaining({ page: 2 }))
+    })
+
+    unmount()
+    getAuditLogs.mockClear()
+
+    // Engineering Supervisor is locked to Production Log without calling getAuditLogs
+    renderWithAuth(<AuditSection loadProduction={mockLoadProduction} />, {
+      authValue: { user: { id: 'eng-1', role: 'Engineering Supervisor' } },
+    })
+    expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(getAuditLogs).not.toHaveBeenCalled()
+  })
+
+  it('passes single date xor date range to loadProduction and handles cold failure on Production Log tab', async () => {
+    const user = userEvent.setup()
+    const mockLoadProduction = vi.fn().mockRejectedValueOnce(new Error('Production query failed')).mockResolvedValue({
+      summary: { totalAccepted: 0, specifiedCount: 0, unspecifiedCount: 0, rejectedCount: 0 },
+      records: [],
+      pagination: { page: 1, pageSize: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+
+    const { unmount } = renderWithAuth(<AuditSection loadProduction={mockLoadProduction} />, {
+      authValue: { user: { id: 'eng-1', role: 'Engineering Supervisor' } },
+    })
+
+    expect(await screen.findByText('Production log could not be loaded.')).toBeInTheDocument()
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('No production log entries match the selected filters.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /select production log date/i }))
+    const calendarDialog = await screen.findByRole('dialog', { name: 'Select production log date' })
+    const dayButton = (await within(calendarDialog).findAllByRole('button'))
+      .find((button) => !button.disabled && /^\d+$/.test(button.textContent.trim()))
+    await user.click(dayButton)
+    await user.click(within(calendarDialog).getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      const lastCall = mockLoadProduction.mock.calls.at(-1)?.[1]
+      expect(lastCall.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(lastCall.dateFrom).toBeUndefined()
+      expect(lastCall.dateTo).toBeUndefined()
+    })
+
+    unmount()
+    mockLoadProduction.mockClear()
+    renderWithAuth(<AuditSection loadProduction={mockLoadProduction} />, {
+      route: '/dashboard/audit?tab=production&dateTo=2026-10-30',
+      authValue: { user: { id: 'eng-1', role: 'Engineering Supervisor' } },
+    })
+    await waitFor(() => {
+      const orphanCall = mockLoadProduction.mock.calls.at(-1)?.[1]
+      expect(orphanCall.date).toBeUndefined()
+      expect(orphanCall.dateFrom).toBeUndefined()
+      expect(orphanCall.dateTo).toBeUndefined()
+    })
   })
 })

@@ -52,7 +52,7 @@ export const navItems = [
     to: '/dashboard/audit',
     icon: 'logs',
     group: 'analyze',
-    roles: ['Admin'],
+    roles: ['Admin', 'Engineering Supervisor'],
     subtitle: 'Trace operator actions and system changes.',
   },
   {

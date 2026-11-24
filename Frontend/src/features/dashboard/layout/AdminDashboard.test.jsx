@@ -1583,7 +1583,7 @@ describe('AdminDashboard alerts', () => {
     expect(nav.querySelector('a[href="/dashboard/reports"]')).toBeInTheDocument()
     expect(nav.querySelector('a[href="/dashboard/settings"]')).toBeInTheDocument()
     expect(nav.querySelector('a[href="/dashboard/machines"]')).toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard/audit"]')).toBeInTheDocument()
     expect(nav.querySelector('a[href="/dashboard/users"]')).not.toBeInTheDocument()
-    expect(nav.querySelector('a[href="/dashboard/audit"]')).not.toBeInTheDocument()
   })
 })
