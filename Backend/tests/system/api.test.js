@@ -1592,3 +1592,96 @@ test('TRUST_PROXY=1 isolates rate limiters by X-Forwarded-For behind a reverse p
     assert.equal(secondClientAllowed.response.status, 201)
   })
 })
+
+test('GET /api/iot/config and POST /api/iot/events rate limit exhaustion on a shared source IP never starves POST /api/iot/heartbeats', async () => {
+  const previousTrustProxy = process.env.TRUST_PROXY
+  const previousIngressLimit = process.env.IOT_INGRESS_RATE_LIMIT
+  const previousDeviceLimit = process.env.IOT_DEVICE_RATE_LIMIT
+  process.env.TRUST_PROXY = '1'
+  process.env.IOT_INGRESS_RATE_LIMIT = '3'
+  process.env.IOT_DEVICE_RATE_LIMIT = '2'
+
+  let app
+  try {
+    app = loadAppWithMocks({
+      'src/modules/iot/iot.service.js': {
+        authenticateDevice: async ({ deviceId }) => ({
+          id: deviceId === 'esp32-m01-s02' ? '22222222-2222-4222-8222-222222222222' : sensorId,
+          sensor_code: deviceId === 'esp32-m01-s02' ? 'S-02' : 'S-01',
+          esp32_device_id: deviceId,
+          machines: { id: machineId, machine_code: 'M-01', name: 'Spiral Mill 01' },
+        }),
+        createHeartbeat: async ({ sensor }) => ({
+          heartbeatId: '33333333-3333-4333-8333-333333333333',
+          sensorCode: sensor.sensor_code,
+          machineCode: 'M-01',
+          receivedAt: '2026-08-21T09:00:00.000Z',
+          connectivityState: 'online',
+          duplicate: false,
+          stale: false,
+          stateApplied: true,
+        }),
+        createSensorEvent: async () => ({ id: 'event-1' }),
+        getDeviceOperationalThresholds: async () => null,
+        getLiveFeed: async () => ({ machine: null, sensors: [] }),
+      },
+    })
+  } finally {
+    if (previousTrustProxy === undefined) delete process.env.TRUST_PROXY
+    else process.env.TRUST_PROXY = previousTrustProxy
+    if (previousIngressLimit === undefined) delete process.env.IOT_INGRESS_RATE_LIMIT
+    else process.env.IOT_INGRESS_RATE_LIMIT = previousIngressLimit
+    if (previousDeviceLimit === undefined) delete process.env.IOT_DEVICE_RATE_LIMIT
+    else process.env.IOT_DEVICE_RATE_LIMIT = previousDeviceLimit
+  }
+
+  const sharedHotspotIp = '203.0.113.50'
+  const s01Headers = {
+    'x-device-id': 'esp32-m01-s01',
+    'x-device-key': 'test-device-key-1',
+    'X-Forwarded-For': sharedHotspotIp,
+  }
+  const s02Headers = {
+    'x-device-id': 'esp32-m01-s02',
+    'x-device-key': 'test-device-key-2',
+    'X-Forwarded-For': sharedHotspotIp,
+  }
+
+  await withTestServer(app, async (baseUrl) => {
+    // S-01 exhausts its device config limit (2) and S-02 exhausts the shared IP config ingress limit (3)
+    const cfg1 = await requestJson(baseUrl, '/api/iot/config', { headers: s01Headers })
+    const cfg2 = await requestJson(baseUrl, '/api/iot/config', { headers: s01Headers })
+    const cfg3DeviceBlocked = await requestJson(baseUrl, '/api/iot/config', { headers: s01Headers })
+    const cfg3TrailingSlashBlocked = await requestJson(baseUrl, '/api/iot/config/', { headers: s01Headers })
+    const cfg4SharedIpBlocked = await requestJson(baseUrl, '/api/iot/config', { headers: s02Headers })
+
+    assert.equal(cfg1.response.status, 200)
+    assert.equal(cfg2.response.status, 200)
+    assert.equal(cfg3DeviceBlocked.response.status, 429)
+    assert.equal(cfg3TrailingSlashBlocked.response.status, 429)
+    assert.equal(cfg4SharedIpBlocked.response.status, 429)
+
+    // Both S-01 and S-02 on the same shared hotspot IP must still be able to deliver heartbeats without HTTP 429
+    const hbBody = {
+      heartbeatId: '33333333-3333-4333-8333-333333333333',
+      bootId: '44444444-4444-4444-8444-444444444444',
+      bootCounter: '1',
+      sequence: '1',
+      recordedAt: '2026-08-21T09:00:00.000Z',
+      activityObserved: true,
+    }
+    const s01Heartbeat = await requestJson(baseUrl, '/api/iot/heartbeats', {
+      method: 'POST',
+      headers: s01Headers,
+      body: hbBody,
+    })
+    const s02Heartbeat = await requestJson(baseUrl, '/api/iot/heartbeats', {
+      method: 'POST',
+      headers: s02Headers,
+      body: hbBody,
+    })
+
+    assert.equal(s01Heartbeat.response.status, 200)
+    assert.equal(s02Heartbeat.response.status, 200)
+  })
+})
