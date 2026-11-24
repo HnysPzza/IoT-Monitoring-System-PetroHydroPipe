@@ -1304,6 +1304,173 @@ test('migration 061 rejects S-05 output outside schedule, during breaks, on rest
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 61)
 })
 
+test('delayed S-05 output pulses recorded while S-03 was online and running are accepted even if S-03 later faults or goes offline before upload', async (t) => {
+  const controlDb = await database(t)
+  const delayedDb = await database(t)
+
+  async function sendS03Heartbeat(db, bootId, seq, recordedAt) {
+    return (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_heartbeat($1, sensor.id, sensor.machine_id, 1, $2, $3, $4::timestamptz, true) result
+      where sensor.sensor_code = 'S-03'
+    `, [randomUUID(), bootId, seq, recordedAt])).rows[0]
+  }
+
+  async function ingestEvent(db, sensorCode, eventType, recordedAt, eventId = randomUUID()) {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_sensor_event(
+        $1::uuid,
+        sensor.id,
+        sensor.machine_id,
+        $2::text,
+        $3::jsonb,
+        $4::timestamptz
+      ) result
+      where sensor.sensor_code = $5
+    `, [eventId, eventType, JSON.stringify({ signal, metadata: {} }), recordedAt, sensorCode])).rows[0]
+  }
+
+  async function acceptedCount(db) {
+    const { rows } = await db.query(`
+      select count(*)::int as count
+      from public.sensor_events event
+      join public.sensors sensor on sensor.id = event.sensor_id
+      where sensor.sensor_code = 'S-05'
+        and event.event_type = 'pulse'
+        and event.output_accepted is true
+    `)
+    return rows[0].count
+  }
+
+  const cutTimes = [
+    '2026-08-21T09:00:05+08:00',
+    '2026-08-21T09:00:10+08:00',
+    '2026-08-21T09:00:15+08:00',
+    '2026-08-21T09:00:20+08:00',
+  ]
+
+  // 1. Control DB: S-03 online + running at 09:00:00, four working-time cuts delivered immediately
+  const controlBootId = randomUUID()
+  await sendS03Heartbeat(controlDb, controlBootId, 1, '2026-08-21T09:00:00+08:00')
+  await ingestEvent(controlDb, 'S-03', 'pulse', '2026-08-21T09:00:00+08:00')
+  for (const cutAt of cutTimes) {
+    const res = await ingestEvent(controlDb, 'S-05', 'pulse', cutAt)
+    assert.equal(res.event_value.metadata.outputAccepted, true)
+    assert.equal(res.event_value.metadata.outputRejectionReason, null)
+  }
+  assert.equal(await acceptedCount(controlDb), 4)
+
+  // 2. Delayed DB Part A: S-03 is online + running at 09:00:00, then faults (Downtime) at 09:01:00 before S-05 uploads 09:00:05 & 09:00:10
+  const delayedBootId = randomUUID()
+  await sendS03Heartbeat(delayedDb, delayedBootId, 1, '2026-08-21T09:00:00+08:00')
+  await ingestEvent(delayedDb, 'S-03', 'pulse', '2026-08-21T09:00:00+08:00')
+  const faultAt0901 = await ingestEvent(delayedDb, 'S-03', 'fault', '2026-08-21T09:01:00+08:00')
+  assert.equal(faultAt0901.new_machine_status, 'Downtime')
+  assert.equal(faultAt0901.downtime_action, 'created')
+
+  const cut1Id = randomUUID()
+  const delayedCut1 = await ingestEvent(delayedDb, 'S-05', 'pulse', cutTimes[0], cut1Id)
+  assert.equal(delayedCut1.state_applied, true)
+  assert.equal(delayedCut1.event_value.metadata.outputAccepted, true)
+  assert.equal(delayedCut1.event_value.metadata.outputRejectionReason, null)
+
+  // Exact duplicate retry of delayedCut1 while machine is in Downtime must remain idempotent and accepted
+  const retryCut1 = await ingestEvent(delayedDb, 'S-05', 'pulse', cutTimes[0], cut1Id)
+  assert.equal(retryCut1.duplicate, true)
+  assert.equal(retryCut1.event_value.metadata.outputAccepted, true)
+
+  // Rapid 50ms bounce after delayedCut1 still rejects as server_debounce
+  const delayedBounce = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:00:05.050+08:00')
+  assert.equal(delayedBounce.event_value.metadata.outputAccepted, false)
+  assert.equal(delayedBounce.event_value.metadata.outputRejectionReason, 'server_debounce')
+
+  const delayedCut2 = await ingestEvent(delayedDb, 'S-05', 'pulse', cutTimes[1])
+  assert.equal(delayedCut2.state_applied, true)
+  assert.equal(delayedCut2.event_value.metadata.outputAccepted, true)
+  assert.equal(delayedCut2.event_value.metadata.outputRejectionReason, null)
+
+  // A cut recorded at or after 09:01:00 (during actual downtime) must still be rejected as machine_downtime,
+  // and machine must remain in Downtime with its 09:01:00 open downtime untouched
+  const cutDuringOpenDowntime = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:01:05+08:00')
+  assert.equal(cutDuringOpenDowntime.state_applied, false)
+  assert.equal(cutDuringOpenDowntime.event_value.metadata.outputAccepted, false)
+  assert.equal(cutDuringOpenDowntime.event_value.metadata.outputRejectionReason, 'machine_downtime')
+  assert.equal((await delayedDb.query("select status from public.machines where machine_code = 'M-01'")).rows[0].status, 'Downtime')
+  assert.equal((await delayedDb.query("select count(*)::int as c from public.downtime_events where status = 'Open'")).rows[0].c, 1)
+
+  // 3. Delayed DB Part B: S-03 recovers at 09:01:30, then goes offline at 09:02:10 before S-05 uploads 09:00:15 & 09:00:20
+  await ingestEvent(delayedDb, 'S-03', 'recovered', '2026-08-21T09:01:30+08:00')
+  const s03Id = (await delayedDb.query("select id from public.sensors where sensor_code = 'S-03'")).rows[0].id
+  await delayedDb.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'offline',
+      last_heartbeat_received_at = clock_timestamp() - interval '60 seconds',
+      last_activity_received_at = clock_timestamp() - interval '60 seconds',
+      last_evaluated_at = '2026-08-21T09:02:10+08:00'::timestamptz
+    where sensor_id = $1
+  `, [s03Id])
+
+  const delayedCut3 = await ingestEvent(delayedDb, 'S-05', 'pulse', cutTimes[2])
+  assert.equal(delayedCut3.state_applied, true)
+  assert.equal(delayedCut3.event_value.metadata.outputAccepted, true)
+  assert.equal(delayedCut3.event_value.metadata.outputRejectionReason, null)
+
+  const delayedCut4 = await ingestEvent(delayedDb, 'S-05', 'pulse', cutTimes[3])
+  assert.equal(delayedCut4.state_applied, true)
+  assert.equal(delayedCut4.event_value.metadata.outputAccepted, true)
+  assert.equal(delayedCut4.event_value.metadata.outputRejectionReason, null)
+
+  // A cut recorded during the closed 09:01:00..09:01:30 downtime window must still be rejected as machine_downtime
+  const cutDuringClosedDowntime = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:01:15+08:00')
+  assert.equal(cutDuringClosedDowntime.state_applied, false)
+  assert.equal(cutDuringClosedDowntime.event_value.metadata.outputAccepted, false)
+  assert.equal(cutDuringClosedDowntime.event_value.metadata.outputRejectionReason, 'machine_downtime')
+
+  // A cut recorded at 09:02:20 (after S-03 went offline and >30s after S-03's last contact at 09:01:30) must be rejected as machine_offline
+  const cutWhileActuallyOffline = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:02:20+08:00')
+  assert.equal(cutWhileActuallyOffline.state_applied, false)
+  assert.equal(cutWhileActuallyOffline.event_value.metadata.outputAccepted, false)
+  assert.equal(cutWhileActuallyOffline.event_value.metadata.outputRejectionReason, 'machine_offline')
+
+  // Immediate delivery and delayed delivery of the 4 valid working-time cuts produce the exact same accepted production count
+  assert.equal(await acceptedCount(delayedDb), await acceptedCount(controlDb))
+
+  // 4. S-03 reconnects at 09:05:00..09:05:40 (online for >30s via 10s heartbeats without new S-03 events), then goes offline at 09:06:00:
+  //    - a cut recorded at 09:03:00 (during the 09:02:10..09:05:10 offline gap) uploaded AFTER reconnect is still rejected as machine_offline
+  //    - a cut recorded at 09:05:12 (while S-03 was online, >30s before S-03's final 09:05:50 heartbeat) uploaded AFTER S-03 goes offline at 09:06:00 is still accepted
+  await sendS03Heartbeat(delayedDb, delayedBootId, 2, '2026-08-21T09:05:00+08:00')
+  const reconnected = await sendS03Heartbeat(delayedDb, delayedBootId, 3, '2026-08-21T09:05:10+08:00')
+  assert.equal(reconnected.connectivity_state, 'online')
+  const cutFromPriorOfflineGap = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:03:00+08:00')
+  assert.equal(cutFromPriorOfflineGap.event_value.metadata.outputAccepted, false)
+  assert.equal(cutFromPriorOfflineGap.event_value.metadata.outputRejectionReason, 'machine_offline')
+
+  // A cut recorded at 09:01:45 (after S-03 recovered at 09:01:30 and before S-03 went offline at 09:02:10) uploaded after reconnect is accepted
+  const cutAfterEventBeforeOffline = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:01:45+08:00')
+  assert.equal(cutAfterEventBeforeOffline.event_value.metadata.outputAccepted, true)
+  assert.equal(cutAfterEventBeforeOffline.event_value.metadata.outputRejectionReason, null)
+
+  for (let seq = 4, sec = 20; sec <= 50; seq++, sec += 10) {
+    await sendS03Heartbeat(delayedDb, delayedBootId, seq, `2026-08-21T09:05:${sec}+08:00`)
+  }
+  await delayedDb.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'offline',
+      ordered_recovery_heartbeats = 0,
+      last_heartbeat_received_at = clock_timestamp() - interval '60 seconds',
+      last_activity_received_at = clock_timestamp() - interval '60 seconds',
+      last_evaluated_at = '2026-08-21T09:06:00+08:00'::timestamptz
+    where sensor_id = $1
+  `, [s03Id])
+  const cutFromEarlierInOnlineSession = await ingestEvent(delayedDb, 'S-05', 'pulse', '2026-08-21T09:05:12+08:00')
+  assert.equal(cutFromEarlierInOnlineSession.event_value.metadata.outputAccepted, true)
+  assert.equal(cutFromEarlierInOnlineSession.event_value.metadata.outputRejectionReason, null)
+})
+
 test('S-01, S-02, S-04 preserve working-hour faults across breaks/after-hours idle, clear off-schedule faults with unrelated S-03 downtime, and recover cleanly in observe/disabled modes', async (t) => {
   const db = await database(t)
 
@@ -1640,6 +1807,202 @@ test('migration 060 standalone shares confirmed-pulse and unrelated S-03 downtim
   await db.exec(migration060)
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 60)
 })
+
+test('Finding #8: lost-ACK retry with drifted metadata rejects 22023 while frozen capture metadata stays idempotent', async (t) => {
+  const db = await database(t)
+  const eventId = randomUUID()
+  const recordedAt = '2026-08-21T09:05:00+08:00'
+
+  const sendGrouped = (rssi) => db.query(`
+    select result.*
+    from public.sensors sensor
+    cross join lateral public.ingest_iot_grouped_sensor_event(
+      $1::uuid,
+      sensor.id,
+      sensor.machine_id,
+      'fault',
+      $2::jsonb,
+      $3::timestamptz
+    ) result
+    where sensor.sensor_code = 'S-01'
+  `, [
+    eventId,
+    JSON.stringify({ signal: 'fault', metadata: { rssi, coilState: 'ABSENT', detectionState: 'FAULT' } }),
+    recordedAt,
+  ])
+
+  const first = (await sendGrouped(-60)).rows[0]
+  assert.equal(first.duplicate, false)
+  assert.equal(first.state_applied, true)
+
+  // Unfrozen metadata rebuild after RSSI drift fails idempotency check with 22023.
+  await assert.rejects(
+    sendGrouped(-64),
+    (err) => err.code === '22023',
+  )
+
+  // Frozen capture-time metadata returns idempotent duplicate without second state mutation.
+  const frozenRetry = (await sendGrouped(-60)).rows[0]
+  assert.equal(frozenRetry.duplicate, true)
+  assert.equal(frozenRetry.state_applied, false)
+})
+
+test('Finding #9: offline recovery requires two heartbeats within 30s and resets counter after stale gap', async (t) => {
+  const db = await database(t)
+  const bootId = randomUUID()
+  const sensor = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+
+  const sendHb = (seq, recordedAt) => db.query(`
+    select * from public.ingest_iot_heartbeat($1, $2, $3, 1, $4, $5, $6::timestamptz, false)
+  `, [randomUUID(), sensor.id, sensor.machine_id, bootId, seq, recordedAt])
+
+  // Seed same-boot offline sensor (sequence 5) before recovery attempt.
+  await sendHb(5, '2026-08-21T09:00:00+08:00')
+  await db.query(`
+    update public.sensor_watchdog_state
+    set connectivity_state = 'offline',
+        ordered_recovery_heartbeats = 0,
+        last_heartbeat_received_at = clock_timestamp() - interval '120 seconds'
+    where sensor_id = $1
+  `, [sensor.id])
+
+  // Recovery heartbeat #1 at T0 moves count to 1 while remaining offline.
+  const hb1 = (await sendHb(6, '2026-08-21T09:02:00+08:00')).rows[0]
+  assert.equal(hb1.connectivity_state, 'offline')
+
+  // Simulate 120s gap before next heartbeat arrives (stale recovery streak).
+  await db.query(`
+    update public.sensor_watchdog_state
+    set last_heartbeat_received_at = clock_timestamp() - interval '120 seconds'
+    where sensor_id = $1
+  `, [sensor.id])
+
+  // Recovery heartbeat #2 arriving 120s later must reset streak to 1 and stay offline.
+  const hb2StaleGap = (await sendHb(7, '2026-08-21T09:04:00+08:00')).rows[0]
+  assert.equal(hb2StaleGap.connectivity_state, 'offline')
+
+  // Consecutive heartbeat #3 arriving 10s after #2 completes 2-in-30s recovery -> online.
+  const hb3Within30s = (await sendHb(8, '2026-08-21T09:04:10+08:00')).rows[0]
+  assert.equal(hb3Within30s.connectivity_state, 'online')
+})
+
+test('Finding #10: delayed heartbeat stamps last_activity_received_at from p_recorded_at (clamped +5s skew), not clock_timestamp()', async (t) => {
+  const db = await database(t)
+  const bootId = randomUUID()
+  const sensor = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+
+  // Send delayed heartbeat whose device activity happened 90s before server receipt.
+  const delayedAtRes = await db.query(
+    "select date_trunc('milliseconds', clock_timestamp() - interval '90 seconds') as recorded_at",
+  )
+  const delayedRecordedAt = new Date(delayedAtRes.rows[0].recorded_at)
+
+  const hb = (await db.query(`
+    select * from public.ingest_iot_heartbeat($1, $2, $3, 1, $4, 1, $5::timestamptz, true)
+  `, [randomUUID(), sensor.id, sensor.machine_id, bootId, delayedRecordedAt.toISOString()])).rows[0]
+
+  const state = (await db.query(
+    'select last_activity_received_at, absence_baseline_at from public.sensor_watchdog_state where sensor_id = $1',
+    [sensor.id],
+  )).rows[0]
+
+  const recordedMs = delayedRecordedAt.getTime()
+  const storedActivityMs = new Date(state.last_activity_received_at).getTime()
+  const serverReceivedMs = new Date(hb.received_at).getTime()
+
+  assert.ok(
+    Math.abs(storedActivityMs - recordedMs) <= 50,
+    `expected last_activity_received_at (${storedActivityMs}) to match p_recorded_at (${recordedMs}), not server received_at (${serverReceivedMs})`,
+  )
+  assert.ok(
+    storedActivityMs >= new Date(state.absence_baseline_at).getTime(),
+    'activity heartbeat on boot/reconnect must keep last_activity_received_at >= absence_baseline_at',
+  )
+  assert.ok(
+    serverReceivedMs - storedActivityMs >= 85000,
+    'server receipt time must stay ~90s after delayed activity timestamp',
+  )
+
+  // Future device clock skew (+120s) is clamped to v_received_at + 5s.
+  const skewed = (await db.query(`
+    select * from public.ingest_iot_heartbeat(
+      $1, $2, $3, 1, $4, 2, clock_timestamp() + interval '120 seconds', true
+    )
+  `, [randomUUID(), sensor.id, sensor.machine_id, bootId])).rows[0]
+  const skewedState = (await db.query(
+    'select last_activity_received_at from public.sensor_watchdog_state where sensor_id = $1',
+    [sensor.id],
+  )).rows[0]
+  assert.ok(
+    new Date(skewedState.last_activity_received_at).getTime() <= new Date(skewed.received_at).getTime() + 5500,
+    'future-skewed p_recorded_at must clamp at v_received_at + 5s',
+  )
+})
+
+test('S-05 rejects pre-first-boot cuts, clock-lagged S-03 recovery unblocks future S-05 cuts, and pre-baseline heartbeat does not recover downtime', async (t) => {
+  const db = await database(t)
+  const bootId = randomUUID()
+  const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+
+  const sendS03Hb = (seq, recordedAt, activityObserved = true) => db.query(
+    'select * from public.ingest_iot_heartbeat($1, $2, $3, 1, $4, $5, $6::timestamptz, $7)',
+    [randomUUID(), s03.id, s03.machine_id, bootId, seq, recordedAt, activityObserved],
+  )
+  const sendS05Cut = async (recordedAt) => (await db.query(`
+    select result.*
+    from public.sensors sensor
+    cross join lateral public.ingest_iot_sensor_event(
+      $1::uuid, sensor.id, sensor.machine_id, 'pulse',
+      '{"signal":"active","metadata":{}}'::jsonb, $2::timestamptz
+    ) result
+    where sensor.sensor_code = 'S-05'
+  `, [randomUUID(), recordedAt])).rows[0]
+
+  // 1. S-03 first boots at 09:00:00 -> delayed S-05 cut from 08:30:00 (while S-03 was unknown/unbooted) must reject as machine_offline.
+  await sendS03Hb(1, '2026-08-21T09:00:00+08:00', true)
+  const preBootCut = await sendS05Cut('2026-08-21T08:30:00+08:00')
+  assert.equal(preBootCut.event_value.metadata.outputAccepted, false)
+  assert.equal(preBootCut.event_value.metadata.outputRejectionReason, 'machine_offline')
+
+  // 2. Watchdog marks S-03 offline at server 09:05:05, then S-03 recovers with 15s clock lag (09:04:50, 09:05:00) -> S-05 cut at 09:05:20 must accept.
+  await db.query(`
+    update public.sensor_watchdog_state
+    set last_heartbeat_received_at = '2026-08-21T09:04:00+08:00'::timestamptz
+    where sensor_id = $1
+  `, [s03.id])
+  const offlineEval = (await db.query(
+    "select * from public.evaluate_sensor_watchdog($1, '2026-08-21T09:05:05+08:00'::timestamptz, 'enforce', 30)",
+    [s03.id],
+  )).rows[0]
+  assert.equal(offlineEval.connectivity_state, 'offline')
+
+  await sendS03Hb(2, '2026-08-21T09:04:50+08:00', true)
+  const recoveredHb = (await sendS03Hb(3, '2026-08-21T09:05:00+08:00', true)).rows[0]
+  assert.equal(recoveredHb.connectivity_state, 'online')
+
+  const postRecoveryCut = await sendS05Cut('2026-08-21T09:05:20+08:00')
+  assert.equal(postRecoveryCut.event_value.metadata.outputAccepted, true)
+  assert.equal(postRecoveryCut.event_value.metadata.outputRejectionReason, null)
+
+  // 3. While S-03 is in absence_watchdog downtime (baseline 09:10:00), a delayed pre-baseline heartbeat (09:09:30) must not advance recovery.
+  await db.query(`
+    update public.sensor_watchdog_state
+    set detection_state = 'downtime',
+        absence_baseline_at = '2026-08-21T09:10:00+08:00'::timestamptz,
+        last_activity_received_at = '2026-08-21T09:10:00+08:00'::timestamptz,
+        recovery_started_at = null,
+        recovery_observation_count = 0
+    where sensor_id = $1
+  `, [s03.id])
+  await sendS03Hb(4, '2026-08-21T09:09:30+08:00', true)
+  const afterStaleHb = (await db.query(
+    'select detection_state, recovery_observation_count from public.sensor_watchdog_state where sensor_id = $1',
+    [s03.id],
+  )).rows[0]
+  assert.equal(afterStaleHb.detection_state, 'downtime')
+  assert.equal(afterStaleHb.recovery_observation_count, 0)
+})
+
 
 
 

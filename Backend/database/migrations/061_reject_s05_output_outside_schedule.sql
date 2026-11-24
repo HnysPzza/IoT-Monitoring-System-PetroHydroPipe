@@ -327,54 +327,127 @@ begin
       where watchdog.sensor_id = v_s03.id;
     end if;
 
-    if v_machine.status = 'Downtime' or exists (
+    if exists (
       select 1
       from public.downtime_events downtime
       join public.sensors sensor on sensor.id = downtime.sensor_id
       where downtime.machine_id = p_machine_id
         and sensor.sensor_code = 'S-03'
-        and (
-          downtime.status = 'Open'
-          or (
-            downtime.started_at <= p_recorded_at
-            and (downtime.ended_at is null or downtime.ended_at > p_recorded_at)
-          )
-        )
+        and downtime.started_at <= p_recorded_at
+        and (downtime.ended_at is null or downtime.ended_at > p_recorded_at)
+    ) or (
+      v_machine.status = 'Downtime'
+      and not exists (
+        select 1
+        from public.downtime_events downtime
+        where downtime.machine_id = p_machine_id
+          and downtime.status = 'Open'
+          and downtime.started_at > p_recorded_at
+      )
     ) then
       v_output_rejection_reason := 'machine_downtime';
     elsif not public.is_machine_output_schedule_eligible(p_machine_id, p_recorded_at) then
       v_output_rejection_reason := 'outside_schedule';
     elsif v_s03.id is null
+      or exists (
+        select 1
+        from (
+          select transition.to_state
+          from public.sensor_watchdog_transitions transition
+          where transition.sensor_id = v_s03.id
+            and transition.to_state like 'connectivity:%'
+            and transition.evaluated_at <= p_recorded_at
+          order by transition.evaluated_at desc, transition.created_at desc
+          limit 1
+        ) latest_conn
+        where latest_conn.to_state <> 'connectivity:online'
+      )
       or (
-        v_s03_watchdog.connectivity_state = 'offline'
-        and (
-          v_s03_watchdog.last_evaluated_at is null
-          or (
-            (v_s03.last_applied_recorded_at is null or v_s03.updated_at <= v_s03_watchdog.last_evaluated_at)
-            and (v_s03_watchdog.last_activity_received_at is null or v_s03_watchdog.last_activity_received_at <= v_s03_watchdog.last_evaluated_at)
-          )
+        exists (
+          select 1
+          from public.sensor_watchdog_transitions transition
+          where transition.sensor_id = v_s03.id
+            and transition.to_state like 'connectivity:%'
+        )
+        and not exists (
+          select 1
+          from public.sensor_watchdog_transitions transition
+          where transition.sensor_id = v_s03.id
+            and transition.to_state like 'connectivity:%'
+            and transition.evaluated_at <= p_recorded_at
+        )
+        and not exists (
+          select 1
+          from public.sensor_events s03_event
+          where s03_event.sensor_id = v_s03.id
+            and s03_event.stale is not true
+            and s03_event.event_type in ('pulse', 'recovered', 'idle')
+            and s03_event.recorded_at >= p_recorded_at - interval '30 seconds'
+            and s03_event.recorded_at <= p_recorded_at + interval '30 seconds'
         )
       )
+      or (
+        v_s03_watchdog.connectivity_state = 'offline'
+        and v_s03_watchdog.last_evaluated_at is not null
+        and p_recorded_at >= v_s03_watchdog.last_evaluated_at
+        and (v_s03_watchdog.last_device_recorded_at is null or v_s03_watchdog.last_device_recorded_at <= v_s03_watchdog.last_evaluated_at)
+        and (v_s03.last_applied_recorded_at is null or v_s03.last_applied_recorded_at <= v_s03_watchdog.last_evaluated_at)
+      )
       or not (
-        (v_s03_watchdog.last_heartbeat_received_at is not null
-          and v_s03_watchdog.last_heartbeat_received_at >= clock_timestamp() - interval '30 seconds')
-        or (v_s03_watchdog.last_activity_received_at is not null
-          and v_s03_watchdog.last_activity_received_at >= clock_timestamp() - interval '30 seconds'
-          and (
-            v_s03.last_applied_recorded_at is null
-            or (
-              p_recorded_at >= v_s03.last_applied_recorded_at - interval '5 minutes'
-              and p_recorded_at - v_s03.last_applied_recorded_at <= interval '5 minutes'
+        (
+          v_s03_watchdog.last_device_recorded_at is not null
+          and p_recorded_at <= v_s03_watchdog.last_device_recorded_at + interval '30 seconds'
+        )
+        or exists (
+          select 1
+          from public.sensor_events s03_event
+          where s03_event.sensor_id = v_s03.id
+            and s03_event.stale is not true
+            and s03_event.event_type in ('pulse', 'recovered', 'idle')
+            and s03_event.recorded_at >= p_recorded_at - interval '30 seconds'
+            and s03_event.recorded_at <= p_recorded_at + interval '30 seconds'
+        )
+        or (
+          not (
+            v_s03_watchdog.connectivity_state = 'offline'
+            and (
+              v_s03_watchdog.last_evaluated_at is null
+              or (
+                (
+                  v_s03.last_applied_recorded_at is null
+                  or v_s03.updated_at <= v_s03_watchdog.last_evaluated_at
+                  or v_s03.last_applied_recorded_at <= v_s03_watchdog.last_evaluated_at
+                )
+                and (
+                  v_s03_watchdog.last_activity_received_at is null
+                  or v_s03_watchdog.last_activity_received_at <= v_s03_watchdog.last_evaluated_at
+                  or v_s03_watchdog.last_activity_received_at < clock_timestamp() - interval '30 seconds'
+                )
+              )
             )
-          ))
-        or (v_s03.last_applied_recorded_at is not null
-          and v_s03.updated_at >= clock_timestamp() - interval '30 seconds'
-          and p_recorded_at >= v_s03.last_applied_recorded_at - interval '5 minutes'
-          and p_recorded_at - v_s03.last_applied_recorded_at <= interval '5 minutes')
-        or (v_s03_watchdog.connectivity_state = 'online'
-          and v_s03_watchdog.last_heartbeat_received_at is null
-          and v_s03_watchdog.last_activity_received_at is null
-          and v_s03.last_applied_recorded_at is null)
+          )
+          and (
+            (v_s03_watchdog.last_heartbeat_received_at is not null
+              and v_s03_watchdog.last_heartbeat_received_at >= clock_timestamp() - interval '30 seconds')
+            or (v_s03_watchdog.last_activity_received_at is not null
+              and v_s03_watchdog.last_activity_received_at >= clock_timestamp() - interval '30 seconds'
+              and (
+                v_s03.last_applied_recorded_at is null
+                or (
+                  p_recorded_at >= v_s03.last_applied_recorded_at - interval '5 minutes'
+                  and p_recorded_at - v_s03.last_applied_recorded_at <= interval '5 minutes'
+                )
+              ))
+            or (v_s03.last_applied_recorded_at is not null
+              and v_s03.updated_at >= clock_timestamp() - interval '30 seconds'
+              and p_recorded_at >= v_s03.last_applied_recorded_at - interval '5 minutes'
+              and p_recorded_at - v_s03.last_applied_recorded_at <= interval '5 minutes')
+            or (v_s03_watchdog.connectivity_state = 'online'
+              and v_s03_watchdog.last_heartbeat_received_at is null
+              and v_s03_watchdog.last_activity_received_at is null
+              and v_s03.last_applied_recorded_at is null)
+          )
+        )
       ) then
       v_output_rejection_reason := 'machine_offline';
     else
@@ -628,11 +701,238 @@ begin
 end;
 $$;
 
+create or replace function public.ingest_iot_heartbeat(
+  p_heartbeat_id uuid,
+  p_sensor_id uuid,
+  p_machine_id uuid,
+  p_boot_counter bigint,
+  p_boot_id uuid,
+  p_sequence bigint,
+  p_recorded_at timestamptz,
+  p_activity_observed boolean
+)
+returns table (
+  heartbeat_id uuid,
+  duplicate boolean,
+  stale boolean,
+  state_applied boolean,
+  received_at timestamptz,
+  connectivity_state text
+)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_sensor public.sensors%rowtype;
+  v_state public.sensor_watchdog_state%rowtype;
+  v_received_at timestamptz := clock_timestamp();
+  v_payload_hash text;
+  v_duplicate boolean := false;
+  v_stale boolean := false;
+  v_applied boolean := false;
+  v_connectivity text;
+  v_recovery_count integer;
+begin
+  if p_heartbeat_id is null or p_boot_id is null or p_recorded_at is null or p_activity_observed is null
+    or p_boot_counter is null or p_boot_counter < 1 or p_sequence is null or p_sequence < 1 then
+    raise exception using errcode = '22023', message = 'Heartbeat fields are invalid.';
+  end if;
+  if p_recorded_at < '2026-05-01T00:00:00+08:00'::timestamptz then
+    raise exception using errcode = '22023', message = 'Heartbeat timestamp is too far in the past.';
+  end if;
+  if p_recorded_at > v_received_at + interval '5 minutes' then
+    raise exception using errcode = '22023', message = 'Heartbeat timestamp is too far in the future.';
+  end if;
+
+  select sensor.* into v_sensor
+  from public.sensors sensor
+  where sensor.id = p_sensor_id
+  for update;
+  if not found or v_sensor.machine_id <> p_machine_id then
+    raise exception using errcode = 'P0002', message = 'Heartbeat sensor assignment was not found.';
+  end if;
+
+  select state.* into v_state
+  from public.sensor_watchdog_state state
+  where state.sensor_id = p_sensor_id
+  for update;
+  if not found then
+    raise exception using errcode = '55000', message = 'Heartbeat runtime state is not configured.';
+  end if;
+
+  v_payload_hash := encode(extensions.digest(convert_to(jsonb_build_object(
+    'heartbeatId', p_heartbeat_id::text,
+    'bootCounter', p_boot_counter::text,
+    'bootId', p_boot_id::text,
+    'sequence', p_sequence::text,
+    'recordedAt', p_recorded_at,
+    'activityObserved', p_activity_observed
+  )::text, 'UTF8'), 'sha256'), 'hex');
+
+  if v_state.boot_counter is not null and p_boot_counter < v_state.boot_counter then
+    v_stale := true;
+  elsif v_state.boot_counter = p_boot_counter then
+    if v_state.boot_id <> p_boot_id then
+      raise exception using errcode = '23505', message = 'Boot identity conflicts with the current boot counter.';
+    elsif p_sequence < v_state.last_sequence then
+      v_stale := true;
+    elsif p_sequence = v_state.last_sequence then
+      if v_state.last_heartbeat_id = p_heartbeat_id
+        and v_state.last_heartbeat_payload_hash = v_payload_hash then
+        v_duplicate := true;
+      else
+        raise exception using errcode = '23505', message = 'Heartbeat sequence was reused with different content.';
+      end if;
+    end if;
+  end if;
+
+  if not v_stale and not v_duplicate then
+    if v_state.connectivity_state = 'offline' and v_state.boot_counter = p_boot_counter then
+      if v_state.ordered_recovery_heartbeats > 0
+        and v_state.last_heartbeat_received_at >= v_received_at - interval '30 seconds'
+        and (
+          v_state.last_device_recorded_at is null
+          or (
+            p_recorded_at >= v_state.last_device_recorded_at
+            and p_recorded_at <= v_state.last_device_recorded_at + interval '30 seconds'
+          )
+        ) then
+        v_recovery_count := least(2, v_state.ordered_recovery_heartbeats + 1);
+      else
+        v_recovery_count := 1;
+      end if;
+      v_connectivity := case when v_recovery_count >= 2 then 'online' else 'offline' end;
+    else
+      v_recovery_count := 0;
+      v_connectivity := 'online';
+    end if;
+
+    if v_state.connectivity_state = 'offline'
+      and v_state.ordered_recovery_heartbeats = 0
+      and not exists (
+        select 1
+        from (
+          select transition.to_state
+          from public.sensor_watchdog_transitions transition
+          where transition.sensor_id = p_sensor_id
+            and transition.to_state like 'connectivity:%'
+          order by transition.evaluated_at desc, transition.created_at desc
+          limit 1
+        ) prev_conn
+        where prev_conn.to_state = 'connectivity:offline'
+      ) then
+      insert into public.sensor_watchdog_transitions (
+        sensor_id, machine_id, mode, from_state, to_state, reason, evaluated_at, settings_version
+      ) values (
+        p_sensor_id,
+        p_machine_id,
+        'enforce',
+        'connectivity:online',
+        'connectivity:offline',
+        'heartbeat_stale',
+        least(
+          p_recorded_at - interval '1 millisecond',
+          case
+            when v_state.last_evaluated_at is not null
+              and v_state.last_evaluated_at >= greatest(
+                coalesce(v_state.last_device_recorded_at, '-infinity'::timestamptz),
+                coalesce(v_sensor.last_applied_recorded_at, '-infinity'::timestamptz)
+              )
+              then v_state.last_evaluated_at
+            else coalesce(
+              nullif(
+                greatest(
+                  coalesce(v_state.last_device_recorded_at, '-infinity'::timestamptz),
+                  coalesce(v_sensor.last_applied_recorded_at, '-infinity'::timestamptz)
+                ),
+                '-infinity'::timestamptz
+              ) + interval '30 seconds',
+              v_state.last_evaluated_at,
+              p_recorded_at - interval '1 millisecond'
+            )
+          end
+        ),
+        v_state.settings_version
+      );
+    end if;
+
+    if v_state.connectivity_state is distinct from v_connectivity and v_connectivity = 'online' then
+      insert into public.sensor_watchdog_transitions (
+        sensor_id, machine_id, mode, from_state, to_state, reason, evaluated_at, settings_version
+      ) values (
+        p_sensor_id,
+        p_machine_id,
+        'enforce',
+        'connectivity:' || coalesce(v_state.connectivity_state, 'unknown'),
+        'connectivity:online',
+        'heartbeat_received',
+        greatest(
+          p_recorded_at,
+          coalesce((
+            select max(transition.evaluated_at) + interval '1 millisecond'
+            from public.sensor_watchdog_transitions transition
+            where transition.sensor_id = p_sensor_id
+              and transition.to_state = 'connectivity:offline'
+              and transition.evaluated_at <= p_recorded_at + interval '5 minutes'
+          ), p_recorded_at)
+        ),
+        v_state.settings_version
+      );
+    end if;
+
+    update public.sensor_watchdog_state
+    set machine_id = p_machine_id,
+        boot_counter = p_boot_counter,
+        boot_id = p_boot_id,
+        last_sequence = p_sequence,
+        last_heartbeat_id = p_heartbeat_id,
+        last_heartbeat_payload_hash = v_payload_hash,
+        last_heartbeat_received_at = v_received_at,
+        last_device_recorded_at = p_recorded_at,
+        last_activity_received_at = case
+          when p_activity_observed then greatest(
+            case
+              when v_state.detection_state in ('downtime', 'recovering')
+                and last_activity_received_at is not null
+                and (v_state.absence_baseline_at is null or p_recorded_at >= v_state.absence_baseline_at)
+                then last_activity_received_at + interval '1 millisecond'
+              else coalesce(last_activity_received_at, '-infinity'::timestamptz)
+            end,
+            least(p_recorded_at, v_received_at + interval '5 seconds')
+          )
+          else last_activity_received_at end,
+        ordered_recovery_heartbeats = v_recovery_count,
+        connectivity_state = v_connectivity,
+        absence_baseline_at = case
+          when v_sensor.fault_source = 'absence_watchdog'
+            or v_state.detection_state in ('downtime', 'recovering') then absence_baseline_at
+          when v_state.boot_counter is distinct from p_boot_counter
+            or (v_state.connectivity_state <> 'online' and v_connectivity = 'online')
+            then case
+              when p_activity_observed then least(p_recorded_at, v_received_at)
+              else v_received_at
+            end
+          else absence_baseline_at end,
+        recovery_started_at = case when not p_activity_observed then null else recovery_started_at end,
+        updated_at = v_received_at
+    where sensor_id = p_sensor_id;
+    v_applied := true;
+  else
+    v_connectivity := v_state.connectivity_state;
+  end if;
+
+  return query select p_heartbeat_id, v_duplicate, v_stale, v_applied, v_received_at, v_connectivity;
+end;
+$$;
+
 revoke all on function
+  public.ingest_iot_heartbeat(uuid,uuid,uuid,bigint,uuid,bigint,timestamptz,boolean),
   public.get_backend_readiness(),
   public.get_backend_readiness_v60()
   from public, anon, authenticated;
 grant execute on function
+  public.ingest_iot_heartbeat(uuid,uuid,uuid,bigint,uuid,bigint,timestamptz,boolean),
   public.get_backend_readiness(),
   public.get_backend_readiness_v60()
   to service_role;
