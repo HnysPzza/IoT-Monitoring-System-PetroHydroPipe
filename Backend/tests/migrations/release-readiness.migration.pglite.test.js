@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 61
+const releaseSchemaVersion = 62
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -1302,6 +1302,13 @@ test('migration 061 rejects S-05 output outside schedule, during breaks, on rest
   )
   await db.exec(migration061)
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 61)
+
+  const migration062 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '062_preserve_s05_same_boot_isp_outage_cuts.sql'),
+    'utf8',
+  )
+  await db.exec(migration062)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 62)
 })
 
 test('delayed S-05 output pulses recorded while S-03 was online and running are accepted even if S-03 later faults or goes offline before upload', async (t) => {
@@ -2001,6 +2008,66 @@ test('S-05 rejects pre-first-boot cuts, clock-lagged S-03 recovery unblocks futu
   )).rows[0]
   assert.equal(afterStaleHb.detection_state, 'downtime')
   assert.equal(afterStaleHb.recovery_observation_count, 0)
+})
+
+test('migration 062 preserves S-05 cuts across same-boot S-03 ISP outages and 2-heartbeat recovery while rejecting cuts across S-03 reboot or stationary gaps', async (t) => {
+  const db = await database(t)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 62)
+
+  const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+  const boot1 = randomUUID()
+  const boot2 = randomUUID()
+
+  const sendS03Hb = (bootCounter, bootId, seq, recordedAt, activityObserved = true) => db.query(
+    'select * from public.ingest_iot_heartbeat($1, $2, $3, $4, $5, $6, $7::timestamptz, $8)',
+    [randomUUID(), s03.id, s03.machine_id, bootCounter, bootId, seq, recordedAt, activityObserved],
+  )
+  const sendEvent = async (sensorCode, eventType, recordedAt) => {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_sensor_event(
+        $1::uuid, sensor.id, sensor.machine_id, $2::text, $3::jsonb, $4::timestamptz
+      ) result
+      where sensor.sensor_code = $5
+    `, [randomUUID(), eventType, JSON.stringify({ signal, metadata: {} }), recordedAt, sensorCode])).rows[0]
+  }
+
+  // Seed S-03 online + Running on boot1 at 09:00:00 Manila.
+  await sendS03Hb(1, boot1, 1, '2026-08-21T09:00:00+08:00', true)
+  await sendEvent('S-03', 'pulse', '2026-08-21T09:00:00+08:00')
+
+  // 1. ISP outage #1: Watchdog marks S-03 offline at 09:00:35 while mill keeps running on boot1.
+  await db.query("update public.sensor_watchdog_state set last_heartbeat_received_at = '2026-08-21T09:00:00+08:00'::timestamptz where sensor_id = $1", [s03.id])
+  await db.query("select * from public.evaluate_sensor_watchdog($1, '2026-08-21T09:00:35+08:00'::timestamptz, 'enforce', 30)", [s03.id])
+
+  // S-03 sends Recovery Heartbeat #1 (ordered_recovery_heartbeats = 1, still 'offline') + live running pulse at 09:01:45..46.
+  const recHb1 = (await sendS03Hb(1, boot1, 2, '2026-08-21T09:01:45+08:00', true)).rows[0]
+  assert.equal(recHb1.connectivity_state, 'offline')
+  await sendEvent('S-03', 'pulse', '2026-08-21T09:01:46+08:00')
+
+  // Bug 3B + 3A: FIFO drain in chronological order — 09:01:15 (during ISP outage, uploaded during Hb1),
+  // then Heartbeat #2 completes recovery -> 'online', then 09:01:30 (buffered during ISP outage) and 09:01:49 (cut during Hb1 gap) all accept!
+  const bufferedDuringHb1 = await sendEvent('S-05', 'pulse', '2026-08-21T09:01:15+08:00')
+  assert.equal(bufferedDuringHb1.event_value.metadata.outputAccepted, true)
+
+  const recHb2 = (await sendS03Hb(1, boot1, 3, '2026-08-21T09:01:55+08:00', true)).rows[0]
+  assert.equal(recHb2.connectivity_state, 'online')
+  const bufferedAfterFullRecovery = await sendEvent('S-05', 'pulse', '2026-08-21T09:01:30+08:00')
+  assert.equal(bufferedAfterFullRecovery.event_value.metadata.outputAccepted, true)
+  const liveDuringHb1 = await sendEvent('S-05', 'pulse', '2026-08-21T09:01:49+08:00')
+  assert.equal(liveDuringHb1.event_value.metadata.outputAccepted, true)
+
+  // 2. Counter-case (Power loss / new boot_id): S-03 goes offline at 09:03:00 and reboots onto boot2 at 09:04:00.
+  await db.query("update public.sensor_watchdog_state set last_heartbeat_received_at = '2026-08-21T09:02:00+08:00'::timestamptz where sensor_id = $1", [s03.id])
+  await db.query("select * from public.evaluate_sensor_watchdog($1, '2026-08-21T09:03:00+08:00'::timestamptz, 'enforce', 30)", [s03.id])
+  await sendS03Hb(2, boot2, 1, '2026-08-21T09:04:00+08:00', true)
+  await sendEvent('S-03', 'pulse', '2026-08-21T09:04:01+08:00')
+
+  const cutDuringRebootGap = await sendEvent('S-05', 'pulse', '2026-08-21T09:03:30+08:00')
+  assert.equal(cutDuringRebootGap.event_value.metadata.outputAccepted, false)
+  assert.equal(cutDuringRebootGap.event_value.metadata.outputRejectionReason, 'machine_offline')
 })
 
 

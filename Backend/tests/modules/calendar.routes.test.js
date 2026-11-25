@@ -256,7 +256,7 @@ test('PUT /api/machines/:machineId/calendar/days/:calendarDate toggles a holiday
 
     const unscheduledResponse = await requestJson(
       baseUrl,
-      `/api/machines/${machineId}/calendar/days/2026-11-20`,
+      `/api/machines/${machineId}/calendar/days/2027-07-20`,
       {
         method: 'PUT',
         headers: authHeader('Admin'),
@@ -610,7 +610,7 @@ test('calendar mutations reject missing machine_not_scheduled reason, today or p
   await withTestServer(app, async (baseUrl) => {
     const missingReasonDay = await requestJson(
       baseUrl,
-      `/api/machines/${machineId}/calendar/days/2026-11-20`,
+      `/api/machines/${machineId}/calendar/days/2027-07-20`,
       {
         method: 'PUT',
         headers: authHeader('Admin'),
@@ -631,8 +631,8 @@ test('calendar mutations reject missing machine_not_scheduled reason, today or p
         method: 'POST',
         headers: authHeader('Admin'),
         body: {
-          startDate: '2026-11-20',
-          endDate: '2026-11-21',
+          startDate: '2027-07-20',
+          endDate: '2027-07-21',
           dayType: 'machine_not_scheduled',
           name: 'Unscheduled Range',
         },
@@ -696,7 +696,7 @@ test('calendar mutations map SQL 23505 manual overwrite conflicts and 40001 vers
   let nextRpcError = {
     code: '23505',
     message: 'Manual production calendar entries already exist in the selected range.',
-    detail: '["2026-11-20"]',
+    detail: '["2027-07-20"]',
   }
   const client = createSupabaseMock({
     rpcHandler: async () => ({ data: null, error: nextRpcError }),
@@ -713,8 +713,8 @@ test('calendar mutations map SQL 23505 manual overwrite conflicts and 40001 vers
         method: 'POST',
         headers: authHeader('Admin'),
         body: {
-          startDate: '2026-11-19',
-          endDate: '2026-11-21',
+          startDate: '2027-07-19',
+          endDate: '2027-07-21',
           dayType: 'day_off',
           name: 'Overlapping Shutdown',
           confirmOverwrite: false,
@@ -724,7 +724,7 @@ test('calendar mutations map SQL 23505 manual overwrite conflicts and 40001 vers
     assert.equal(overwriteConflict.response.status, 409)
     assertError(overwriteConflict.body, 'CALENDAR_OVERWRITE_CONFIRM_REQUIRED')
     assert.deepEqual(overwriteConflict.body.error.details, {
-      conflictingDates: ['2026-11-20'],
+      conflictingDates: ['2027-07-20'],
     })
 
     nextRpcError = {

@@ -2,7 +2,13 @@ import { createApiError, isTransientApiError } from '../errors/apiError.js'
 import { notifyUnauthorized } from '../errors/unauthorizedSession.js'
 import { assertSessionCurrent, getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+export function resolveApiBaseUrl(env = import.meta.env) {
+  const configured = env?.VITE_API_BASE_URL?.trim()
+  if (configured) return configured.replace(/\/+$/, '')
+  return env?.PROD ? '' : 'http://localhost:3000'
+}
+
+export const API_BASE_URL = resolveApiBaseUrl()
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000
 
 const AUTH_COOKIE_PATH_PATTERN = /^\/api\/auth\//
