@@ -21,13 +21,13 @@ ESP32 Sensors (S-01 to S-05) -> Express Backend -> Supabase PostgreSQL -> Expres
 - **Live Monitoring & Watchdog**: Real-time machine and sensor status with 10-second ESP32 heartbeats, server-owned Manila shift/break schedules, and configurable absence thresholds.
 - **Downtime & Alert Management**: Direct `S-03` downtime, grouped `S-01 + S-02 + S-04` process-fault escalation, revision-ordered alert acknowledgements, and Server-Sent Events (SSE) with automatic REST polling fallback.
 - **Production Specifications & Reports**: Finished pipe tracking (`S-05`) with inline and bulk specification editing (`Customer`, `Diameter`, `Thickness`, `Length`, `Pipe Number`, `Tonnage`), optimistic concurrency (`409 Conflict`), and PDF/XLSX report exports.
-- **Security & Audit Integrity**: Custom Express JWT + `HttpOnly; SameSite=Strict` refresh session rotation, CSRF protection, five role-based access levels (`Admin` displayed as **Managing Director**, `Operation Manager`, `Production Supervisor`, `Engineering Supervisor`, `Quality Control`), and atomic PostgreSQL RPC mutations with `audit_logs` (schema readiness **v58**).
+- **Security & Audit Integrity**: Custom Express JWT + `HttpOnly; SameSite=Strict` refresh session rotation, CSRF protection, five role-based access levels (`Admin` displayed as **Managing Director**, `Operation Manager`, `Production Supervisor`, `Engineering Supervisor`, `Quality Control`), and atomic PostgreSQL RPC mutations with `audit_logs` (schema readiness **v62**).
 
 ## Technology Stack
 
 - **Frontend**: React 19 and Vite 8 (`Frontend/`)
 - **Backend**: Node.js and Express 5 (`Backend/`)
-- **Database**: Supabase PostgreSQL (`Backend/database/`, migrations through `058`)
+- **Database**: Supabase PostgreSQL (`Backend/database/`, migrations through `062`)
 - **Hardware**: ESP32 sensor nodes with hardware-interrupt pulse capture and idempotent network retries
 
 ## Quick Start

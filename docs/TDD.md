@@ -27,7 +27,7 @@
 
 ## 2. Firmware Design (ESP32, all 5 nodes)
 
-No physical ESP32 nodes are integrated yet. This section defines the contract future firmware must satisfy.
+Five physical ESP32 nodes (`S-01` through `S-05`) are implemented against this contract; hosted production cutover requires flashing the final HTTPS URL and rotated device keys.
 
 ### 2.1 Risk this design prevents
 
@@ -208,8 +208,7 @@ UC018 currently defines only the trigger threshold. The clear/resume threshold n
 
 ## 8. Email / Notification Subsystem
 Needed for: temporary password delivery on account creation (UC005), forced first-login password change (UC003), password reset (UC007).
-- **Confirmed vendor: Resend** (SendGrid ruled out, free tier eliminated 2025). The paper still says Brevo — that's a text correction owed to Table 2/NonFunc_024 and the Overview paragraph, not a real implementation ambiguity.
-- `Nodemailer` as the sending library, integrated against Resend's API.
+- **Confirmed vendor: Brevo** transactional email HTTP API (`BREVO_API_KEY`, `BREVO_FROM_EMAIL`), matching the paper (Overview paragraph + NonFunc_024).
 
 ## 9. Deployment (technical detail, see PRD §9 for the 4-stage plan)
 - Stage 2 (Site Survey): confirm ≥ -67 dBm WiFi signal at each of the 5 mounting points before ordering enclosure hardware.
@@ -224,7 +223,7 @@ Needed for: temporary password delivery on account creation (UC005), forced firs
 | Sensor 2 & 4: Type A or Type B | Yes, before firmware fix | Physically inspect signal behavior during lab testing, don't assume |
 | Debounce/clear threshold value | Yes, before firmware fix | Pick a starting value (e.g. 5–10s), validate/tune during parallel run |
 | ~~Threshold storage: firmware-hardcoded vs. server-config~~ | **Implemented - backend-managed per-machine configuration** | Phase 2 storage/API is complete and the Phase 3 heartbeat/watchdog consumer is implemented; the ingestion RPC still cannot detect an event that never arrives, and production enforcement requires hardware evidence |
-| ~~Email vendor~~ | **Resolved — Resend** | Update the paper (Overview paragraph + NonFunc_024) to replace "Brevo" |
+| ~~Email vendor~~ | **Resolved — Brevo** | Implemented via Brevo transactional API; verify SPF/DKIM/DMARC before production cutover |
 | Supabase Pro funding | Yes, before production deployment | Confirm with Petro Hydro management |
 | PDF library: Puppeteer vs PDFKit | No | Pick one, avoid mixing two rendering approaches |
 

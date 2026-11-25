@@ -32,16 +32,38 @@ test('public documentation index links only to tracked public documents', () => 
   }
 })
 
-test('database guide documents migrations 008 through 018', () => {
+test('database guide documents current v62 migrations and readiness', () => {
   const content = fs.readFileSync(path.resolve(__dirname, '../../database/README.md'), 'utf8')
 
   for (let migration = 8; migration <= 18; migration += 1) {
     assert.match(content, new RegExp(`0${migration}_`))
   }
+  for (let migration = 59; migration <= 62; migration += 1) {
+    assert.match(content, new RegExp(`0${migration}_`))
+  }
+  assert.match(content, /readiness version 62|returns `62`/i)
+  assert.doesNotMatch(content, /through 058|readiness version 58|returns `58`/i)
   assert.match(content, /S-02 Inside Filler Wire/)
   assert.match(content, /S-04 Outside Filler Wire/)
   assert.match(content, /WATCHDOG_MODE=disabled/)
   assert.match(content, /POST \/api\/iot\/heartbeats/)
+})
+
+test('public docs align on schema v62, Brevo email, and five integrated ESP32 nodes', () => {
+  const rootReadme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
+  const docsReadme = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8')
+  const architecture = fs.readFileSync(path.join(root, 'docs/ARCHITECTURE.md'), 'utf8')
+  const prd = fs.readFileSync(path.join(root, 'docs/PRD.md'), 'utf8')
+  const tdd = fs.readFileSync(path.join(root, 'docs/TDD.md'), 'utf8')
+
+  for (const content of [rootReadme, docsReadme, architecture]) {
+    assert.match(content, /\b(?:v|0)?62\b/)
+    assert.doesNotMatch(content, /v58|through `058`|readiness version: \*\*58\*\*|056–058/i)
+  }
+  for (const content of [prd, tdd]) {
+    assert.match(content, /Brevo/i)
+    assert.doesNotMatch(content, /Confirmed.*Resend|Resolved.*Resend|Nodemailer/i)
+  }
 })
 
 test('public operations docs preserve the watchdog safety boundary', () => {
@@ -61,7 +83,8 @@ test('device docs keep schedules server-owned and heartbeats independent from pr
   const tdd = fs.readFileSync(path.join(root, 'docs/TDD.md'), 'utf8')
 
   for (const content of [architecture, tdd]) {
-    assert.match(content, /No physical ESP32.*integrated/i)
+    assert.doesNotMatch(content, /No physical ESP32.*integrated/i)
+    assert.match(content, /five ESP32|all 5.*ESP32|5 ESP32/i)
     assert.match(content, /backend.*authoritative.*shift.*break/i)
     assert.match(content, /heartbeats.*independent.*production pulses/i)
     assert.match(content, /must not.*store.*schedule/i)

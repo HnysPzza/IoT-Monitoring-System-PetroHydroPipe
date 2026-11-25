@@ -31,7 +31,7 @@ Five ESP32-backed inductive proximity sensors are assigned to `M-01`:
 - `S-03` — Machine Main Sensor (main spindle rotation and **machine-running authority**)
 - `S-05` — Production Output Cutting (finished pipe counter)
 
-No physical ESP32 nodes are integrated yet on the hosted cloud environment; device flows in this document define the backend contract and local firmware behavior. The UI only displays supported proximity and count states—never unsupported telemetry such as speed, pressure, temperature, or RPM.
+Five physical ESP32 sensor nodes (`S-01` through `S-05`) are implemented against this contract using HTTPS (`WiFiClientSecure`) and gitignored device secrets; hosted cloud cutover requires flashing the production Render URL and rotated keys. The UI only displays supported proximity and count states—never unsupported telemetry such as speed, pressure, temperature, or RPM.
 
 ---
 
@@ -53,7 +53,7 @@ Node.js and Express server handling security, validation, and coordination:
 - **Realtime SSE & Watchdog**: Publishes post-commit Server-Sent Events (SSE) for instant dashboard refreshes and runs the optional background watchdog evaluator.
 
 ### 3. Database (`Backend/database/`)
-Supabase PostgreSQL schema (current readiness version: **58**):
+Supabase PostgreSQL schema (current readiness version: **62**):
 - **Core tables**: `roles`, `users`, `machines`, `sensors`, `sensor_events`, `downtime_events`, `production_outputs`, `alerts`, `alert_revision_state`, `machine_operational_settings`, `machine_operational_settings_history`, `sensor_watchdog_state`, `sensor_watchdog_transitions`, and `audit_logs`.
 - **RPC-only mutations**: Direct `INSERT`, `UPDATE`, and `DELETE` privileges are revoked from client roles and restricted on `service_role` so state changes must pass through audited PostgreSQL functions.
 

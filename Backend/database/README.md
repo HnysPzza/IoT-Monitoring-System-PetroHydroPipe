@@ -58,6 +58,10 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 - `migrations/056_clear_fault_on_absence_disable.sql` clears active sensor faults, process alerts, and machine downtime when absence detection is disabled and advances readiness to 56.
 - `migrations/057_atomic_user_status_and_archive_audit.sql` makes user status updates and account archiving atomic with `audit_logs`, revokes direct `service_role` mutations on `public.users`, and advances readiness to 57.
 - `migrations/058_query_speed_indexes_and_analytics_bounds.sql` adds covering/ordered indexes for `audit_logs`, analytics pulses, and accepted `S-05` output events, bounds `get_analytics_first_recorded_at` with `LIMIT 1`, and advances readiness to 58.
+- `migrations/059_add_production_calendar.sql` adds Manila production calendar day overrides and advances readiness to 59.
+- `migrations/060_reject_s05_output_when_s03_offline.sql` rejects `S-05` output when `S-03` is offline and advances readiness to 60.
+- `migrations/061_reject_s05_output_outside_schedule.sql` rejects `S-05` output outside active shift schedules and advances readiness to 61.
+- `migrations/062_preserve_s05_same_boot_isp_outage_cuts.sql` preserves buffered `S-05` pipe cuts across same-boot ISP outages when `S-03` proves running state on reconnect and advances readiness to 62.
 
 ## Tables
 
@@ -83,8 +87,8 @@ This folder contains the Supabase/PostgreSQL database foundation for the PetroHy
 3. Copy and run `schema.sql`.
 4. Copy and run the credential-free `seed.sql` to create the roles, M-01, and its five sensors.
 5. Provision exactly one active, unarchived Admin with a privately generated bcrypt password hash.
-6. Run migrations 029 through 058 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Migration 046 stops without removing the legacy role if any account still uses it. Verify `select public.get_backend_readiness();` returns `58` before starting the current backend.
-7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 058 from `Backend/database/migrations/`.
+6. Run migrations 029 through 062 in order after provisioning the Admin. The base schema includes migrations through 028; do not replay 001 through 028. Migration 046 stops without removing the legacy role if any account still uses it. Verify `select public.get_backend_readiness();` returns `62` before starting the current backend.
+7. For existing databases, skip fresh-install steps 3 through 6 and apply only pending migration files in order through 062 from `Backend/database/migrations/`.
 8. Generate one secret per ESP32, bcrypt-hash each secret locally, replace the placeholders in `device_key_setup.sql`, then run it.
 9. Confirm the configured rows:
    - 5 roles (`Admin` is displayed in the interface as Managing Director)
@@ -422,11 +426,11 @@ Expected readiness is `44`. This verifies the database contract only; it does no
 
 1. Back up the database and schedule a maintenance window. Stop old backend instances before changing auth RPCs.
 2. For an existing database, apply all pending migrations in order, including `026_refresh_tokens.sql` followed by `027_harden_auth_sessions.sql`. If 026 is already applied, run only 027. Do not reapply 026 after 027.
-3. Apply pending migrations through 058 before deploying the current backend, which requires readiness version 58. Migration 029 requires exactly one active, unarchived Admin. Migration 046 requires the legacy Managing Director role to be unassigned and verifies the five-role catalog. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
+3. Apply pending migrations through 062 before deploying the current backend, which requires readiness version 62. Migration 029 requires exactly one active, unarchived Admin. Migration 046 requires the legacy Managing Director role to be unassigned and verifies the five-role catalog. Deploy the matching backend and frontend together on the same schemeful site; cross-site hosting does not send the `SameSite=Strict` refresh cookie. Check `GET /api/health/ready` after deployment.
 4. Sign in again. Migration 027 intentionally revokes legacy refresh tokens because migration 026 did not store session lineage. User and business records remain intact. Reapplying 027 preserves sessions created by 027.
 5. Verify login, reload, two-tab refresh, logout, and cookie attributes over the deployed HTTPS origin. Local tests do not verify hosted permissions, proxy behavior, or HTTPS cookies.
 
-For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 058 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
+For a fresh database, run `schema.sql` (baseline 028), provision exactly one active, unarchived Admin, then apply migrations 029 through 062 in order. Do not replay migrations 001 through 028 over this baseline. Schema installation alone is incomplete for the current backend. Logout revokes the session; the backend checks access JWT session lineage on protected requests. Plan privileged cleanup of expired `auth_sessions` separately; cascades remove their refresh-token rows. Never delete unexpired replay evidence.
 
 Only `service_role` may execute the auth mutation RPCs. Direct refresh/session table writes are denied to that role. Never expose its key to the frontend.
 
