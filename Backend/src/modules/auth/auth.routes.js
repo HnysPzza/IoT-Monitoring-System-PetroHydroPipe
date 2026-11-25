@@ -53,20 +53,20 @@ function requireRefreshCookie(req, res, next) {
 // Login is rate-limited before validation to slow repeated guessing attempts.
 router.post('/login', loginRateLimiter, rejectForeignOrigin, validateRequest(loginSchema), asyncHandler(authController.login))
 router.post('/refresh', refreshRateLimiter, rejectForeignOrigin, requireRefreshCookie, asyncHandler(authController.refresh))
-router.post('/logout', rejectForeignOrigin, asyncHandler(authController.logout))
+router.post('/logout', refreshRateLimiter, rejectForeignOrigin, asyncHandler(authController.logout))
 router.get('/me', authenticateAllowingPasswordChange, asyncHandler(authController.me))
 router.post('/setup-password/validate', setupCheckLimiter, rejectForeignOrigin, validateRequest(setupTokenSchema), asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store').json(await onboarding.validateSetupToken(req.validated.body))
 }))
 router.post('/setup-password', setupLimiter, rejectForeignOrigin, validateRequest(setupPasswordSchema), asyncHandler(async (req, res) => {
-  await onboarding.setupPassword(req.validated.body)
+  await onboarding.setupPassword(req.validated.body, 'setup')
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
 router.post('/password-reset/validate', setupCheckLimiter, rejectForeignOrigin, validateRequest(setupTokenSchema), asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store').json(await onboarding.validatePasswordResetToken(req.validated.body))
 }))
 router.post('/password-reset', setupLimiter, rejectForeignOrigin, validateRequest(setupPasswordSchema), asyncHandler(async (req, res) => {
-  await onboarding.setupPassword(req.validated.body)
+  await onboarding.setupPassword(req.validated.body, 'reset')
   res.set('Cache-Control', 'no-store').json({ completed: true })
 }))
 router.post('/change-password', changeIngressLimiter, rejectForeignOrigin, authenticateRequiringPasswordChange, changeLimiter, validateRequest(changePasswordSchema), asyncHandler(async (req, res) => {

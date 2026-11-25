@@ -245,3 +245,54 @@ test('updateUserStatus and archiveUser use atomic RPCs and map error codes accur
     { status: 500, code: 'USER_ARCHIVE_FAILED' },
   )
 })
+
+test('setupPassword enforces expected token purpose before calling complete_password_setup RPC', async () => {
+  const token = 'd'.repeat(64)
+  const now = Date.now()
+  let rpcCalled = false
+  let row = {
+    purpose: 'reset',
+    expires_at: new Date(now + 60000).toISOString(),
+    used_at: null,
+    users: { status: 'Active', deleted_at: null, onboarding_state: 'Ready' },
+  }
+  const query = {
+    select: () => query,
+    eq: () => query,
+    maybeSingle: async () => ({ data: row, error: null }),
+  }
+  loadAppWithMocks({
+    'src/database/client.js': {
+      getSupabaseClient: () => ({
+        from: () => query,
+        rpc: async () => {
+          rpcCalled = true
+          return { data: null, error: null }
+        },
+      }),
+    },
+  })
+  const service = require('../../../src/modules/auth/onboarding.service')
+
+  await assert.rejects(
+    service.setupPassword({ token, password: 'Valid-Password1!' }, 'setup'),
+    { status: 400, code: 'ACCOUNT_OPERATION_INVALID' },
+  )
+  assert.equal(rpcCalled, false)
+
+  await service.setupPassword({ token, password: 'Valid-Password1!' }, 'reset')
+  assert.equal(rpcCalled, true)
+
+  rpcCalled = false
+  row = {
+    purpose: 'setup',
+    expires_at: new Date(now + 60000).toISOString(),
+    used_at: null,
+    users: { status: 'Active', deleted_at: null, onboarding_state: 'Invited' },
+  }
+  await assert.rejects(
+    service.setupPassword({ token, password: 'Valid-Password1!' }, 'reset'),
+    { status: 400, code: 'ACCOUNT_OPERATION_INVALID' },
+  )
+  assert.equal(rpcCalled, false)
+})

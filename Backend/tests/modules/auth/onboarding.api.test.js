@@ -78,7 +78,7 @@ test('password reset links validate and save through separate public endpoints',
   const app = loadAppWithMocks({
     'src/modules/auth/onboarding.service.js': {
       validatePasswordResetToken: async (body) => { calls.push({ action: 'validate', body }); return { validForMs: 60000 } },
-      setupPassword: async (body) => calls.push({ action: 'complete', body }),
+      setupPassword: async (body, purpose) => calls.push({ action: 'complete', body, purpose }),
     },
   })
   await withTestServer(app, async (baseUrl) => {
@@ -98,7 +98,7 @@ test('password reset links validate and save through separate public endpoints',
     assert.deepEqual(completed.body, { completed: true })
     assert.deepEqual(calls, [
       { action: 'validate', body },
-      { action: 'complete', body: passwordBody },
+      { action: 'complete', body: passwordBody, purpose: 'reset' },
     ])
   })
 })
@@ -206,12 +206,18 @@ test('accountWriteLimiter and onboarding limiters isolate client IPs behind a tr
       setupPassword: async () => {},
       requestPasswordReset: async () => ({ delivery: 'accepted' }),
     },
+    'src/modules/users/users.service.js': {
+      updateUserStatus: async () => ({ id: targetId, status: 'Inactive' }),
+      archiveUser: async () => ({ id: targetId, status: 'Inactive' }),
+    },
   })
   app.set('trust proxy', 1)
 
   const targetId = '22222222-2222-4222-8222-222222222222'
   const adminId = '11111111-1111-4111-8111-111111111111'
+  const otherAdminId = '44444444-4444-4444-8444-444444444444'
   const adminAuth = `Bearer ${jwt.sign({ role: 'Admin', username: 'admin' }, process.env.JWT_SECRET, { subject: adminId })}`
+  const otherAdminAuth = `Bearer ${jwt.sign({ role: 'Admin', username: 'admin2' }, process.env.JWT_SECRET, { subject: otherAdminId })}`
   const setupBody = { token: 'a'.repeat(64), password: 'A-long-new-password1!' }
 
   await withTestServer(app, async (baseUrl) => {
@@ -254,20 +260,27 @@ test('accountWriteLimiter and onboarding limiters isolate client IPs behind a tr
 
     const limitedWrite = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
       method: 'POST',
-      headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.10' },
-    })
-    assert.equal(limitedWrite.response.status, 429)
-    assert.deepEqual(limitedWrite.body, {
-      error: {
-        code: 'RATE_LIMITED',
-        message: 'Too many attempts. Wait before trying again.',
-      },
-    })
-
-    const otherIpWrite = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
-      method: 'POST',
       headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.11' },
     })
-    assert.equal(otherIpWrite.response.status, 200)
+    assert.equal(limitedWrite.response.status, 429)
+
+    const limitedStatus = await requestJson(baseUrl, `/api/users/${targetId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.11' },
+      body: { status: 'Inactive' },
+    })
+    assert.equal(limitedStatus.response.status, 429)
+
+    const limitedArchive = await requestJson(baseUrl, `/api/users/${targetId}/archive`, {
+      method: 'PATCH',
+      headers: { Authorization: adminAuth, 'X-Forwarded-For': '203.0.113.11' },
+    })
+    assert.equal(limitedArchive.response.status, 429)
+
+    const otherAdminWrite = await requestJson(baseUrl, `/api/users/${targetId}/password-reset`, {
+      method: 'POST',
+      headers: { Authorization: otherAdminAuth, 'X-Forwarded-For': '203.0.113.10' },
+    })
+    assert.equal(otherAdminWrite.response.status, 200)
   })
 })

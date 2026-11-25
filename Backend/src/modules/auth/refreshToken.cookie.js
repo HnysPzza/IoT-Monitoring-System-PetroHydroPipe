@@ -1,6 +1,7 @@
 const env = require('../../config/env')
 
 const REFRESH_COOKIE_NAME = 'ph_refresh'
+const REFRESH_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
 function cookieOptions(maxAgeMs) {
   return {
@@ -38,7 +39,8 @@ function readRefreshCookie(req) {
     const name = part.slice(0, separatorIndex).trim()
     if (name === REFRESH_COOKIE_NAME) {
       try {
-        return decodeURIComponent(part.slice(separatorIndex + 1).trim())
+        const value = decodeURIComponent(part.slice(separatorIndex + 1).trim())
+        return REFRESH_TOKEN_PATTERN.test(value) ? value : null
       } catch {
         return null
       }
