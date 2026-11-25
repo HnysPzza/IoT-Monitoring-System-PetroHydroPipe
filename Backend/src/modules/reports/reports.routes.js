@@ -3,7 +3,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
 const validateRequest = require('../../middleware/validateRequest')
-const { exportRateLimiter } = require('../../middleware/rateLimiters')
+const { exportRateLimiter, heavyReadRateLimiter } = require('../../middleware/rateLimiters')
 const reportsController = require('./reports.controller')
 const { exportReportSchema, reportSummarySchema } = require('./reports.model')
 
@@ -18,7 +18,7 @@ const reportRoles = [
 router.use(authenticate)
 router.use(authorizeRole(reportRoles))
 
-router.get('/summary', validateRequest(reportSummarySchema), asyncHandler(reportsController.getSummary))
+router.get('/summary', heavyReadRateLimiter, validateRequest(reportSummarySchema), asyncHandler(reportsController.getSummary))
 
 // Export authorization is granted to Admin, Operation Manager, Quality Control, and Engineering Supervisor.
 router.post(

@@ -90,9 +90,21 @@ const accountWriteLimiter = rateLimit({
   passOnStoreError: false,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  keyGenerator: (req) => req.user?.sub || ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json(rateLimitResponse('Too many attempts. Wait before trying again.'))
+  },
+})
+
+const heavyReadRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.authenticatedUser?.id || req.user?.sub || ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many read requests. Please try again shortly.'))
   },
 })
 
@@ -155,6 +167,7 @@ module.exports = {
   changeIngressLimiter,
   changeLimiter,
   exportRateLimiter,
+  heavyReadRateLimiter,
   iotIngressRateLimiter,
   iotVerifiedDeviceRateLimiter,
   loginRateLimiter,
