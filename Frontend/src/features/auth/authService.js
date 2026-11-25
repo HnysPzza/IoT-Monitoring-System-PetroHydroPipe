@@ -1,6 +1,6 @@
 import { apiRequest } from '../../shared/services/apiClient.js'
 
-const USE_MOCK_LOGIN = import.meta.env.VITE_USE_MOCK_LOGIN === 'true'
+const USE_MOCK_LOGIN = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_LOGIN === 'true'
 
 // Small delay keeps mock mode close to a real backend request habang development pa.
 function delay(ms) {
