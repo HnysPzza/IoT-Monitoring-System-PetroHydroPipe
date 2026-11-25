@@ -5,6 +5,7 @@ const { getSupabaseClient } = require('../../database/client')
 const logger = require('../../utils/logger')
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid username or password.'
+const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8l4N0h8k9pT2B6E4z8Q1W3V5Y7X9Z2'
 
 const TOKEN_EXPIRES_IN = `${env.ACCESS_TOKEN_EXPIRES_MINUTES}m`
 
@@ -135,6 +136,7 @@ async function login({ username, password }) {
   const normalizedUsername = username.trim().toLowerCase()
 
   if (!userRecord || userRecord.status !== 'Active' || userRecord.deleted_at || userRecord.onboarding_state === 'Invited' || !userRecord.password_hash) {
+    await verifyPassword(password, DUMMY_PASSWORD_HASH)
     await recordLoginFailure({
       userId: userRecord?.id || null,
       metadata: {

@@ -3,9 +3,10 @@ const { z } = require('zod')
 // Login accepts only the fields needed for username/password authentication.
 const loginSchema = z.object({
   body: z.object({
-    username: z.string().trim().min(1, 'Username is required.'),
-    password: z.string().min(1, 'Password is required.'),
-  }),
+    username: z.string().trim().min(1, 'Username is required.').max(80, 'Username is too long.'),
+    password: z.string().min(1, 'Password is required.').max(72, 'Password is too long.')
+      .refine((value) => Buffer.byteLength(value, 'utf8') <= 72, 'Password is too long.'),
+  }).strict(),
 })
 
 const passwordSchema = z.string().refine((value) => Array.from(value).length >= 12, 'Use at least 12 characters.')
