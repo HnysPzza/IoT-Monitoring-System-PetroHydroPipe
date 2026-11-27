@@ -4972,10 +4972,16 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
   min-height: 36px;
   padding: 8px 12px;
   border-radius: 999px;
   background: var(--c-surface2);
+  white-space: nowrap;
+}
+
+.section-chip svg {
+  flex-shrink: 0;
 }
 
 .stat-card {
