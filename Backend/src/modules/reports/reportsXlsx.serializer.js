@@ -72,20 +72,43 @@ function capitalizeWord(value, fallback) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1) : fallback
 }
 
+const MANILA_PARTS_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+const MANILA_DATE_TEXT_FORMATTER = new Intl.DateTimeFormat('en-PH', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+})
+
+const SHORT_DAY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+
 function getManilaParts(dateInput) {
   const d = new Date(dateInput)
   if (Number.isNaN(d.getTime())) return null
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(d)
-  return Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  const parts = MANILA_PARTS_FORMATTER.formatToParts(d)
+  const map = {}
+  for (let i = 0; i < parts.length; i += 1) {
+    map[parts[i].type] = parts[i].value
+  }
+  return map
 }
 
 function manilaExcelDate(dateInput) {
@@ -114,26 +137,13 @@ function formatManilaDateText(dateInput) {
   if (!dateInput) return MISSING_PLACEHOLDER
   const d = new Date(dateInput)
   if (Number.isNaN(d.getTime())) return String(dateInput)
-  return d.toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }) + ' PST'
+  return `${MANILA_DATE_TEXT_FORMATTER.format(d)} PST`
 }
 
 function formatShortDay(dayKey) {
   const d = dateValue(dayKey)
   if (!d) return dayKey ? String(dayKey) : 'Undated'
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'UTC',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(d)
+  return SHORT_DAY_FORMATTER.format(d)
 }
 
 function formatPeriodWindowLabel(report) {
