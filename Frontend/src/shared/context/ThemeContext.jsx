@@ -4,6 +4,12 @@ import { flushSync } from 'react-dom'
 const THEME_STORAGE_KEY = 'iot_monitoring_theme'
 export const ThemeContext = createContext(null)
 
+function syncColorSchemeMeta(theme) {
+  document
+    .querySelector('meta[name="color-scheme"]')
+    ?.setAttribute('content', theme === 'dark' ? 'only dark' : 'only light')
+}
+
 // Starts from the saved theme, then uses the dashboard's light operational theme.
 function getInitialTheme() {
   if (typeof window === 'undefined') {
@@ -38,6 +44,7 @@ export function ThemeProvider({ children }) {
     const updateTheme = () => {
       const themeToApply = themeRef.current
       document.documentElement.dataset.theme = themeToApply
+      syncColorSchemeMeta(themeToApply)
       setThemeState(themeToApply)
     }
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
@@ -54,6 +61,7 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     themeRef.current = theme
     document.documentElement.dataset.theme = theme
+    syncColorSchemeMeta(theme)
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
 

@@ -1,6 +1,6 @@
 /* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
-  color-scheme: dark;
+  color-scheme: only dark;
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --c-bg: #0B1322;
   /* Layer 1: Main Canvas */
@@ -87,7 +87,7 @@
 
 /* Light theme overrides dashboard surfaces while auth pages keep the dark operational look. */
 :root[data-theme='light'] {
-  color-scheme: light;
+  color-scheme: only light;
   --c-bg: #F4F7FA;
   --c-surface: #FFFFFF;
   --c-surface2: #F1F5F9;
@@ -209,7 +209,7 @@ button:disabled {
 
 /* Auth split layout aligned to industrial dark-slate tokens and single photo gradient overlay. */
 .login-page {
-  color-scheme: dark;
+  color-scheme: only dark;
   --c-bg: #0B1322;
   --c-surface: #111C2E;
   --c-surface2: #0F172A;
