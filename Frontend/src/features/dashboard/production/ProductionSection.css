@@ -475,7 +475,7 @@ button.production-kpi-pill:hover:not(.production-kpi-active) {
 .production-date-popover {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 1000;
   background: var(--prod-popover-bg);
   border: 1px solid var(--prod-border);
@@ -1669,7 +1669,6 @@ button.production-kpi-pill:hover:not(.production-kpi-active) {
   .production-square-btn,
   .production-pagination-btn,
   .production-action-btn,
-  .production-calendar-nav-btn,
   .production-tool-btn,
   .production-date-clear-inline,
   .production-search-clear-btn,
@@ -1689,12 +1688,7 @@ button.production-kpi-pill:hover:not(.production-kpi-active) {
   .production-kpi-pill,
   .production-dropdown-trigger,
   .production-date-trigger-container,
-  .production-preset-btn,
   .production-dropdown-item,
-  .production-calendar-day,
-  .production-calendar-month-btn,
-  .production-popover-reset-btn,
-  .production-popover-apply-btn,
   .production-bulk-apply-btn,
   .production-confirm-cancel-btn,
   .production-deselect-btn,
@@ -2026,16 +2020,23 @@ button.production-kpi-pill:hover:not(.production-kpi-active) {
   .production-popover-sidebar {
     width: 100%;
     flex-direction: row;
-    overflow-x: auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 2px;
     border-right: none;
     border-bottom: 1px solid var(--prod-border-subtle);
-    padding: 8px;
+    padding: 6px;
   }
 
   .production-preset-btn {
+    flex: 1 1 auto;
+    min-width: 0;
     width: auto;
+    padding: 0 5px;
+    font-size: 11px;
+    letter-spacing: -0.01em;
+    text-align: center;
     white-space: nowrap;
-    flex-shrink: 0;
   }
 
   .production-popover-calendar {

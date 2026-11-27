@@ -615,9 +615,11 @@
     border-right: none;
     border-bottom: 1px solid #E2E8F0;
     flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
     flex-shrink: 0;
-    overflow-x: auto;
-    padding: 6px 8px;
+    gap: 2px;
+    padding: 6px;
   }
 
   :root[data-theme='dark'] .trend-popover-sidebar {
@@ -625,11 +627,16 @@
   }
 
   .trend-preset-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+    text-align: center;
     white-space: nowrap;
     width: auto;
-    flex-shrink: 0;
-    min-height: 36px;
-    padding: 4px 10px;
+    min-height: 34px;
+    padding: 4px 6px;
+    font-size: 11.5px;
+    letter-spacing: -0.01em;
   }
 
   .trend-calendar-header {

@@ -119,7 +119,7 @@ export function getDisplayLabels(rawFilter) {
   }
 }
 
-const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+const WEEKDAY_NAMES = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -402,7 +402,7 @@ export default function ProductionDateRangePicker({
   // Calendar calculations
   const year = viewMonth.getFullYear()
   const month = viewMonth.getMonth()
-  const firstDayIndex = new Date(year, month, 1).getDay()
+  const firstDayIndex = (new Date(year, month, 1).getDay() + 6) % 7
   const totalDays = new Date(year, month + 1, 0).getDate()
   const monthTitle = viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 

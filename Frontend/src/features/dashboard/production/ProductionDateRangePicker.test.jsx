@@ -158,6 +158,9 @@ describe('ProductionDateRangePicker Unit & Integration Suite', () => {
       expect(within(dialog).getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
       expect(within(dialog).getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
       expect(within(dialog).getByRole('button', { name: 'Custom Range' })).toBeInTheDocument()
+
+      const weekdays = Array.from(dialog.querySelectorAll('.production-calendar-weekday')).map((el) => el.textContent)
+      expect(weekdays).toEqual(['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'])
     })
 
     it('selecting Weekly preset updates footer label and applies on Apply click', async () => {
