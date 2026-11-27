@@ -96,12 +96,36 @@ function getModeConfig(changePassword, resetPassword) {
   }
 }
 
+function readStoredToken(key) {
+  try {
+    return window.sessionStorage.getItem(key) || ''
+  } catch {
+    return ''
+  }
+}
+
+function writeStoredToken(key, value) {
+  try {
+    if (value) window.sessionStorage.setItem(key, value)
+    else window.sessionStorage.removeItem(key)
+  } catch {
+    // Ignore storage quota or private-mode restrictions.
+  }
+}
+
 // Handles onboarding password creation, email password resets, and forced password updates.
 export default function PasswordSetupPage({ changePassword = false, resetPassword = false }) {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
   const managingDirectorLabel = getRoleDisplayName('Admin')
-  const [linkToken, setLinkToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('token') || '')
+  const modeKey = `${changePassword}:${resetPassword}`
+  const tokenStorageKey = `ph_setup_token_${modeKey}`
+  const [linkToken, setLinkToken] = useState(() => {
+    if (changePassword) return ''
+    const hashToken = new URLSearchParams(window.location.hash.slice(1)).get('token') || ''
+    if (hashToken) return hashToken
+    return readStoredToken(tokenStorageKey)
+  })
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
@@ -116,7 +140,6 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   const [validForMs, setValidForMs] = useState(null)
   const [checkAttempt, setCheckAttempt] = useState(0)
 
-  const modeKey = `${changePassword}:${resetPassword}`
   const prevModeKeyRef = useRef(modeKey)
   const submitting = useRef(false)
   const pendingFocusRef = useRef(null)
@@ -167,7 +190,8 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
   useEffect(() => {
     if (prevModeKeyRef.current === modeKey) return
     prevModeKeyRef.current = modeKey
-    const nextToken = changePassword ? '' : (new URLSearchParams(window.location.hash.slice(1)).get('token') || '')
+    const hashToken = changePassword ? '' : (new URLSearchParams(window.location.hash.slice(1)).get('token') || '')
+    const nextToken = changePassword ? '' : (hashToken || readStoredToken(tokenStorageKey))
     setLinkToken(nextToken)
     setPassword('')
     setConfirmation('')
@@ -180,11 +204,19 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
     setError('')
     setLinkState('checking')
     setValidForMs(null)
-  }, [changePassword, modeKey])
+  }, [changePassword, modeKey, tokenStorageKey])
 
   useEffect(() => {
-    if (!changePassword) window.history.replaceState(window.history.state, '', window.location.pathname)
-  }, [changePassword, modeKey])
+    if (changePassword) return
+    if (linkToken && !completed && linkState !== 'invalid') {
+      writeStoredToken(tokenStorageKey, linkToken)
+    } else if (completed || linkState === 'invalid') {
+      writeStoredToken(tokenStorageKey, '')
+    }
+    if (window.location.hash) {
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
+  }, [changePassword, completed, linkState, linkToken, modeKey, tokenStorageKey])
 
   useEffect(() => {
     if (changePassword || linkState === 'valid') firstFieldRef.current?.focus()

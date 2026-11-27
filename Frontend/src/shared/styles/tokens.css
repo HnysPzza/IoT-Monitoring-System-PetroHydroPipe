@@ -1,7 +1,7 @@
 /* Theme tokens used by login, dashboard, charts, alerts, and status badges. */
 :root {
   color-scheme: dark;
-  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --c-bg: #0B1322;
   /* Layer 1: Main Canvas */
   --c-surface: #111C2E;
@@ -7456,7 +7456,6 @@ button:disabled {
   .shake,
   .input-shell.shake,
   .login-page .btn,
-  .login-page .btn-primary .spinner,
   .login-page .icon-button,
   .btn,
   .reports-icon-button,
@@ -7466,6 +7465,10 @@ button:disabled {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .login-page .btn-primary .spinner {
+    animation-duration: 2.4s !important;
   }
 
   @supports (appearance: base-select) {

@@ -42,6 +42,27 @@ describe('LoginPage', () => {
     restoreProperty(document, 'startViewTransition', originalStartViewTransition)
     restoreProperty(window, 'matchMedia', originalMatchMedia)
   })
+  it('does not show an error when untouched auto-focused username loses focus while empty', async () => {
+    const user = userEvent.setup()
+
+    renderWithAuth(<LoginPage />, {
+      authValue: {
+        isAuthenticated: false,
+        token: null,
+        user: null,
+        login: vi.fn(),
+      },
+      route: '/login',
+    })
+
+    const usernameInput = screen.getByLabelText(/username/i)
+    expect(usernameInput).toHaveFocus()
+    await user.tab()
+
+    expect(screen.queryByText('Username is required.')).not.toBeInTheDocument()
+    expect(usernameInput).toHaveAttribute('aria-invalid', 'false')
+  })
+
   it('shows validation errors without calling login when fields are empty', async () => {
     const user = userEvent.setup()
     const login = vi.fn()

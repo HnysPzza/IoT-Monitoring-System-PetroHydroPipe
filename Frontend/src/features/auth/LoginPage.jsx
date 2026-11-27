@@ -127,6 +127,7 @@ export default function LoginPage() {
   }
 
   function handleBlur(event) {
+    if (!event.target.value && !touched[event.target.name]) return
     setTouched((prev) => ({ ...prev, [event.target.name]: true }))
     setErrors(validate(values))
   }
