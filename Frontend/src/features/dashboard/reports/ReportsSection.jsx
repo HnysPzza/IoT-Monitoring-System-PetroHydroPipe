@@ -194,6 +194,7 @@ function ExportMenu({ isBlocked, exportState, exportingFormat, onExport }) {
             <img src="/assets/report-export-pdf.png" alt="" aria-hidden="true" />
             <span>{isExporting && exportingFormat === 'pdf' ? 'Exporting...' : 'Export PDF'}</span>
           </button>
+          <div className="reports-export-divider" role="separator" />
           <button
             className="reports-export-option"
             type="button"

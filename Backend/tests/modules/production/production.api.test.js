@@ -1360,6 +1360,7 @@ test('calculatePipeTonnage pure helper computes metric tonnage correctly and han
   // Invariant 4: OD <= Thickness returns null
   assert.equal(calculatePipeTonnage(12.7, 12.7, 6000), null)
   assert.equal(calculatePipeTonnage(10.0, 12.7, 6000), null)
+  assert.equal(calculatePipeTonnage(10, 2, 10), null)
 
   // Invariant 5: Invalid types (booleans, objects, arrays) return null
   assert.equal(calculatePipeTonnage(true, 12.7, 6000), null)

@@ -67,7 +67,8 @@ function calculatePipeTonnage(diameter, thickness, length) {
 
   const weightKgPerMeter = Math.PI * (d - t) * t * (STEEL_DENSITY_KG_PER_M3 / 1000000)
   const totalWeightTons = (weightKgPerMeter * l) / 1000000
-  return Math.round(totalWeightTons * 10000) / 10000
+  const rounded = Math.round(totalWeightTons * 10000) / 10000
+  return rounded > 0 ? rounded : null
 }
 
 function checkIsSpecified(spec) {

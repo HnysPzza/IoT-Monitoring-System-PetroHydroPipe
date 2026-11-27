@@ -1729,6 +1729,52 @@ describe('Editable Tonnage & 7850 kg/m^3 Auto-Calculation', () => {
       })
     })
   })
+
+  it('clears stale bulk tonnage when a dimension is cleared and updates Total Tons optimistically on save', async () => {
+    const user = userEvent.setup()
+    let resolveBatch
+    const mockLoad = vi.fn().mockResolvedValue({
+      ...mockProductionPayload,
+      summary: { ...mockProductionPayload.summary, totalTonnage: 1.1513 },
+    })
+    const mockBatchUpdate = vi.fn(() => new Promise((resolve) => { resolveBatch = resolve }))
+
+    renderWithAuth(
+      <ProductionSection loadProduction={mockLoad} batchUpdateProductionSpecs={mockBatchUpdate} />,
+      { authValue: { user: { role: 'Quality Control' } } },
+    )
+
+    await screen.findByText('Maynilad Water')
+    await user.click(screen.getByLabelText(/select cut at 2026-10-30T07:15:00/i))
+
+    const dInput = screen.getByLabelText('Bulk diameter')
+    const tInput = screen.getByLabelText('Bulk thickness')
+    const lInput = screen.getByLabelText('Bulk length')
+    const tonsInput = screen.getByLabelText('Bulk tonnage')
+
+    expect(dInput).toHaveAttribute('inputmode', 'decimal')
+    await user.type(dInput, '625.4')
+    await user.type(tInput, '12.7')
+    await user.type(lInput, '6000')
+    expect(tonsInput).toHaveValue(1.1514)
+
+    // Clearing length must clear auto-calculated tonnage instead of keeping stale 1.1514.
+    await user.clear(lInput)
+    expect(tonsInput).toHaveValue(null)
+
+    await user.type(lInput, '6000')
+    expect(tonsInput).toHaveValue(1.1514)
+
+    await user.click(screen.getByRole('button', { name: 'Apply to 1 cut' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    // Total Tons KPI updates optimistically before server response resolves (1.1513 + 1.1514 = 2.3027).
+    const totalTonsCard = screen.getByLabelText('Total production tonnage')
+    expect(within(totalTonsCard).getByText('2.3027')).toBeInTheDocument()
+
+    resolveBatch({ updatedCount: 1 })
+    await waitFor(() => expect(mockBatchUpdate).toHaveBeenCalledTimes(1))
+  })
 })
 
 describe('UX & Accessibility Audit Regression Contracts', () => {

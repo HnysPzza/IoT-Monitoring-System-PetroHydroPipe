@@ -60,19 +60,6 @@ export function parseProductionDate(value) {
   return new Date(year, month - 1, day)
 }
 
-export function formatProductionDateInput(date) {
-  if (!(date instanceof Date) || isNaN(date.getTime())) return ''
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-export function formatProductionDateLabel(date) {
-  if (!(date instanceof Date) || isNaN(date.getTime())) return ''
-  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 export function formatManilaDateTime(isoString) {
   if (!isoString) return '—'
   const date = new Date(isoString)
@@ -104,7 +91,8 @@ export function calculatePipeTonnage(diameter, thickness, length) {
   if (d <= 0 || t <= 0 || l <= 0 || d <= t) return null
   const weightKgPerMeter = Math.PI * (d - t) * t * (STEEL_DENSITY_KG_PER_M3 / 1000000)
   const totalWeightTons = (weightKgPerMeter * l) / 1000000
-  return Math.round(totalWeightTons * 10000) / 10000
+  const rounded = Math.round(totalWeightTons * 10000) / 10000
+  return rounded > 0 ? rounded : null
 }
 
 export function hasInformation(record) {
@@ -494,9 +482,7 @@ export default function ProductionSection({
     setBulkForm((prev) => {
       const next = { ...prev, [field]: value }
       const autoTons = calculatePipeTonnage(next.diameter, next.thickness, next.length)
-      if (autoTons !== null) {
-        next.tonnage = String(autoTons)
-      }
+      next.tonnage = autoTons !== null ? String(autoTons) : ''
       return next
     })
   }
@@ -590,6 +576,7 @@ export default function ProductionSection({
 
     void queryClient.cancelQueries({ queryKey: key, exact: true })
     let newlySpecifiedCount = 0
+    let tonnageDelta = 0
     const targetSet = new Set(targetIds)
     setRecords((prev) =>
       prev.map((r) => {
@@ -605,6 +592,8 @@ export default function ProductionSection({
             : newDiameter !== undefined || newThickness !== undefined || newLength !== undefined
               ? calculatePipeTonnage(effDiameter, effThickness, effLength)
               : (r.tonnage ?? calculatePipeTonnage(effDiameter, effThickness, effLength))
+        const prevRowTonnage = r.tonnage != null && Number.isFinite(Number(r.tonnage)) ? Number(r.tonnage) : 0
+        tonnageDelta += (effTonnage ?? 0) - prevRowTonnage
         const isNowSpecified = Boolean(
           (effCustomer && effCustomer.trim() !== '') ||
           effDiameter != null ||
@@ -629,11 +618,12 @@ export default function ProductionSection({
       }),
     )
 
-    if (newlySpecifiedCount > 0) {
+    if (newlySpecifiedCount > 0 || tonnageDelta !== 0) {
       setSummary((prev) => ({
         ...prev,
         specifiedCount: (prev.specifiedCount ?? 0) + newlySpecifiedCount,
         unspecifiedCount: Math.max(0, (prev.unspecifiedCount ?? 0) - newlySpecifiedCount),
+        totalTonnage: Math.max(0, Math.round(((prev.totalTonnage ?? 0) + tonnageDelta) * 10000) / 10000),
       }))
     }
 
@@ -842,17 +832,15 @@ export default function ProductionSection({
       }),
     )
 
-    if (!wasSpecified && isNowSpecified) {
+    const prevRecordTonnage = record.tonnage != null && Number.isFinite(Number(record.tonnage)) ? Number(record.tonnage) : 0
+    const tonnageDelta = (newTonnage ?? 0) - prevRecordTonnage
+    if (wasSpecified !== isNowSpecified || tonnageDelta !== 0) {
+      const specifiedDelta = !wasSpecified && isNowSpecified ? 1 : wasSpecified && !isNowSpecified ? -1 : 0
       setSummary((prev) => ({
         ...prev,
-        specifiedCount: (prev.specifiedCount ?? 0) + 1,
-        unspecifiedCount: Math.max(0, (prev.unspecifiedCount ?? 0) - 1),
-      }))
-    } else if (wasSpecified && !isNowSpecified) {
-      setSummary((prev) => ({
-        ...prev,
-        specifiedCount: Math.max(0, (prev.specifiedCount ?? 0) - 1),
-        unspecifiedCount: (prev.unspecifiedCount ?? 0) + 1,
+        specifiedCount: Math.max(0, (prev.specifiedCount ?? 0) + specifiedDelta),
+        unspecifiedCount: Math.max(0, (prev.unspecifiedCount ?? 0) - specifiedDelta),
+        totalTonnage: Math.max(0, Math.round(((prev.totalTonnage ?? 0) + tonnageDelta) * 10000) / 10000),
       }))
     }
 
@@ -1222,6 +1210,7 @@ export default function ProductionSection({
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
+                  inputMode="decimal"
                   placeholder="Diameter (OD)"
                   aria-label="Bulk diameter"
                   step="any"
@@ -1235,6 +1224,7 @@ export default function ProductionSection({
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
+                  inputMode="decimal"
                   placeholder="Thickness"
                   aria-label="Bulk thickness"
                   step="any"
@@ -1248,6 +1238,7 @@ export default function ProductionSection({
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
+                  inputMode="decimal"
                   placeholder="Length"
                   aria-label="Bulk length"
                   step="any"
@@ -1261,6 +1252,7 @@ export default function ProductionSection({
               <div className="dimension-input-wrapper production-dimension-wrapper">
                 <input
                   type="number"
+                  inputMode="decimal"
                   placeholder="Tons"
                   aria-label="Bulk tonnage"
                   step="0.0001"
@@ -1403,6 +1395,7 @@ export default function ProductionSection({
                           <td className="production-col-num tabular-data" data-label="Diameter (OD mm)">
                             <input
                               type="number"
+                              inputMode="decimal"
                               className="production-inline-input production-inline-num tabular-data"
                               aria-label="Specification diameter"
                               name="diameter"
@@ -1416,6 +1409,7 @@ export default function ProductionSection({
                           <td className="production-col-num tabular-data" data-label="Thickness (mm)">
                             <input
                               type="number"
+                              inputMode="decimal"
                               className="production-inline-input production-inline-num tabular-data"
                               aria-label="Specification thickness"
                               name="thickness"
@@ -1429,6 +1423,7 @@ export default function ProductionSection({
                           <td className="production-col-num tabular-data" data-label="Length (mm)">
                             <input
                               type="number"
+                              inputMode="decimal"
                               className="production-inline-input production-inline-num tabular-data"
                               aria-label="Specification length"
                               name="length"
@@ -1442,6 +1437,7 @@ export default function ProductionSection({
                           <td className="production-col-num tabular-data" data-label="Pipe #">
                             <input
                               type="number"
+                              inputMode="numeric"
                               className="production-inline-input production-inline-num tabular-data"
                               aria-label="Specification pipe number"
                               name="pipeNumber"
@@ -1455,6 +1451,7 @@ export default function ProductionSection({
                           <td className="production-col-num tabular-data" data-label="Tons">
                             <input
                               type="number"
+                              inputMode="decimal"
                               className="production-inline-input production-inline-num tabular-data"
                               aria-label="Specification tonnage"
                               name="tonnage"

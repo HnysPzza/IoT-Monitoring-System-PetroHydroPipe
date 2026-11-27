@@ -309,6 +309,32 @@
 }
 
 @media (max-width: 680px) {
+  .downtime-table-card .section-heading {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .downtime-heading-group {
+    min-width: 0;
+  }
+
+  .downtime-heading-group h2 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  .downtime-header-controls {
+    flex-shrink: 0;
+    gap: 6px;
+  }
+
+  .downtime-header-controls .section-chip {
+    min-height: 32px;
+    padding: 4px 10px;
+    gap: 5px;
+    font-size: 0.78rem;
+  }
+
   .downtime-layout .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

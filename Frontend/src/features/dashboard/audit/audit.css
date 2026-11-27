@@ -1,15 +1,23 @@
 /* Layout, table card stack, modal transitions, and Operate-mode states for Audit Log. */
+#audit-header-controls {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+#audit-header-controls .audit-tabs {
+  padding: 3px;
+}
+
+#audit-header-controls .audit-tab-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
 .audit-page-header {
   display: grid;
   gap: 4px;
-}
-
-.audit-header-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
 }
 
 .audit-tabs {
@@ -78,21 +86,6 @@
   display: grid;
   gap: inherit;
   min-width: 0;
-}
-
-.audit-page-title {
-  margin: 0;
-  color: var(--c-text);
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.audit-page-subtitle {
-  margin: 0;
-  color: var(--c-text-2);
-  font-size: 0.88rem;
-  line-height: 1.45;
 }
 
 .audit-controls-card {
@@ -656,9 +649,25 @@
     width: 100%;
   }
 
+  .audit-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 10px 8px;
+  }
+
+  .audit-controls > .filter-field:not(.audit-date-field) {
+    grid-column: 1 / -1;
+  }
+
   .audit-controls-actions {
-    width: 100%;
+    width: auto;
     justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .audit-reset-button {
+    padding: 0 10px;
+    font-size: 0.78rem;
   }
 
   .audit-table {

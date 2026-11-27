@@ -54,7 +54,6 @@ export const navItems = [
     icon: 'logs',
     group: 'analyze',
     roles: ['Admin', 'Engineering Supervisor'],
-    subtitle: 'Trace operator actions and system changes.',
   },
   {
     label: 'User Accounts',

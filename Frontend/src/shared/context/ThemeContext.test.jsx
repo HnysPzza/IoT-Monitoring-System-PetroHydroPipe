@@ -104,4 +104,28 @@ describe('ThemeProvider', () => {
     expect(screen.getByRole('button', { name: 'light' })).toBeInTheDocument()
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
   })
+
+  it('syncs the color-scheme meta tag with only light and only dark to opt out of browser force-dark inversion', () => {
+    const meta = document.createElement('meta')
+    meta.setAttribute('name', 'color-scheme')
+    meta.setAttribute('content', 'only light')
+    document.head.appendChild(meta)
+
+    try {
+      configureMotionPreference(true, vi.fn())
+      render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>,
+      )
+
+      expect(meta).toHaveAttribute('content', 'only light')
+      fireEvent.click(screen.getByRole('button', { name: 'light' }))
+      expect(meta).toHaveAttribute('content', 'only dark')
+      fireEvent.click(screen.getByRole('button', { name: 'dark' }))
+      expect(meta).toHaveAttribute('content', 'only light')
+    } finally {
+      meta.remove()
+    }
+  })
 })
