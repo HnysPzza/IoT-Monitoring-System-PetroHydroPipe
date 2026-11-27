@@ -931,6 +931,129 @@ test('device authentication throttles rotating fake device IDs from the same sou
   assert.equal(sensorLookups.length, 3)
 })
 
+test('registered ESP32 devices failing behind a shared Plant NAT IP only throttle that device and never lock out sibling cold-cache ESP32s', async () => {
+  const auditLogs = []
+  const sensorLookups = []
+  const baseRecord = createSensorRecord()
+  const sensors = {
+    'esp32-m01-s01': { ...baseRecord, id: 'sensor-1', sensor_code: 'S-01', esp32_device_id: 'esp32-m01-s01' },
+    'esp32-m01-s02': { ...baseRecord, id: 'sensor-2', sensor_code: 'S-02', esp32_device_id: 'esp32-m01-s02' },
+    'esp32-m01-s03': { ...baseRecord, id: 'sensor-3', sensor_code: 'S-03', esp32_device_id: 'esp32-m01-s03' },
+    'esp32-m01-s04': { ...baseRecord, id: 'sensor-4', sensor_code: 'S-04', esp32_device_id: 'esp32-m01-s04' },
+    'esp32-m01-s05': { ...baseRecord, id: 'sensor-5', sensor_code: 'S-05', esp32_device_id: 'esp32-m01-s05' },
+  }
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    auditLogs,
+    sensorLookups,
+    sensorRecordOverride: (deviceId) => sensors[deviceId] || null,
+    envOverrides: {
+      IOT_AUTH_FAILURE_RATE_LIMIT: 10,
+      IOT_AUTH_FAILURE_WINDOW_MS: 60_000,
+    },
+  })
+
+  for (let i = 0; i < 10; i++) {
+    await assert.rejects(
+      () => iotService.authenticateDevice({
+        deviceId: 'esp32-m01-s05',
+        deviceKey: 'wrong-rotated-key',
+        sourceIp: '203.0.113.10',
+      }),
+      { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+    )
+  }
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s05',
+      deviceKey: 'device-secret',
+      sourceIp: '203.0.113.10',
+    }),
+    { code: 'RATE_LIMITED', status: 429 },
+  )
+
+  for (const deviceId of ['esp32-m01-s01', 'esp32-m01-s02', 'esp32-m01-s03', 'esp32-m01-s04']) {
+    const authed = await iotService.authenticateDevice({
+      deviceId,
+      deviceKey: 'device-secret',
+      sourceIp: '203.0.113.10',
+    })
+    assert.equal(authed.id, sensors[deviceId].id)
+  }
+
+  // Unknown scanner IDs from a separate IP still trigger IP-level throttling before hitting DB.
+  const lookupsBeforeScan = sensorLookups.length
+  for (let i = 0; i < 10; i++) {
+    await assert.rejects(
+      () => iotService.authenticateDevice({
+        deviceId: `esp32-fake-${i}`,
+        deviceKey: 'wrong-key',
+        sourceIp: '198.51.100.77',
+      }),
+      { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+    )
+  }
+  assert.equal(sensorLookups.length, lookupsBeforeScan + 10)
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-fake-overflow',
+      deviceKey: 'wrong-key',
+      sourceIp: '198.51.100.77',
+    }),
+    { code: 'RATE_LIMITED', status: 429 },
+  )
+  assert.equal(sensorLookups.length, lookupsBeforeScan + 10)
+})
+
+test('external attacker failing auth for a known device ID only throttles that IP and never locks out the real plant ESP32', async () => {
+  const auditLogs = []
+  const sensorLookups = []
+  const baseRecord = createSensorRecord()
+  const sensors = {
+    'esp32-m01-s03': { ...baseRecord, id: 'sensor-3', sensor_code: 'S-03', esp32_device_id: 'esp32-m01-s03' },
+  }
+  const iotService = loadIotService({
+    eventType: 'pulse',
+    signal: 'active',
+    auditLogs,
+    sensorLookups,
+    sensorRecordOverride: (deviceId) => sensors[deviceId] || null,
+    envOverrides: {
+      IOT_AUTH_FAILURE_RATE_LIMIT: 10,
+      IOT_AUTH_FAILURE_WINDOW_MS: 60_000,
+    },
+  })
+
+  for (let i = 0; i < 10; i++) {
+    await assert.rejects(
+      () => iotService.authenticateDevice({
+        deviceId: 'esp32-m01-s03',
+        deviceKey: i % 2 === 0 ? 'attacker-wrong-key' : '',
+        sourceIp: '198.51.100.88',
+      }),
+      { code: 'DEVICE_UNAUTHORIZED', status: 401 },
+    )
+  }
+
+  await assert.rejects(
+    () => iotService.authenticateDevice({
+      deviceId: 'esp32-m01-s03',
+      deviceKey: 'attacker-wrong-key',
+      sourceIp: '198.51.100.88',
+    }),
+    { code: 'RATE_LIMITED', status: 429 },
+  )
+
+  const plantDevice = await iotService.authenticateDevice({
+    deviceId: 'esp32-m01-s03',
+    deviceKey: 'device-secret',
+    sourceIp: '203.0.113.10',
+  })
+  assert.equal(plantDevice.id, 'sensor-3')
+})
+
 test('device authentication logs IOT_AUTH_AUDIT_LOG_FAILED, still rejects 401, and retries audit on next failure when audit persistence fails', async () => {
   const logs = []
   const auditLogs = []

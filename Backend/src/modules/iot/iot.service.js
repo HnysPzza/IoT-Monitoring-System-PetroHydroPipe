@@ -18,6 +18,8 @@ const MAX_BOOT_COUNTER_OVERRIDES = 64
 const MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES = 16
 const DEVICE_THRESHOLDS_CACHE_TTL_MS = 5_000
 const verifiedDeviceCache = new Map()
+// ponytail: in-process known-ID set; warm from sensors table if multi-node.
+const knownSensorDeviceIds = new Set()
 const failedAuthBuckets = new Map()
 const failedAuthAuditCooldowns = new Map()
 const deviceBootCounterOverrides = new Map()
@@ -364,9 +366,19 @@ function cacheVerifiedSensor(deviceId, keyDigest, sensor, now) {
   })
 }
 
-function getFailureBucketKey(deviceId, sourceIp) {
-  if (sourceIp) return `ip:${sourceIp}`
-  return `device:${deviceId || 'missing'}`
+function rememberKnownSensorDeviceId(deviceId) {
+  if (!deviceId || knownSensorDeviceIds.has(deviceId)) return
+  if (knownSensorDeviceIds.size >= MAX_DEVICE_AUTH_CACHE_ENTRIES) {
+    const oldest = knownSensorDeviceIds.values().next().value
+    if (oldest !== undefined) knownSensorDeviceIds.delete(oldest)
+  }
+  knownSensorDeviceIds.add(deviceId)
+}
+
+function getFailureBucketKey(deviceId, sourceIp, isKnownDevice = false) {
+  if (isKnownDevice && sourceIp) return `ip:${sourceIp}:device:${deviceId || 'missing'}`
+  if (isKnownDevice || !sourceIp) return `device:${deviceId || 'missing'}`
+  return `ip:${sourceIp}`
 }
 
 function assertNotAuthThrottled(bucketKey, now) {
@@ -435,14 +447,17 @@ async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, failureBu
 
 async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
   const now = Date.now()
-  const failureBucketKey = getFailureBucketKey(deviceId, sourceIp)
+  const deviceBucketKey = getFailureBucketKey(deviceId, sourceIp, true)
+  const ipBucketKey = sourceIp ? getFailureBucketKey(deviceId, sourceIp, false) : null
+  const isKnownDevice = Boolean(deviceId && knownSensorDeviceIds.has(deviceId))
 
   if (!deviceId || !deviceKey) {
-    assertNotAuthThrottled(failureBucketKey, now)
-    recordFailedAuthAttempt(failureBucketKey, now)
+    const missingBucketKey = getFailureBucketKey(deviceId, sourceIp, isKnownDevice)
+    assertNotAuthThrottled(missingBucketKey, now)
+    recordFailedAuthAttempt(missingBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId: deviceId || null,
-      failureBucketKey,
+      failureBucketKey: missingBucketKey,
       reason: !deviceId ? 'missing_device_id' : 'missing_device_key',
       now,
     })
@@ -452,34 +467,41 @@ async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
   const keyDigest = digestDeviceKey(deviceKey)
   const cachedEntry = getCachedSensorEntry(deviceId, now)
   if (cachedEntry && crypto.timingSafeEqual(cachedEntry.keyDigest, keyDigest)) {
+    rememberKnownSensorDeviceId(deviceId)
     return cachedEntry.sensor
   }
 
-  assertNotAuthThrottled(failureBucketKey, now)
+  assertNotAuthThrottled(deviceBucketKey, now)
+  if (!isKnownDevice && ipBucketKey) {
+    assertNotAuthThrottled(ipBucketKey, now)
+  }
 
   const sensor = await findSensorByDeviceId(deviceId)
 
   if (!sensor?.device_key_hash) {
     verifiedDeviceCache.delete(deviceId)
+    knownSensorDeviceIds.delete(deviceId)
     await bcrypt.compare(deviceKey, DUMMY_DEVICE_KEY_HASH)
-    recordFailedAuthAttempt(failureBucketKey, now)
+    const unknownBucketKey = getFailureBucketKey(deviceId, sourceIp, false)
+    recordFailedAuthAttempt(unknownBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId,
-      failureBucketKey,
+      failureBucketKey: unknownBucketKey,
       reason: sensor ? 'missing_device_key_hash' : 'unknown_device',
       now,
     })
     throw createIotError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
   }
 
+  rememberKnownSensorDeviceId(deviceId)
   const keyMatches = await bcrypt.compare(deviceKey, sensor.device_key_hash)
 
   if (!keyMatches) {
-    recordFailedAuthAttempt(failureBucketKey, now)
+    recordFailedAuthAttempt(deviceBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId,
       sensorCode: sensor.sensor_code,
-      failureBucketKey,
+      failureBucketKey: deviceBucketKey,
       reason: 'invalid_device_key',
       now,
     })
