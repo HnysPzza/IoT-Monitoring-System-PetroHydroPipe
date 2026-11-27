@@ -211,6 +211,23 @@ function validateEnv() {
     if (isLowEntropySecret(env.JWT_SECRET)) {
       throw new Error("Invalid environment configuration. JWT_SECRET must have high entropy in production; generate one with crypto.randomBytes(48).toString('base64url').")
     }
+
+    const isLoopbackOrigin = (origin) => {
+      const host = new URL(origin).hostname.toLowerCase()
+      return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1'
+    }
+
+    if (corsOrigins.length === 0 || corsOrigins.some(isLoopbackOrigin)) {
+      throw new Error('Invalid environment configuration. CORS_ORIGIN cannot use localhost or be empty in production.')
+    }
+
+    if (isLoopbackOrigin(env.ACCOUNT_SETUP_ORIGIN)) {
+      throw new Error('Invalid environment configuration. ACCOUNT_SETUP_ORIGIN cannot use localhost in production.')
+    }
+
+    if (env.WATCHDOG_MODE === 'disabled') {
+      throw new Error('Invalid environment configuration. WATCHDOG_MODE cannot be disabled in production.')
+    }
   }
 
   return env

@@ -27,6 +27,8 @@ test('production refuses each missing backend credential even when other setting
     NODE_ENV: 'production',
     TRUST_PROXY: '1',
     CORS_ORIGIN: 'https://frontend.example.test',
+    ACCOUNT_SETUP_ORIGIN: 'https://frontend.example.test',
+    WATCHDOG_MODE: 'enforce',
     SUPABASE_URL: 'https://database.example.test',
     SUPABASE_SERVICE_ROLE_KEY: 'synthetic-test-value',
     JWT_SECRET: 'synthetic-signing-value-for-tests-123456',
@@ -343,4 +345,39 @@ test('parses TRUST_PROXY hop counts, subnets, and rejects permissive true', () =
       assert.throws(loadEnv, /TRUST_PROXY/)
     })
   }
+})
+
+test('production rejects localhost origins and disabled watchdog mode', () => {
+  const validProd = {
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    CORS_ORIGIN: 'https://frontend.example.test,https://admin.example.test',
+    ACCOUNT_SETUP_ORIGIN: 'https://frontend.example.test',
+    WATCHDOG_MODE: 'enforce',
+    SUPABASE_URL: 'https://database.example.test',
+    SUPABASE_SERVICE_ROLE_KEY: 'synthetic-test-value',
+    JWT_SECRET: 'synthetic-signing-value-for-tests-123456',
+  }
+
+  for (const localOrigin of ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://frontend.example.test,http://localhost:4173']) {
+    withEnvironment({ ...validProd, CORS_ORIGIN: localOrigin }, (loadEnv) => {
+      assert.throws(loadEnv, /CORS_ORIGIN/)
+    })
+  }
+
+  for (const localOrigin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
+    withEnvironment({ ...validProd, ACCOUNT_SETUP_ORIGIN: localOrigin }, (loadEnv) => {
+      assert.throws(loadEnv, /ACCOUNT_SETUP_ORIGIN/)
+    })
+  }
+
+  withEnvironment({ ...validProd, WATCHDOG_MODE: 'disabled' }, (loadEnv) => {
+    assert.throws(loadEnv, /WATCHDOG_MODE/)
+  })
+
+  withEnvironment(validProd, (loadEnv) => {
+    const parsed = loadEnv()
+    assert.equal(parsed.WATCHDOG_MODE, 'enforce')
+    assert.equal(parsed.ACCOUNT_SETUP_ORIGIN, 'https://frontend.example.test')
+  })
 })
