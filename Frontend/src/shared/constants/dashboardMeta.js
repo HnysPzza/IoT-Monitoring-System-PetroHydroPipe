@@ -49,6 +49,7 @@ export const navItems = [
   },
   {
     label: 'Audit Log',
+    roleLabels: { 'Engineering Supervisor': 'Production Log' },
     to: '/dashboard/audit',
     icon: 'logs',
     group: 'analyze',
@@ -80,6 +81,10 @@ export const navItems = [
     subtitle: 'Operational configuration, sensor thresholds, and system preferences for Spiral Mill 01.',
   },
 ]
+
+export function getNavItemLabel(item, role) {
+  return item?.roleLabels?.[role] || item?.label || ''
+}
 
 export function canAccessDashboardRoute(role, path) {
   return Boolean(navItems.find((item) => item.to === path)?.roles.includes(role))
