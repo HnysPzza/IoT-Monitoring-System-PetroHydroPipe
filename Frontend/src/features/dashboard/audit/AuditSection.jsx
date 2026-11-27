@@ -478,10 +478,10 @@ export default function AuditSection({ loadProduction = getProductionLogs }) {
   return (
     <div className="audit-layout">
       <div className="sr-only" role="status" aria-live="polite">{liveAnnouncement}</div>
-      <header className="audit-page-header">
-        <div className="audit-header-row">
-          <h1 id="audit-title" className="audit-page-title">{isAdmin ? 'Audit log' : 'Production log'}</h1>
-          {isAdmin ? (
+      <h1 id="audit-title" className="sr-only">{isAdmin ? 'Audit log' : 'Production log'}</h1>
+      {isAdmin ? (
+        <header className="audit-page-header">
+          <div className="audit-header-row">
             <div
               className="audit-tabs"
               role="tablist"
@@ -516,9 +516,9 @@ export default function AuditSection({ loadProduction = getProductionLogs }) {
                 Production Log
               </button>
             </div>
-          ) : null}
-        </div>
-      </header>
+          </div>
+        </header>
+      ) : null}
 
       <div
         id={isAdmin ? 'audit-tabpanel' : undefined}
