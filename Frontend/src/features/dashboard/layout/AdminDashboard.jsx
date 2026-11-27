@@ -29,7 +29,7 @@ import { onlineManager, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useTheme } from '../../../shared/hooks/useTheme.js'
-import { navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
+import { getNavItemLabel, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
 import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
 import {
@@ -843,14 +843,15 @@ export default function AdminDashboard() {
               <div className="sidebar-nav-links">
                 {group.items.map((item) => {
                   const Icon = icons[item.icon]
+                  const itemLabel = getNavItemLabel(item, user?.role)
                   return (
                     <NavLink
                       key={item.to}
                       to={item.to}
                       end={item.to === '/dashboard'}
-                      title={isDesktopSidebarCollapsed ? item.label : undefined}
-                      data-label={item.label}
-                      aria-label={isDesktopSidebarCollapsed ? item.label : undefined}
+                      title={isDesktopSidebarCollapsed ? itemLabel : undefined}
+                      data-label={itemLabel}
+                      aria-label={isDesktopSidebarCollapsed ? itemLabel : undefined}
                       aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === item.to ? 'sidebar-collapsed-tooltip' : undefined}
                       onPointerDown={() => {
                         pointerFocusedToRef.current = item.to
@@ -859,7 +860,7 @@ export default function AdminDashboard() {
                       onMouseEnter={(event) => {
                         if (!isDesktopSidebarCollapsed) return
                         const rect = event.currentTarget.getBoundingClientRect()
-                        setHoveredTooltip({ to: item.to, label: item.label, top: rect.top + rect.height / 2 })
+                        setHoveredTooltip({ to: item.to, label: itemLabel, top: rect.top + rect.height / 2 })
                       }}
                       onMouseLeave={() => {
                         if (pointerFocusedToRef.current === item.to) {
@@ -872,7 +873,7 @@ export default function AdminDashboard() {
                         pointerFocusedToRef.current = null
                         if (!isDesktopSidebarCollapsed || isPointerFocus) return
                         const rect = event.currentTarget.getBoundingClientRect()
-                        setFocusedTooltip({ to: item.to, label: item.label, top: rect.top + rect.height / 2 })
+                        setFocusedTooltip({ to: item.to, label: itemLabel, top: rect.top + rect.height / 2 })
                       }}
                       onBlur={() => {
                         pointerFocusedToRef.current = null
@@ -890,7 +891,7 @@ export default function AdminDashboard() {
                         aria-hidden="true"
                       />
                       <span className="sidebar-link-copy">
-                        <span className="sidebar-link-label">{item.label}</span>
+                        <span className="sidebar-link-label">{itemLabel}</span>
                       </span>
                     </NavLink>
                   )

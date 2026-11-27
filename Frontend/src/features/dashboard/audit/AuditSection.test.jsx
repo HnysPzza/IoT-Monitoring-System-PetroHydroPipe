@@ -1167,6 +1167,7 @@ describe('AuditSection', () => {
       authValue: { user: { id: 'eng-1', role: 'Engineering Supervisor' } },
     })
     expect(await screen.findByText('Maynilad Water')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /production log/i })).toBeInTheDocument()
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
     expect(getAuditLogs).not.toHaveBeenCalled()
   })

@@ -481,7 +481,7 @@ export default function AuditSection({ loadProduction = getProductionLogs }) {
       <header className="audit-page-header">
         <div className="audit-header-row">
           <div>
-            <h1 id="audit-title" className="audit-page-title">Audit log</h1>
+            <h1 id="audit-title" className="audit-page-title">{isAdmin ? 'Audit log' : 'Production log'}</h1>
             <p className="audit-page-subtitle">
               {isProductionTab
                 ? 'Read-only chronological log of S-05 production cut events and recorded specifications.'
