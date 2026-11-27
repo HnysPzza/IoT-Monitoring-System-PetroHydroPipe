@@ -7188,18 +7188,22 @@ button:disabled {
 
   .alerts-popover {
     position: fixed;
-    top: var(--topbar-offset, 84px);
-    left: 16px;
-    right: 16px;
+    top: var(--topbar-offset, 66px);
+    left: 12px;
+    right: 12px;
     display: flex;
     flex-direction: column;
     width: auto;
-    max-height: calc(100dvh - var(--topbar-offset, 84px) - 16px);
+    max-height: min(380px, 52dvh);
   }
 
   .dashboard-topbar:has(#overview-header-controls) .alerts-popover {
-    top: var(--topbar-offset, 124px);
-    max-height: calc(100dvh - var(--topbar-offset, 124px) - 16px);
+    top: var(--topbar-offset, 66px);
+    max-height: min(380px, 52dvh);
+  }
+
+  .alerts-popover-header {
+    padding: 8px 12px;
   }
 
   .alerts-popover-header,
@@ -7209,6 +7213,11 @@ button:disabled {
 
   .alerts-popover-list {
     min-height: 0;
+    max-height: min(260px, 36dvh);
+  }
+
+  .alerts-popover-footer {
+    padding: 4px 8px;
   }
 
   .dashboard-clock {
@@ -7408,21 +7417,21 @@ button:disabled {
 
 @media (max-width: 480px) {
   .alerts-popover {
-    left: 12px;
-    right: 12px;
+    left: 10px;
+    right: 10px;
     max-width: none;
     transform-origin: top right;
   }
 
   .alert-row {
-    grid-template-columns: 14px minmax(0, 1fr);
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
   }
 
-  .alert-row .alert-acknowledge-ghost-btn,
-  .alert-row .alert-acked-tag {
-    grid-column: 2;
-    justify-self: start;
-    margin-top: 6px;
+  .alert-row .alert-acknowledge-ghost-btn {
+    padding: 0 10px;
   }
 }
 
