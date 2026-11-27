@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { onlineManager } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
@@ -339,6 +339,29 @@ describe('LiveSection polling', () => {
     expect(getLiveFeed).toHaveBeenCalledTimes(2)
   })
 
+  it('shows red S-03 downtime top banner over idle banner and keeps event time inside each sensor card', async () => {
+    const downtimePayload = payload()
+    downtimePayload.machine.status = 'Downtime'
+    downtimePayload.sensors.push({
+      id: 'sensor-3',
+      sensorCode: 'S-03',
+      label: 'Machine Main Sensor',
+      status: 'Downtime',
+      signal: 'no_pulse',
+      lastEventAt: '2026-08-22T00:02:00.000Z',
+      purpose: 'Main spindle authority',
+      monitoring: { stateFresh: true, connectivityState: 'online', detectionState: 'downtime' },
+    })
+    getLiveFeed.mockResolvedValue(downtimePayload)
+
+    renderWithAuth(<LiveSection />)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveClass('notice-error')
+    expect(alert).toHaveTextContent(/S-03 Machine Main Sensor downtime detected/i)
+    expect(screen.queryByRole('heading', { name: 'Latest event by sensor' })).not.toBeInTheDocument()
+  })
+
   it('ticks relative event ages every 60 seconds and cleans up on unmount', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-22T00:02:10.000Z'))
@@ -347,11 +370,11 @@ describe('LiveSection polling', () => {
     const view = renderWithAuth(<LiveSection />)
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
 
-    const activity = screen.getByRole('list', { name: 'Latest event reported by each sensor' })
-    expect(within(activity).getByText('10 seconds ago')).toBeInTheDocument()
+    expect(screen.getByText('10 seconds ago')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Latest event reported by each sensor' })).not.toBeInTheDocument()
 
     await act(async () => { vi.advanceTimersByTime(60_000) })
-    expect(within(activity).getByText('1 minute ago')).toBeInTheDocument()
+    expect(screen.getByText('1 minute ago')).toBeInTheDocument()
     view.unmount()
   })
 })

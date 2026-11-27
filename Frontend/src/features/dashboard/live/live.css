@@ -14,7 +14,9 @@
 .live-layout .live-sensor-meta dd.live-offline { color: var(--status-offline-text); }
 .live-layout .live-sensor-card h3 { font-size: 0.875rem; }
 .live-layout .live-sensor-card .status { flex-shrink: 0; white-space: nowrap; }
-.live-layout .live-sensor-card .machine-id { color: var(--c-text-2); font-size: 11px; }
+.live-layout .live-sensor-card .machine-id { color: var(--c-text-2); font-size: 12px; }
+.live-layout .live-event-age { display: grid; gap: 2px; }
+.live-layout .live-event-age time { color: var(--c-text-2); font-size: 0.75rem; font-weight: 400; }
 .live-layout .live-purpose-row { padding-top: 8px; }
 .live-layout .live-activity-card { padding: 14px 16px; }
 .live-layout .live-activity-heading { margin-bottom: 10px; }
