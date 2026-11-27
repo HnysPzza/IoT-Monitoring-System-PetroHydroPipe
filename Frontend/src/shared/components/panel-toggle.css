@@ -5,25 +5,30 @@
   align-items: center;
   justify-content: center;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   padding: 0;
   border: 1px solid var(--card-border, rgba(175, 192, 206, 0.16));
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--icon-bg, rgba(255, 255, 255, 0.04));
+  box-shadow: none;
   color: var(--c-text-2, #AFC0CE);
   cursor: pointer;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   user-select: none;
   transition:
-    background-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
     color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-toggle-btn::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 
 .panel-toggle-btn.desktop-only {
@@ -44,49 +49,18 @@
   }
 }
 
-.panel-toggle-btn:hover {
+.panel-toggle-btn:hover,
+.panel-toggle-btn:active {
   color: var(--c-text, #F8FAFC);
   background: rgba(56, 189, 248, 0.08);
   border-color: rgba(56, 189, 248, 0.25);
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.18),
-    0 0 12px rgba(56, 189, 248, 0.1);
-}
-
-.panel-toggle-btn:active {
-  transform: scale(0.92);
-}
-
-.panel-toggle-btn:focus-visible {
-  outline: none;
-  border-color: rgba(56, 189, 248, 0.5);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
-}
-
-/* Sidebar-header toggles keep a full touch target while rendering as an icon only. */
-.panel-toggle-btn.sidebar-toggle,
-.panel-toggle-btn.sidebar-toggle:hover,
-.panel-toggle-btn.sidebar-toggle:active {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  border-color: transparent;
-  background: transparent;
   box-shadow: none;
   transform: none;
 }
 
-.panel-toggle-btn.sidebar-toggle:hover,
-.panel-toggle-btn.sidebar-toggle:active {
-  color: var(--c-text, #F8FAFC);
-}
-
-.panel-toggle-btn.sidebar-toggle:focus-visible {
+.panel-toggle-btn:focus-visible {
   outline: 2px solid var(--c-primary, #1677FF);
   outline-offset: 2px;
-  border-color: transparent;
-  background: transparent;
   box-shadow: none;
 }
 
