@@ -2927,7 +2927,6 @@ button:disabled {
 }
 
 .analytics-header-row,
-.analytics-title-group,
 .analytics-header-controls {
   display: flex;
   align-items: center;
@@ -2937,15 +2936,6 @@ button:disabled {
   justify-content: space-between;
   gap: 16px;
   min-height: 44px;
-}
-
-.analytics-title-group {
-  min-width: 0;
-  gap: 8px;
-}
-
-.analytics-title-group h2 {
-  margin: 0;
 }
 
 .analytics-refresh-button:focus-visible {
@@ -4438,6 +4428,17 @@ button:disabled {
 .reports-export-menu-list {
   display: grid;
   gap: 3px;
+}
+
+.reports-export-divider {
+  width: 100%;
+  height: 1px;
+  margin: 2px 0;
+  background: #CBD5E1;
+}
+
+:root[data-theme='dark'] .reports-export-divider {
+  background: #334155;
 }
 
 .reports-export-option {
