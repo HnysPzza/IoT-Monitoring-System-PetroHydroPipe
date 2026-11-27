@@ -179,6 +179,7 @@ html {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   color: var(--c-text);
   background: var(--c-bg);
@@ -205,6 +206,13 @@ button:disabled {
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+html:has(.login-page),
+body:has(.login-page) {
+  background: #0B1322;
+  overscroll-behavior-y: none;
 }
 
 /* Auth split layout aligned to industrial dark-slate tokens and single photo gradient overlay. */
@@ -6858,7 +6866,9 @@ button:disabled {
 
   .login-page {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto 1fr;
+    grid-template-rows: auto auto;
+    align-content: center;
+    align-content: safe center;
   }
 
   .brand-panel {

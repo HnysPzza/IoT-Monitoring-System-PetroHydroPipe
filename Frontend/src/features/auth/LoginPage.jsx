@@ -64,7 +64,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     mountedRef.current = true
-    usernameRef.current?.focus()
+    if (!window.matchMedia?.('(pointer: coarse)')?.matches) {
+      usernameRef.current?.focus()
+    }
     return () => {
       mountedRef.current = false
       window.clearTimeout(redirectTimerRef.current)
