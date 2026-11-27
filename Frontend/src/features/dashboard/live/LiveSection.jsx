@@ -9,7 +9,7 @@ import { getSensorLabel, getSensorPurpose } from '../../../shared/constants/sens
 import { formatLiveDateTime } from '../../../shared/utils/formatters.js'
 import { formatSignal } from '../../../shared/utils/signalFormatters.js'
 import { getSensorStatusClass } from '../../../shared/utils/statusClasses.js'
-import { formatSensorStatusSummary, getProcessIdleBanner, presentLiveSensors, summarizeSensorStatuses } from './livePresentation.js'
+import { formatSensorStatusSummary, getProcessIdleBanner, getProcessSensorFaultBanner, presentLiveSensors, summarizeSensorStatuses } from './livePresentation.js'
 import { useLiveFeedStream } from './useLiveFeedStream.js'
 
 const RELATIVE_TIME_UNITS = [
@@ -61,9 +61,13 @@ export default function LiveSection() {
     [presentedSensors],
   )
   const statusSummaryLabel = formatSensorStatusSummary(sensorSummary)
+  const downtimeBanner = useMemo(() => {
+    const issue = getProcessSensorFaultBanner(presentedSensors, monitoring.mode)
+    return issue?.isDowntime ? issue : null
+  }, [presentedSensors, monitoring.mode])
   const processIdleBanner = useMemo(
-    () => getProcessIdleBanner(presentedSensors, monitoring.mode),
-    [presentedSensors, monitoring.mode],
+    () => (downtimeBanner ? null : getProcessIdleBanner(presentedSensors, monitoring.mode)),
+    [downtimeBanner, presentedSensors, monitoring.mode],
   )
 
   useEffect(() => {
@@ -106,17 +110,6 @@ export default function LiveSection() {
             </article>
           ))}
         </section>
-        <section className="section-card live-activity-card" aria-hidden="true">
-          <div className="skeleton live-skeleton-title" />
-          <div className="live-activity-grid">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div key={index} className="live-activity-item">
-                <div className="skeleton live-skeleton-value" />
-                <div className="skeleton live-skeleton-label" />
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
     )
   }
@@ -136,6 +129,19 @@ export default function LiveSection() {
           >
             Retry live feed
           </button>
+        </div>
+      ) : null}
+      {downtimeBanner ? (
+        <div className="notice notice-error dashboard-alert overview-alert-banner" role="alert">
+          <div className="overview-alert-lead">
+            <AlertTriangle size={16} aria-hidden="true" className="overview-alert-icon" />
+            <span className="overview-alert-message">{downtimeBanner.message}</span>
+          </div>
+          {downtimeBanner.extraCount > 0 ? (
+            <span className="overview-alert-count">
+              +{downtimeBanner.extraCount} more active issue{downtimeBanner.extraCount > 1 ? 's' : ''}
+            </span>
+          ) : null}
         </div>
       ) : null}
       {processIdleBanner ? (
@@ -241,6 +247,13 @@ export default function LiveSection() {
                   <span className="live-connectivity-label">{sensor.connectivityLabel}</span>
                 </dd>
               </div>
+              <div>
+                <dt>Last event</dt>
+                <dd className="live-event-age">
+                  <span>{formatEventAge(sensor.lastEventAt)}</span>
+                  {sensor.lastEventAt ? <time dateTime={sensor.lastEventAt}>{formatLiveDateTime(sensor.lastEventAt)}</time> : null}
+                </dd>
+              </div>
             </dl>
             <div className="live-purpose-row">
               <span>{getSensorPurpose(sensor.sensorCode, sensor.purpose)}</span>
@@ -248,28 +261,6 @@ export default function LiveSection() {
           </article>
         ))}
       </section>
-
-      {presentedSensors.length > 0 ? (
-        <section className="section-card live-activity-card" aria-labelledby="live-activity-title">
-          <div className="live-activity-heading">
-            <div><h2 id="live-activity-title">Latest event by sensor</h2></div>
-          </div>
-          <ol className="live-activity-grid" aria-label="Latest event reported by each sensor">
-            {presentedSensors.map((sensor) => (
-              <li className="live-activity-item" key={sensor.id}>
-                <div className="live-activity-sensor">
-                  <span className="machine-id">{sensor.sensorCode}</span>
-                  <strong>{getSensorLabel(sensor.sensorCode, sensor.label)}</strong>
-                </div>
-                <div className="live-activity-time">
-                  <span>{formatEventAge(sensor.lastEventAt)}</span>
-                  {sensor.lastEventAt ? <time dateTime={sensor.lastEventAt}>{formatLiveDateTime(sensor.lastEventAt)}</time> : null}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
     </div>
   )
 }

@@ -76,6 +76,27 @@ test('propagates loss basis and period query failures', async () => {
   }), (error) => error === eventFailure)
 })
 
+test('Daily Analytics tracks Manila hours and compares the same elapsed hours yesterday', async () => {
+  const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
+  const { dependencies, aggregationCalls } = createDependencies({ eventRows: [
+    { bucket_start: '2026-08-03T03:00:00Z', sensor_code: 'S-05', event_count: 4 },
+    { bucket_start: '2026-08-03T04:00:00Z', sensor_code: 'S-05', event_count: 2 },
+    { bucket_start: '2026-08-02T04:00:00Z', sensor_code: 'S-05', event_count: 1 },
+  ] })
+  dependencies.asOf = new Date('2026-08-03T12:15:00+08:00')
+  const { selected, comparison } = await getAnalytics({ startDate: '2026-08-03', endDate: '2026-08-03' }, dependencies)
+  assert.deepEqual(aggregationCalls.map(call => call.bucketSeconds), [3600, 3600])
+  assert.equal(selected.range.bucket, 'hourly')
+  assert.equal(selected.trends.length, 24)
+  assert.equal(selected.trends[0].startAt, '2026-08-02T16:00:00.000Z')
+  assert.equal(selected.trends[23].label, '23:00')
+  assert.deepEqual(selected.trends.slice(10, 14).map(point => point.metrics.outputPieces), [0, 4, 2, null])
+  assert.equal(selected.trends[12].periodState, 'partial')
+  assert.equal(selected.trends[12].endAt, '2026-08-03T04:15:00.000Z')
+  assert.equal(comparison.trends[12].endAt, '2026-08-02T04:15:00.000Z')
+  assert.equal(comparison.trends[12].metrics.outputPieces, 1)
+})
+
 test('Analytics compares a partial Manila range with the matching elapsed preceding range', async () => {
   const { getAnalytics } = require('../../../src/modules/analytics/analytics.service')
   const { dependencies, aggregationCalls } = createDependencies({

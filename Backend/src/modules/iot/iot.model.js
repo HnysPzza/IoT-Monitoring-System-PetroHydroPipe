@@ -10,6 +10,24 @@ const SIGNAL_BY_EVENT_TYPE = {
 
 const RESERVED_METADATA_KEYS = ['outputAccepted', 'outputRejectionReason']
 const MIN_RECORDED_AT = new Date('2026-05-01T00:00:00+08:00')
+const MAX_METADATA_BYTES = 4096
+const MAX_METADATA_DEPTH = 3
+const MAX_METADATA_KEYS = 32
+
+function isBoundedMetadata(metadata) {
+  if (Buffer.byteLength(JSON.stringify(metadata), 'utf8') > MAX_METADATA_BYTES) return false
+  let keyCount = 0
+  function inspect(value, depth) {
+    if (depth > MAX_METADATA_DEPTH) return false
+    if (value === null || typeof value !== 'object') return true
+    if (Array.isArray(value)) return value.every((item) => inspect(item, depth + 1))
+    const keys = Object.keys(value)
+    keyCount += keys.length
+    if (keyCount > MAX_METADATA_KEYS) return false
+    return keys.every((key) => inspect(value[key], depth + 1))
+  }
+  return inspect(metadata, 0)
+}
 
 const recordedAtTimestampSchema = z.string()
   .datetime({ offset: true, message: 'recordedAt must be an ISO timestamp with an offset.' })
@@ -50,6 +68,13 @@ const sensorEventSchema = z.object({
         code: 'custom',
         path: ['metadata', key],
         message: `metadata.${key} is reserved for server use.`,
+      })
+    }
+    if (!isBoundedMetadata(body.metadata)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['metadata'],
+        message: 'metadata exceeds allowed nesting depth, key count, or byte size.',
       })
     }
   }),

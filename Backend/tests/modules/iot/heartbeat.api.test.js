@@ -257,3 +257,71 @@ test('heartbeat endpoint preserves controlled authentication, conflict, and inte
     })
   }
 })
+
+test('S-01, S-02, S-04 config, heartbeat, and event endpoints emit x-absence-enabled=false without S-03 stall headers when disabled', async () => {
+  for (const sensorCode of ['S-01', 'S-02', 'S-04']) {
+    const app = loadAppWithMocks({
+      'src/modules/iot/iot.service.js': {
+        authenticateDevice: async () => ({
+          id: `30000000-0000-4000-8000-00000000000${sensorCode.slice(-1)}`,
+          sensor_code: sensorCode,
+          machines: { id: '10000000-0000-4000-8000-000000000001', machine_code: 'M-01' },
+        }),
+        createHeartbeat: async ({ payload }) => ({ heartbeatId: payload.heartbeatId, stateApplied: true }),
+        createSensorEvent: async ({ payload }) => ({
+          id: 'event-1',
+          eventId: payload.eventId,
+          sensorCode,
+          machineCode: 'M-01',
+          eventType: payload.eventType,
+          signal: payload.signal,
+          recordedAt: payload.recordedAt || '2026-11-18T13:15:00.000Z',
+          duplicate: false,
+          stale: false,
+          stateApplied: true,
+        }),
+        getDeviceOperationalThresholds: async () => ({
+          sensorCode,
+          machineCode: 'M-01',
+          version: '21',
+          absenceDetectionEnabled: false,
+          triggerSeconds: 60,
+          recoverySeconds: sensorCode === 'S-01' ? 300 : 60,
+        }),
+        getLiveFeed: async () => ({}),
+      },
+    })
+
+    await withTestServer(app, async (baseUrl) => {
+      const headers = deviceHeaders({ 'x-device-id': `esp32-m01-${sensorCode.toLowerCase()}` })
+      const configResult = await requestJson(baseUrl, '/api/iot/config', { method: 'GET', headers })
+      assert.equal(configResult.response.status, 200)
+      assert.equal(configResult.response.headers.get('x-absence-enabled'), 'false')
+      assert.equal(configResult.response.headers.get('x-rotation-stall-ms'), null)
+
+      const hbResult = await requestJson(baseUrl, '/api/iot/heartbeats', {
+        method: 'POST',
+        headers,
+        body: heartbeatBody,
+      })
+      assert.equal(hbResult.response.status, 200)
+      assert.equal(hbResult.response.headers.get('x-absence-enabled'), 'false')
+      assert.equal(hbResult.response.headers.get('x-rotation-stall-ms'), null)
+
+      const eventResult = await requestJson(baseUrl, '/api/iot/events', {
+        method: 'POST',
+        headers,
+        body: {
+          eventId: '60000000-0000-4000-8000-000000000001',
+          eventType: 'idle',
+          signal: 'idle',
+          recordedAt: '2026-11-18T13:15:00.000Z',
+          metadata: { detectionState: 'IDLE' },
+        },
+      })
+      assert.equal(eventResult.response.status, 201)
+      assert.equal(eventResult.response.headers.get('x-absence-enabled'), 'false')
+      assert.equal(eventResult.response.headers.get('x-rotation-stall-ms'), null)
+    })
+  }
+})

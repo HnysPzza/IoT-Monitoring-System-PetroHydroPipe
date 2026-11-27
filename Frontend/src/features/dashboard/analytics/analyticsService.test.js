@@ -9,8 +9,14 @@ describe('Analytics API service', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('uses a deterministic Monday-start week and automatic daily buckets', () => {
-    expect(resolveAnalyticsRange({ referenceDate: '2026-08-14' })).toEqual({
+    expect(resolveAnalyticsRange({ period: 'this-week', referenceDate: '2026-08-14' })).toEqual({
       period: 'this-week', startDate: '2026-08-10', endDate: '2026-08-16', daysInclusive: 7, bucket: 'daily',
+    })
+  })
+
+  it('resolves Daily to one Manila date with hourly buckets', () => {
+    expect(resolveAnalyticsRange({ referenceDate: '2026-08-12' })).toEqual({
+      period: 'day', startDate: '2026-08-12', endDate: '2026-08-12', daysInclusive: 1, bucket: 'hourly',
     })
   })
 

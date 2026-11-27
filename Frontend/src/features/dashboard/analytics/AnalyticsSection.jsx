@@ -12,6 +12,7 @@ import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
 import AnalyticsDateRangePicker from './AnalyticsDateRangePicker.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 import AnalyticsKpiCard from './AnalyticsKpiCard.jsx'
+import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 
 const AUTO_REFRESH_MS = 60 * 1000
@@ -30,7 +31,7 @@ function getRangeValidation(options) {
 export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot }) {
   const online = useNetworkOnline()
   const currentManilaDate = getManilaDateInputValue()
-  const [period, setPeriod] = useState('week')
+  const [period, setPeriod] = useState('day')
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
   const [customRange, setCustomRange] = useState(null)
   const [trendMetric, setTrendMetric] = useState('downtime')
@@ -39,6 +40,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     if (period === 'all') {
       return { period: 'all' }
     }
+    if (period === 'day') return { period, referenceDate: selectedDate }
     if (period === 'month') {
       return { period: 'this-month', referenceDate: selectedDate }
     }
@@ -78,7 +80,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     setPeriod(nextPeriod)
     if (nextPeriod === 'custom') {
       setCustomRange({ startDate: nextStartDate, endDate: nextEndDate })
-    } else if (nextPeriod === 'week' || nextPeriod === 'month') {
+    } else if (nextPeriod === 'day' || nextPeriod === 'week' || nextPeriod === 'month') {
       setSelectedDate(nextStartDate)
     }
   }, [])
@@ -139,12 +141,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
     <div className="reports-layout analytics-layout">
       {resolvedHeaderSlot ? createPortal(controls, resolvedHeaderSlot) : controls}
 
-      {loadState === 'refreshing' ? (
-        <div className="notice dashboard-alert" role="status" aria-live="polite">
-          <RotateCw className="spin-icon" size={16} aria-hidden="true" />
-          <span>{isShowingPreviousRange ? 'Loading selected period; previous results remain visible.' : 'Refreshing Analytics...'}</span>
-        </div>
-      ) : null}
+      <RefreshStatus active={loadState === 'refreshing'} isPlaceholder={isShowingPreviousRange} message="Refreshing Analytics..." placeholderMessage="Loading selected period; previous results remain visible." />
 
       {loadState === 'stale' ? (
         <div className="notice notice-error dashboard-alert" role="alert">

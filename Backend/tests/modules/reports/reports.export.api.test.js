@@ -292,3 +292,153 @@ test('Export API limits repeated exports per user beyond the configured cap', as
     assert.ok(limited[0].headers.get('retry-after'))
   })
 })
+
+function authHeaderForUser(userId, role = 'Admin') {
+  const token = jwt.sign({ username: `user-${userId.slice(-2)}`, role }, JWT_SECRET, {
+    subject: userId,
+    expiresIn: '1h',
+  })
+  return { Authorization: `Bearer ${token}` }
+}
+
+test('Export API passes bounded maxLogs per format (10000 PDF, 25000 XLSX)', async () => {
+  const summaryCalls = []
+  const app = loadAppWithMocks({
+    'src/modules/reports/reports.service.js': {
+      getSummary: async (query, options) => {
+        summaryCalls.push({ query, options })
+        return { ...REPORT, rows: [...REPORT.rows] }
+      },
+    },
+    'src/modules/audit/audit.service.js': {
+      listAuditLogs: async () => ({}),
+      recordAuditLog: async () => {},
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const pdfRes = await requestExport(baseUrl, { type: 'daily', date: '2026-09-02', format: 'pdf' }, authHeader('Admin'))
+    const xlsxRes = await requestExport(baseUrl, { type: 'daily', date: '2026-09-02', format: 'xlsx' }, authHeader('Admin'))
+    assert.equal(pdfRes.status, 200)
+    assert.equal(xlsxRes.status, 200)
+    assert.equal(summaryCalls[0].options?.maxLogs, 10_000)
+    assert.equal(summaryCalls[1].options?.maxLogs, 25_000)
+  })
+})
+
+test('Export API bounds concurrent exports to 2 active + 8 queued, returns 429 EXPORT_BUSY on overflow, and releases slots on failure', async () => {
+  let active = 0
+  let maxActive = 0
+  let failNext = false
+  const resolvers = []
+  const app = loadAppWithMocks({
+    'src/modules/reports/reports.service.js': {
+      getSummary: async () => {
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        try {
+          if (failNext) throw new Error('synthetic export failure')
+          await new Promise((resolve) => resolvers.push(resolve))
+          return { ...REPORT, rows: [...REPORT.rows] }
+        } finally {
+          active -= 1
+        }
+      },
+    },
+    'src/modules/audit/audit.service.js': {
+      listAuditLogs: async () => ({}),
+      recordAuditLog: async () => {},
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    let completed = 0
+    const pending = Array.from({ length: 11 }, (_, idx) => {
+      const uid = `22222222-2222-4222-8222-0000000000${String(idx + 1).padStart(2, '0')}`
+      return requestExport(baseUrl, { type: 'daily', date: '2026-09-02', format: 'xlsx' }, authHeaderForUser(uid))
+        .finally(() => { completed += 1 })
+    })
+
+    try {
+      // Wait briefly until the first 2 enter getSummary and 8 wait in queue while 11th overflows.
+      await new Promise((r) => setTimeout(r, 80))
+      assert.equal(maxActive, 2)
+
+      while (completed < 11) {
+        while (resolvers.length > 0) resolvers.shift()()
+        await new Promise((r) => setTimeout(r, 10))
+      }
+
+      const responses = await Promise.all(pending)
+      const okCount = responses.filter((r) => r.status === 200).length
+      const busyResponses = responses.filter((r) => r.status === 429)
+      assert.equal(okCount, 10)
+      assert.equal(busyResponses.length, 1)
+      assertError(await busyResponses[0].json(), 'EXPORT_BUSY')
+      assert.ok(busyResponses[0].headers.get('retry-after'))
+
+      // Verify slots release when getSummary throws.
+      failNext = true
+      const errRes = await Promise.all([
+        requestExport(baseUrl, { type: 'daily', date: '2026-09-02', format: 'xlsx' }, authHeaderForUser('33333333-3333-4333-8333-000000000001')),
+        requestExport(baseUrl, { type: 'daily', date: '2026-09-02', format: 'xlsx' }, authHeaderForUser('33333333-3333-4333-8333-000000000002')),
+      ])
+      assert.deepEqual(errRes.map((r) => r.status), [500, 500])
+
+      failNext = false
+      const recoveryReq = requestExport(
+        baseUrl,
+        { type: 'daily', date: '2026-09-02', format: 'xlsx' },
+        authHeaderForUser('33333333-3333-4333-8333-000000000003'),
+      )
+      await new Promise((r) => setTimeout(r, 30))
+      assert.equal(resolvers.length, 1)
+      resolvers.shift()()
+      assert.equal((await recoveryReq).status, 200)
+    } finally {
+      while (resolvers.length > 0) resolvers.shift()()
+    }
+  })
+})
+
+test('Export API skips sending response after client disconnect mid-export and releases slot', async () => {
+  let markAuditEntered
+  let releaseAudit
+  const auditEntered = new Promise((resolve) => { markAuditEntered = resolve })
+  const auditGate = new Promise((resolve) => { releaseAudit = resolve })
+  let gateActive = true
+  const app = loadAppWithMocks({
+    'src/modules/reports/reports.service.js': {
+      getSummary: async () => ({ ...REPORT, rows: [...REPORT.rows] }),
+    },
+    'src/modules/audit/audit.service.js': {
+      listAuditLogs: async () => ({}),
+      recordAuditLog: async () => {
+        if (!gateActive) return
+        markAuditEntered()
+        await auditGate
+      },
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const controller = new AbortController()
+    const aborted = fetch(`${baseUrl}/api/reports/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader('Admin') },
+      body: JSON.stringify({ type: 'daily', date: '2026-09-02', format: 'xlsx' }),
+      signal: controller.signal,
+    }).catch(() => null)
+
+    await auditEntered
+    controller.abort()
+    await aborted
+    await new Promise((r) => setTimeout(r, 20))
+    releaseAudit()
+    await new Promise((r) => setTimeout(r, 20))
+
+    gateActive = false
+    const followUp = await requestExport(baseUrl, { type: 'daily', date: '2026-09-02', format: 'xlsx' }, authHeader('Admin'))
+    assert.equal(followUp.status, 200)
+  })
+})

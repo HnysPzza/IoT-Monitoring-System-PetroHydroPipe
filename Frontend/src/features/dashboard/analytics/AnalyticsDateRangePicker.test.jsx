@@ -118,7 +118,7 @@ describe('AnalyticsDateRangePicker component', () => {
     expect(screen.getByText('Nov 2 \u2013 Nov 22, 2026')).toBeInTheDocument()
   })
 
-  it('opens popover showing 4 presets and calendar grid with Monday-first headers', async () => {
+  it('opens popover showing five presets and calendar grid with Monday-first headers', async () => {
     const user = userEvent.setup()
     render(
       <AnalyticsDateRangePicker
@@ -135,13 +135,12 @@ describe('AnalyticsDateRangePicker component', () => {
     expect(trigger).toHaveClass('is-open')
     expect(screen.getByRole('dialog', { name: 'Select Analytics date range' })).toBeInTheDocument()
 
-    // 4 quick presets
+    expect(screen.getByRole('button', { name: 'Daily' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All time' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Custom Range' })).toBeInTheDocument()
 
-    // Weekly is active by default
     expect(screen.getByRole('button', { name: 'Weekly' })).toHaveClass('is-active')
 
     // Weekday headers: Mo, Tu, We, Th, Fr, Sa, Su

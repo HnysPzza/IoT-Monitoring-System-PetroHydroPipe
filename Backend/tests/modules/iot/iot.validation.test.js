@@ -95,3 +95,21 @@ test('every mismatched event and signal pair is rejected', () => {
     }
   }
 })
+
+test('device metadata rejects excessive nesting, key count, or serialized size', () => {
+  const deep = event('pulse', 'active')
+  deep.body.metadata = { a: { b: { c: { d: 1 } } } }
+  assert.equal(sensorEventSchema.safeParse(deep).success, false)
+
+  const tooManyKeys = event('pulse', 'active')
+  tooManyKeys.body.metadata = Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`k${i}`, i]))
+  assert.equal(sensorEventSchema.safeParse(tooManyKeys).success, false)
+
+  const oversized = event('pulse', 'active')
+  oversized.body.metadata = { blob: 'x'.repeat(4097) }
+  assert.equal(sensorEventSchema.safeParse(oversized).success, false)
+
+  const valid = event('pulse', 'active')
+  valid.body.metadata = { rssi: -55, nested: { a: { b: 1 } } }
+  assert.equal(sensorEventSchema.safeParse(valid).success, true)
+})

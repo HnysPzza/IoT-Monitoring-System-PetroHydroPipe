@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
+const zlib = require('node:zlib')
 const ExcelJS = require('@excel.js/exceljs').default
 const { toXlsx } = require('../../../src/modules/reports/reportsXlsx.serializer')
 
@@ -829,5 +830,107 @@ test('toXlsx treats blank pipeNumber string as missing rather than inventing zer
   })))
   const logsSheet = wb.getWorksheet('Production Cut Logs')
   assert.equal(logsSheet.getCell('F5').value, 42)
+})
+
+test('toPdf serializes a 5,000-cut production report without per-row Intl churn', async () => {
+  const logs = Array.from({ length: 5000 }, (_, i) => ({
+    id: `ev-${i}`,
+    deviceEventId: i + 1,
+    recordedAt: new Date(Date.UTC(2026, 8, 1 + (i % 28), 8 + (i % 8), i % 60)).toISOString(),
+    customer: `Customer ${(i % 12) + 1}`,
+    diameter: 600 + (i % 5) * 100,
+    thickness: 8.5,
+    length: 12000,
+    pipeNumber: i + 1,
+    tonnage: 1.5432,
+    isSpecified: i % 3 !== 0,
+  }))
+  const report = createProductionReport({
+    reportType: 'monthly',
+    totalProductionOutput: 5000,
+    totalTonnage: 7716,
+    metrics: {
+      totalProductionOutput: 5000,
+      totalTonnage: 7716,
+      specifiedPipes: 3333,
+      unspecifiedPipes: 1667,
+      distinctProductSizes: 5,
+    },
+    productionLogs: logs,
+  })
+  const t0 = performance.now()
+  const pdfBuffer = await toPdf(report)
+  const elapsedMs = performance.now() - t0
+  assert.equal(pdfBuffer.subarray(0, 5).toString('utf8'), '%PDF-')
+  assert.ok(elapsedMs < 15000, `Expected 5,000-row PDF generation < 15000ms, got ${elapsedMs.toFixed(1)}ms`)
+})
+
+function extractPdfTextBlocks(pdfBuffer) {
+  const blocks = []
+  let idx = 0
+  while ((idx = pdfBuffer.indexOf('stream\n', idx)) !== -1) {
+    const end = pdfBuffer.indexOf('\nendstream', idx)
+    if (end === -1) break
+    let text
+    try {
+      text = zlib.inflateSync(pdfBuffer.subarray(idx + 7, end)).toString('latin1')
+    } catch {
+      text = pdfBuffer.subarray(idx + 7, end).toString('latin1')
+    }
+    for (const block of text.matchAll(/BT[\s\S]*?ET/g)) {
+      const tm = block[0].match(/1 0 0 1 ([\d.]+) ([\d.]+) Tm/)
+      const tj = block[0].match(/\[([^\]]+)\]\s*TJ|<([0-9a-fA-F]+)>\s*Tj/)
+      if (!tm || !tj) continue
+      const line = tj[2]
+        ? Buffer.from(tj[2], 'hex').toString('latin1')
+        : [...tj[1].matchAll(/<([0-9a-fA-F]+)>/g)]
+          .map((part) => Buffer.from(part[1], 'hex').toString('latin1'))
+          .join('')
+      if (line) blocks.push({ x: Number(tm[1]), y: Number(tm[2]), text: line })
+    }
+    idx = end + 10
+  }
+  return blocks
+}
+
+test('toPdf expands row height when wide uppercase cells wrap past actual Helvetica column width', async () => {
+  const report = createProductionReport({
+    specBreakdown: [
+      {
+        customer: 'PETRO HYDRO PIPES CORP',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeCount: 1,
+        totalTonnage: 1.1513,
+        percentageOfTotal: 50,
+        isSpecified: true,
+      },
+      {
+        customer: 'MCWD',
+        diameter: 625.4,
+        thickness: 12.7,
+        length: 6000,
+        pipeCount: 1,
+        totalTonnage: 1.1513,
+        percentageOfTotal: 50,
+        isSpecified: true,
+      },
+    ],
+    productionLogs: [],
+  })
+
+  const pdfBuffer = await toPdf(report)
+  const blocks = extractPdfTextBlocks(pdfBuffer)
+  const firstRow = blocks.find((b) => b.text.includes('PETRO HYDRO') && b.x < 60)
+  const secondRow = blocks.find((b) => b.text.trim() === 'MCWD' && b.x < 60)
+
+  assert.ok(firstRow, 'Expected wrapped customer row in PDF')
+  assert.ok(secondRow, 'Expected following spec row in PDF')
+  // Wrapped 2-line row must expand beyond the 18pt single-line height so line 2 does not hit the row border.
+  assert.ok(
+    firstRow.y - secondRow.y > 22,
+    `Expected wrapped row height > 22pt, got ${(firstRow.y - secondRow.y).toFixed(2)}pt`,
+  )
 })
 

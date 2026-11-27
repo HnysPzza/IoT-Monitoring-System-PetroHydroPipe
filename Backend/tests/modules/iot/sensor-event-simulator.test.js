@@ -589,6 +589,40 @@ test('S-05 pulse verification accepts output when machine is Idle with no open d
   assert.match(result.stdout, /S-05 pulse was accepted with no open downtime/i)
 })
 
+test('S-05 pulse verification rejects output when S-03 is offline with no open downtime', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  const s03 = baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-03')
+  s03.monitoring = { connectivityState: 'offline' }
+  baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-05').lastEventAt = 'previous-output'
+
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => s05PulseResponse(event, {
+    downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+    machineStatus: 'Running', stateApplied: false, duplicate: false, stale: false,
+    outputAccepted: false, outputRejectionReason: 'machine_offline',
+  }), baseline)
+
+  assert.equal(result.exitCode, 0, result.stderr)
+  assert.deepEqual(result.receivedEvents.map((event) => event.metadata.sensorCode), ['S-05'])
+  assert.match(result.stdout, /S-05 pulse was rejected while S-03 is offline/i)
+})
+
+test('S-05 pulse verification rejects output when outside scheduled work hours', async (t) => {
+  const baseline = cleanVerificationBaseline()
+  const s03 = baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-03')
+  s03.monitoring = { connectivityState: 'online', detectionState: 'suspended' }
+  baseline.live.sensors.find((sensor) => sensor.sensorCode === 'S-05').lastEventAt = 'previous-output'
+
+  const result = await runSimulator(t, ['--send-s05-pulse'], 0.999999, (event) => s05PulseResponse(event, {
+    downtimeAction: null, downtimeId: null, downtimeSensorCode: null,
+    machineStatus: 'Running', stateApplied: false, duplicate: false, stale: false,
+    outputAccepted: false, outputRejectionReason: 'outside_schedule',
+  }), baseline)
+
+  assert.equal(result.exitCode, 0, result.stderr)
+  assert.deepEqual(result.receivedEvents.map((event) => event.metadata.sensorCode), ['S-05'])
+  assert.match(result.stdout, /S-05 pulse was rejected outside scheduled working hours/i)
+})
+
 test('S-05 pulse verification rejects output when S-03 downtime is open', async (t) => {
   const baseline = cleanVerificationBaseline()
   baseline.live.machine.status = 'Downtime'

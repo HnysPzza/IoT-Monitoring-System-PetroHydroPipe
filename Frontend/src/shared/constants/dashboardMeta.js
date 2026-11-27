@@ -25,7 +25,7 @@ export const navItems = [
     subtitle: 'Review stoppages, causes, and intervention history.',
   },
   {
-    label: 'Production Logs',
+    label: 'Production Output',
     to: '/dashboard/production',
     icon: 'notebook-dot',
     group: 'monitor',
@@ -49,10 +49,11 @@ export const navItems = [
   },
   {
     label: 'Audit Log',
+    roleLabels: { 'Engineering Supervisor': 'Production Log' },
     to: '/dashboard/audit',
     icon: 'logs',
     group: 'analyze',
-    roles: ['Admin'],
+    roles: ['Admin', 'Engineering Supervisor'],
     subtitle: 'Trace operator actions and system changes.',
   },
   {
@@ -81,6 +82,10 @@ export const navItems = [
   },
 ]
 
+export function getNavItemLabel(item, role) {
+  return item?.roleLabels?.[role] || item?.label || ''
+}
+
 export function canAccessDashboardRoute(role, path) {
   return Boolean(navItems.find((item) => item.to === path)?.roles.includes(role))
 }
@@ -103,7 +108,7 @@ export const dashboardPageMeta = {
     title: 'Downtime Records',
   },
   '/dashboard/production': {
-    title: 'Production Logs',
+    title: 'Production Output',
   },
   '/dashboard/reports': {
     title: 'Reports',

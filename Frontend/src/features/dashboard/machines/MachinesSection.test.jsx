@@ -52,10 +52,14 @@ describe('MachinesSection live snapshot', () => {
     getLiveFeed.mockResolvedValue(livePayload())
     renderWithAuth(<MachinesSection />)
     expect(await screen.findByText('ESP32-03')).toBeInTheDocument()
+    const viewToggle = screen.getByRole('group', { name: 'Sensor view' })
+    expect(viewToggle).toHaveAttribute('data-active-view', 'grid')
     await user.click(screen.getByRole('button', { name: 'Table view' }))
+    expect(viewToggle).toHaveAttribute('data-active-view', 'table')
     expect(screen.getByRole('table')).toHaveTextContent('ESP32-03')
     expect(screen.getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Grid view' }))
+    expect(viewToggle).toHaveAttribute('data-active-view', 'grid')
     expect(screen.getByText('ESP32-03').closest('article')).toBeInTheDocument()
   })
 
@@ -418,5 +422,82 @@ describe('MachinesSection live snapshot', () => {
 
     expect(screen.getByRole('button', { name: 'Refresh machines' })).toHaveAttribute('aria-busy', 'true')
     expect(screen.queryByText('Refreshing live machine status...')).not.toBeInTheDocument()
+  })
+
+  it('moves machine name and status out of the mobile topbar so header controls stay side by side', async () => {
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn((query) => ({
+      matches: query === '(max-width: 680px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+
+    try {
+      const client = new QueryClient()
+      const payload = livePayload()
+      const preloadedFeed = {
+        machine: payload.machine,
+        sensors: payload.sensors,
+        monitoring: payload.monitoring,
+        state: 'ready',
+        error: '',
+        lastUpdated: new Date('2026-08-10T02:00:00.000Z'),
+        isRefreshing: false,
+        reload: vi.fn(),
+      }
+
+      function LayoutShell() {
+        return (
+          <div>
+            <header className="dashboard-topbar">
+              <div id="machines-header-controls" data-testid="machines-topbar-slot" />
+            </header>
+            <Outlet context={{ liveFeed: preloadedFeed }} />
+          </div>
+        )
+      }
+
+      render(
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider value={{ token: 'test-token' }}>
+            <MemoryRouter initialEntries={['/dashboard/machines']}>
+              <Routes>
+                <Route path="/dashboard" element={<LayoutShell />}>
+                  <Route path="machines" element={<MachinesSection />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </AuthContext.Provider>
+        </QueryClientProvider>,
+      )
+
+      const topbarSlot = screen.getByTestId('machines-topbar-slot')
+      const heading = screen.getByRole('heading', { name: 'Spiral Mill 01' })
+      expect(topbarSlot).toContainElement(screen.getByRole('button', { name: 'Refresh machines' }))
+      expect(topbarSlot).not.toContainElement(heading)
+      expect(topbarSlot.textContent).not.toContain('Downtime')
+      expect(heading.closest('.machines-mobile-meta')).toHaveTextContent('Downtime')
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
+
+    const [{ readFileSync }, path] = await Promise.all([import('node:fs'), import('node:path')])
+    const css = readFileSync(path.resolve(__dirname, 'machines.css'), 'utf8')
+    const mediaBlock = (query) => css.split(/\r?\n/).filter((line) => line.startsWith(`@media (${query})`)).join('\n')
+    const max900Rules = mediaBlock('max-width: 900px')
+    const max680Rules = mediaBlock('max-width: 680px')
+    const max480Rules = mediaBlock('max-width: 480px')
+
+    const reducedMotionRules = mediaBlock('prefers-reduced-motion: reduce')
+
+    expect(css).toMatch(/\.machines-header-controls\s*\{[^}]*flex-wrap:\s*nowrap/)
+    expect(css).toMatch(/\.machines-view-toggle::before\s*\{[^}]*transition:\s*transform\s+240ms/)
+    expect(css).toMatch(/\.machines-view-toggle\[data-active-view='table'\]::before\s*\{[^}]*translateX\(calc\(100%\s*\+\s*8px\)\)/)
+    expect(reducedMotionRules).toMatch(/\.machines-view-toggle::before,\s*\.machines-view-toggle button\s*\{[^}]*transition-duration:\s*0\.01ms\s*!important/)
+    expect(max900Rules).toMatch(/\.dashboard-topbar:has\(#machines-header-controls\)\s+\.topbar-leading\s*\{[^}]*flex-wrap:\s*nowrap/)
+    expect(max680Rules).toMatch(/\.dashboard-topbar:has\(#machines-header-controls\)\s+\.topbar-divider\s*\{[^}]*display:\s*none/)
+    expect(max680Rules).not.toMatch(/#machines-header-controls\s*\{[^}]*(flex:\s*1\s+1\s+100%|width:\s*100%)/)
+    expect(max480Rules).toMatch(/\.machines-section-actions\s*\{[^}]*flex-wrap:\s*nowrap/)
   })
 })

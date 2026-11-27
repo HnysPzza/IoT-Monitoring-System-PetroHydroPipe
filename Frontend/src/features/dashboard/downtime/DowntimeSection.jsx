@@ -1,6 +1,7 @@
 import './downtime.css'
 import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import Status from '../../../shared/components/Status.jsx'
+import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { fromDateInputValue, toDateInputValue } from '../overview/DowntimeTrendChart.jsx'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
@@ -494,16 +495,6 @@ export default function DowntimeSection() {
         <div className="section-heading">
           <div className="downtime-heading-group">
             <h2 id="downtime-records-title">Downtime records</h2>
-            {isBackgroundRefreshing ? (
-              <div className="downtime-refresh-status" role="status">
-                <RotateCw className="spin-icon" size={14} aria-hidden="true" />
-                <span>
-                  {query.isPlaceholderData
-                    ? 'Refreshing downtime records for the selected filters; previous results remain visible.'
-                    : 'Refreshing downtime records...'}
-                </span>
-              </div>
-            ) : null}
           </div>
           <div className="downtime-header-controls">
             <span className="section-chip">
@@ -522,6 +513,8 @@ export default function DowntimeSection() {
             </button>
           </div>
         </div>
+
+        <RefreshStatus active={isBackgroundRefreshing} isPlaceholder={query.isPlaceholderData} message="Refreshing downtime records..." placeholderMessage="Refreshing downtime records for the selected filters; previous results remain visible." />
 
         {isLoading ? (
           <div className="skeleton skeleton-panel" />

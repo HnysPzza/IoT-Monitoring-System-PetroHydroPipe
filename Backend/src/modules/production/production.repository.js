@@ -2,7 +2,7 @@ const { getSupabaseClient } = require('../../database/client')
 const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const PAGE_SIZE = 500
-const CHUNK_SIZE = 500
+const CHUNK_SIZE = 100
 
 function createRepositoryError(code, message) {
   const error = new Error(message)

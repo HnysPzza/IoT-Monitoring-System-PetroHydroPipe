@@ -718,8 +718,9 @@ describe('DashboardSection', () => {
   it('announces a same-range chart refresh while preserving cached points', async () => {
     const user = userEvent.setup()
     const refreshRequest = deferred()
+    const liveRefreshRequest = deferred()
     getDashboardOverview.mockResolvedValue(overviewPayload())
-    getLiveFeed.mockResolvedValue(livePayload())
+    getLiveFeed.mockResolvedValueOnce(livePayload()).mockReturnValueOnce(liveRefreshRequest.promise)
     getDashboardDowntimeImpact
       .mockResolvedValueOnce({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Cached chart point', minutes: 10 }] } })
       .mockReturnValueOnce(refreshRequest.promise)
@@ -727,12 +728,23 @@ describe('DashboardSection', () => {
     renderWithAuth(<DashboardSection />)
 
     expect(await screen.findByText(/Cached chart point/)).toBeInTheDocument()
+    await screen.findByRole('heading', { name: /Machine Health/ })
+    const machineCard = screen.getByText('Machine Online').closest('article')
+    const machineCardText = machineCard.textContent
     await user.click(screen.getByRole('button', { name: /refresh overview data/i }))
 
     expect(screen.getByText(/Cached chart point/)).toBeInTheDocument()
-    const refreshStatus = screen.getByText('Refreshing downtime chart...')
+    expect(machineCard).toHaveTextContent(machineCardText)
+    const refreshStatus = screen.getByText('Downtime by Period').parentElement.querySelector('[role="status"]')
     expect(refreshStatus).toHaveAttribute('role', 'status')
     expect(refreshStatus).toHaveAttribute('aria-live', 'polite')
+    expect(refreshStatus).toHaveTextContent('Refreshing...')
+    expect(refreshStatus).toHaveClass('overview-refresh-status')
+    expect(screen.getByRole('heading', { name: /Machine Health/ }).closest('section').querySelector('.overview-refresh-status')).toHaveTextContent('Refreshing...')
+    expect(screen.getByRole('button', { name: /refresh overview data/i }).querySelector('svg')).toHaveClass('spin-icon')
+    refreshRequest.resolve({ downtimeImpact: { thresholdMinutes: 30, points: [{ label: 'Updated chart point', minutes: 15 }] } })
+    liveRefreshRequest.resolve(livePayload())
+    expect(await screen.findByText(/Updated chart point/)).toBeInTheDocument()
   })
 
   it('stacks the fault alert banner and the idle material changeover banner when one sensor has an alert and another is idle', async () => {
@@ -1051,7 +1063,7 @@ describe('DashboardSection', () => {
     const retryOverviewButton = screen.getByRole('button', { name: /retry overview/i })
     expect(retryOverviewButton).toHaveClass('btn', 'btn-secondary', 'overview-retry-button')
 
-    const chartRefreshing = screen.getByText('Refreshing downtime chart...').closest('[role="status"]')
+    const chartRefreshing = screen.getByText('Downtime by Period').parentElement.querySelector('[role="status"]')
     expect(overviewStale).toHaveAttribute('aria-live', 'polite')
     expect(chartRefreshing).toHaveAttribute('aria-live', 'off')
 
@@ -1232,5 +1244,72 @@ describe('DashboardSection', () => {
     const loadedKpiGrid = document.querySelector('.overview-layout .kpi-grid')
     expect(loadedKpiGrid).not.toBeNull()
     expect(alertsStack.compareDocumentPosition(loadedKpiGrid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows Machine Online as 0 / 1 Main sensor offline when S-03 is offline even if S-01 is online and Idle, while keeping connected Idle at 1 / 1', async () => {
+    const onlyS01IdleWithS03Offline = (machineStatus) => livePayload({
+      machine: {
+        id: 'machine-1',
+        machineCode: 'M-01',
+        name: 'Spiral Mill 01',
+        status: machineStatus,
+      },
+      sensors: [
+        { id: 'sensor-1', sensorCode: 'S-01', status: 'Idle', monitoring: { connectivityState: 'online', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-2', sensorCode: 'S-02', status: 'Running', monitoring: { connectivityState: 'offline', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-3', sensorCode: 'S-03', status: 'Idle', monitoring: { connectivityState: 'offline', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-4', sensorCode: 'S-04', status: 'Running', monitoring: { connectivityState: 'offline', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-5', sensorCode: 'S-05', status: 'Idle', monitoring: { connectivityState: 'offline', stateFresh: true, detectionState: 'disabled' } },
+      ],
+    })
+
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+
+    // 1. machine.status stale Running with S-03 offline and S-01 Idle -> 0 / 1 Main sensor offline (not 1 / 1 green)
+    getLiveFeed.mockResolvedValue(onlyS01IdleWithS03Offline('Running'))
+    const { unmount } = renderWithAuth(<DashboardSection />)
+
+    expect(await screen.findByText('Spiral Mill 01 · Main sensor offline')).toBeInTheDocument()
+    const staleRunningCard = screen.getByText('Machine Online').closest('article')
+    expect(staleRunningCard).toHaveTextContent('0 / 1')
+    expect(staleRunningCard).toHaveClass('stat-card-warning')
+    expect(await screen.findByText('1 / 5 sensors reporting')).toBeInTheDocument()
+    unmount()
+
+    // 2. machine.status Idle with S-03 offline and S-01 Idle -> still 0 / 1 Main sensor offline (not 1 / 1 neutral)
+    getLiveFeed.mockResolvedValue(onlyS01IdleWithS03Offline('Idle'))
+    const idleView = renderWithAuth(<DashboardSection />)
+    expect(await screen.findByText('Spiral Mill 01 · Main sensor offline')).toBeInTheDocument()
+    const offlineIdleCard = screen.getByText('Machine Online').closest('article')
+    expect(offlineIdleCard).toHaveTextContent('0 / 1')
+    expect(offlineIdleCard).toHaveClass('stat-card-warning')
+    idleView.unmount()
+
+    // 3. machine.status Idle with S-03 online and S-01 Idle -> stays 1 / 1 Idle (neutral)
+    getLiveFeed.mockResolvedValue(livePayload({
+      machine: { id: 'machine-1', machineCode: 'M-01', name: 'Spiral Mill 01', status: 'Idle' },
+      sensors: [
+        { id: 'sensor-1', sensorCode: 'S-01', status: 'Idle', monitoring: { connectivityState: 'online', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-2', sensorCode: 'S-02', status: 'Idle', monitoring: { connectivityState: 'online', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-3', sensorCode: 'S-03', status: 'Idle', monitoring: { connectivityState: 'online', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-4', sensorCode: 'S-04', status: 'Idle', monitoring: { connectivityState: 'online', stateFresh: true, detectionState: 'suspended' } },
+        { id: 'sensor-5', sensorCode: 'S-05', status: 'Idle', monitoring: { connectivityState: 'online', stateFresh: true, detectionState: 'disabled' } },
+      ],
+    }))
+    const connectedIdleView = renderWithAuth(<DashboardSection />)
+    expect(await screen.findByText('Spiral Mill 01 · Idle')).toBeInTheDocument()
+    const connectedIdleCard = screen.getByText('Machine Online').closest('article')
+    expect(connectedIdleCard).toHaveTextContent('1 / 1')
+    expect(connectedIdleCard).toHaveClass('stat-card-neutral')
+    connectedIdleView.unmount()
+
+    // 4. Downtime retains precedence over Main sensor offline
+    getLiveFeed.mockResolvedValue(onlyS01IdleWithS03Offline('Downtime'))
+    renderWithAuth(<DashboardSection />)
+    expect(await screen.findByText('Spiral Mill 01 · Downtime')).toBeInTheDocument()
+    const downtimeCard = screen.getByText('Machine Online').closest('article')
+    expect(downtimeCard).toHaveTextContent('0 / 1')
+    expect(downtimeCard).toHaveClass('stat-card-warning')
   })
 })

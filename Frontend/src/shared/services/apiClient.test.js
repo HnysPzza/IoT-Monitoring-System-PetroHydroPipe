@@ -2,10 +2,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   apiRequest,
   DEFAULT_REQUEST_TIMEOUT_MS,
+  resolveApiBaseUrl,
 } from './apiClient.js'
 import { createApiError } from '../errors/apiError.js'
 import { setUnauthorizedHandler } from '../errors/unauthorizedSession.js'
 import { beginSessionChange, setSessionRefresher } from './sessionRefresh.js'
+
+describe('resolveApiBaseUrl', () => {
+  it('defaults to same-origin empty string in production when VITE_API_BASE_URL is unset', () => {
+    expect(resolveApiBaseUrl({ PROD: true, DEV: false, VITE_API_BASE_URL: '' })).toBe('')
+    expect(resolveApiBaseUrl({ PROD: true, DEV: false })).toBe('')
+  })
+
+  it('defaults to localhost backend in dev/test when VITE_API_BASE_URL is unset', () => {
+    expect(resolveApiBaseUrl({ PROD: false, DEV: true, VITE_API_BASE_URL: '' })).toBe('http://localhost:3000')
+  })
+
+  it('strips trailing slashes from explicit VITE_API_BASE_URL', () => {
+    expect(resolveApiBaseUrl({ PROD: true, VITE_API_BASE_URL: 'https://api.example.com/' })).toBe('https://api.example.com')
+  })
+})
 
 describe('apiRequest', () => {
   afterEach(() => {

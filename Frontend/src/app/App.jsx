@@ -173,7 +173,7 @@ export default function App() {
           <Route
             path="audit"
             element={
-              <RequireRole roles={['Admin']}>
+              <RequireRole roles={['Admin', 'Engineering Supervisor']}>
                 <LazyDashboardRoute>
                   <AuditSection />
                 </LazyDashboardRoute>

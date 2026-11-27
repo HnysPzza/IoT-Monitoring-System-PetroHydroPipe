@@ -15,6 +15,7 @@ vi.mock('../../shared/services/apiClient.js', () => ({ apiRequest: vi.fn() }))
 beforeEach(() => { apiRequest.mockReset().mockResolvedValue({ validForMs: 3600000 }) })
 afterEach(() => {
   vi.useRealTimers()
+  window.sessionStorage.clear()
   window.history.replaceState(null, '', '/')
   vi.clearAllMocks()
 })
@@ -89,6 +90,19 @@ it('lets the user reveal and hide the new password', async () => {
 
   await user.click(screen.getByRole('button', { name: 'Hide new password' }))
   expect(passwordInput).toHaveAttribute('type', 'password')
+})
+
+it('restores a scrubbed setup token from sessionStorage on reload and clears it on invalid link', async () => {
+  const token = 'e'.repeat(64)
+  window.history.replaceState(null, '', `/setup-password#token=${token}`)
+  const first = render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+  expect(await screen.findByLabelText('New password')).toBeInTheDocument()
+  expect(window.location.hash).toBe('')
+  first.unmount()
+
+  render(<MemoryRouter><PasswordSetupPage /></MemoryRouter>)
+  expect(await screen.findByLabelText('New password')).toBeInTheDocument()
+  expect(apiRequest).toHaveBeenLastCalledWith('/api/auth/setup-password/validate', expect.objectContaining({ body: { token } }))
 })
 
 it('hides password fields until the server accepts the link', async () => {

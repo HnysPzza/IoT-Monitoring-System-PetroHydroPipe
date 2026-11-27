@@ -4,6 +4,23 @@ const fs = require('fs')
 
 const NOT_AVAILABLE = 'Not available'
 
+const MANILA_DAY_KEY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+const MANILA_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-PH', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+})
+
 const COMPANY_NAME = 'Petro Hydro Pipes Corporation'
 const COMPANY_SUBTITLE = 'Spiral Welded Steel Pipe Manufacturer'
 const COMPANY_ADDRESS = 'Dunggoan, Danao City 6004 Cebu, Philippines'
@@ -49,12 +66,7 @@ function formatManilaDayKey(dateStr, fallbackDate) {
   try {
     const d = new Date(dateStr)
     if (Number.isNaN(d.getTime())) return fallbackDate || 'UNDATED'
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(d)
+    return MANILA_DAY_KEY_FORMATTER.format(d)
   } catch {
     return fallbackDate || 'UNDATED'
   }
@@ -65,15 +77,7 @@ function formatManilaDate(dateStr) {
   try {
     const d = new Date(dateStr)
     if (Number.isNaN(d.getTime())) return String(dateStr)
-    return d.toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    }) + ' PST'
+    return `${MANILA_DATE_TIME_FORMATTER.format(d)} PST`
   } catch {
     return String(dateStr)
   }
@@ -219,42 +223,76 @@ function renderGenericTable(doc, { columns, rows, emptyNotice, onNewPage }) {
     return
   }
 
-  rows.forEach((row, rowIndex) => {
-    let maxContentHeight = 0
-    row.forEach((cellVal, colIndex) => {
-      const col = columns[colIndex]
-      doc.font(col.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
-      const textHeight = doc.heightOfString(pdfText(cellVal), { width: col.width - 12 })
-      if (textHeight > maxContentHeight) maxContentHeight = textHeight
-    })
+  const ROW_PADDING_V = 4
+  const FONT_BODY_SIZE = 8
+  const SINGLE_LINE_ROW_HEIGHT = 18
+  const MAX_CHAR_WIDTH = FONT_BODY_SIZE
+  let activeFont = null
+  doc.fontSize(FONT_BODY_SIZE)
 
-    const rowHeight = Math.max(maxContentHeight + 8, 18)
+  rows.forEach((row, rowIndex) => {
+    const rowTexts = new Array(row.length)
+    const needsWrap = new Array(row.length)
+    let maxContentHeight = 0
+    for (let colIndex = 0; colIndex < row.length; colIndex += 1) {
+      const col = columns[colIndex]
+      const text = pdfText(row[colIndex])
+      rowTexts[colIndex] = text
+      const cellMaxWidth = col.width - 12
+      let wrap = text.includes('\n')
+      if (!wrap && text.length * MAX_CHAR_WIDTH > cellMaxWidth) {
+        const fontName = col.bold ? 'Helvetica-Bold' : 'Helvetica'
+        if (activeFont !== fontName) {
+          doc.font(fontName)
+          activeFont = fontName
+        }
+        wrap = doc.widthOfString(text) > cellMaxWidth
+      }
+      needsWrap[colIndex] = wrap
+      if (wrap) {
+        const fontName = col.bold ? 'Helvetica-Bold' : 'Helvetica'
+        if (activeFont !== fontName) {
+          doc.font(fontName)
+          activeFont = fontName
+        }
+        const textHeight = doc.heightOfString(text, { width: cellMaxWidth })
+        if (textHeight > maxContentHeight) maxContentHeight = textHeight
+      }
+    }
+
+    const rowHeight = maxContentHeight > 0
+      ? Math.max(maxContentHeight + ROW_PADDING_V * 2, SINGLE_LINE_ROW_HEIGHT)
+      : SINGLE_LINE_ROW_HEIGHT
 
     if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom - 40) {
       doc.addPage()
       doc.y = doc.page.margins.top + 8
       if (onNewPage) onNewPage()
       drawHeader()
+      activeFont = null
+      doc.fontSize(FONT_BODY_SIZE)
     }
 
     const rowY = doc.y
     const isEven = rowIndex % 2 === 1
-    doc.rect(left, rowY, printableWidth, rowHeight).fill(isEven ? COLOR.rowEven : COLOR.rowOdd)
+    if (isEven) doc.rect(left, rowY, printableWidth, rowHeight).fill(COLOR.rowEven)
 
     let currentX = left
-    row.forEach((cellVal, colIndex) => {
+    for (let colIndex = 0; colIndex < rowTexts.length; colIndex += 1) {
       const col = columns[colIndex]
-      const text = pdfText(cellVal)
-      doc.font(col.bold ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(8)
-        .fillColor(col.color || COLOR.textDark)
-        .text(text, currentX + 6, rowY + 4, {
+      const fontName = col.bold ? 'Helvetica-Bold' : 'Helvetica'
+      if (activeFont !== fontName) {
+        doc.font(fontName)
+        activeFont = fontName
+      }
+      doc.fillColor(col.color || COLOR.textDark)
+        .text(rowTexts[colIndex], currentX + 6, rowY + ROW_PADDING_V, {
           width: col.width - 12,
           align: col.align || 'left',
-          lineBreak: true,
+          lineBreak: needsWrap[colIndex],
         })
       currentX += col.width
-    })
+    }
 
     doc.moveTo(left, rowY + rowHeight).lineTo(left + printableWidth, rowY + rowHeight)
       .lineWidth(0.5).strokeColor(COLOR.borderLight).stroke()
@@ -399,9 +437,10 @@ function renderProductionSections(doc, report, printableWidth) {
   let currentDayKey = null
   let dailyPipeCount = 0
   let dailyTonnage = 0
+  let nextDayKey = logs.length > 0 ? formatManilaDayKey(logs[0].recordedAt, report.selectedDate) : null
 
   logs.forEach((log, index) => {
-    const dayKey = formatManilaDayKey(log.recordedAt, report.selectedDate)
+    const dayKey = nextDayKey
     if (currentDayKey === null) {
       currentDayKey = dayKey
     }
@@ -430,7 +469,7 @@ function renderProductionSections(doc, report, printableWidth) {
     logRows.push([timestampText, customerText, diameterText, thicknessText, lengthText, pipeNumberText, tonsText])
 
     const nextLog = logs[index + 1]
-    const nextDayKey = nextLog ? formatManilaDayKey(nextLog.recordedAt, report.selectedDate) : null
+    nextDayKey = nextLog ? formatManilaDayKey(nextLog.recordedAt, report.selectedDate) : null
 
     if (nextDayKey !== dayKey) {
       const roundedDailyTons = Math.round(dailyTonnage * 10000) / 10000

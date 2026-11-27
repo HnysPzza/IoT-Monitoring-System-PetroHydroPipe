@@ -160,6 +160,25 @@ describe('Analytics presentation helpers', () => {
     expect(getProcessSensorBreakdown(analyticsTestFixture)).toEqual(analyticsTestFixture.selected.processSensors)
   })
 
+  it.each([
+    [[0, 0, 5, null], 'negative', 'var(--chart-danger)', 'Trending up (+5 min)'],
+    [[5, 10, null], 'negative', 'var(--chart-danger)', 'Trending up (+100.0%)'],
+    [[5, 0], 'positive', 'var(--chart-target)', 'Trending down (-100.0%)'],
+    [[0, 0], 'neutral', 'var(--chart-current)', 'Steady pace'],
+  ])('colors downtime for observed values %j', (values, sentiment, strokeColor, label) => {
+    const trend = { metric: { id: 'downtime' }, points: values.map(value => ({ value })) }
+    expect(getTrendEvaluation(trend)).toMatchObject({ sentiment, strokeColor, label })
+  })
+
+  it('marks an intermediate downtime spike and skips changes across missing values', () => {
+    const trends = [0, 12, 0, null, 8].map((downtimeMinutes, i) => ({
+      key: String(i), metrics: { downtimeMinutes },
+    }))
+    const snapshot = { selected: { range: {}, trends } }
+    const { points } = buildAnalyticsTrend(snapshot, 'downtime')
+    expect(points.map(point => point.downtimeIncreased)).toEqual([false, true, false, false, false])
+  })
+
   it('evaluates only observed trend points', () => {
     const result = getTrendEvaluation({
       metric: { id: 'production' },

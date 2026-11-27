@@ -265,6 +265,7 @@ export function subscribeToServerEvents(path, token, {
 
       invokeHandler(onOpen, openState)
 
+      const MAX_SSE_BUFFER_LENGTH = 64 * 1024
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -329,6 +330,14 @@ export function subscribeToServerEvents(path, token, {
           }
 
           boundaryIndex = buffer.indexOf('\n\n')
+        }
+        if (buffer.length > MAX_SSE_BUFFER_LENGTH) {
+          throw createApiError(
+            'Event stream buffer limit exceeded.',
+            0,
+            null,
+            'SSE_BUFFER_OVERFLOW',
+          )
         }
       }
 

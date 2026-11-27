@@ -15,6 +15,7 @@ function AnalyticsTrendTooltip({ active, payload, label, metric }) {
   return (
     <div className="recharts-tooltip-card industrial-tooltip">
       <strong>{label}</strong>
+      {payload.some(entry => entry.payload.downtimeIncreased) && <span>Downtime increased from the previous interval</span>}
       {payload.map((entry) => (
         <span key={entry.dataKey}>
           {entry.dataKey === 'comparisonValue'
@@ -70,7 +71,7 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
           {metric.label} - {bucket} buckets
         </span>
         <span className="section-chip">
-          <span aria-hidden="true" style={{ width: 18, borderTop: '3px solid var(--chart-current)' }} />
+          <span aria-hidden="true" style={{ width: 18, borderTop: `3px solid ${strokeColor}` }} />
           Selected period
         </span>
         {hasComparison ? (
@@ -132,7 +133,15 @@ export default function AnalyticsTrendExplorer({ snapshot, metricId, onMetricCha
               stroke={strokeColor}
               strokeWidth={3}
               fill="url(#analyticsTrendAreaGradient)"
-              dot={{ r: 3.5, strokeWidth: 2, fill: 'var(--c-surface)', stroke: strokeColor }}
+              dot={({ cx, cy, payload }) => {
+                if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null
+                const increased = payload.downtimeIncreased
+                return (
+                  <circle key={payload.key} cx={cx} cy={cy} r={increased ? 5 : 3.5} strokeWidth={2}
+                    fill={increased ? 'var(--chart-danger)' : 'var(--c-surface)'}
+                    stroke={increased ? 'var(--chart-danger)' : strokeColor} />
+                )
+              }}
               activeDot={{ r: 6, strokeWidth: 2, fill: strokeColor, stroke: 'var(--c-surface)' }}
               isAnimationActive={!prefersReducedMotion}
               animationDuration={320}

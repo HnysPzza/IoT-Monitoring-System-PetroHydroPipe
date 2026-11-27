@@ -26,11 +26,9 @@ Frontend/playwright-report/
 # Local generated documentation; keep the maintained public docs tracked.
 docs/*
 !docs/ARCHITECTURE.md
-!docs/clone-and-run.md
 !docs/PRD.md
 !docs/README.md
 !docs/RUNBOOK.md
-!docs/TDD.md
 
 # Phase plans
 phase plan.md

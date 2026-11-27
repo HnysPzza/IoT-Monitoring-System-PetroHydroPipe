@@ -63,11 +63,11 @@ node --test tests/request-deadline.api.test.js tests/env.test.js
 
 Expected: `0 fail`.
 
-### Current backend migration chain through 058
+### Current backend migration chain through 063
 
-For existing installations, apply pending migrations 029 through 058 in numeric order before deploying the current backend, which requires readiness version 58. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Migrations 056 through 058 add absence-disable fault clearing, atomic user status/archive audit RPCs, and analytics/audit/report query indexes. Existing installations use only pending migrations, not the complete schema or old migration replays.
+For existing installations, apply pending migrations 029 through 063 in numeric order before deploying the current backend, which requires readiness version 63. The base schema already includes migrations through 028. Migration 029 requires exactly one active, unarchived Admin. Migration 046 stops if the legacy Managing Director role is assigned to an account, then removes it and verifies the five-role catalog. Migrations 056 through 063 add absence-disable fault clearing, atomic user status/archive audit RPCs, analytics/audit/report query indexes, production calendar exclusions, S-05 schedule/offline output validation, same-boot S-03 ISP-outage S-05 pipe preservation, and WAN-outage/recovery-pause `S-05` retry promotion. Existing installations use only pending migrations, not the complete schema or old migration replays.
 
-For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 058. Do not replay migrations 001 through 028 over the fresh baseline.
+For a fresh installation, run `schema.sql` (baseline 028) and the credential-free operational seed. Privately provision exactly one active, unarchived Admin with a bcrypt hash, then apply migrations 029 through 063. Do not replay migrations 001 through 028 over the fresh baseline.
 
 ### Telemetry staleness migration 028
 
@@ -95,7 +95,7 @@ select stale, count(*) from public.sensor_events group by stale;
 
 ### Migration readiness versions
 
-Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Subsequent migrations 047 through 055 advance readiness to `55` (atomic confirmed device recovery and live readiness repair). Migration 056 advances readiness to `56` (clearing active fault/downtime when absence detection is disabled). Migration 057 advances readiness to `57` (atomic user status and archive RPCs with `audit_logs` and revoked direct `service_role` user mutations). Migration 058 advances readiness to `58` (query speed indexes for audit logs, analytics pulses, and S-05 reports plus bounded first-event lookup). Apply all migrations through 058 before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
+Expected readiness after migration 044 and before 045: `44`. Migration 045 advances readiness to `45`; migration 046 advances it to `46` after removing the unused legacy Managing Director role. Subsequent migrations 047 through 055 advance readiness to `55` (atomic confirmed device recovery and live readiness repair). Migration 056 advances readiness to `56` (clearing active fault/downtime when absence detection is disabled). Migration 057 advances readiness to `57` (atomic user status and archive RPCs with `audit_logs` and revoked direct `service_role` user mutations). Migration 058 advances readiness to `58` (query speed indexes for audit logs, analytics pulses, and S-05 reports plus bounded first-event lookup). Migrations 059 through 063 advance readiness to `63` (production calendar exclusions, S-05 offline/schedule validation, same-boot S-03 ISP-outage S-05 pipe preservation, and WAN-outage/recovery-pause retry promotion). Apply all migrations through 063 before deploying the current backend. A passing readiness check is a schema check, not a hosted-data or hardware certification.
 
 ### S-05 output validation migration 044
 
@@ -128,7 +128,23 @@ select public.get_backend_readiness();
 select name from public.roles order by name;
 ```
 
-Expected readiness is `58`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
+Expected readiness is `63`, with `Admin`, `Operation Manager`, `Quality Control`, `Engineering Supervisor`, and `Production Supervisor`. The migration is transactional and has a two-second lock timeout. Local tests do not verify the hosted database or its account contents.
+
+### Production Render, Supabase & Brevo preflight (`ASAP-4`)
+
+Before cutting over to Render, run this read-only preflight in the hosted Supabase SQL editor and verify all rows pass:
+
+```sql
+select
+  public.get_backend_readiness() as readiness_version,
+  (select count(*) from public.users u join public.roles r on r.id = u.role_id
+   where r.name = 'Admin' and u.status = 'Active' and u.deleted_at is null) as active_admins,
+  (select count(*) from public.users u join public.roles r on r.id = u.role_id
+   where r.name = 'Managing Director') as legacy_md_users,
+  (select array_agg(name order by name) from public.roles) as roles_catalog;
+```
+
+Expected: `readiness_version = 63`, `active_admins = 1`, `legacy_md_users = 0`, and the exact five-role catalog. Confirm `CORS_ORIGIN` and `ACCOUNT_SETUP_ORIGIN` are set to the non-localhost production Render origin and `WATCHDOG_MODE=enforce` is configured (production startup fails fast otherwise). Confirm the hosted Supabase project is on **Pro** (no 7-day idle auto-pause, PITR enabled), rotate all five ESP32 device keys via `cd Backend && npm run iot:keys` (`scripts/generate-device-keys.js`), verify Brevo custom sender domain `SPF`, `DKIM`, and `DMARC` DNS records, and confirm `GET /api/health/ready` returns `200` on Render.
 
 ### Health and readiness (historical migration 024 checks)
 

@@ -1,5 +1,6 @@
 const { getSupabaseClient } = require('../../database/client')
 const { formatBusinessDate } = require('../../shared/businessTime')
+const { invalidateDeviceThresholdsCache } = require('../iot/iot.service')
 const { storedCalendarDayRecordSchema } = require('./calendar.model')
 
 function createCalendarError(status, code, message, details) {
@@ -201,6 +202,7 @@ async function setProductionCalendarDay(
     throw createCalendarError(500, 'CALENDAR_UPDATE_FAILED', 'Unable to update production calendar entry.')
   }
 
+  invalidateDeviceThresholdsCache?.(machineId)
   return parseCalendarEntry(row, 'CALENDAR_UPDATE_FAILED', machineId)
 }
 
@@ -243,6 +245,7 @@ async function setProductionCalendarRange(
   }
 
   const entries = data.map((row) => parseCalendarEntry(row, 'CALENDAR_RANGE_UPDATE_FAILED', machineId))
+  invalidateDeviceThresholdsCache?.(machineId)
   return {
     groupId: entries[0].groupId,
     entries,
@@ -282,7 +285,9 @@ async function removeProductionCalendarDay(
   }
 
   const rawResult = Array.isArray(data) ? data[0] : data
-  return validateRemovalResult(rawResult, 'CALENDAR_REMOVE_FAILED')
+  const validated = validateRemovalResult(rawResult, 'CALENDAR_REMOVE_FAILED')
+  invalidateDeviceThresholdsCache?.(machineId)
+  return validated
 }
 
 async function removeProductionCalendarRange(
@@ -303,7 +308,9 @@ async function removeProductionCalendarRange(
   }
 
   const rawResult = Array.isArray(data) ? data[0] : data
-  return validateRemovalResult(rawResult, 'CALENDAR_RANGE_REMOVE_FAILED')
+  const validated = validateRemovalResult(rawResult, 'CALENDAR_RANGE_REMOVE_FAILED')
+  invalidateDeviceThresholdsCache?.(machineId)
+  return validated
 }
 
 module.exports = {

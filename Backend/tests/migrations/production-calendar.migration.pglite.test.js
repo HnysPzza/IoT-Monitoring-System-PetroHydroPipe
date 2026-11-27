@@ -528,7 +528,7 @@ test('calendar RPCs enforce validation, advance-only dates, manual overwrite con
   await assert.rejects(
     db.query(
       `select * from public.set_production_calendar_day(
-        $1, '2026-11-20'::date, 'machine_not_scheduled', 'Unscheduled Stop', false, '   ', null, false, $2
+        $1, '2027-07-20'::date, 'machine_not_scheduled', 'Unscheduled Stop', false, '   ', null, false, $2
       )`,
       [machineId, adminId],
     ),
@@ -537,7 +537,7 @@ test('calendar RPCs enforce validation, advance-only dates, manual overwrite con
 
   const savedUnscheduled = (await db.query(
     `select * from public.set_production_calendar_day(
-      $1, '2026-11-20'::date, 'machine_not_scheduled', 'Unscheduled Stop', false, 'No orders', null, false, $2
+      $1, '2027-07-20'::date, 'machine_not_scheduled', 'Unscheduled Stop', false, 'No orders', null, false, $2
     )`,
     [machineId, adminId],
   )).rows[0]
@@ -571,24 +571,24 @@ test('calendar RPCs enforce validation, advance-only dates, manual overwrite con
   await assert.rejects(
     db.query(
       `select * from public.set_production_calendar_range(
-        $1, '2026-11-19'::date, '2026-11-21'::date, 'day_off', 'Overlapping Range', null, false, $2
+        $1, '2027-07-19'::date, '2027-07-21'::date, 'day_off', 'Overlapping Range', null, false, $2
       )`,
       [machineId, adminId],
     ),
-    (error) => error.code === '23505' && /2026-11-20/.test(error.detail || ''),
+    (error) => error.code === '23505' && /2027-07-20/.test(error.detail || ''),
   )
 
   const untouched = (await db.query(
     `select count(*)::int as count
      from public.production_calendar_days
-     where machine_id = $1 and calendar_date in ('2026-11-19'::date, '2026-11-21'::date)`,
+     where machine_id = $1 and calendar_date in ('2027-07-19'::date, '2027-07-21'::date)`,
     [machineId],
   )).rows[0].count
   assert.equal(untouched, 0)
 
   const overwritten = (await db.query(
     `select * from public.set_production_calendar_range(
-      $1, '2026-11-19'::date, '2026-11-21'::date, 'day_off', 'Overlapping Range', null, true, $2
+      $1, '2027-07-19'::date, '2027-07-21'::date, 'day_off', 'Overlapping Range', null, true, $2
     )`,
     [machineId, adminId],
   )).rows
@@ -628,14 +628,14 @@ test('calendar RPCs enforce validation, advance-only dates, manual overwrite con
   )
   await assert.rejects(
     db.query(
-      "update public.production_calendar_days set is_working = true where machine_id = $1 and calendar_date = '2026-11-20'::date",
+      "update public.production_calendar_days set is_working = true where machine_id = $1 and calendar_date = '2027-07-20'::date",
       [machineId],
     ),
     /permission denied/i,
   )
   await assert.rejects(
     db.query(
-      "delete from public.production_calendar_days where machine_id = $1 and calendar_date = '2026-11-20'::date",
+      "delete from public.production_calendar_days where machine_id = $1 and calendar_date = '2027-07-20'::date",
       [machineId],
     ),
     /permission denied/i,
@@ -660,19 +660,19 @@ test('Node.js getEligibleSeconds and PostgreSQL watchdog_eligible_seconds match 
 
   await db.query(
     `select * from public.set_production_calendar_day(
-      $1, '2026-11-25'::date, 'holiday', 'Special Plant Holiday', false, null, null, false, $2
+      $1, '2027-07-07'::date, 'holiday', 'Special Plant Holiday', false, null, null, false, $2
     )`,
     [machineId, adminId],
   )
   await db.query(
     `select * from public.set_production_calendar_day(
-      $1, '2026-11-29'::date, 'holiday', 'Sunday Overtime Run', true, null, null, false, $2
+      $1, '2027-07-11'::date, 'holiday', 'Sunday Overtime Run', true, null, null, false, $2
     )`,
     [machineId, adminId],
   )
   await db.query(
     `select * from public.set_production_calendar_range(
-      $1, '2026-12-02'::date, '2026-12-04'::date, 'day_off', 'Three-Day Shutdown', null, false, $2
+      $1, '2027-07-14'::date, '2027-07-16'::date, 'day_off', 'Three-Day Shutdown', null, false, $2
     )`,
     [machineId, adminId],
   )
@@ -688,41 +688,41 @@ test('Node.js getEligibleSeconds and PostgreSQL watchdog_eligible_seconds match 
     select calendar_date::text as calendar_date, is_working
     from public.production_calendar_days
     where machine_id = $1
-      and calendar_date between '2026-11-22'::date and '2026-12-05'::date
+      and calendar_date between '2027-07-04'::date and '2027-07-17'::date
     order by calendar_date asc
   `, [machineId])).rows
 
   const dates = [
-    '2026-11-22',
-    '2026-11-23',
-    '2026-11-24',
-    '2026-11-25',
-    '2026-11-26',
-    '2026-11-27',
-    '2026-11-28',
-    '2026-11-29',
-    '2026-11-30',
-    '2026-12-01',
-    '2026-12-02',
-    '2026-12-03',
-    '2026-12-04',
-    '2026-12-05',
+    '2027-07-04',
+    '2027-07-05',
+    '2027-07-06',
+    '2027-07-07',
+    '2027-07-08',
+    '2027-07-09',
+    '2027-07-10',
+    '2027-07-11',
+    '2027-07-12',
+    '2027-07-13',
+    '2027-07-14',
+    '2027-07-15',
+    '2027-07-16',
+    '2027-07-17',
   ]
   const nextDates = [
-    '2026-11-23',
-    '2026-11-24',
-    '2026-11-25',
-    '2026-11-26',
-    '2026-11-27',
-    '2026-11-28',
-    '2026-11-29',
-    '2026-11-30',
-    '2026-12-01',
-    '2026-12-02',
-    '2026-12-03',
-    '2026-12-04',
-    '2026-12-05',
-    '2026-12-06',
+    '2027-07-05',
+    '2027-07-06',
+    '2027-07-07',
+    '2027-07-08',
+    '2027-07-09',
+    '2027-07-10',
+    '2027-07-11',
+    '2027-07-12',
+    '2027-07-13',
+    '2027-07-14',
+    '2027-07-15',
+    '2027-07-16',
+    '2027-07-17',
+    '2027-07-18',
   ]
 
   let expectedTotalSeconds = 0
@@ -746,8 +746,8 @@ test('Node.js getEligibleSeconds and PostgreSQL watchdog_eligible_seconds match 
     expectedTotalSeconds += sqlSeconds
   }
 
-  const fullWindowStart = '2026-11-22T00:00:00+08:00'
-  const fullWindowEnd = '2026-12-06T00:00:00+08:00'
+  const fullWindowStart = '2027-07-04T00:00:00+08:00'
+  const fullWindowEnd = '2027-07-18T00:00:00+08:00'
   const sqlTotalSeconds = Number((await db.query(
     'select public.watchdog_eligible_seconds($1, $2::timestamptz, $3::timestamptz) as seconds',
     [machineId, fullWindowStart, fullWindowEnd],

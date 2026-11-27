@@ -441,7 +441,7 @@ export default function ReportsSection() {
   return (
     <div className="reports-layout">
       {loadState === 'loading' ? (
-        <div className="notice dashboard-alert" role="status" aria-live="polite">
+        <div className={hasCurrentReport ? 'sr-only' : 'notice dashboard-alert'} role="status" aria-live="polite">
           <RotateCw className="spin-icon" size={16} aria-hidden="true" />
           <span>{hasCurrentReport ? 'Refreshing report...' : 'Loading report...'}</span>
         </div>

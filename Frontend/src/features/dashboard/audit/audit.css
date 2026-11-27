@@ -4,6 +4,82 @@
   gap: 4px;
 }
 
+.audit-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.audit-tabs {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-surface2);
+  isolation: isolate;
+}
+
+.audit-tabs::before {
+  content: '';
+  box-sizing: border-box;
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 6px);
+  border: 1px solid var(--c-border);
+  border-radius: 7px;
+  background: var(--c-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 16%);
+  transform: translateX(0);
+  transition: transform 240ms var(--ease-out);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.audit-tabs[data-active-tab='production']::before {
+  transform: translateX(calc(100% + 4px));
+}
+
+.audit-tab-btn {
+  position: relative;
+  z-index: 1;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 160ms var(--ease-std);
+}
+
+.audit-tab-btn:hover:not(.is-active),
+.audit-tab-btn.is-active {
+  color: var(--c-text);
+}
+
+.audit-tab-btn:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.audit-panel {
+  display: grid;
+  gap: inherit;
+  min-width: 0;
+}
+
 .audit-page-title {
   margin: 0;
   color: var(--c-text);
@@ -128,20 +204,6 @@
   min-height: 26px;
 }
 
-.audit-refresh-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border: 1px solid var(--subtle-border);
-  border-radius: 999px;
-  background: var(--c-surface2);
-  color: var(--c-text-2);
-  font-size: 0.78rem;
-  font-weight: 600;
-  animation: audit-fade-slide-in 160ms var(--ease-out);
-}
-
 .audit-total-chip {
   min-height: 32px;
   padding: 5px 10px;
@@ -157,12 +219,12 @@
 }
 
 .audit-table {
-  min-width: 780px;
+  min-width: 890px;
 }
 
 .audit-table th,
 .audit-table td {
-  padding: 12px;
+  padding: 10px;
 }
 
 .audit-time-cell {
@@ -170,8 +232,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+.audit-action-cell {
+  min-width: 172px;
+}
+
+.audit-actor-cell {
+  min-width: 112px;
+  font-weight: 500;
+}
+
+.audit-pipe-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-target-cell {
+  min-width: 124px;
+}
+
 .audit-summary-cell {
-  max-width: 44ch;
+  min-width: 205px;
+  max-width: 38ch;
   line-height: 1.45;
 }
 
@@ -196,6 +277,24 @@
   flex: 0 0 7px;
   border-radius: 50%;
   background: var(--c-text-2);
+}
+
+.audit-table .audit-action-badge {
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.audit-table .audit-action-badge::before {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  margin-top: 0.42em;
 }
 
 .audit-action-badge[data-tone='danger'] {
@@ -225,18 +324,21 @@
 .audit-action-stack {
   display: grid;
   justify-items: start;
-  gap: 5px;
+  gap: 3px;
+  max-width: 215px;
 }
 
 .audit-entity-label {
   display: block;
   color: var(--c-text-2);
   font-family: var(--font-sans);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
+  line-height: 1.25;
 }
 
 .audit-details-button {
   min-height: 44px;
+  padding: 0 12px;
   white-space: nowrap;
 }
 
@@ -550,6 +652,10 @@
 }
 
 @media (max-width: 640px) {
+  .audit-tabs {
+    width: 100%;
+  }
+
   .audit-controls-actions {
     width: 100%;
     justify-content: flex-end;
@@ -611,6 +717,17 @@
 
   .audit-time-cell {
     white-space: normal;
+  }
+
+  .audit-action-cell,
+  .audit-actor-cell,
+  .audit-target-cell,
+  .audit-summary-cell {
+    min-width: 0;
+  }
+
+  .audit-action-stack {
+    max-width: none;
   }
 
   .audit-summary-cell {
@@ -687,13 +804,14 @@
 @media (prefers-reduced-motion: reduce) {
   .audit-date-clear,
   .audit-reset-button,
-  .audit-refresh-status,
   .audit-table tbody tr.audit-row-arrived td,
   .audit-table tbody tr.audit-row-returned td {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
 
+  .audit-tabs::before,
+  .audit-tab-btn,
   .audit-table tbody,
   .audit-dialog-filter-btn,
   .audit-details-dialog,

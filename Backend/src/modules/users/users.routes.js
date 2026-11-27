@@ -23,7 +23,7 @@ router.post('/:id/resend-setup', accountWriteLimiter, validateRequest(archiveUse
 router.post('/:id/password-reset', accountWriteLimiter, validateRequest(archiveUserSchema), asyncHandler(async (req, res) => {
   res.json(await requestPasswordReset({ userId: req.validated.params.id, actorUserId: req.user.sub }))
 }))
-router.patch('/:id/status', validateRequest(updateUserStatusSchema), asyncHandler(usersController.updateUserStatus))
-router.patch('/:id/archive', validateRequest(archiveUserSchema), asyncHandler(usersController.archiveUser))
+router.patch('/:id/status', accountWriteLimiter, validateRequest(updateUserStatusSchema), asyncHandler(usersController.updateUserStatus))
+router.patch('/:id/archive', accountWriteLimiter, validateRequest(archiveUserSchema), asyncHandler(usersController.archiveUser))
 
 module.exports = router

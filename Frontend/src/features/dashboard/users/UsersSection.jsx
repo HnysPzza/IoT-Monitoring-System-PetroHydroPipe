@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
@@ -182,7 +183,7 @@ export default function UsersSection() {
     <div className="users-header-controls">
       {!isLoading && !loadError ? <span className="users-count">{directory.total} {hasActiveFilters ? 'matching' : 'staff'} accounts</span> : null}
       <button className="icon-button users-refresh" type="button" aria-label="Refresh accounts" title="Refresh accounts" disabled={isLoading || busy} onClick={() => usersQuery.refetch()}>
-        <RotateCw size={15} aria-hidden="true" />
+        <RotateCw size={15} className={usersQuery.isFetching && usersQuery.data ? 'spin-icon' : ''} aria-hidden="true" />
       </button>
     </div>
   )
@@ -297,7 +298,7 @@ export default function UsersSection() {
         </div>
 
         {staleNotice ? <div role="alert">{staleNotice} <button type="button" onClick={() => usersQuery.refetch()}>Retry</button></div> : null}
-        {usersQuery.isFetching && usersQuery.data ? <div role="status">{usersQuery.isPlaceholderData ? 'Loading selected filters; previous results remain visible.' : 'Refreshing accounts...'}</div> : null}
+        <RefreshStatus active={Boolean(usersQuery.isFetching && usersQuery.data)} isPlaceholder={usersQuery.isPlaceholderData} message="Refreshing accounts..." placeholderMessage="Loading selected filters; previous results remain visible." />
         {loadError && !usersQuery.data ? (
           <div className="users-load-error" role="alert">
             <p>{loadError}</p>

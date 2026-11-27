@@ -29,6 +29,7 @@ function createAnalyticsError(status, code, message) {
 }
 
 function getBucketConfig(daysInclusive) {
+  if (daysInclusive === 1) return { bucket: 'hourly', seconds: 3600 }
   if (daysInclusive <= 2) return { bucket: 'four-hour', seconds: 14400 }
   if (daysInclusive <= 14) return { bucket: 'daily', seconds: 86400 }
   if (daysInclusive <= 93) return { bucket: 'weekly', seconds: 604800 }
@@ -61,14 +62,14 @@ function createRange(start, end, requestedStartDate, requestedEndDate, asOf, buc
 }
 
 function formatBucketLabel(start, end, bucket) {
-  if (bucket === 'four-hour') {
+  if (bucket === 'hourly' || bucket === 'four-hour') {
     const time = start.toLocaleTimeString('en-PH', {
       timeZone: BUSINESS_TIME_ZONE,
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     })
-    return `${formatBusinessDate(start)} ${time}`
+    return bucket === 'hourly' ? time : `${formatBusinessDate(start)} ${time}`
   }
   const lastObservedDate = formatBusinessDate(new Date(end.getTime() - 1))
   const firstDate = formatBusinessDate(start)

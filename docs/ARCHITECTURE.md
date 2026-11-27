@@ -31,7 +31,7 @@ Five ESP32-backed inductive proximity sensors are assigned to `M-01`:
 - `S-03` — Machine Main Sensor (main spindle rotation and **machine-running authority**)
 - `S-05` — Production Output Cutting (finished pipe counter)
 
-No physical ESP32 nodes are integrated yet on the hosted cloud environment; device flows in this document define the backend contract and local firmware behavior. The UI only displays supported proximity and count states—never unsupported telemetry such as speed, pressure, temperature, or RPM.
+Five physical ESP32 sensor nodes (`S-01` through `S-05`) are implemented against this contract using HTTPS (`WiFiClientSecure`) and gitignored device secrets; hosted cloud cutover requires flashing the production Render URL and rotated keys. The UI only displays supported proximity and count states—never unsupported telemetry such as speed, pressure, temperature, or RPM.
 
 ---
 
@@ -49,11 +49,12 @@ React and Vite single-page dashboard providing role-aware views:
 Node.js and Express server handling security, validation, and coordination:
 - **Authentication & Sessions**: Username/password login verified with bcrypt, short-lived access JWTs, and `HttpOnly; SameSite=Strict` refresh token cookies with replay detection.
 - **Role Authorization**: Five roles (`Admin` displayed as **Managing Director**, `Operation Manager`, `Production Supervisor`, `Engineering Supervisor`, and `Quality Control`).
-- **IoT Ingestion**: Authenticates ESP32 headers (`x-device-id`, `x-device-key` matched against SHA-256/bcrypt hashes), caches machine thresholds for 5 seconds to reduce database load, and forwards events to PostgreSQL RPCs.
-- **Realtime SSE & Watchdog**: Publishes post-commit Server-Sent Events (SSE) for instant dashboard refreshes and runs the optional background watchdog evaluator.
+- **IoT Ingestion**: Authenticates ESP32 headers (`x-device-id`, `x-device-key` matched against SHA-256/bcrypt hashes) with per-device failure isolation behind shared Plant NAT IPs, caches machine thresholds for 5 seconds to reduce database load, and forwards events to PostgreSQL RPCs.
+- **Bounded Queries & Exports**: Caps `GET /api/downtime` date spans at `366` days, chunks production spec lookups to `100` UUIDs per PostgREST `.in()` query, and gates PDF/XLSX exports at `2` concurrent active + `8` queued (`429 EXPORT_BUSY`) with `10,000` PDF / `25,000` XLSX log bounds.
+- **Realtime SSE & Watchdog**: Publishes post-commit Server-Sent Events (SSE) for instant dashboard refreshes and runs the production-enforced background watchdog evaluator (`WATCHDOG_MODE=enforce` required in `NODE_ENV=production`).
 
 ### 3. Database (`Backend/database/`)
-Supabase PostgreSQL schema (current readiness version: **58**):
+Supabase PostgreSQL schema (current readiness version: **63**):
 - **Core tables**: `roles`, `users`, `machines`, `sensors`, `sensor_events`, `downtime_events`, `production_outputs`, `alerts`, `alert_revision_state`, `machine_operational_settings`, `machine_operational_settings_history`, `sensor_watchdog_state`, `sensor_watchdog_transitions`, and `audit_logs`.
 - **RPC-only mutations**: Direct `INSERT`, `UPDATE`, and `DELETE` privileges are revoked from client roles and restricted on `service_role` so state changes must pass through audited PostgreSQL functions.
 
@@ -68,7 +69,7 @@ Supabase PostgreSQL schema (current readiness version: **58**):
 
 ### 2. How Pipe Counting Works (`S-05` Output Rule)
 - Every `S-05` pulse is saved in `sensor_events` as raw evidence.
-- A pipe pulse is **accepted** (`output_accepted = true`) unless `S-03` machine downtime is active, the event timestamp is stale, or the pulse arrives within the 100 ms server debounce floor (`054_s05_output_only_reject_on_downtime.sql`).
+- A pipe pulse is **accepted** (`output_accepted = true`) unless `S-03` machine downtime is active, `S-03` is unverified offline, the event falls outside the active shift/calendar schedule, the timestamp is stale, or the pulse arrives within the 100 ms server debounce floor (`054`–`063`). Same-boot WAN-outage and recovery-window cuts are preserved when `S-03` proves running state on reconnect (`062`–`063`).
 - Rejected pulses stay in the database with a rejection reason for forensic review, but never increase pipe counts, reports, or analytics.
 - **S-05 absence detection is permanently prohibited** because a quiet pipe cutter does not mean the machine is broken.
 

@@ -100,6 +100,22 @@ test('publishes when a sensor receives a new event timestamp with the same activ
   assert.equal(published[1].sensors[1].lastEventAt, '2026-10-31T00:00:02.000Z')
 })
 
+test('publishes when a sensor receives a new heartbeat timestamp so stale-window recovery is broadcast', async () => {
+  const first = buildLive()
+  first.sensors[0].monitoring.lastHeartbeatAt = '2026-10-31T00:00:00.000Z'
+  const second = buildLive()
+  second.sensors[0].monitoring.lastHeartbeatAt = '2026-10-31T00:00:35.000Z'
+  const { publisher, published, flushScheduled } = setup([first, second])
+
+  publisher.requestPublish()
+  await flushScheduled()
+  publisher.requestPublish()
+  await flushScheduled()
+
+  assert.equal(published.length, 2)
+  assert.equal(published[1].sensors[0].monitoring.lastHeartbeatAt, '2026-10-31T00:00:35.000Z')
+})
+
 test('publishes when only the machine status changes', async () => {
   const { publisher, published, flushScheduled } = setup([
     buildLive({ machineStatus: 'Running' }),

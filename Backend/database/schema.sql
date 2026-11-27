@@ -76,6 +76,8 @@ create table if not exists sensor_events (
         'stale_event',
         'machine_stationary',
         'machine_downtime',
+        'machine_offline',
+        'outside_schedule',
         'server_debounce'
       )
     )

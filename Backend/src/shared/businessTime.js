@@ -1,6 +1,12 @@
 const BUSINESS_TIME_ZONE = 'Asia/Manila'
 const BUSINESS_UTC_OFFSET = '+08:00'
 const DAY_MS = 24 * 60 * 60 * 1000
+const MIN_BUSINESS_DATE = '2000-01-01'
+const MAX_BUSINESS_DATE = '2100-12-31'
+
+function isBusinessDateInRange(dateString) {
+  return dateString >= MIN_BUSINESS_DATE && dateString <= MAX_BUSINESS_DATE
+}
 
 function getBusinessDateParts(value = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -10,7 +16,8 @@ function getBusinessDateParts(value = new Date()) {
     day: '2-digit',
   }).formatToParts(new Date(value))
 
-  return Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  const mapped = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return { ...mapped, year: String(mapped.year).padStart(4, '0') }
 }
 
 function formatBusinessDate(value = new Date()) {
@@ -45,7 +52,7 @@ function startOfBusinessMonth(value) {
 function addBusinessMonths(value, months) {
   const { year, month } = getBusinessDateParts(value)
   const target = new Date(Date.UTC(Number(year), Number(month) - 1 + months, 1))
-  const targetYear = target.getUTCFullYear()
+  const targetYear = String(target.getUTCFullYear()).padStart(4, '0')
   const targetMonth = String(target.getUTCMonth() + 1).padStart(2, '0')
   return parseBusinessDate(`${targetYear}-${targetMonth}-01`)
 }
@@ -71,12 +78,15 @@ function formatBusinessWeekday(value) {
 
 module.exports = {
   BUSINESS_TIME_ZONE,
+  MAX_BUSINESS_DATE,
+  MIN_BUSINESS_DATE,
   addBusinessDays,
   addBusinessMonths,
   formatBusinessDate,
   formatBusinessTime,
   formatBusinessWeekday,
   getBusinessDayRange,
+  isBusinessDateInRange,
   parseBusinessDate,
   startOfBusinessDay,
   startOfBusinessMonth,

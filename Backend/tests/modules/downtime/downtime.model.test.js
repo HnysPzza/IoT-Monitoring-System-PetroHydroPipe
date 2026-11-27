@@ -46,3 +46,23 @@ test('downtime list schema accepts valid dateFrom and dateTo range and rejects i
   })
   assert.equal(inverted.success, false)
 })
+
+test('downtime list schema accepts up to 366 days and rejects oversized multi-year ranges immediately', () => {
+  const leapYearMax = listDowntimeSchema.safeParse({
+    query: { dateFrom: '2024-01-01', dateTo: '2025-01-01' },
+  })
+  assert.equal(leapYearMax.success, true)
+
+  const overCap = listDowntimeSchema.safeParse({
+    query: { dateFrom: '2024-01-01', dateTo: '2025-01-02' },
+  })
+  assert.equal(overCap.success, false)
+
+  const t0 = performance.now()
+  const century = listDowntimeSchema.safeParse({
+    query: { dateFrom: '1926-01-01', dateTo: '2026-12-31' },
+  })
+  const elapsedMs = performance.now() - t0
+  assert.equal(century.success, false)
+  assert.ok(elapsedMs < 50, `Expected immediate schema rejection, took ${elapsedMs}ms`)
+})

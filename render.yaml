@@ -2,24 +2,24 @@ services:
   - type: web
     name: petrohydropipe-backend
     runtime: node
-    rootDir: Backend
-    buildCommand: npm ci --omit=dev
-    startCommand: npm start
-    healthCheckPath: /api/health/live
+    plan: starter
+    # ponytail: single-instance RAM SSE/rate-limit/IoT-auth caches; move to Redis before scaling >1.
+    numInstances: 1
+    buildCommand: npm --prefix Backend ci --omit=dev && npm --prefix Frontend ci --include=dev && npm --prefix Frontend run build
+    startCommand: npm --prefix Backend start
+    healthCheckPath: /api/health/ready
     envVars:
+      - key: NODE_VERSION
+        value: 22.x
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3000
-
-  - type: web
-    name: petrohydropipe-frontend
-    runtime: static
-    rootDir: Frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
+      - key: TRUST_PROXY
+        value: "1"
+      - key: CORS_ORIGIN
+        sync: false
+      - key: ACCOUNT_SETUP_ORIGIN
+        sync: false
+      - key: WATCHDOG_MODE
+        value: enforce

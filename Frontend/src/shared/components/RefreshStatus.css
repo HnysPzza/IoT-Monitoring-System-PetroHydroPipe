@@ -1,0 +1,22 @@
+.refresh-status-slot {
+  display: grid;
+  min-width: 0;
+  color: var(--c-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.refresh-status-slot::before,
+.refresh-status-slot::after,
+.refresh-status-slot > span {
+  grid-area: 1 / 1;
+}
+
+.refresh-status-slot::before,
+.refresh-status-slot::after {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.refresh-status-slot::before { content: attr(data-message); }
+.refresh-status-slot::after { content: attr(data-placeholder); }

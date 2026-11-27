@@ -142,7 +142,20 @@ async function requestPasswordReset({ userId, actorUserId }) {
   return { delivery: await sendPasswordLinkEmail(data.email, token, origin, 'reset') }
 }
 
-async function setupPassword({ token, password }) {
+async function setupPassword({ token, password }, expectedPurpose = 'setup') {
+  // Verify immutable token purpose before hashing while preserving the submit error contract.
+  try {
+    if (expectedPurpose === 'reset') {
+      await validatePasswordResetToken({ token })
+    } else {
+      await validateSetupToken({ token })
+    }
+  } catch (error) {
+    if (error.code === 'SETUP_LINK_INVALID' || error.code === 'PASSWORD_RESET_LINK_INVALID') {
+      throw fail(400, 'ACCOUNT_OPERATION_INVALID', 'Account or setup link is not eligible. Refresh the directory or request a new link.')
+    }
+    throw error
+  }
   await callOnboarding('complete_password_setup', { p_token_hash: hashToken(token), p_password_hash: await bcrypt.hash(password, 10) })
 }
 

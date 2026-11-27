@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs')
 const { z } = require('zod')
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
+const { isEligibleAt } = require('../../shared/operationalTime')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
 const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
@@ -17,9 +18,10 @@ const MAX_BOOT_COUNTER_OVERRIDES = 64
 const MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES = 16
 const DEVICE_THRESHOLDS_CACHE_TTL_MS = 5_000
 const verifiedDeviceCache = new Map()
+// ponytail: in-process known-ID set; warm from sensors table if multi-node.
+const knownSensorDeviceIds = new Set()
 const failedAuthBuckets = new Map()
 const failedAuthAuditCooldowns = new Map()
-const recentDeviceHeartbeats = new Map()
 const deviceBootCounterOverrides = new Map()
 const deviceThresholdsCache = new Map()
 
@@ -29,6 +31,8 @@ const OUTPUT_REJECTION_REASONS = new Set([
   'stale_event',
   'machine_stationary',
   'machine_downtime',
+  'machine_offline',
+  'outside_schedule',
   'server_debounce',
 ])
 
@@ -203,52 +207,13 @@ function isMonitoringStateFresh(snapshotAt, lastEvaluatedAt) {
   return age >= -MAX_EVALUATION_CLOCK_SKEW_MS && age <= maximumAge
 }
 
-function getLatestTimestampMs(timestamps) {
-  let latestMs = null
-  for (const value of timestamps) {
-    if (!value) continue
-    const parsedMs = new Date(value).getTime()
-    if (!Number.isFinite(parsedMs)) continue
-    if (latestMs === null || parsedMs > latestMs) {
-      latestMs = parsedMs
-    }
-  }
-  return latestMs
-}
-
-function resolveLastHeartbeatAt(sensorRecord) {
-  const recentHeartbeatAt = recentDeviceHeartbeats.get(sensorRecord.id) || null
-  const dbHeartbeatAt = sensorRecord.watchdog?.last_heartbeat_received_at || null
-  if (!recentHeartbeatAt) return dbHeartbeatAt
-  if (!dbHeartbeatAt) return recentHeartbeatAt
-  return new Date(recentHeartbeatAt).getTime() > new Date(dbHeartbeatAt).getTime()
-    ? recentHeartbeatAt
-    : dbHeartbeatAt
-}
-
 function resolveConnectivityState(snapshotAt, sensorRecord) {
-  const watchdog = sensorRecord?.watchdog
-  if (!watchdog) return null
-
-  const latestContactMs = getLatestTimestampMs([
-    recentDeviceHeartbeats.get(sensorRecord.id),
-    watchdog.last_heartbeat_received_at,
-    watchdog.last_activity_received_at,
-    sensorRecord.latest_event?.recorded_at,
-  ])
-
-  if (latestContactMs === null) {
-    return watchdog.connectivity_state === 'online' || watchdog.connectivity_state === 'offline'
-      ? watchdog.connectivity_state
-      : null
-  }
-
-  const snapshotMs = new Date(snapshotAt).getTime()
-  if (!Number.isFinite(snapshotMs)) return null
-
-  const age = snapshotMs - latestContactMs
+  const watchdog = sensorRecord.watchdog
+  if (!watchdog?.last_heartbeat_received_at) return null
+  const age = Date.parse(snapshotAt) - Date.parse(watchdog.last_heartbeat_received_at)
+  if (!Number.isFinite(age)) return null
   if (age > env.IOT_HEARTBEAT_STALE_AFTER_MS) return 'offline'
-  return 'online'
+  return watchdog.connectivity_state === 'unknown' ? null : watchdog.connectivity_state
 }
 
 const PROCESS_SENSOR_CODES = new Set(['S-01', 'S-02', 'S-04'])
@@ -306,7 +271,7 @@ function toLiveSensorResponse(sensorRecord, snapshotAt, machineStatus) {
       stateFresh,
       connectivityState,
       detectionState,
-      lastHeartbeatAt: resolveLastHeartbeatAt(sensorRecord),
+      lastHeartbeatAt: sensorRecord.watchdog?.last_heartbeat_received_at || null,
       lastActivityAt: sensorRecord.watchdog?.last_activity_received_at || null,
       lastEvaluatedAt: sensorRecord.watchdog?.last_evaluated_at || null,
     },
@@ -401,9 +366,19 @@ function cacheVerifiedSensor(deviceId, keyDigest, sensor, now) {
   })
 }
 
-function getFailureBucketKey(deviceId, sourceIp) {
-  if (sourceIp) return `ip:${sourceIp}`
-  return `device:${deviceId || 'missing'}`
+function rememberKnownSensorDeviceId(deviceId) {
+  if (!deviceId || knownSensorDeviceIds.has(deviceId)) return
+  if (knownSensorDeviceIds.size >= MAX_DEVICE_AUTH_CACHE_ENTRIES) {
+    const oldest = knownSensorDeviceIds.values().next().value
+    if (oldest !== undefined) knownSensorDeviceIds.delete(oldest)
+  }
+  knownSensorDeviceIds.add(deviceId)
+}
+
+function getFailureBucketKey(deviceId, sourceIp, isKnownDevice = false) {
+  if (isKnownDevice && sourceIp) return `ip:${sourceIp}:device:${deviceId || 'missing'}`
+  if (isKnownDevice || !sourceIp) return `device:${deviceId || 'missing'}`
+  return `ip:${sourceIp}`
 }
 
 function assertNotAuthThrottled(bucketKey, now) {
@@ -472,14 +447,17 @@ async function recordThrottledAuthFailureAudit({ deviceId, sensorCode, failureBu
 
 async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
   const now = Date.now()
-  const failureBucketKey = getFailureBucketKey(deviceId, sourceIp)
+  const deviceBucketKey = getFailureBucketKey(deviceId, sourceIp, true)
+  const ipBucketKey = sourceIp ? getFailureBucketKey(deviceId, sourceIp, false) : null
+  const isKnownDevice = Boolean(deviceId && knownSensorDeviceIds.has(deviceId))
 
   if (!deviceId || !deviceKey) {
-    assertNotAuthThrottled(failureBucketKey, now)
-    recordFailedAuthAttempt(failureBucketKey, now)
+    const missingBucketKey = getFailureBucketKey(deviceId, sourceIp, isKnownDevice)
+    assertNotAuthThrottled(missingBucketKey, now)
+    recordFailedAuthAttempt(missingBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId: deviceId || null,
-      failureBucketKey,
+      failureBucketKey: missingBucketKey,
       reason: !deviceId ? 'missing_device_id' : 'missing_device_key',
       now,
     })
@@ -489,34 +467,41 @@ async function authenticateDevice({ deviceId, deviceKey, sourceIp }) {
   const keyDigest = digestDeviceKey(deviceKey)
   const cachedEntry = getCachedSensorEntry(deviceId, now)
   if (cachedEntry && crypto.timingSafeEqual(cachedEntry.keyDigest, keyDigest)) {
+    rememberKnownSensorDeviceId(deviceId)
     return cachedEntry.sensor
   }
 
-  assertNotAuthThrottled(failureBucketKey, now)
+  assertNotAuthThrottled(deviceBucketKey, now)
+  if (!isKnownDevice && ipBucketKey) {
+    assertNotAuthThrottled(ipBucketKey, now)
+  }
 
   const sensor = await findSensorByDeviceId(deviceId)
 
   if (!sensor?.device_key_hash) {
     verifiedDeviceCache.delete(deviceId)
+    knownSensorDeviceIds.delete(deviceId)
     await bcrypt.compare(deviceKey, DUMMY_DEVICE_KEY_HASH)
-    recordFailedAuthAttempt(failureBucketKey, now)
+    const unknownBucketKey = getFailureBucketKey(deviceId, sourceIp, false)
+    recordFailedAuthAttempt(unknownBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId,
-      failureBucketKey,
+      failureBucketKey: unknownBucketKey,
       reason: sensor ? 'missing_device_key_hash' : 'unknown_device',
       now,
     })
     throw createIotError(401, 'DEVICE_UNAUTHORIZED', 'Invalid ESP32 device credentials.')
   }
 
+  rememberKnownSensorDeviceId(deviceId)
   const keyMatches = await bcrypt.compare(deviceKey, sensor.device_key_hash)
 
   if (!keyMatches) {
-    recordFailedAuthAttempt(failureBucketKey, now)
+    recordFailedAuthAttempt(deviceBucketKey, now)
     await recordThrottledAuthFailureAudit({
       deviceId,
       sensorCode: sensor.sensor_code,
-      failureBucketKey,
+      failureBucketKey: deviceBucketKey,
       reason: 'invalid_device_key',
       now,
     })
@@ -537,19 +522,81 @@ function assertAllowedEventMetadata(metadata) {
   }
 }
 
+async function normalizeScheduleAwareEventPayload({ sensor, machine, payload, recordedAt }) {
+  const metadata = payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+    ? payload.metadata
+    : {}
+  const isDeviceAbsenceFault = sensor.sensor_code !== 'S-05'
+    && payload.eventType === 'fault'
+    && metadata.detectionState === 'FAULT'
+  const isUnconfirmedDeviceRecovery = sensor.sensor_code !== 'S-05'
+    && (payload.eventType === 'recovered' || payload.eventType === 'pulse')
+    && payload.signal === 'active'
+    && metadata.detectionState === 'RUNNING'
+    && metadata.recoveryConfirmed !== true
+
+  if (!isDeviceAbsenceFault && !isUnconfirmedDeviceRecovery) {
+    return {
+      eventType: payload.eventType,
+      signal: payload.signal,
+      metadata,
+    }
+  }
+
+  if (env.WATCHDOG_MODE === 'enforce') {
+    const thresholds = await getDeviceOperationalThresholds(
+      { ...sensor, machines: machine },
+      { useCache: true, asOf: new Date(recordedAt) },
+    )
+    if (!thresholds || thresholds.absenceDetectionEnabled !== false) {
+      return {
+        eventType: payload.eventType,
+        signal: payload.signal,
+        metadata,
+      }
+    }
+  }
+
+  if (isDeviceAbsenceFault) {
+    return {
+      eventType: 'idle',
+      signal: 'idle',
+      metadata: {
+        ...metadata,
+        detectionState: 'IDLE',
+      },
+    }
+  }
+
+  return {
+    eventType: payload.eventType,
+    signal: payload.signal,
+    metadata: {
+      ...metadata,
+      recoveryConfirmed: true,
+    },
+  }
+}
+
 async function processSensorEvent({ sensor, machine, payload, recordedAt }) {
   assertAllowedEventMetadata(payload.metadata)
   const supabase = getSupabaseClient()
+  const normalized = await normalizeScheduleAwareEventPayload({
+    sensor,
+    machine,
+    payload,
+    recordedAt,
+  })
 
   const { data, error } = await supabase
     .rpc('ingest_iot_sensor_event', {
       p_device_event_id: payload.eventId,
       p_sensor_id: sensor.id,
       p_machine_id: machine.id,
-      p_event_type: payload.eventType,
+      p_event_type: normalized.eventType,
       p_event_value: {
-        signal: payload.signal,
-        metadata: payload.metadata || {},
+        signal: normalized.signal,
+        metadata: normalized.metadata,
       },
       p_recorded_at: recordedAt,
     })
@@ -688,7 +735,7 @@ function invalidateDeviceThresholdsCache(machineId) {
   deviceThresholdsCache.clear()
 }
 
-async function getDeviceOperationalThresholds(sensor, { useCache = false } = {}) {
+async function getDeviceOperationalThresholds(sensor, { useCache = false, asOf = new Date() } = {}) {
   const supabase = getSupabaseClient()
   if (!sensor || typeof supabase?.from !== 'function') return null
   const machine = getMachineRecord(sensor)
@@ -710,17 +757,43 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false } = {})
     if (!data) {
       const { data: queriedData, error } = await supabase
         .from('machine_operational_settings')
-        .select('sensor_thresholds, version')
+        .select('sensor_thresholds, shift_schedule, version')
         .eq('machine_id', machineId)
         .maybeSingle()
 
       if (error || !queriedData?.sensor_thresholds) return null
-      data = queriedData
-      pruneExpiredMapEntries(deviceThresholdsCache, now, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
-      deviceThresholdsCache.set(machineId, {
-        data: queriedData,
-        expiresAt: now + DEVICE_THRESHOLDS_CACHE_TTL_MS,
-      })
+
+      let calendarDays = []
+      let calendarErrorFlag = false
+      if (queriedData.shift_schedule && typeof queriedData.shift_schedule === 'object') {
+        try {
+          const { data: calendarData, error: calendarError } = await supabase
+            .from('production_calendar_days')
+            .select('calendar_date, is_working')
+            .eq('machine_id', machineId)
+          if (calendarError) {
+            calendarErrorFlag = true
+          } else if (Array.isArray(calendarData)) {
+            calendarDays = calendarData
+          }
+        } catch {
+          calendarDays = []
+          calendarErrorFlag = true
+        }
+      }
+
+      data = {
+        ...queriedData,
+        calendar_days: calendarDays,
+        calendar_error: calendarErrorFlag,
+      }
+      if (!calendarErrorFlag) {
+        pruneExpiredMapEntries(deviceThresholdsCache, now, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
+        deviceThresholdsCache.set(machineId, {
+          data,
+          expiresAt: now + DEVICE_THRESHOLDS_CACHE_TTL_MS,
+        })
+      }
     }
 
     const threshold = data.sensor_thresholds[sensor.sensor_code]
@@ -736,7 +809,22 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false } = {})
       && threshold.recoverySeconds <= 300
       ? threshold.recoverySeconds
       : null
-    const absenceDetectionEnabled = Boolean(threshold.absenceDetectionEnabled)
+    const scheduleEligible = data.shift_schedule && typeof data.shift_schedule === 'object'
+      ? isEligibleAt({
+        at: asOf,
+        settingsHistory: [{
+          version: data.version ?? 1,
+          shift_schedule: data.shift_schedule,
+          effective_from: null,
+          effective_to: null,
+        }],
+        calendarDays: data.calendar_days || [],
+      })
+      : true
+    const absenceDetectionEnabled = env.WATCHDOG_MODE === 'enforce'
+      && !data.calendar_error
+      && scheduleEligible
+      && Boolean(threshold.absenceDetectionEnabled)
       && sensor.sensor_code !== 'S-05'
       && triggerSeconds !== null
       && recoverySeconds !== null
@@ -780,7 +868,6 @@ async function createSensorEvent({ sensor, payload }) {
   }
 
   if (processing.state_applied) {
-    recentDeviceHeartbeats.set(sensor.id, processing.recorded_at)
     publishIngestionTransitions({ sensor, machine, processing })
     requestLiveStatusPublish()
   }
@@ -796,9 +883,6 @@ async function createHeartbeat({ sensor, payload }) {
   }
 
   const processing = await processHeartbeat({ sensor, machine, payload })
-  if (!processing.duplicate) {
-    recentDeviceHeartbeats.set(sensor.id, processing.received_at)
-  }
   if (processing.state_applied || (!processing.duplicate && processing.connectivity_state === 'offline')) {
     requestLiveStatusPublish()
   }

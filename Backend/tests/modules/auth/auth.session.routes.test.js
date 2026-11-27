@@ -9,6 +9,9 @@ const {
 } = require('../../helpers/appTestUtils')
 
 const REFRESH_COOKIE = 'ph_refresh'
+const VALID_REFRESH_TOKEN = 'a'.repeat(43)
+const PREVIOUS_REFRESH_TOKEN = 'b'.repeat(43)
+const REPLAYED_REFRESH_TOKEN = 'c'.repeat(43)
 
 function parseCookies(response) {
   const raw = response.headers.get('set-cookie') || ''
@@ -79,12 +82,12 @@ test('login revokes a prior browser refresh token before replacing the cookie', 
   await withTestServer(app, async (baseUrl) => {
     const { response } = await requestJson(baseUrl, '/api/auth/login', {
       method: 'POST',
-      headers: { Cookie: `${REFRESH_COOKIE}=previous-raw-token` },
+      headers: { Cookie: `${REFRESH_COOKIE}=${PREVIOUS_REFRESH_TOKEN}` },
       body: { username: 'admin', password: 'whatever' },
     })
 
     assert.equal(response.status, 200)
-    assert.equal(revokedToken, 'previous-raw-token')
+    assert.equal(revokedToken, PREVIOUS_REFRESH_TOKEN)
   })
 })
 
@@ -94,7 +97,7 @@ test('refresh with a valid cookie returns a new access token and rotates the coo
   await withTestServer(app, async (baseUrl) => {
     const { response, body } = await requestJson(baseUrl, '/api/auth/refresh', {
       method: 'POST',
-      headers: { Cookie: `${REFRESH_COOKIE}=raw-token-value` },
+      headers: { Cookie: `${REFRESH_COOKIE}=${VALID_REFRESH_TOKEN}` },
     })
 
     assert.equal(response.status, 200)
@@ -145,7 +148,7 @@ test('refresh with an unknown or reused token is a 401 and clears the cookie', a
   await withTestServer(app, async (baseUrl) => {
     const { response } = await requestJson(baseUrl, '/api/auth/refresh', {
       method: 'POST',
-      headers: { Cookie: `${REFRESH_COOKIE}=replayed` },
+      headers: { Cookie: `${REFRESH_COOKIE}=${REPLAYED_REFRESH_TOKEN}` },
     })
 
     assert.equal(response.status, 401)
@@ -162,7 +165,7 @@ test('refresh from a disallowed origin is rejected by the CSRF origin check', as
     const { response } = await requestJson(baseUrl, '/api/auth/refresh', {
       method: 'POST',
       headers: {
-        Cookie: `${REFRESH_COOKIE}=raw-token-value`,
+        Cookie: `${REFRESH_COOKIE}=${VALID_REFRESH_TOKEN}`,
         Origin: 'https://evil.example.com',
       },
     })
@@ -189,14 +192,14 @@ test('refresh is rate-limited before repeated rotations reach the controller', a
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const { response } = await requestJson(baseUrl, '/api/auth/refresh', {
         method: 'POST',
-        headers: { Cookie: `${REFRESH_COOKIE}=raw-token-value` },
+        headers: { Cookie: `${REFRESH_COOKIE}=${VALID_REFRESH_TOKEN}` },
       })
       assert.equal(response.status, 200)
     }
 
     const { response, body } = await requestJson(baseUrl, '/api/auth/refresh', {
       method: 'POST',
-      headers: { Cookie: `${REFRESH_COOKIE}=raw-token-value` },
+      headers: { Cookie: `${REFRESH_COOKIE}=${VALID_REFRESH_TOKEN}` },
     })
     assert.equal(response.status, 429)
     assertError(body, 'RATE_LIMITED')
@@ -211,7 +214,7 @@ test('logout revokes the presented refresh token and clears the cookie', async (
   await withTestServer(app, async (baseUrl) => {
     const { response } = await requestJson(baseUrl, '/api/auth/logout', {
       method: 'POST',
-      headers: { Cookie: `${REFRESH_COOKIE}=raw-token-value` },
+      headers: { Cookie: `${REFRESH_COOKIE}=${VALID_REFRESH_TOKEN}` },
     })
 
     assert.equal(response.status, 200)
@@ -245,11 +248,97 @@ test('logout never reports success when refresh-token revocation fails', async (
   await withTestServer(app, async (baseUrl) => {
     const { response, body } = await requestJson(baseUrl, '/api/auth/logout', {
       method: 'POST',
-      headers: { Cookie: `${REFRESH_COOKIE}=raw-token-value` },
+      headers: { Cookie: `${REFRESH_COOKIE}=${VALID_REFRESH_TOKEN}` },
     })
 
     assert.equal(response.status, 500)
     assertError(body, 'REFRESH_TOKEN_REVOKE_FAILED')
     assert.match(findRefreshCookie(response), /Max-Age=0|Expires=Thu, 01 Jan 1970/i)
   })
+})
+
+test('login rejects oversized username/password and unexpected fields', async () => {
+  const app = loadAuthApp()
+
+  await withTestServer(app, async (baseUrl) => {
+    const longUser = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { username: 'u'.repeat(81), password: 'Password1!' },
+    })
+    assert.equal(longUser.response.status, 400)
+
+    const longPass = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { username: 'admin', password: 'p'.repeat(73) },
+    })
+    assert.equal(longPass.response.status, 400)
+
+    const extraField = await requestJson(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { username: 'admin', password: 'Password1!', role: 'Admin' },
+    })
+    assert.equal(extraField.response.status, 400)
+  })
+})
+
+test('logout ignores malformed refresh cookies without calling revokeRefreshToken and is rate-limited', async () => {
+  let revokeCalls = 0
+  const app = loadAuthApp({
+    refreshServiceOverrides: {
+      revokeRefreshToken: async () => { revokeCalls += 1 },
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const badCookie = await requestJson(baseUrl, '/api/auth/logout', {
+      method: 'POST',
+      headers: { Cookie: `${REFRESH_COOKIE}=arbitrary-invalid-string` },
+    })
+    assert.equal(badCookie.response.status, 200)
+    assert.equal(revokeCalls, 0)
+
+    for (let attempt = 1; attempt < 20; attempt += 1) {
+      const { response } = await requestJson(baseUrl, '/api/auth/logout', { method: 'POST' })
+      assert.equal(response.status, 200)
+    }
+    const limited = await requestJson(baseUrl, '/api/auth/logout', { method: 'POST' })
+    assert.equal(limited.response.status, 429)
+    assertError(limited.body, 'RATE_LIMITED')
+  })
+})
+
+test('login runs dummy bcrypt comparison for missing or ineligible accounts', async () => {
+  const bcrypt = require('bcryptjs')
+  const originalCompare = bcrypt.compare
+  let compareCalls = 0
+  bcrypt.compare = async (...args) => {
+    compareCalls += 1
+    return originalCompare(...args)
+  }
+
+  try {
+    const clientPath = require.resolve('../../../src/database/client')
+    const servicePath = require.resolve('../../../src/modules/auth/auth.service')
+    delete require.cache[servicePath]
+    require.cache[clientPath] = {
+      id: clientPath,
+      filename: clientPath,
+      loaded: true,
+      exports: {
+        getSupabaseClient: () => ({
+          from(table) {
+            if (table === 'users') {
+              return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }
+            }
+            return { insert: async () => ({ error: null }) }
+          },
+        }),
+      },
+    }
+    const authService = require('../../../src/modules/auth/auth.service')
+    await assert.rejects(authService.login({ username: 'nobody', password: 'WrongPassword1!' }), { status: 401 })
+    assert.equal(compareCalls, 1)
+  } finally {
+    bcrypt.compare = originalCompare
+  }
 })
