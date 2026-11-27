@@ -7142,13 +7142,16 @@ button:disabled {
   .dashboard-topbar {
     align-items: center;
     flex-direction: row;
-    min-height: 68px;
-    padding: 10px 16px;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: 60px;
+    padding: 8px 12px;
   }
 
   .topbar-leading {
+    flex: 0 0 auto;
     min-width: 0;
-    gap: 10px;
+    gap: 6px;
   }
 
   .topbar-leading>div {
@@ -7164,10 +7167,23 @@ button:disabled {
   }
 
   .topbar-trailing {
-    width: auto;
-    flex: 0 0 auto;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 6px;
     justify-content: flex-end;
     margin-left: auto;
+  }
+
+  .topbar-trailing .status {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-divider {
+    display: none;
   }
 
   .alerts-popover {
@@ -7203,14 +7219,20 @@ button:disabled {
     display: none;
   }
 
+  @media (max-width: 480px) {
+    .dashboard-clock {
+      display: none;
+    }
+  }
+
   @media (max-width: 420px) {
     .dashboard-topbar {
-      gap: 8px;
+      gap: 6px;
     }
 
     .topbar-leading,
     .topbar-trailing {
-      gap: 8px;
+      gap: 4px;
     }
 
     .topbar-label {
@@ -7218,12 +7240,6 @@ button:disabled {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-
-    .topbar-divider {
-      display: none;
-    }
-
-
   }
 
   .kpi-grid,
