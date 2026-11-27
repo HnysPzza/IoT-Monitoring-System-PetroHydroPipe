@@ -29,7 +29,7 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(trigger).toHaveTextContent('DAILY')
     expect(screen.queryByRole('group', { name: 'Analytics date range' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh data' })).toHaveTextContent('')
-    expect(screen.getByRole('button', { name: 'Analytics data coverage information' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Analytics data coverage information' })).not.toBeInTheDocument()
   })
 
   it('refreshes server-owned bucket states while the page remains open', async () => {
@@ -64,8 +64,7 @@ describe('AnalyticsSection recorded-data states', () => {
     await waitFor(() => expect(screen.queryByText('Refreshing Analytics...')).not.toBeInTheDocument())
   })
 
-  it('moves the backend data-coverage caveat into the Analytics info popover', async () => {
-    const user = userEvent.setup()
+  it('loads recorded analytics data without rendering the info popover button', async () => {
     const deferred = createDeferred()
     const loadAnalytics = vi.fn(() => deferred.promise)
     renderWithAuth(<AnalyticsSection loadAnalytics={loadAnalytics} />)
@@ -76,8 +75,7 @@ describe('AnalyticsSection recorded-data states', () => {
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
     expect(screen.queryByText('Recorded system data')).not.toBeInTheDocument()
     expect(screen.queryByText(/Historical sensor heartbeat coverage is not stored/i)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Analytics data coverage information' }))
-    expect(screen.getByRole('dialog', { name: 'Analytics data coverage information' })).toHaveTextContent(/Historical sensor heartbeat coverage is not stored/i)
+    expect(screen.queryByRole('button', { name: 'Analytics data coverage information' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Prior period:/i)).not.toBeInTheDocument()
     expect(loadAnalytics).toHaveBeenCalledWith(
       'test-token',

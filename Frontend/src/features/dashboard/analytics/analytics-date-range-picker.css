@@ -364,7 +364,7 @@
 
   .shadcn-calendar-popover.analytics-date-range-popover,
   .analytics-date-range-popover {
-    width: min(340px, calc(100vw - 24px));
+    width: min(312px, calc(100vw - 24px));
     max-height: min(420px, 72dvh, var(--radix-popover-content-available-height, 72dvh));
   }
 

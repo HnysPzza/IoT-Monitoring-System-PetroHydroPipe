@@ -5,7 +5,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { queryKeys } from '../../../shared/services/queryClient.js'
-import { AlertTriangle, Info, RotateCw } from 'lucide-react'
+import { AlertTriangle, RotateCw } from 'lucide-react'
 import { getAnalyticsKpis } from './analyticsPresentation.js'
 import { getAnalyticsSnapshot, getManilaDateInputValue, resolveAnalyticsRange } from './analyticsService.js'
 import AnalyticsOperationsDetails from './AnalyticsOperationsDetails.jsx'
@@ -13,7 +13,6 @@ import AnalyticsDateRangePicker from './AnalyticsDateRangePicker.jsx'
 import AnalyticsTrendExplorer from './AnalyticsTrendExplorer.jsx'
 import AnalyticsKpiCard from './AnalyticsKpiCard.jsx'
 import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
-import { Popover, PopoverContent, PopoverTrigger } from '../../../shared/components/ui/Popover.jsx'
 
 const AUTO_REFRESH_MS = 60 * 1000
 
@@ -35,7 +34,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const [selectedDate, setSelectedDate] = useState(currentManilaDate)
   const [customRange, setCustomRange] = useState(null)
   const [trendMetric, setTrendMetric] = useState('downtime')
-  const [isCaveatOpen, setIsCaveatOpen] = useState(false)
   const requestOptions = useMemo(() => {
     if (period === 'all') {
       return { period: 'all' }
@@ -73,7 +71,6 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const isInitialLoading = loadState === 'loading' && !snapshot
   const kpis = snapshot ? getAnalyticsKpis(snapshot) : []
   const hasComparison = snapshot?.comparisonMode !== 'none'
-  const coverageMessage = snapshot?.coverage?.message || 'Metrics use recorded system events and downtime records. Historical heartbeat completeness is not available.'
   const isShowingPreviousRange = query.isPlaceholderData
 
   const handleRangeChange = useCallback(({ period: nextPeriod, startDate: nextStartDate, endDate: nextEndDate }) => {
@@ -88,25 +85,7 @@ export default function AnalyticsSection({ loadAnalytics = getAnalyticsSnapshot 
   const controls = (
       <div className="analytics-controls-card">
         <div className="analytics-header-row">
-          <div className="analytics-title-group">
-            <h2 className="sr-only">Analytics</h2>
-            <Popover open={isCaveatOpen} onOpenChange={setIsCaveatOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  className="analytics-info-trigger"
-                  type="button"
-                  aria-label="Analytics data coverage information"
-                  aria-haspopup="dialog"
-                  aria-expanded={isCaveatOpen}
-                >
-                  <Info size={16} aria-hidden="true" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="analytics-caveat-popover" aria-label="Analytics data coverage information">
-                {coverageMessage}
-              </PopoverContent>
-            </Popover>
-          </div>
+          <h2 className="sr-only">Analytics</h2>
 
           <div className="analytics-header-controls">
             <AnalyticsDateRangePicker

@@ -2948,38 +2948,9 @@ button:disabled {
   margin: 0;
 }
 
-.analytics-info-trigger {
-  display: inline-grid;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--c-text-2);
-  background: transparent;
-}
-
-.analytics-info-trigger:hover,
-.analytics-info-trigger[aria-expanded='true'] {
-  border-color: var(--subtle-border);
-  color: var(--c-text);
-  background: var(--hover-bg);
-}
-
-.analytics-info-trigger:focus-visible,
 .analytics-refresh-button:focus-visible {
   outline: 2px solid var(--c-primary);
   outline-offset: 2px;
-}
-
-.analytics-caveat-popover {
-  max-width: min(320px, calc(100vw - 24px));
-  color: var(--c-text-2);
-  font-size: 0.78rem;
-  line-height: 1.5;
 }
 
 .analytics-header-controls {
