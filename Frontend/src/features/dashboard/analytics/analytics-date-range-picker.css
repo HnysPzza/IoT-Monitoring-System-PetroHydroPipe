@@ -374,20 +374,29 @@
   }
 
   .analytics-popover-sidebar {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
     width: 100%;
     border-right: none;
     border-bottom: 1px solid #E2E8F0;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 6px 8px;
+    padding: 6px;
+    gap: 2px;
   }
 
   .analytics-preset-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+    text-align: center;
     white-space: nowrap;
     width: auto;
-    flex-shrink: 0;
-    min-height: 36px;
-    height: 36px;
+    padding: 0 5px;
+    font-size: 11px;
+    letter-spacing: -0.01em;
+    min-height: 34px;
+    height: 34px;
   }
 
   .analytics-popover-calendar {
