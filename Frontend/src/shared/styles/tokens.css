@@ -6966,6 +6966,12 @@ button:disabled {
     width: 100%;
   }
 
+  .trend-calendar-control {
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+  }
+
   .analytics-header-row {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -7274,9 +7280,14 @@ button:disabled {
   }
 
   .trend-controls,
-  .trend-mode-toggle,
-  .trend-calendar-control {
+  .trend-mode-toggle {
     width: 100%;
+  }
+
+  .trend-calendar-control {
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .trend-chart-panel {

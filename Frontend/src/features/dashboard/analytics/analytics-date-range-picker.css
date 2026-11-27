@@ -364,7 +364,8 @@
 
   .shadcn-calendar-popover.analytics-date-range-popover,
   .analytics-date-range-popover {
-    width: calc(100vw - 24px);
+    width: min(340px, calc(100vw - 24px));
+    max-height: min(420px, 72dvh, var(--radix-popover-content-available-height, 72dvh));
   }
 
   .analytics-popover-body {
@@ -378,22 +379,34 @@
     border-bottom: 1px solid #E2E8F0;
     flex-direction: row;
     overflow-x: auto;
-    padding: 8px;
+    padding: 6px 8px;
   }
 
   .analytics-preset-btn {
     white-space: nowrap;
     width: auto;
     flex-shrink: 0;
+    min-height: 36px;
+    height: 36px;
   }
 
   .analytics-popover-calendar {
-    padding: 12px;
+    padding: 8px 10px;
+  }
+
+  .analytics-calendar-header {
+    margin-bottom: 6px;
+  }
+
+  .analytics-calendar-day-btn {
+    min-height: 34px;
+    height: 34px;
   }
 
   .analytics-popover-footer {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    padding: 8px 10px;
   }
 
   .analytics-popover-footer-text {
@@ -515,20 +528,28 @@
 }
 
 @media (pointer: coarse) {
-  .analytics-date-trigger,
-  .analytics-preset-btn,
-  .analytics-calendar-nav-btn,
-  .analytics-calendar-day-btn,
-  .analytics-popover-cancel-btn,
-  .analytics-popover-apply-btn {
+  .analytics-date-trigger {
     min-height: 44px;
     height: auto;
   }
 
+  .analytics-preset-btn,
+  .analytics-calendar-nav-btn,
+  .analytics-popover-cancel-btn,
+  .analytics-popover-apply-btn {
+    min-height: 38px;
+    height: auto;
+  }
+
+  .analytics-calendar-day-btn {
+    min-height: 36px;
+    height: 36px;
+  }
+
   .analytics-calendar-nav-btn {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
   }
 }
 
