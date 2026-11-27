@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 62
+const releaseSchemaVersion = 63
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -1309,6 +1309,13 @@ test('migration 061 rejects S-05 output outside schedule, during breaks, on rest
   )
   await db.exec(migration062)
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 62)
+
+  const migration063 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '063_fix_s05_wan_outage_and_recovery_cuts.sql'),
+    'utf8',
+  )
+  await db.exec(migration063)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
 })
 
 test('delayed S-05 output pulses recorded while S-03 was online and running are accepted even if S-03 later faults or goes offline before upload', async (t) => {
@@ -2012,7 +2019,7 @@ test('S-05 rejects pre-first-boot cuts, clock-lagged S-03 recovery unblocks futu
 
 test('migration 062 preserves S-05 cuts across same-boot S-03 ISP outages and 2-heartbeat recovery while rejecting cuts across S-03 reboot or stationary gaps', async (t) => {
   const db = await database(t)
-  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 62)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
 
   const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
   const boot1 = randomUUID()
@@ -2068,6 +2075,105 @@ test('migration 062 preserves S-05 cuts across same-boot S-03 ISP outages and 2-
   const cutDuringRebootGap = await sendEvent('S-05', 'pulse', '2026-08-21T09:03:30+08:00')
   assert.equal(cutDuringRebootGap.event_value.metadata.outputAccepted, false)
   assert.equal(cutDuringRebootGap.event_value.metadata.outputRejectionReason, 'machine_offline')
+})
+
+test('migration 063 promotes retried S-05 WAN-outage cuts after S-03 recovers and keeps sameBootRecovery when HB#2 stops', async (t) => {
+  const db = await database(t)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 63)
+
+  const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+  const boot1 = randomUUID()
+  const boot2 = randomUUID()
+
+  const sendS03Hb = (bootCounter, bootId, seq, recordedAt, activityObserved = true) => db.query(
+    'select * from public.ingest_iot_heartbeat($1, $2, $3, $4, $5, $6, $7::timestamptz, $8)',
+    [randomUUID(), s03.id, s03.machine_id, bootCounter, bootId, seq, recordedAt, activityObserved],
+  )
+  const sendEventWithId = async (sensorCode, eventId, eventType, recordedAt) => {
+    const signal = eventType === 'idle' ? 'idle' : eventType === 'fault' ? 'fault' : 'active'
+    return (await db.query(`
+      select result.*
+      from public.sensors sensor
+      cross join lateral public.ingest_iot_sensor_event(
+        $1::uuid, sensor.id, sensor.machine_id, $2::text, $3::jsonb, $4::timestamptz
+      ) result
+      where sensor.sensor_code = $5
+    `, [eventId, eventType, JSON.stringify({ signal, metadata: {} }), recordedAt, sensorCode])).rows[0]
+  }
+
+  // Seed S-03 online + Running on boot1 at 09:00:00 Manila.
+  await sendS03Hb(1, boot1, 1, '2026-08-21T09:00:00+08:00', true)
+  await sendEventWithId('S-03', randomUUID(), 'pulse', '2026-08-21T09:00:00+08:00')
+
+  // Watchdog marks S-03 offline at 09:00:35 during ISP WAN drop.
+  await db.query("update public.sensor_watchdog_state set last_heartbeat_received_at = '2026-08-21T09:00:00+08:00'::timestamptz where sensor_id = $1", [s03.id])
+  await db.query("select * from public.evaluate_sensor_watchdog($1, '2026-08-21T09:00:35+08:00'::timestamptz, 'enforce', 30)", [s03.id])
+
+  // Scenario 4A: S-05 flushes early on WAN restore BEFORE S-03 post-outage pulse -> initial machine_offline rejection.
+  const earlyCutId = randomUUID()
+  const earlyRejected = await sendEventWithId('S-05', earlyCutId, 'pulse', '2026-08-21T09:01:15+08:00')
+  assert.equal(earlyRejected.event_value.metadata.outputAccepted, false)
+  assert.equal(earlyRejected.event_value.metadata.outputRejectionReason, 'machine_offline')
+
+  // Scenario 4B: S-03 sends HB#1 (active=true) + pulse, then spindle stops before HB#2 (active=false).
+  await sendS03Hb(1, boot1, 2, '2026-08-21T09:01:45+08:00', true)
+  await sendEventWithId('S-03', randomUUID(), 'pulse', '2026-08-21T09:01:46+08:00')
+  const hb2 = (await sendS03Hb(1, boot1, 3, '2026-08-21T09:01:55+08:00', false)).rows[0]
+  assert.equal(hb2.connectivity_state, 'online')
+
+  // S-05 retries earlyCutId -> promoted idempotently to accepted! Next retry is duplicate without double-counting.
+  const promoted = await sendEventWithId('S-05', earlyCutId, 'pulse', '2026-08-21T09:01:15+08:00')
+  assert.equal(promoted.state_applied, true)
+  assert.equal(promoted.event_value.metadata.outputAccepted, true)
+  assert.equal(promoted.event_value.metadata.outputRejectionReason, null)
+
+  const duplicateRetry = await sendEventWithId('S-05', earlyCutId, 'pulse', '2026-08-21T09:01:15+08:00')
+  assert.equal(duplicateRetry.duplicate, true)
+  assert.equal(duplicateRetry.state_applied, false)
+  assert.equal(duplicateRetry.event_value.metadata.outputAccepted, true)
+
+  // New cut from same outage window after HB#2 (activityObserved=false) also accepts via preserved sameBootRecovery.
+  const cutAfterHb2Pause = await sendEventWithId('S-05', randomUUID(), 'pulse', '2026-08-21T09:01:30+08:00')
+  assert.equal(cutAfterHb2Pause.event_value.metadata.outputAccepted, true)
+
+  // Counter-case: S-03 reboot onto boot2 still permanently rejects outage-window cut even on retry.
+  await db.query("update public.sensor_watchdog_state set last_heartbeat_received_at = '2026-08-21T09:02:00+08:00'::timestamptz where sensor_id = $1", [s03.id])
+  await db.query("select * from public.evaluate_sensor_watchdog($1, '2026-08-21T09:03:00+08:00'::timestamptz, 'enforce', 30)", [s03.id])
+  await sendS03Hb(2, boot2, 1, '2026-08-21T09:04:00+08:00', true)
+  await sendEventWithId('S-03', randomUUID(), 'pulse', '2026-08-21T09:04:01+08:00')
+  const rebootCutId = randomUUID()
+  const rebootRejected = await sendEventWithId('S-05', rebootCutId, 'pulse', '2026-08-21T09:03:30+08:00')
+  assert.equal(rebootRejected.event_value.metadata.outputAccepted, false)
+  const rebootRetried = await sendEventWithId('S-05', rebootCutId, 'pulse', '2026-08-21T09:03:30+08:00')
+  assert.equal(rebootRetried.event_value.metadata.outputAccepted, false)
+  assert.equal(rebootRetried.event_value.metadata.outputRejectionReason, 'machine_offline')
+})
+
+test('migration 063 preserves v62 heartbeat payload hash so in-flight retries deduplicate across upgrade', async (t) => {
+  const db = await database(t, 62)
+  const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
+  const hbId = randomUUID()
+  const bootId = randomUUID()
+  const recordedAt = '2026-08-21T09:00:00+08:00'
+
+  const first = (await db.query(
+    'select * from public.ingest_iot_heartbeat($1, $2, $3, $4, $5, $6, $7::timestamptz, $8)',
+    [hbId, s03.id, s03.machine_id, 1, bootId, 1, recordedAt, true],
+  )).rows[0]
+  assert.equal(first.state_applied, true)
+
+  const migration063 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '063_fix_s05_wan_outage_and_recovery_cuts.sql'),
+    'utf8',
+  )
+  await db.exec(migration063)
+
+  const retried = (await db.query(
+    'select * from public.ingest_iot_heartbeat($1, $2, $3, $4, $5, $6, $7::timestamptz, $8)',
+    [hbId, s03.id, s03.machine_id, 1, bootId, 1, recordedAt, true],
+  )).rows[0]
+  assert.equal(retried.duplicate, true)
+  assert.equal(retried.state_applied, false)
 })
 
 
