@@ -26,7 +26,14 @@ const listDowntimeSchema = z.object({
   }).refine((query) => !query.dateFrom || !query.dateTo || query.dateFrom <= query.dateTo, {
     message: 'Start date must be on or before end date.',
     path: ['dateFrom'],
-  }),
+  }).refine(
+    (query) => !query.dateFrom || !query.dateTo
+      || (Date.parse(`${query.dateTo}T00:00:00Z`) - Date.parse(`${query.dateFrom}T00:00:00Z`)) <= 366 * 86_400_000,
+    {
+      message: 'Date range cannot exceed 366 days.',
+      path: ['dateTo'],
+    },
+  ),
 })
 
 const updateDowntimeSchema = z.object({
