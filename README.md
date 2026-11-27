@@ -1,60 +1,32 @@
 # IoT-Based Pipe Manufacturing Machine Monitoring System
 
-Real-time industrial IoT monitoring system for **Petro Hydro Pipe Corp.'s** Spiral Mill machine (`M-01`). It uses five ESP32-backed inductive proximity sensors to track material presence, main spindle activity, machine downtime, alerts, and finished-pipe production output.
+A real-time monitoring web application built for **Petro Hydro Pipe Corp.** to track its Spiral Mill pipe manufacturing machine. Five industrial proximity sensors connected to ESP32 microcontrollers watch the production line and report live machine status, downtime incidents, alerts, and finished pipe counts to plant supervisors and managers.
 
-## System Overview
+## What It Does
 
-```text
-ESP32 Sensors (S-01 to S-05) -> Express Backend -> Supabase PostgreSQL -> Express APIs / SSE -> React Dashboard
-```
+- **Live Machine & Sensor Monitoring:** Shows whether the Spiral Mill is running, idle, in downtime, or offline, updating live in the browser as factory conditions change.
+- **Five Monitored Stations:**
+  - **Raw Material & Coil Joint** — watches for raw steel strip presence.
+  - **Inside Filler Wire** — monitors inside welding wire availability.
+  - **Machine Main Sensor** — tracks main spindle rotation to confirm whether the machine is running.
+  - **Outside Filler Wire** — monitors outside welding wire availability.
+  - **Production Output Cutting** — counts each finished steel pipe as it is cut.
+- **Downtime & Alerts:** Automatically opens downtime records and alerts when the main spindle stops or when all three material and wire sensors fault together, while respecting scheduled shift hours, breaks, and non-working days.
+- **Production Logs & Reports:** Tracks pipe specifications (customer, diameter, thickness, length, pipe number, and tonnage), compares daily output, estimates production loss from unplanned stops, and exports reports to PDF and Excel.
+- **Role-Based Access:** Supports five plant roles—Managing Director, Operation Manager, Production Supervisor, Engineering Supervisor, and Quality Control—with secure login, email-based account setup and password resets, and an audit trail of changes.
 
-- **Monitored Machine**: `M-01` — `Spiral Mill 01`
-- **Five Assigned Sensors**:
-  - `S-01` — Raw Material & Coil Joint (process material presence)
-  - `S-02` — Inside Filler Wire (process consumable presence)
-  - `S-03` — Machine Main Sensor (spindle rotation & machine-running authority)
-  - `S-04` — Outside Filler Wire (process consumable presence)
-  - `S-05` — Production Output Cutting (finished pipe counter)
+## What We Built It With
 
-## Key Capabilities
+- **Web Dashboard:** Built with React and Vite for a responsive desktop and mobile interface.
+- **Backend Server:** Built with Node.js and Express to handle user logins, sensor data intake, live browser updates, and report generation.
+- **Database:** Powered by PostgreSQL on Supabase to store sensor readings, downtime history, alerts, production records, settings, and audit logs.
+- **Email Service:** Uses Brevo to send account setup and password reset emails.
+- **Factory Hardware:** Five ESP32 microcontrollers wired to inductive proximity sensors through optocouplers, sending encrypted updates over Wi-Fi with automatic retries when factory internet fluctuates.
 
-- **Live Monitoring & Watchdog**: Real-time machine and sensor status with 10-second ESP32 heartbeats, server-owned Manila shift/break schedules, and configurable absence thresholds.
-- **Downtime & Alert Management**: Direct `S-03` downtime, grouped `S-01 + S-02 + S-04` process-fault escalation, revision-ordered alert acknowledgements, and Server-Sent Events (SSE) with automatic REST polling fallback.
-- **Production Specifications & Reports**: Finished pipe tracking (`S-05`) with inline and bulk specification editing (`Customer`, `Diameter`, `Thickness`, `Length`, `Pipe Number`, `Tonnage`), optimistic concurrency (`409 Conflict`), and PDF/XLSX report exports.
-- **Security & Audit Integrity**: Custom Express JWT + `HttpOnly; SameSite=Strict` refresh session rotation, CSRF protection, five role-based access levels (`Admin` displayed as **Managing Director**, `Operation Manager`, `Production Supervisor`, `Engineering Supervisor`, `Quality Control`), and atomic PostgreSQL RPC mutations with `audit_logs` (schema readiness **v62**).
-
-## Technology Stack
-
-- **Frontend**: React 19 and Vite 8 (`Frontend/`)
-- **Backend**: Node.js and Express 5 (`Backend/`)
-- **Database**: Supabase PostgreSQL (`Backend/database/`, migrations through `062`)
-- **Hardware**: ESP32 sensor nodes with hardware-interrupt pulse capture and idempotent network retries
-
-## Quick Start
-
-```bash
-# 1. Start Backend (http://localhost:3000)
-cd Backend
-npm run dev
-
-# 2. Start Frontend (http://localhost:5173)
-cd Frontend
-npm run dev
-
-# 3. Run Full Verification Suite (784 Backend + 650 Frontend tests)
-node scripts/run-tests.js --suite all
-```
-
-## Project Documentation
+## Technical Documentation
 
 - [Documentation Index](docs/README.md)
-- [Clone and Run Guide](docs/clone-and-run.md)
 - [System Architecture](docs/ARCHITECTURE.md)
 - [Operations Runbook](docs/RUNBOOK.md)
 - [Database Setup & Migrations](Backend/database/README.md)
 - [Product Requirements Document](docs/PRD.md)
-- [Technical Design Document](docs/TDD.md)
-
-## Scope
-
-This project monitors one Spiral Mill machine (`M-01`) and five inductive proximity sensors (`S-01` to `S-05`). Analog speed, pressure, temperature, RPM, voltage sensing, and line-efficiency telemetry are outside the project scope.
