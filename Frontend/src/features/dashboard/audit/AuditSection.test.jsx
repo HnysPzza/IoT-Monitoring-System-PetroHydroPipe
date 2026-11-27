@@ -1217,4 +1217,24 @@ describe('AuditSection', () => {
       expect(orphanCall.dateTo).toBeUndefined()
     })
   })
+
+  it('portals Admin tabs into the topbar header slot on desktop instead of stacking above the filter card', async () => {
+    getAuditLogs.mockResolvedValue({
+      logs: [],
+      pagination: { page: 1, limit: 25, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+    })
+    const slot = document.createElement('div')
+    slot.id = 'audit-header-controls'
+    document.body.appendChild(slot)
+
+    try {
+      const { container } = renderWithAuth(<AuditSection />)
+      await screen.findByText('No audit records match the selected filters.')
+
+      expect(within(slot).getByRole('tablist', { name: 'Audit log views' })).toBeInTheDocument()
+      expect(container.querySelector('.audit-page-header')).not.toBeInTheDocument()
+    } finally {
+      slot.remove()
+    }
+  })
 })

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { useSearchParams } from 'react-router'
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, History, RotateCw, X } from 'lucide-react'
 import { keepPreviousData } from '@tanstack/react-query'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
+import { useMobileViewport } from '../../../shared/hooks/useMobileViewport.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
@@ -475,50 +477,60 @@ export default function AuditSection({ loadProduction = getProductionLogs }) {
     }
   }
 
+  const isCompactViewport = useMobileViewport('(max-width: 640px)')
+  const [headerSlot, setHeaderSlot] = useState(() => document.getElementById('audit-header-controls'))
+  useLayoutEffect(() => {
+    const slot = document.getElementById('audit-header-controls')
+    if (slot !== headerSlot) setHeaderSlot(slot)
+  }, [headerSlot])
+  const resolvedHeaderSlot = !isCompactViewport
+    ? (headerSlot?.isConnected ? headerSlot : document.getElementById('audit-header-controls'))
+    : null
+
+  const tabsControl = isAdmin ? (
+    <div
+      className="audit-tabs"
+      role="tablist"
+      aria-label="Audit log views"
+      data-active-tab={activeTab}
+      onKeyDown={handleTabKeyDown}
+    >
+      <button
+        ref={systemTabRef}
+        type="button"
+        id="audit-tab-system"
+        role="tab"
+        tabIndex={!isProductionTab ? 0 : -1}
+        aria-selected={!isProductionTab}
+        aria-controls="audit-tabpanel"
+        className={`audit-tab-btn ${!isProductionTab ? 'is-active' : ''}`}
+        onClick={() => switchTab('system')}
+      >
+        System Activity
+      </button>
+      <button
+        ref={productionTabRef}
+        type="button"
+        id="audit-tab-production"
+        role="tab"
+        tabIndex={isProductionTab ? 0 : -1}
+        aria-selected={isProductionTab}
+        aria-controls="audit-tabpanel"
+        className={`audit-tab-btn ${isProductionTab ? 'is-active' : ''}`}
+        onClick={() => switchTab('production')}
+      >
+        Production Log
+      </button>
+    </div>
+  ) : null
+
   return (
     <div className="audit-layout">
       <div className="sr-only" role="status" aria-live="polite">{liveAnnouncement}</div>
       <h1 id="audit-title" className="sr-only">{isAdmin ? 'Audit log' : 'Production log'}</h1>
-      {isAdmin ? (
-        <header className="audit-page-header">
-          <div className="audit-header-row">
-            <div
-              className="audit-tabs"
-              role="tablist"
-              aria-label="Audit log views"
-              data-active-tab={activeTab}
-              onKeyDown={handleTabKeyDown}
-            >
-              <button
-                ref={systemTabRef}
-                type="button"
-                id="audit-tab-system"
-                role="tab"
-                tabIndex={!isProductionTab ? 0 : -1}
-                aria-selected={!isProductionTab}
-                aria-controls="audit-tabpanel"
-                className={`audit-tab-btn ${!isProductionTab ? 'is-active' : ''}`}
-                onClick={() => switchTab('system')}
-              >
-                System Activity
-              </button>
-              <button
-                ref={productionTabRef}
-                type="button"
-                id="audit-tab-production"
-                role="tab"
-                tabIndex={isProductionTab ? 0 : -1}
-                aria-selected={isProductionTab}
-                aria-controls="audit-tabpanel"
-                className={`audit-tab-btn ${isProductionTab ? 'is-active' : ''}`}
-                onClick={() => switchTab('production')}
-              >
-                Production Log
-              </button>
-            </div>
-          </div>
-        </header>
-      ) : null}
+      {tabsControl && resolvedHeaderSlot
+        ? createPortal(tabsControl, resolvedHeaderSlot)
+        : tabsControl ? <header className="audit-page-header">{tabsControl}</header> : null}
 
       <div
         id={isAdmin ? 'audit-tabpanel' : undefined}
