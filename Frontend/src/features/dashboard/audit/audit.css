@@ -88,13 +88,6 @@
   line-height: 1.2;
 }
 
-.audit-page-subtitle {
-  margin: 0;
-  color: var(--c-text-2);
-  font-size: 0.88rem;
-  line-height: 1.45;
-}
-
 .audit-controls-card {
   min-width: 0;
 }
@@ -656,9 +649,25 @@
     width: 100%;
   }
 
+  .audit-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 10px 8px;
+  }
+
+  .audit-controls > .filter-field:not(.audit-date-field) {
+    grid-column: 1 / -1;
+  }
+
   .audit-controls-actions {
-    width: 100%;
+    width: auto;
     justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .audit-reset-button {
+    padding: 0 10px;
+    font-size: 0.78rem;
   }
 
   .audit-table {

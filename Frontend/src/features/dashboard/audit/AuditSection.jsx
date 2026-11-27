@@ -480,14 +480,7 @@ export default function AuditSection({ loadProduction = getProductionLogs }) {
       <div className="sr-only" role="status" aria-live="polite">{liveAnnouncement}</div>
       <header className="audit-page-header">
         <div className="audit-header-row">
-          <div>
-            <h1 id="audit-title" className="audit-page-title">{isAdmin ? 'Audit log' : 'Production log'}</h1>
-            <p className="audit-page-subtitle">
-              {isProductionTab
-                ? 'Read-only chronological log of S-05 production cut events and recorded specifications.'
-                : 'Recorded user, machine, sensor, and security activity.'}
-            </p>
-          </div>
+          <h1 id="audit-title" className="audit-page-title">{isAdmin ? 'Audit log' : 'Production log'}</h1>
           {isAdmin ? (
             <div
               className="audit-tabs"
