@@ -22,9 +22,11 @@ function withEnvironment(overrides, action) {
 }
 
 function startReadinessServer({ status = 200, body = '63', delayMs = 0 } = {}) {
+  let hits = 0
   let observeCancellation
   const cancellation = new Promise((resolve) => { observeCancellation = resolve })
   const server = http.createServer((request, response) => {
+    hits += 1
     response.once('close', () => {
       if (!response.writableEnded) observeCancellation(true)
     })
@@ -44,6 +46,7 @@ function startReadinessServer({ status = 200, body = '63', delayMs = 0 } = {}) {
       resolve({
         url: `http://127.0.0.1:${server.address().port}`,
         cancellation,
+        getHits: () => hits,
         close: () => new Promise((done) => server.close(done)),
       })
     })
@@ -165,4 +168,93 @@ test('health endpoints reject unsupported methods and suffixes', async () => {
       assert.equal(response.status, 404)
     }
   })
+})
+
+test('readiness coalesces concurrent checks and caches ready state for 5 seconds', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 })
+  const upstream = await startReadinessServer({ delayMs: 120 })
+  try {
+    await withEnvironment({
+      SUPABASE_URL: upstream.url,
+      SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+      HEALTH_READINESS_TIMEOUT_MS: '500',
+    }, async () => {
+      const app = loadAppWithMocks()
+      await withTestServer(app, async (baseUrl) => {
+        const concurrent = await Promise.all(
+          Array.from({ length: 5 }, () => requestJson(baseUrl, '/api/health/ready')),
+        )
+        for (const item of concurrent) assert.equal(item.response.status, 200)
+        assert.equal(upstream.getHits(), 1)
+
+        const cached = await requestJson(baseUrl, '/api/health/ready')
+        assert.equal(cached.response.status, 200)
+        assert.equal(upstream.getHits(), 1)
+
+        context.mock.timers.tick(5001)
+        const refreshed = await requestJson(baseUrl, '/api/health/ready')
+        assert.equal(refreshed.response.status, 200)
+        assert.equal(upstream.getHits(), 2)
+      })
+    })
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('readiness coalesces failures and caches not_ready state for 2 seconds', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 })
+  const upstream = await startReadinessServer({ status: 500, body: '{"message":"down"}', delayMs: 80 })
+  try {
+    await withEnvironment({
+      SUPABASE_URL: upstream.url,
+      SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+      HEALTH_READINESS_TIMEOUT_MS: '500',
+    }, async () => {
+      const app = loadAppWithMocks()
+      await withTestServer(app, async (baseUrl) => {
+        const concurrent = await Promise.all(
+          Array.from({ length: 3 }, () => requestJson(baseUrl, '/api/health/ready')),
+        )
+        for (const item of concurrent) assert.equal(item.response.status, 503)
+        assert.equal(upstream.getHits(), 1)
+
+        const cached = await requestJson(baseUrl, '/api/health/ready')
+        assert.equal(cached.response.status, 503)
+        assert.equal(upstream.getHits(), 1)
+
+        context.mock.timers.tick(2001)
+        const retried = await requestJson(baseUrl, '/api/health/ready')
+        assert.equal(retried.response.status, 503)
+        assert.equal(upstream.getHits(), 2)
+      })
+    })
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('readiness endpoint enforces IP rate limit above 30 requests per minute', async () => {
+  const upstream = await startReadinessServer()
+  try {
+    await withEnvironment({
+      SUPABASE_URL: upstream.url,
+      SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+      HEALTH_READINESS_TIMEOUT_MS: '500',
+    }, async () => {
+      const app = loadAppWithMocks()
+      await withTestServer(app, async (baseUrl) => {
+        for (let i = 0; i < 30; i += 1) {
+          const { response } = await requestJson(baseUrl, '/api/health/ready')
+          assert.equal(response.status, 200)
+        }
+        const limited = await requestJson(baseUrl, '/api/health/ready')
+        assert.equal(limited.response.status, 429)
+        assert.equal(limited.body?.error?.code, 'RATE_LIMITED')
+        assert.ok(Number(limited.response.headers.get('retry-after')) > 0)
+      })
+    })
+  } finally {
+    await upstream.close()
+  }
 })

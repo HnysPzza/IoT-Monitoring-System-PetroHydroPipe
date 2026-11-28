@@ -1,4 +1,5 @@
 const express = require('express')
+const { healthReadinessRateLimiter } = require('../../middleware/rateLimiters')
 const logger = require('../../utils/logger')
 const healthService = require('./health.service')
 
@@ -17,7 +18,7 @@ function live(req, res) {
 router.use(noStore)
 router.get('/', live)
 router.get('/live', live)
-router.get('/ready', async (req, res) => {
+router.get('/ready', healthReadinessRateLimiter, async (req, res) => {
   try {
     await healthService.checkReadiness()
     return res.json({ status: 'ready', service })
