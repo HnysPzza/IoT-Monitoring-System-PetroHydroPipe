@@ -401,6 +401,43 @@ it('commits the delayed account action after navigating to another dashboard rou
   }
 })
 
+it('warns on beforeunload only while a delayed account action is pending', async () => {
+  const account = {
+    id: 'user-unload',
+    name: 'Operator Unload',
+    username: 'opunload',
+    email: 'opunload@example.test',
+    role: 'Production Supervisor',
+    status: 'Active',
+    createdAt: '2026-06-01T00:00:00.000Z',
+    lastLoginAt: null,
+  }
+  getUsers.mockResolvedValue({
+    users: [account],
+    total: 1,
+    summary: { total: 1, active: 1, inactive: 0, pending: 0 },
+  })
+  const user = userEvent.setup()
+  const view = renderUsers()
+  try {
+    await waitFor(() => expect(screen.getByRole('button', { name: /actions for operator unload/i })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /actions for operator unload/i }))
+    await user.click(await screen.findByRole('button', { name: /deactivate account/i }))
+    await user.click(screen.getByRole('button', { name: /^deactivate$/i }))
+
+    const pendingUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(pendingUnload)
+    expect(pendingUnload.defaultPrevented).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: /undo deactivate for operator unload/i }))
+    const clearedUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(clearedUnload)
+    expect(clearedUnload.defaultPrevented).toBe(false)
+  } finally {
+    view.unmount()
+  }
+})
+
 it('renders custom role select affordances and the paper-plane flight stage on the Add user submit button', async () => {
   const user = userEvent.setup()
   renderUsers()

@@ -762,6 +762,7 @@ describe('AdminDashboard alerts', () => {
     expect(getAlerts).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(1)
     expect(getAlerts).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(0)
     expect(screen.getByText('Revision 12')).toBeInTheDocument()
     await vi.advanceTimersByTimeAsync(10000)
     expect(getAlerts).toHaveBeenCalledTimes(3)
@@ -802,6 +803,7 @@ describe('AdminDashboard alerts', () => {
     expect(getAlerts).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(1)
     expect(getAlerts).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(0)
     expect(screen.getByText('Revision 12')).toBeInTheDocument()
   })
 
@@ -884,6 +886,7 @@ describe('AdminDashboard alerts', () => {
     expect(getAlerts).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1)
     expect(getAlerts).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(0)
     expect(screen.getByRole('button', { name: /open alerts, none active/i })).toBeInTheDocument()
   })
 
@@ -914,6 +917,7 @@ describe('AdminDashboard alerts', () => {
     await vi.advanceTimersByTimeAsync(1)
 
     expect(getAlerts).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(0)
     expect(screen.getByText('Acknowledged')).toBeInTheDocument()
   })
 
@@ -937,6 +941,7 @@ describe('AdminDashboard alerts', () => {
     expect(screen.queryByText('Invalid acknowledgement response')).not.toBeInTheDocument()
     expect(screen.getByText('Active')).toBeInTheDocument()
     await vi.advanceTimersByTimeAsync(5000)
+    await vi.advanceTimersByTimeAsync(0)
     expect(screen.getByText('Acknowledged')).toBeInTheDocument()
   })
 

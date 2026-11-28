@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict')
-const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -7,16 +6,6 @@ const test = require('node:test')
 const { loadAppWithMocks, withTestServer } = require('../helpers/appTestUtils')
 
 const root = path.resolve(__dirname, '../../..')
-
-function computeInlineThemeScriptHash() {
-  const indexHtml = fs.readFileSync(path.join(root, 'Frontend/index.html'), 'utf8')
-  const inlineScriptMatch = indexHtml.match(/<script>([\s\S]*?)<\/script>/)
-  assert.ok(inlineScriptMatch, 'Frontend/index.html inline theme script must exist')
-
-  // Browsers hash exact script text (normalizing CRLF to LF per HTML spec).
-  const inlineScriptLf = inlineScriptMatch[1].replace(/\r\n/g, '\n')
-  return `sha256-${crypto.createHash('sha256').update(inlineScriptLf, 'utf8').digest('base64')}`
-}
 
 test('render.yaml deploys a single Node web service with no Static Site /api rewrite', () => {
   const renderYaml = fs.readFileSync(path.join(root, 'render.yaml'), 'utf8')
@@ -46,7 +35,13 @@ test('render.yaml deploys a single Node web service with no Static Site /api rew
 })
 
 test('Express serves Frontend SPA same-origin with CSP headers, cache rules, and API 404 isolation', async () => {
-  const expectedScriptSha256 = computeInlineThemeScriptHash()
+  const indexHtml = fs.readFileSync(path.join(root, 'Frontend/index.html'), 'utf8')
+  const nginxConf = fs.readFileSync(path.join(root, 'Frontend/nginx.conf'), 'utf8')
+  assert.match(indexHtml, /<script src="\/theme-init\.js"><\/script>/)
+  assert.doesNotMatch(indexHtml, /<script>[\s\S]*?<\/script>/)
+  assert.equal(fs.existsSync(path.join(root, 'Frontend/public/theme-init.js')), true)
+  assert.match(nginxConf, /add_header Content-Security-Policy "[^"]*script-src 'self'[^"]*frame-ancestors 'none'/)
+
   const distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'php-frontend-dist-'))
 
   try {
@@ -69,12 +64,22 @@ test('Express serves Frontend SPA same-origin with CSP headers, cache rules, and
       assert.equal(rootRes.headers.get('x-content-type-options'), 'nosniff')
       assert.equal(rootRes.headers.get('referrer-policy'), 'strict-origin-when-cross-origin')
       const csp = rootRes.headers.get('content-security-policy') || ''
-      assert.ok(csp.includes(`'${expectedScriptSha256}'`), `CSP must include '${expectedScriptSha256}', got: ${csp}`)
+      assert.match(csp, /script-src 'self'(?:;|$)/)
+      assert.doesNotMatch(csp, /sha256-/)
       assert.match(csp, /connect-src 'self'/)
       assert.match(csp, /frame-ancestors 'none'/)
       assert.match(csp, /object-src 'none'/)
       assert.doesNotMatch(csp, /upgrade-insecure-requests/)
       assert.match(rootBody, /spa-shell/)
+
+      const corsPreflight = await fetch(`${baseUrl}/api/reports/export`, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:5173',
+          'Access-Control-Request-Method': 'POST',
+        },
+      })
+      assert.match(corsPreflight.headers.get('access-control-expose-headers') || '', /Content-Disposition/i)
 
       for (const spaPath of ['/login', '/dashboard/machines', '/setup-password?token=abc']) {
         const res = await fetch(`${baseUrl}${spaPath}`)

@@ -35,6 +35,16 @@ export default function UsersActionProvider({ children }) {
   useEffect(() => () => window.clearTimeout(actionTimer.current), [])
 
   useEffect(() => {
+    if (!pendingAction) return undefined
+    const handleBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [pendingAction])
+
+  useEffect(() => {
     if (pendingAction?.phase === 'undo' && pendingAction.removesFromResults) {
       undoButton.current?.focus()
     }

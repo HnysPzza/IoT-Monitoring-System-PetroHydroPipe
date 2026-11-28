@@ -1312,4 +1312,39 @@ describe('DashboardSection', () => {
     expect(downtimeCard).toHaveTextContent('0 / 1')
     expect(downtimeCard).toHaveClass('stat-card-warning')
   })
+
+  it('reuses outlet liveFeed without duplicate getLiveFeed polling and delegates refresh', async () => {
+    const user = userEvent.setup()
+    getDashboardOverview.mockResolvedValue(overviewPayload())
+    getDashboardDowntimeImpact.mockResolvedValue(emptyDowntimePayload())
+    const reload = vi.fn()
+    const outletLiveFeed = {
+      data: livePayload(),
+      state: 'success',
+      error: '',
+      lastUpdated: new Date('2026-07-23T02:04:00.000Z'),
+      isRefreshing: false,
+      reload,
+    }
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+        <AuthContext.Provider value={{ token: 'test-token', user: { id: 'admin-1', role: 'Admin' }, isAuthenticated: true, isRestoring: false }}>
+          <MemoryRouter initialEntries={['/dashboard']}>
+            <Routes>
+              <Route element={<Outlet context={{ activeAlerts: [], hasTrustedAlertList: true, liveFeed: outletLiveFeed }} />}>
+                <Route path="/dashboard" element={<DashboardSection />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('Machine Health · Spiral Mill 01')).toBeInTheDocument()
+    expect(getLiveFeed).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Refresh overview data' }))
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
 })

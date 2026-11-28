@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApiError } from '../../../shared/errors/apiError.js'
 import { exportReport, getReportSummary, reportCategories } from './reportsService.js'
 import { setUnauthorizedHandler } from '../../../shared/errors/unauthorizedSession.js'
 import { setSessionRefresher } from '../../../shared/services/sessionRefresh.js'
@@ -263,5 +264,23 @@ describe('exportReport', () => {
       selectedDate: '2026-09-02',
       format: 'pdf',
     })).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+  })
+
+  it('preserves 503 refresh errors instead of masking them as network errors', async () => {
+    setSessionRefresher(async () => {
+      throw createApiError('Authentication service is temporarily unavailable.', 503, null, 'AUTH_SERVICE_UNAVAILABLE')
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      error: { message: 'Unauthorized' },
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(exportReport('expired-token', {
+      reportType: 'daily',
+      selectedDate: '2026-09-02',
+      format: 'pdf',
+    })).rejects.toMatchObject({
+      status: 503,
+      code: 'AUTH_SERVICE_UNAVAILABLE',
+    })
   })
 })

@@ -422,7 +422,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
           <div className="password-state-copy">
             <h1 ref={stateHeadingRef} id="password-setup-title" tabIndex={-1}>{validLink ? 'Link expired or used' : 'Link unavailable'}</h1>
             <p>
-              Password links work once for 1 hour and cannot be reused after reload. Contact your {managingDirectorLabel} to issue a new link.
+              Password links expire after 1 hour and work only once. Contact your {managingDirectorLabel} to issue a new link.
             </p>
           </div>
           <Link className="btn btn-secondary password-state-action" to="/login">
@@ -618,7 +618,7 @@ export default function PasswordSetupPage({ changePassword = false, resetPasswor
           ) : (
             <p className="password-privacy-note">
               <ShieldCheck size={16} aria-hidden="true" />
-              <span>Password stays private. Reloading invalidates this one-time link.</span>
+              <span>Password stays private. This link works once and expires after 1 hour.</span>
             </p>
           )}
         </div>

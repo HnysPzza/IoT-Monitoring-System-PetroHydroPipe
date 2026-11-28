@@ -394,6 +394,26 @@ describe('subscribeToServerEvents', () => {
     unsubscribe()
   })
 
+  it('aborts and reports SSE_BUFFER_OVERFLOW before parsing when an oversized chunk contains a boundary', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: {"pad":"${'x'.repeat(70 * 1024)}"}\n\n`))
+      },
+    })
+    const onError = vi.fn()
+    const onEvent = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onError, onEvent })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onEvent).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'SSE_BUFFER_OVERFLOW' }))
+    unsubscribe()
+  })
+
   it('confirms live only after a parsed heartbeat and allows a future fallback cycle after recovery', async () => {
     vi.useFakeTimers()
     const encoder = new TextEncoder()

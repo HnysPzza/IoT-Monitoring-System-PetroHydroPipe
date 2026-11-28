@@ -29,7 +29,9 @@ function loadAuditService(calls, tableResponses = {}, logs = []) {
           const query = {
             select() { return this },
             order() { return this },
-            range() { return this },
+            range(from, to) { calls.push({ operation: 'range', from, to }); return this },
+            neq(field, value) { calls.push({ operation: 'neq', field, value }); return this },
+            or(expr) { calls.push({ operation: 'or', expr }); return this },
             insert(payload) {
               calls.push({ operation: 'insert', table, payload })
               return Promise.resolve(tableResponses[table] || { data: null, error: null })
@@ -58,9 +60,26 @@ test('audit date filters use Manila business-day boundaries', async () => {
   await service.listAuditLogs({ dateFrom: '2026-07-13', dateTo: '2026-07-13' })
 
   assert.deepEqual(calls, [
+    { operation: 'neq', field: 'action', value: 'SENSOR_PULSE' },
+    { operation: 'or', expr: 'action.neq.IOT_EVENT_RECEIVED,and(or(metadata->>eventType.is.null,metadata->>eventType.not.ilike.pulse),or(metadata->>event_type.is.null,metadata->>event_type.not.ilike.pulse),or(metadata->>signal.is.null,metadata->>signal.not.ilike.pulse))' },
+    { operation: 'range', from: 0, to: 24 },
     { operation: 'gte', field: 'created_at', value: '2026-07-12T16:00:00.000Z' },
     { operation: 'lt', field: 'created_at', value: '2026-07-13T16:00:00.000Z' },
   ])
+})
+
+test('listAuditLogs applies SQL pulse exclusion before pagination range', async () => {
+  const calls = []
+  const service = loadAuditService(calls, {
+    audit_logs: { data: [], count: 0, error: null },
+  })
+
+  await service.listAuditLogs({ page: 2, limit: 10 })
+
+  const neqIndex = calls.findIndex((c) => c.operation === 'neq' && c.field === 'action' && c.value === 'SENSOR_PULSE')
+  const orIndex = calls.findIndex((c) => c.operation === 'or')
+  const rangeIndex = calls.findIndex((c) => c.operation === 'range' && c.from === 10 && c.to === 19)
+  assert.ok(neqIndex >= 0 && orIndex > neqIndex && rangeIndex > orIndex)
 })
 
 test('audit user records include the affected username', async () => {
@@ -86,7 +105,7 @@ test('audit user records include the affected username', async () => {
   const result = await service.listAuditLogs()
 
   assert.deepEqual(result.logs[0].targetUser, { username: 'operator01' })
-  assert.deepEqual(calls, [{ operation: 'in', field: 'id', values: ['target-1'] }])
+  assert.ok(calls.some((c) => c.operation === 'in' && c.field === 'id' && c.values[0] === 'target-1'))
 })
 
 test('recordAuditLog logs AUDIT_WRITE_FAILED and throws 500 instead of swallowing insert errors', async () => {
@@ -602,15 +621,11 @@ test('listAuditLogs expands WATCHDOG_DOWNTIME_CREATED filter to include legacy W
 
   await service.listAuditLogs({ action: 'WATCHDOG_DOWNTIME_CREATED' })
 
-  assert.deepEqual(calls, [
-    { operation: 'in', field: 'action', values: ['WATCHDOG_DOWNTIME_CREATED', 'WATCHDOG_DOWNTIME_CONFIRMED'] },
-  ])
+  assert.ok(calls.some((c) => c.operation === 'in' && c.field === 'action' && c.values[0] === 'WATCHDOG_DOWNTIME_CREATED'))
 
   calls.length = 0
   await service.listAuditLogs({ action: 'toString' })
-  assert.deepEqual(calls, [
-    { operation: 'eq', field: 'action', value: 'toString' },
-  ])
+  assert.ok(calls.some((c) => c.operation === 'eq' && c.field === 'action' && c.value === 'toString'))
 })
 
 

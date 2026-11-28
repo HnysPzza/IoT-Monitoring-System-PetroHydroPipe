@@ -289,6 +289,14 @@ export function subscribeToServerEvents(path, token, {
         let boundaryIndex = buffer.indexOf('\n\n')
 
         while (boundaryIndex >= 0) {
+          if (boundaryIndex > MAX_SSE_BUFFER_LENGTH) {
+            throw createApiError(
+              'Event stream buffer limit exceeded.',
+              0,
+              null,
+              'SSE_BUFFER_OVERFLOW',
+            )
+          }
           const rawMessage = buffer.slice(0, boundaryIndex).trim()
           buffer = buffer.slice(boundaryIndex + 2)
 

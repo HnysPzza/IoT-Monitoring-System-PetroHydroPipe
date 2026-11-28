@@ -1,4 +1,4 @@
-import { Fragment, createContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../../shared/errors/unauthorizedSession.js'
 import { apiRequest } from '../../shared/services/apiClient.js'
 import { beginSessionChange, endSessionAcrossTabs, getSessionGeneration, refreshSessionOnce, setCurrentSession, setSessionRefresher, withSessionLock } from '../../shared/services/sessionRefresh.js'
@@ -20,7 +20,19 @@ export function AuthProvider({ children }) {
   const explicitlyLoggedOutRef = useRef(false)
   const identityRef = useRef(null)
 
-  function applySession(payload) {
+  const clearSession = useCallback(() => {
+    queryClient.clear()
+    if (identityRef.current !== null) {
+      setSessionEpoch((epoch) => epoch + 1)
+    }
+    identityRef.current = null
+    removeUnauthorizedHandlerRef.current()
+    syncRoleHint(null)
+    setSessionError(null)
+    setAuth(null)
+  }, [])
+
+  const applySession = useCallback((payload) => {
     const identity = `${payload?.user?.id || ''}:${payload?.user?.role || ''}`
     if (identityRef.current !== identity) queryClient.clear()
     if (identityRef.current !== null && identityRef.current !== identity) {
@@ -32,19 +44,7 @@ export function AuthProvider({ children }) {
     syncRoleHint(payload?.user?.role)
     setSessionError(null)
     setAuth(payload)
-  }
-
-  function clearSession() {
-    queryClient.clear()
-    if (identityRef.current !== null) {
-      setSessionEpoch((epoch) => epoch + 1)
-    }
-    identityRef.current = null
-    removeUnauthorizedHandlerRef.current()
-    syncRoleHint(null)
-    setSessionError(null)
-    setAuth(null)
-  }
+  }, [clearSession])
 
   // Sessions live in React state only; clear any pre-migration localStorage token.
   useEffect(() => {
@@ -86,11 +86,11 @@ export function AuthProvider({ children }) {
       setSessionRefresher(null)
       removeUnauthorizedHandlerRef.current()
     }
-  }, [])
+  }, [applySession, clearSession])
 
   // Silent restore: a valid HttpOnly refresh cookie brings the session back
   // after a page reload without ever exposing a token to storage.
-  async function runSessionRestore(isCancelled = () => false) {
+  const runSessionRestore = useCallback(async (isCancelled = () => false) => {
     const generation = getSessionGeneration()
     if (!isCancelled()) {
       setIsRestoring(true)
@@ -112,7 +112,7 @@ export function AuthProvider({ children }) {
     } finally {
       if (!isCancelled()) setIsRestoring(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -121,9 +121,9 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [runSessionRestore])
 
-  async function login(credentials) {
+  const login = useCallback(async (credentials) => {
     clearSession()
     const generation = beginSessionChange()
     const nextAuth = await withSessionLock(() => loginRequest(credentials))
@@ -132,9 +132,9 @@ export function AuthProvider({ children }) {
     setCurrentSession(nextAuth)
     applySession(nextAuth)
     return nextAuth
-  }
+  }, [applySession, clearSession])
 
-  async function logout() {
+  const logout = useCallback(async () => {
     explicitlyLoggedOutRef.current = true
     clearSession()
     endSessionAcrossTabs()
@@ -144,7 +144,7 @@ export function AuthProvider({ children }) {
     } catch {
       // Clear the local session even if the backend call fails.
     }
-  }
+  }, [clearSession])
 
   const value = useMemo(
     () => ({
@@ -157,7 +157,7 @@ export function AuthProvider({ children }) {
       login,
       logout,
     }),
-    [auth, isRestoring, sessionError],
+    [auth, isRestoring, login, logout, runSessionRestore, sessionError],
   )
 
   return <AuthContext.Provider value={value}><Fragment key={sessionEpoch}>{children}</Fragment></AuthContext.Provider>

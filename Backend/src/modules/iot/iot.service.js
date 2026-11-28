@@ -4,6 +4,7 @@ const { z } = require('zod')
 const { getSupabaseClient } = require('../../database/client')
 const env = require('../../config/env')
 const { isEligibleAt } = require('../../shared/operationalTime')
+const { addBusinessDays, formatBusinessDate } = require('../../shared/businessTime')
 const { getSensorLabel, getSensorPurpose } = require('../../shared/sensorIdentity')
 const logger = require('../../utils/logger')
 const { recordAuditLog } = require('../audit/audit.service')
@@ -24,6 +25,8 @@ const failedAuthBuckets = new Map()
 const failedAuthAuditCooldowns = new Map()
 const deviceBootCounterOverrides = new Map()
 const deviceThresholdsCache = new Map()
+// ponytail: process-local in-flight map; share via cache or lock if multi-instance.
+const deviceThresholdsInFlight = new Map()
 
 const ALERT_TRANSITION_ACTIONS = new Set(['created', 'updated', 'acknowledged', 'resolved'])
 const DOWNTIME_TRANSITION_ACTIONS = new Set(['created', 'resolved'])
@@ -730,9 +733,13 @@ async function processHeartbeat({ sensor, machine, payload }) {
 function invalidateDeviceThresholdsCache(machineId) {
   if (machineId) {
     deviceThresholdsCache.delete(machineId)
+    for (const key of deviceThresholdsInFlight.keys()) {
+      if (key.startsWith(`${machineId}:`)) deviceThresholdsInFlight.delete(key)
+    }
     return
   }
   deviceThresholdsCache.clear()
+  deviceThresholdsInFlight.clear()
 }
 
 async function getDeviceOperationalThresholds(sensor, { useCache = false, asOf = new Date() } = {}) {
@@ -744,17 +751,22 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false, asOf =
 
   try {
     const now = Date.now()
+    const asOfDate = asOf instanceof Date ? asOf : new Date(asOf)
+    const asOfDay = formatBusinessDate(asOfDate)
+    const windowStart = formatBusinessDate(addBusinessDays(asOfDate, -1))
+    const windowEnd = formatBusinessDate(addBusinessDays(asOfDate, 1))
+    const inFlightKey = `${machineId}:${asOfDay}`
     let data = null
     if (useCache) {
       const cached = deviceThresholdsCache.get(machineId)
-      if (cached && cached.expiresAt > now) {
+      if (cached && cached.expiresAt > now && asOfDay >= cached.windowStart && asOfDay <= cached.windowEnd) {
         data = cached.data
       } else if (cached) {
         deviceThresholdsCache.delete(machineId)
       }
     }
 
-    if (!data) {
+    const loadThresholds = async () => {
       const { data: queriedData, error } = await supabase
         .from('machine_operational_settings')
         .select('sensor_thresholds, shift_schedule, version')
@@ -771,6 +783,8 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false, asOf =
             .from('production_calendar_days')
             .select('calendar_date, is_working')
             .eq('machine_id', machineId)
+            .gte('calendar_date', windowStart)
+            .lte('calendar_date', windowEnd)
           if (calendarError) {
             calendarErrorFlag = true
           } else if (Array.isArray(calendarData)) {
@@ -782,18 +796,40 @@ async function getDeviceOperationalThresholds(sensor, { useCache = false, asOf =
         }
       }
 
-      data = {
+      const loaded = {
         ...queriedData,
         calendar_days: calendarDays,
         calendar_error: calendarErrorFlag,
       }
       if (!calendarErrorFlag) {
-        pruneExpiredMapEntries(deviceThresholdsCache, now, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
+        const cachedAt = Date.now()
+        pruneExpiredMapEntries(deviceThresholdsCache, cachedAt, MAX_DEVICE_THRESHOLDS_CACHE_ENTRIES)
         deviceThresholdsCache.set(machineId, {
-          data,
-          expiresAt: now + DEVICE_THRESHOLDS_CACHE_TTL_MS,
+          data: loaded,
+          windowStart,
+          windowEnd,
+          expiresAt: cachedAt + DEVICE_THRESHOLDS_CACHE_TTL_MS,
         })
       }
+      return loaded
+    }
+
+    if (!data) {
+      if (useCache) {
+        let pending = deviceThresholdsInFlight.get(inFlightKey)
+        if (!pending) {
+          pending = loadThresholds().finally(() => {
+            if (deviceThresholdsInFlight.get(inFlightKey) === pending) {
+              deviceThresholdsInFlight.delete(inFlightKey)
+            }
+          })
+          deviceThresholdsInFlight.set(inFlightKey, pending)
+        }
+        data = await pending
+      } else {
+        data = await loadThresholds()
+      }
+      if (!data) return null
     }
 
     const threshold = data.sensor_thresholds[sensor.sensor_code]

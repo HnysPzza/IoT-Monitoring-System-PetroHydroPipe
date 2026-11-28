@@ -129,10 +129,10 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
     assert.ok(Number.isFinite(hugeTonnage))
 
     // Valid small positive: OD 10mm, t 0.1mm, L 100mm
-    // (10 - 0.1) * 0.1 * 0.02466 * 100 / 1e6 = 9.9 * 0.1 * 0.02466 * 100 / 1e6 = 0.000244134 / 1e2 = 0.00000244...
-    // rounds to 0.0000
+    // (10 - 0.1) * 0.1 * 0.02466 * 100 / 1e6 = 0.000244134 / 1e2 = 0.00000244...
+    // rounds to 0.0000, which calculatePipeTonnage normalizes to null.
     const tinyTonnage = calculatePipeTonnage(10, 0.1, 100)
-    assert.equal(tinyTonnage, 0) // Rounded to 4 decimal places is 0.0000 = 0
+    assert.equal(tinyTonnage, null)
   })
 
   test('Challenge 3: Database RPC Batch Update Strictly Preserves Physical Pipe Numbers', async () => {

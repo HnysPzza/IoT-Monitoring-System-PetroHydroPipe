@@ -107,6 +107,12 @@ export default function SettingsSection() {
   const [isSaving, setIsSaving] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [enforcementBlocked, setEnforcementBlocked] = useState(false)
+  const settingsRef = useRef(settings)
+  const constraintsRef = useRef(constraints)
+  const draftRef = useRef(draft)
+  settingsRef.current = settings
+  constraintsRef.current = constraints
+  draftRef.current = draft
 
   const queryClient = useQueryClient()
   const machinesQuery = useAuthenticatedQuery({
@@ -145,14 +151,17 @@ export default function SettingsSection() {
     const latest = settingsQuery.data?.settings
     const latestConstraints = settingsQuery.data?.constraints
     if (!latest || isSaving) return
-    if (settings && /^\d+$/.test(String(latest.version)) && /^\d+$/.test(String(settings.version)) && BigInt(latest.version) < BigInt(settings.version)) {
+    const currentSettings = settingsRef.current
+    const currentConstraints = constraintsRef.current
+    const currentDraft = draftRef.current
+    if (currentSettings && /^\d+$/.test(String(latest.version)) && /^\d+$/.test(String(currentSettings.version)) && BigInt(latest.version) < BigInt(currentSettings.version)) {
       return
     }
-    if (!draft || (settings && settingsAreEqual(draft, toDraft(settings, constraints || latestConstraints)))) {
+    if (!currentDraft || (currentSettings && settingsAreEqual(currentDraft, toDraft(currentSettings, currentConstraints || latestConstraints)))) {
       setSettings(latest)
       setConstraints(latestConstraints)
       setDraft(toDraft(latest, latestConstraints))
-    } else if (settings && latest.version !== settings.version) {
+    } else if (currentSettings && latest.version !== currentSettings.version) {
       setConflict(true)
       setNotice({ type: 'error', message: 'Another user changed these settings. Your draft was kept; reload the latest version before saving.' })
     }

@@ -77,13 +77,19 @@ function DashboardClock() {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
-    // Local clock updates the topbar without using backend data.
-    const timerId = window.setInterval(() => {
+    // Align updates to minute boundaries without using backend data.
+    let intervalId = null
+    const msUntilNextMinute = 60000 - (Date.now() % 60000)
+    const timeoutId = window.setTimeout(() => {
       setNow(new Date())
-    }, 1000)
+      intervalId = window.setInterval(() => {
+        setNow(new Date())
+      }, 60000)
+    }, msUntilNextMinute)
 
     return () => {
-      window.clearInterval(timerId)
+      window.clearTimeout(timeoutId)
+      if (intervalId !== null) window.clearInterval(intervalId)
     }
   }, [])
 
@@ -93,6 +99,7 @@ function DashboardClock() {
         {now.toLocaleTimeString('en-PH', {
           hour: '2-digit',
           minute: '2-digit',
+          timeZone: 'Asia/Manila',
         })}
       </strong>
       <span>
@@ -100,6 +107,7 @@ function DashboardClock() {
           month: 'short',
           day: '2-digit',
           year: 'numeric',
+          timeZone: 'Asia/Manila',
         })}
       </span>
     </time>

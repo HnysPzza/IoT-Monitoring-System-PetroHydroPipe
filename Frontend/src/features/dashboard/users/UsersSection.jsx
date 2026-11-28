@@ -55,6 +55,7 @@ export default function UsersSection() {
   const [notice, setNotice] = useState(null)
   const [isMutating, setIsMutating] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const busy = isMutating
   const dialog = useRef(null)
   const confirmDialog = useRef(null)
@@ -98,7 +99,7 @@ export default function UsersSection() {
   const directory = applyPendingAction(usersQuery.data || { users: [], total: 0 }, pendingAction, query)
   const isLoading = usersQuery.isPending && !usersQuery.data
   const loadError = usersQuery.error?.message || (rolesQuery.isError ? rolesQuery.error?.message : '') || (!online && usersQuery.data ? 'Unable to refresh while offline.' : '')
-  const staleNotice = loadError && usersQuery.data ? `Account data is stale.${usersQuery.isPlaceholderData ? ' Showing previous filter results.' : ''}${usersQuery.dataUpdatedAt ? ` Last updated ${new Date(usersQuery.dataUpdatedAt).toLocaleString()}.` : ''} ${loadError}` : ''
+  const staleNotice = loadError && usersQuery.data ? `Account data is stale.${usersQuery.isPlaceholderData ? ' Showing previous filter results.' : ''}${usersQuery.dataUpdatedAt ? ` Last updated ${new Date(usersQuery.dataUpdatedAt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' })}.` : ''} ${loadError}` : ''
   useEffect(() => {
     if (!usersQuery.data || usersQuery.isPlaceholderData) return
     const lastPage = Math.max(1, Math.ceil(usersQuery.data.total / query.limit))
@@ -153,6 +154,7 @@ export default function UsersSection() {
       ...form, name: form.name.trim(), username: normalizeUsername(form.username), email: form.email.trim().toLowerCase(),
     }), 'Invitation sent. Brevo accepted the email; inbox delivery is not guaranteed.')
     if (saved) {
+      setIsCreateOpen(false)
       dialog.current.close()
       setForm(initialUserForm)
     }
@@ -162,6 +164,7 @@ export default function UsersSection() {
     setNotice(null)
     setErrors({})
     setForm(initialUserForm)
+    setIsCreateOpen(true)
     dialog.current.showModal()
     dialog.current.querySelector('#account-name')?.focus()
   }
@@ -177,7 +180,7 @@ export default function UsersSection() {
   useLayoutEffect(() => {
     const slot = document.getElementById('users-header-controls')
     if (slot !== headerSlot) setHeaderSlot(slot)
-  })
+  }, [headerSlot])
   const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('users-header-controls')
   const headerControls = (
     <div className="users-header-controls">
@@ -192,7 +195,7 @@ export default function UsersSection() {
 
   return (
     <div className="users-directory">
-      <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
+      {!isCreateOpen ? <UsersNotice notice={notice} onDismiss={() => setNotice(null)} /> : null}
       {resolvedHeaderSlot ? createPortal(headerControls, resolvedHeaderSlot) : headerControls}
 
       <section className="section-card users-directory-card" aria-label="Staff accounts">
@@ -347,8 +350,14 @@ export default function UsersSection() {
       </section>
 
       {/* Account Creation Modal */}
-      <dialog className="users-dialog" ref={dialog} aria-labelledby="create-account-title" onCancel={(event) => { if (busy) event.preventDefault() }}>
-        <UsersNotice notice={notice} onDismiss={() => setNotice(null)} />
+      <dialog
+        className="users-dialog"
+        ref={dialog}
+        aria-labelledby="create-account-title"
+        onCancel={(event) => { if (busy) event.preventDefault() }}
+        onClose={() => setIsCreateOpen(false)}
+      >
+        {isCreateOpen ? <UsersNotice notice={notice} onDismiss={() => setNotice(null)} /> : null}
         <UserAccountForm
           form={form}
           errors={errors}
@@ -356,7 +365,10 @@ export default function UsersSection() {
           isLoading={busy}
           isSubmitting={busy}
           onSubmit={handleSubmit}
-          onClose={() => dialog.current?.close()}
+          onClose={() => {
+            setIsCreateOpen(false)
+            dialog.current?.close()
+          }}
           onFieldChange={(field, value) => {
             setForm((current) => ({ ...current, [field]: value }))
             setErrors((current) => ({ ...current, [field]: '' }))

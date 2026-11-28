@@ -89,7 +89,7 @@ export async function exportReport(token, { category = 'regular', reportType, se
         }
       }
     } catch (error) {
-      if (error?.code === 'SESSION_CHANGED') throw error
+      if (error?.code === 'SESSION_CHANGED' || error?.status) throw error
       if (error?.name === 'AbortError') {
         throw createApiError('The export request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
       }

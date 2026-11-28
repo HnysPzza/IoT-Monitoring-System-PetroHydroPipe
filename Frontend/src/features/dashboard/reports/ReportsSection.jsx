@@ -228,7 +228,7 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
-        const items = containerRef.current?.querySelectorAll('[role="menuitem"]')
+        const items = containerRef.current?.querySelectorAll('[role="menuitemradio"]')
         if (!items || items.length === 0) return
         const activeIdx = Array.from(items).indexOf(document.activeElement)
         const nextIdx = event.key === 'ArrowDown'
@@ -302,7 +302,7 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
       {isOpen ? (
         <div
           id="reports-filter-menu"
-          className="reports-filter-popover rounded-2xl p-2 min-w-[220px] shadow-lg"
+          className="reports-filter-popover"
           role="menu"
           aria-label="Report category"
         >
@@ -312,10 +312,9 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
               return (
                 <button
                   key={cat.id}
-                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${isSelected ? 'is-active' : ''
-                    }`}
+                  className={`reports-filter-popover-item ${isSelected ? 'is-active' : ''}`.trim()}
                   type="button"
-                  role="menuitem"
+                  role="menuitemradio"
                   aria-checked={isSelected}
                   onClick={() => handleSelect(cat.id)}
                 >

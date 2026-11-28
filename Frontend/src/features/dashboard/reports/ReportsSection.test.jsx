@@ -218,7 +218,7 @@ async function selectReportDate(user, dateName) {
 
 async function selectReportCategory(user, categoryLabel) {
   await user.click(await screen.findByRole('button', { name: 'Filter report type' }))
-  await user.click(await screen.findByRole('menuitem', { name: categoryLabel }))
+  await user.click(await screen.findByRole('menuitemradio', { name: categoryLabel }))
 }
 
 describe('ReportsSection request states', () => {
@@ -497,7 +497,7 @@ describe('ReportsSection request states', () => {
     const filterButton = screen.getByRole('button', { name: 'Filter report type' })
     await user.click(filterButton)
 
-    const prodButton = screen.getByRole('menuitem', { name: 'Production Report' })
+    const prodButton = screen.getByRole('menuitemradio', { name: 'Production Report' })
     expect(prodButton).toHaveAttribute('aria-checked', 'false')
     await user.click(prodButton)
 
@@ -678,16 +678,15 @@ describe('ReportsSection request states', () => {
     expect(funnelButton).toHaveAttribute('aria-expanded', 'true')
     const popover = screen.getByRole('menu', { name: 'Report category' })
     expect(popover).toHaveClass('reports-filter-popover')
-    expect(popover).toHaveClass('rounded-2xl')
 
     // Active item (Regular Report) has checkmark and active styling
-    const regularItem = screen.getByRole('menuitem', { name: 'Regular Report' })
+    const regularItem = screen.getByRole('menuitemradio', { name: 'Regular Report' })
     expect(regularItem).toHaveClass('is-active')
     expect(regularItem).toHaveAttribute('aria-checked', 'true')
     expect(regularItem.querySelector('svg')).toBeInTheDocument()
 
     // Production Report is inactive
-    const prodItem = screen.getByRole('menuitem', { name: 'Production Report' })
+    const prodItem = screen.getByRole('menuitemradio', { name: 'Production Report' })
     expect(prodItem).not.toHaveClass('is-active')
     expect(prodItem).toHaveAttribute('aria-checked', 'false')
 
@@ -700,11 +699,11 @@ describe('ReportsSection request states', () => {
     await user.click(funnelButton)
     expect(screen.getByRole('menu', { name: 'Report category' })).toBeInTheDocument()
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Regular Report' })).toHaveFocus()
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Production Report' })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Production Report' })).toHaveFocus()
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Regular Report' })).toHaveFocus()
 
     // Close by clicking outside
     await user.click(document.body)
@@ -715,9 +714,9 @@ describe('ReportsSection request states', () => {
     await user.click(funnelButton)
     expect(screen.getByRole('menu', { name: 'Report category' })).toBeInTheDocument()
     await user.tab()
-    expect(screen.getByRole('menuitem', { name: 'Regular Report' })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Regular Report' })).toHaveFocus()
     await user.tab()
-    expect(screen.getByRole('menuitem', { name: 'Production Report' })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Production Report' })).toHaveFocus()
     await user.tab()
     expect(screen.queryByRole('menu', { name: 'Report category' })).not.toBeInTheDocument()
     expect(funnelButton).toHaveAttribute('aria-expanded', 'false')

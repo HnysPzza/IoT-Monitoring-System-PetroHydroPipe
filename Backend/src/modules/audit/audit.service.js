@@ -194,6 +194,8 @@ async function listAuditLogs(filters = {}) {
         )
       )
     `, { count: 'exact' })
+    .neq('action', 'SENSOR_PULSE')
+    .or('action.neq.IOT_EVENT_RECEIVED,and(or(metadata->>eventType.is.null,metadata->>eventType.not.ilike.pulse),or(metadata->>event_type.is.null,metadata->>event_type.not.ilike.pulse),or(metadata->>signal.is.null,metadata->>signal.not.ilike.pulse))')
     .order('created_at', { ascending: false })
     .range(from, to)
 
