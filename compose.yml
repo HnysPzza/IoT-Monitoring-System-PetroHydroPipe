@@ -8,21 +8,24 @@ services:
     env_file:
       - ./Backend/.env
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: "3000"
       TRUST_PROXY: "1"
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       ACCOUNT_SETUP_ORIGIN: ${ACCOUNT_SETUP_ORIGIN:-http://localhost:5173}
+      WATCHDOG_MODE: ${WATCHDOG_MODE:-enforce}
     ports:
       - "3000:3000"
     restart: unless-stopped
 
   frontend:
     image: petrohydropipe-frontend:local
+    depends_on:
+      - backend
     build:
       context: ./Frontend
       args:
-        VITE_API_BASE_URL: http://localhost:3000
+        VITE_API_BASE_URL: ""
         VITE_USE_MOCK_LOGIN: "false"
     ports:
       - "5173:8080"
