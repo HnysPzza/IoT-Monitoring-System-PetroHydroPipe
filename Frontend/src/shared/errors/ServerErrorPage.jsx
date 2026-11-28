@@ -141,6 +141,8 @@ function ServerErrorMascotIllustration() {
 export default function ServerErrorPage({
   onRetry,
   onNavigateHome,
+  isNetworkError = false,
+  status,
   role,
   tabIndex,
   shellRef,
@@ -148,6 +150,24 @@ export default function ServerErrorPage({
   const auth = useContext(AuthContext)
   const dashboardPath = getRoleDashboardPath(auth?.user?.role)
   const handleRetry = onRetry || defaultReloadPage
+  const networkError = isNetworkError || status === 0
+  const isRateLimited = status === 429
+  const eyebrow = isRateLimited
+    ? 'TOO MANY REQUESTS'
+    : networkError
+      ? 'CONNECTION UNAVAILABLE'
+      : 'INTERNAL SERVER ERROR'
+  const code = isRateLimited ? '429' : networkError ? 'OFFLINE' : '500'
+  const title = isRateLimited
+    ? 'Too many requests right now.'
+    : networkError
+      ? 'Unable to reach the server.'
+      : 'Something went wrong on our end.'
+  const description = isRateLimited
+    ? 'Wait a moment and try again to restore your session.'
+    : networkError
+      ? 'Check your network connection and try again to restore your session.'
+      : 'This isn’t something you did. Try reloading the page, or return to your dashboard to continue.'
 
   return (
     <ErrorPageShell
@@ -158,13 +178,13 @@ export default function ServerErrorPage({
       shellRef={shellRef}
       visual={<ServerErrorMascotIllustration />}
     >
-      <p className="error-state-eyebrow">INTERNAL SERVER ERROR</p>
-      <p className="error-state-code" aria-hidden="true">500</p>
+      <p className="error-state-eyebrow">{eyebrow}</p>
+      <p className="error-state-code" aria-hidden="true">{code}</p>
       <h1 id="error-500-title" className="error-state-title">
-        Something went wrong on our end.
+        {title}
       </h1>
       <p className="error-state-description">
-        This isn’t something you did. Try reloading the page, or return to your dashboard to continue.
+        {description}
       </p>
       <div className="error-state-actions">
         <div className="error-state-action-row">

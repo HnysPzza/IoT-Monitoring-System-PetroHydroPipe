@@ -20,10 +20,24 @@ async function authenticateAllowingPasswordChange(req, res, next) {
     return next(new Error('JWT_SECRET is not configured.'))
   }
 
+  let tokenPayload
   try {
     // JWT identifies the user; current role/status is refreshed from the database.
-    const tokenPayload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] })
-    const currentUser = await authService.getAuthenticatedUser(tokenPayload)
+    tokenPayload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] })
+  } catch {
+    return res.status(401).json({
+      error: {
+        code: 'UNAUTHENTICATED',
+        message: 'Invalid or expired token.',
+      },
+    })
+  }
+
+  try {
+    const currentUser = await authService.getAuthenticatedUser(
+      tokenPayload,
+      req.requestSignal ? { signal: req.requestSignal } : undefined,
+    )
     req.tokenPayload = tokenPayload
     req.authenticatedUser = currentUser
     req.user = {
@@ -31,17 +45,20 @@ async function authenticateAllowingPasswordChange(req, res, next) {
       sub: currentUser.id,
     }
     return next()
-  } catch (error) { //catch any 403 or 401 errors
-    if (error.status) {
+  } catch (error) {
+    if (error?.status) {
       return next(error)
     }
-    //if catch error respond with http 401 status or invalid/expired token
-    return res.status(401).json({
-      error: {
-        code: 'UNAUTHENTICATED',
-        message: 'Invalid or expired token.',
-      },
-    })
+
+    const isTimeout = error?.name === 'AbortError'
+    const upstreamError = new Error(
+      isTimeout
+        ? 'Authentication request timed out.'
+        : 'Authentication service is temporarily unavailable.',
+    )
+    upstreamError.status = isTimeout ? 504 : 503
+    upstreamError.code = isTimeout ? 'UPSTREAM_TIMEOUT' : 'AUTH_SERVICE_UNAVAILABLE'
+    return next(upstreamError)
   }
 }
 

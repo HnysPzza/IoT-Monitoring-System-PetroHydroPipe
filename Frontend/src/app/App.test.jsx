@@ -113,6 +113,81 @@ describe('ProtectedRoute', () => {
     expect(retrySessionRestore).toHaveBeenCalledTimes(1)
   })
 
+  it('renders a recoverable connection error instead of 401 when session restore fails with status 0 network drop', async () => {
+    const user = userEvent.setup()
+    const retrySessionRestore = vi.fn()
+
+    renderWithAuth(
+      <Routes>
+        <Route
+          path="/dashboard/reports"
+          element={(
+            <ProtectedRoute>
+              <span>Protected content</span>
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>,
+      {
+        authValue: {
+          isAuthenticated: false,
+          isRestoring: false,
+          token: null,
+          user: null,
+          sessionError: { status: 0, code: 'NETWORK_ERROR', message: 'Unable to reach the server.' },
+          retrySessionRestore,
+        },
+        route: '/dashboard/reports',
+      },
+    )
+
+    expect(screen.getByText('CONNECTION UNAVAILABLE')).toBeInTheDocument()
+    expect(screen.getByText('OFFLINE')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /unable to reach the server\./i })).toBeInTheDocument()
+    expect(screen.queryByText('SIGN-IN REQUIRED')).not.toBeInTheDocument()
+    expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    expect(retrySessionRestore).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders a recoverable rate-limit error instead of 401 or 500 when session restore hits 429', async () => {
+    const user = userEvent.setup()
+    const retrySessionRestore = vi.fn()
+
+    renderWithAuth(
+      <Routes>
+        <Route
+          path="/dashboard/reports"
+          element={(
+            <ProtectedRoute>
+              <span>Protected content</span>
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>,
+      {
+        authValue: {
+          isAuthenticated: false,
+          isRestoring: false,
+          token: null,
+          user: null,
+          sessionError: { status: 429, code: 'RATE_LIMITED', message: 'Too many requests.' },
+          retrySessionRestore,
+        },
+        route: '/dashboard/reports',
+      },
+    )
+
+    expect(screen.getByText('TOO MANY REQUESTS')).toBeInTheDocument()
+    expect(screen.getByText('429')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /too many requests right now\./i })).toBeInTheDocument()
+    expect(screen.queryByText('SIGN-IN REQUIRED')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    expect(retrySessionRestore).toHaveBeenCalledTimes(1)
+  })
+
   it('places dashboard descendants inside the route-aware recovery boundary', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 

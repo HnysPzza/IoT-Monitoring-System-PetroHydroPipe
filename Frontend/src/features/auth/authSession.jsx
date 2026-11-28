@@ -100,7 +100,13 @@ export function AuthProvider({ children }) {
     try {
       await refreshSessionOnce()
     } catch (error) {
-      if (!isCancelled() && !explicitlyLoggedOutRef.current && generation === getSessionGeneration() && error?.status >= 500) {
+      if (
+        !isCancelled()
+        && !explicitlyLoggedOutRef.current
+        && generation === getSessionGeneration()
+        && error?.code !== 'REQUEST_ABORTED'
+        && (error?.status === 0 || error?.status >= 500 || isTransientApiError(error))
+      ) {
         setSessionError(error)
       }
     } finally {

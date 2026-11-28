@@ -207,6 +207,28 @@ test('watchdog diagnostics reject invalid, expired, inactive, and archived authe
   }
 })
 
+test('authenticate maps raw network/upstream drops to 503 and AbortError to 504 instead of 401', async () => {
+  const cases = [
+    { err: new TypeError('fetch failed'), expectedStatus: 503, expectedCode: 'AUTH_SERVICE_UNAVAILABLE' },
+    { err: Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }), expectedStatus: 504, expectedCode: 'UPSTREAM_TIMEOUT' },
+  ]
+
+  for (const { err, expectedStatus, expectedCode } of cases) {
+    const app = loadAppWithMocks({
+      'src/modules/auth/auth.service.js': {
+        login: async () => ({}),
+        getAuthenticatedUser: async () => { throw err },
+      },
+    })
+    await withTestServer(app, async (baseUrl) => {
+      const result = await requestJson(baseUrl, '/api/operations/watchdog', {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(result.response.status, expectedStatus)
+      assertError(result.body, expectedCode)
+    })
+  }
+})
 
 test('POST /api/auth/login succeeds with valid credentials', async () => {
   const app = loadAppWithMocks({
