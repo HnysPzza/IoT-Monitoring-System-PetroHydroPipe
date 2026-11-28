@@ -54,6 +54,7 @@ describe('ProductionDateRangePicker Unit & Integration Suite', () => {
       expect(formatRangeDisplay(nov1, nov1)).toBe('Nov 1, 2026')
       expect(formatRangeDisplay(oct26, nov1)).toBe('Oct 26 – Nov 1, 2026')
       expect(formatRangeDisplay(nov1, nov10)).toBe('Nov 1 – 10, 2026')
+      expect(formatRangeDisplay(new Date(2026, 11, 28), new Date(2027, 0, 3))).toBe('Dec 28, 2026 – Jan 3, 2027')
       expect(formatRangeDisplay(null, null)).toBe('All Dates')
     })
 
@@ -537,6 +538,33 @@ describe('ProductionDateRangePicker Unit & Integration Suite', () => {
       expect(selectedDay).toHaveAttribute('aria-pressed', 'true')
 
       await user.click(within(dialog).getByRole('button', { name: 'Weekly' }))
+      expect(within(dialog).getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('preserves staged draft selection when parent re-renders with a new value reference while open', async () => {
+      const user = userEvent.setup()
+      const handleChange = vi.fn()
+      const { rerender } = render(
+        <ProductionDateRangePicker
+          value={{ type: 'day', startDate: '2026-11-01', endDate: '2026-11-01' }}
+          onChange={handleChange}
+          maxDate="2026-12-31"
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Filter by date' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Weekly' }))
+      expect(within(dialog).getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
+
+      rerender(
+        <ProductionDateRangePicker
+          value={{ type: 'day', startDate: '2026-11-01', endDate: '2026-11-01' }}
+          onChange={handleChange}
+          maxDate="2026-12-31"
+        />,
+      )
+
       expect(within(dialog).getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
     })
   })

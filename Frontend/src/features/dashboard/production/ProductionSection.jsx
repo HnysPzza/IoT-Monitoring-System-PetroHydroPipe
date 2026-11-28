@@ -1,6 +1,6 @@
 import Status from '../../../shared/components/Status.jsx'
 import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
@@ -286,8 +286,10 @@ export default function ProductionSection({
   const updateFn = updateProductionSpec || updateProduction
   const batchUpdateFn = batchUpdateProductionSpecsProp || batchUpdateProduction || batchUpdateProductionSpecs
   const { token, user } = useAuth()
-  const identityRef = useRef(null)
-  identityRef.current = `${user?.id || ''}:${user?.role || ''}`
+  const identityRef = useRef(`${user?.id || ''}:${user?.role || ''}`)
+  useLayoutEffect(() => {
+    identityRef.current = `${user?.id || ''}:${user?.role || ''}`
+  }, [user?.id, user?.role])
   const mountedRef = useRef(false)
   useEffect(() => {
     mountedRef.current = true
@@ -360,9 +362,12 @@ export default function ProductionSection({
   })
   const [isConfirmingBulk, setIsConfirmingBulk] = useState(false)
   const [isApplyingBulk, setIsApplyingBulk] = useState(false)
+  const [savingRecordIds, setSavingRecordIds] = useState(() => new Set())
   const [flashingRecordIds, setFlashingRecordIds] = useState(() => new Set())
 
   const flashTimeoutRef = useRef(null)
+  const bulkApplyingRef = useRef(false)
+  const savingIdsRef = useRef(new Set())
   const lastClickedIndexRef = useRef(null)
   const headerCheckboxRef = useRef(null)
   const lastSavedSpecRef = useRef(null)
@@ -546,6 +551,8 @@ export default function ProductionSection({
   }
 
   const handleConfirmBulkApply = async () => {
+    if (bulkApplyingRef.current) return
+    bulkApplyingRef.current = true
     const sessionGeneration = getSessionGeneration()
     const identity = identityRef.current
     const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
@@ -554,8 +561,12 @@ export default function ProductionSection({
     setError(null)
 
     const targetIds = Array.from(selectedIds)
-    const prevRecords = records
-    const prevSummary = summary
+    const targetSet = new Set(targetIds)
+    const prevById = new Map(
+      records
+        .filter((r) => targetSet.has(r.id || r.sensorEventId))
+        .map((r) => [r.id || r.sensorEventId, r]),
+    )
 
     const newCustomer = bulkForm.customer.trim() || undefined
     const newDiameter =
@@ -577,7 +588,6 @@ export default function ProductionSection({
     void queryClient.cancelQueries({ queryKey: key, exact: true })
     let newlySpecifiedCount = 0
     let tonnageDelta = 0
-    const targetSet = new Set(targetIds)
     setRecords((prev) =>
       prev.map((r) => {
         const id = r.id || r.sensorEventId
@@ -668,11 +678,19 @@ export default function ProductionSection({
         if (sessionGeneration === getSessionGeneration()) void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
         return
       }
-      setRecords(prevRecords)
-      setSummary(prevSummary)
+      setRecords((prev) => prev.map((r) => prevById.get(r.id || r.sensorEventId) || r))
+      if (newlySpecifiedCount > 0 || tonnageDelta !== 0) {
+        setSummary((prev) => ({
+          ...prev,
+          specifiedCount: Math.max(0, (prev.specifiedCount ?? 0) - newlySpecifiedCount),
+          unspecifiedCount: (prev.unspecifiedCount ?? 0) + newlySpecifiedCount,
+          totalTonnage: Math.max(0, Math.round(((prev.totalTonnage ?? 0) - tonnageDelta) * 10000) / 10000),
+        }))
+      }
       setError(err.message || 'Unable to update production specifications.')
     } finally {
-      setIsApplyingBulk(false)
+      bulkApplyingRef.current = false
+      if (mountedRef.current) setIsApplyingBulk(false)
     }
   }
 
@@ -775,16 +793,16 @@ export default function ProductionSection({
   }
 
   const handleSave = async (record) => {
+    const rowId = record.id || record.sensorEventId
+    if (savingIdsRef.current.has(rowId)) return
+    savingIdsRef.current.add(rowId)
+    setSavingRecordIds((prev) => new Set(prev).add(rowId))
     const sessionGeneration = getSessionGeneration()
     const identity = identityRef.current
     const isCurrentSession = () => mountedRef.current && identityRef.current === identity && sessionGeneration === getSessionGeneration()
-    const rowId = record.id || record.sensorEventId
     const savedEditForm = { ...editForm }
     setEditingRecordId(null)
     setError(null)
-
-    const prevRecords = records
-    const prevSummary = summary
 
     const newCustomer = editForm.customer?.trim() || null
     const newDiameter = editForm.diameter === '' || editForm.diameter === null ? null : Number(editForm.diameter)
@@ -811,6 +829,7 @@ export default function ProductionSection({
         newTonnage != null,
     )
     const wasSpecified = Boolean(record.isSpecified)
+    const specifiedDelta = !wasSpecified && isNowSpecified ? 1 : wasSpecified && !isNowSpecified ? -1 : 0
 
     void queryClient.cancelQueries({ queryKey: key, exact: true })
     setRecords((prev) =>
@@ -834,8 +853,7 @@ export default function ProductionSection({
 
     const prevRecordTonnage = record.tonnage != null && Number.isFinite(Number(record.tonnage)) ? Number(record.tonnage) : 0
     const tonnageDelta = (newTonnage ?? 0) - prevRecordTonnage
-    if (wasSpecified !== isNowSpecified || tonnageDelta !== 0) {
-      const specifiedDelta = !wasSpecified && isNowSpecified ? 1 : wasSpecified && !isNowSpecified ? -1 : 0
+    if (specifiedDelta !== 0 || tonnageDelta !== 0) {
       setSummary((prev) => ({
         ...prev,
         specifiedCount: Math.max(0, (prev.specifiedCount ?? 0) + specifiedDelta),
@@ -857,6 +875,18 @@ export default function ProductionSection({
       length: newLength,
       pipeNumber: newPipeNumber,
       tonnage: newTonnage,
+    }
+
+    const rollbackRow = () => {
+      setRecords((prev) => prev.map((r) => ((r.id || r.sensorEventId) === rowId ? record : r)))
+      if (specifiedDelta !== 0 || tonnageDelta !== 0) {
+        setSummary((prev) => ({
+          ...prev,
+          specifiedCount: Math.max(0, (prev.specifiedCount ?? 0) - specifiedDelta),
+          unspecifiedCount: Math.max(0, (prev.unspecifiedCount ?? 0) + specifiedDelta),
+          totalTonnage: Math.max(0, Math.round(((prev.totalTonnage ?? 0) - tonnageDelta) * 10000) / 10000),
+        }))
+      }
     }
 
     try {
@@ -931,16 +961,24 @@ export default function ProductionSection({
         (err?.message && /modified by another user/i.test(err.message))
 
       if (isConflict) {
-        setRecords(prevRecords)
-        setSummary(prevSummary)
+        rollbackRow()
         setConflictNotice('Production specification was modified by another user.')
         loadData({ silent: true })
       } else {
-        setRecords(prevRecords)
-        setSummary(prevSummary)
+        rollbackRow()
         setEditingRecordId(rowId)
         setEditForm(savedEditForm)
         setError(err.message || 'Unable to update production specification.')
+      }
+    } finally {
+      savingIdsRef.current.delete(rowId)
+      if (mountedRef.current) {
+        setSavingRecordIds((prev) => {
+          if (!prev.has(rowId)) return prev
+          const next = new Set(prev)
+          next.delete(rowId)
+          return next
+        })
       }
     }
   }
@@ -1336,6 +1374,7 @@ export default function ProductionSection({
                   const isAccepted = Boolean(record.outputAccepted)
                   const isSpec = Boolean(record.isSpecified)
                   const isEditing = editingRecordId === rowId
+                  const isRowSaving = savingRecordIds.has(rowId)
                   const isFlashing = flashingRecordId === rowId || flashingRecordIds.has(rowId)
                   const isSelected = selectedIds.has(rowId)
 
@@ -1512,6 +1551,7 @@ export default function ProductionSection({
                                 className="production-action-btn production-save-btn"
                                 aria-label="Save specification"
                                 title="Save specification"
+                                disabled={isRowSaving}
                                 onClick={() => handleSave(record)}
                               >
                                 <Check size={15} strokeWidth={2} aria-hidden="true" />
@@ -1521,6 +1561,7 @@ export default function ProductionSection({
                                 className="production-action-btn production-cancel-btn"
                                 aria-label="Cancel editing"
                                 title="Cancel editing"
+                                disabled={isRowSaving}
                                 onClick={handleCancel}
                               >
                                 <X size={15} strokeWidth={2} aria-hidden="true" />
@@ -1532,6 +1573,7 @@ export default function ProductionSection({
                               className="production-action-btn"
                               aria-label="Edit specification"
                               title="Edit specification"
+                              disabled={isRowSaving}
                               onClick={() => handleStartEdit(record)}
                             >
                               <Pencil size={14} strokeWidth={1.75} aria-hidden="true" />
