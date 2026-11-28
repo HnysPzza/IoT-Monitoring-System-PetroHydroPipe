@@ -155,3 +155,45 @@ test('userWriteRateLimiter caps production, alert, downtime, settings, and calen
     }
   })
 })
+
+test('loginRateLimiter allows repeated successful logins behind shared NAT while still limiting failed attempts', async () => {
+  const token = jwt.sign({ username: 'staff', role: 'Admin' }, JWT_SECRET, { subject: USER_A, expiresIn: '1h' })
+  const app = loadAppWithMocks({
+    'src/modules/auth/auth.service.js': {
+      login: async () => ({
+        user: { id: USER_A, name: 'Staff', username: 'staff', role: 'Admin', status: 'Active', mustChangePassword: false },
+      }),
+      createAuthToken: () => token,
+    },
+    'src/modules/auth/refreshTokens.service.js': {
+      issueRefreshToken: async () => ({ rawToken: 'rt-1', sessionId: USER_B, expiresAt: new Date(Date.now() + 86400000).toISOString() }),
+    },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    for (let i = 0; i < 12; i += 1) {
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: `staff${i}`, password: 'ValidPassword1!' }),
+      })
+      assert.equal(res.status, 200, `Successful shift login #${i + 1} must not be rate-limited`)
+    }
+  })
+})
+
+test('PATCH /api/users/:id/status rejects unexpected extra fields strictly', async () => {
+  const app = loadAppWithMocks({
+    'src/modules/users/users.service.js': {
+      updateUserStatus: async () => ({ id: USER_B, status: 'Inactive' }),
+    },
+  })
+  await withTestServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/users/${USER_B}/status`, {
+      method: 'PATCH',
+      headers: authHeaders(USER_A, 'Admin'),
+      body: JSON.stringify({ status: 'Inactive', extraField: true }),
+    })
+    assert.equal(res.status, 400)
+  })
+})

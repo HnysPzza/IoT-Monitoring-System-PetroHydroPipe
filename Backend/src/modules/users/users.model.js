@@ -34,10 +34,10 @@ const updateUserStatusSchema = z.object({
   // Status updates only allow activate/deactivate, never delete.
   params: z.object({
     id: z.string().uuid('Invalid user id.'),
-  }),
+  }).strict(),
   body: z.object({
     status: z.enum(['Active', 'Inactive']),
-  }),
+  }).strict(),
 })
 
 const archiveUserSchema = z.object({
