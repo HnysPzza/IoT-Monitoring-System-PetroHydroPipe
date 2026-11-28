@@ -13,11 +13,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-backend-suite'
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const MACHINE_ID = '22222222-2222-4222-8222-222222222222'
 
-function authHeader(role = 'Admin') {
+function authHeader(role = 'Admin', subject = USER_ID) {
   const token = jwt.sign(
     { username: role.toLowerCase().replaceAll(' ', ''), role },
     JWT_SECRET,
-    { subject: USER_ID, expiresIn: '1h' },
+    { subject, expiresIn: '1h' },
   )
   return { Authorization: `Bearer ${token}` }
 }
@@ -180,5 +180,100 @@ test('GET /api/reports/summary returns 0 scheduledEligibleMinutes and N/A availa
     assert.equal(response.body.report.metrics.availabilityPercent, null)
     const availabilityCard = response.body.report.summary.find((item) => item.id === 'availability')
     assert.equal(availabilityCard.value, 'N/A')
+  })
+})
+
+test('findProductionSpecsByEventIds bounds chunk concurrency to at most 4 in-flight PostgREST queries', async () => {
+  let active = 0
+  let peak = 0
+  const fakeClient = {
+    from() {
+      return {
+        select() { return this },
+        in: async () => {
+          active += 1
+          if (active > peak) peak = active
+          await new Promise((resolve) => setTimeout(resolve, 15))
+          active -= 1
+          return { data: [], error: null }
+        },
+      }
+    },
+  }
+  const { findProductionSpecsByEventIds } = require('../../src/modules/reports/reports.repository')
+  const ids = Array.from({ length: 2500 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
+  await findProductionSpecsByEventIds(ids, fakeClient)
+  assert.ok(peak >= 1 && peak <= 4, `Expected concurrency in [1, 4], got ${peak}`)
+})
+
+test('POST /api/reports/export drops aborted queued waiters without leaking queue slots and enforces strict schemas', async () => {
+  let releaseFirst
+  const firstHold = new Promise((resolve) => { releaseFirst = resolve })
+  let exportCalls = 0
+  const app = loadAppWithMocks({
+    'src/modules/reports/reports.service.js': {
+      getSummary: async () => {
+        exportCalls += 1
+        if (exportCalls <= 2) await firstHold
+        return {
+          category: 'regular',
+          reportType: 'daily',
+          selectedDate: '2026-08-09',
+          periodState: 'complete',
+          summary: [],
+          rows: [],
+        }
+      },
+    },
+    'src/modules/reports/reportsExport.serializer.js': {
+      contentTypeFor: () => 'application/pdf',
+      toPdf: async () => Buffer.from('%PDF-1.4\n'),
+      buildExportFilename: () => 'report.pdf',
+    },
+    'src/modules/audit/audit.service.js': { recordAuditLog: async () => {} },
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const uid = (n) => `11111111-1111-4111-8111-${String(n).padStart(12, '0')}`
+    const headersFor = (n) => ({ ...authHeader('Admin', uid(n)), 'Content-Type': 'application/json' })
+    const body = JSON.stringify({ category: 'regular', type: 'daily', date: '2026-08-09', format: 'pdf' })
+
+    const p1 = fetch(`${baseUrl}/api/reports/export`, { method: 'POST', headers: headersFor(1), body })
+    const p2 = fetch(`${baseUrl}/api/reports/export`, { method: 'POST', headers: headersFor(2), body })
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    const abortController = new AbortController()
+    const abortedWaiter = fetch(`${baseUrl}/api/reports/export`, {
+      method: 'POST',
+      headers: headersFor(3),
+      body,
+      signal: abortController.signal,
+    }).catch((err) => err.name)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    abortController.abort()
+    await abortedWaiter
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    const queued = Array.from({ length: 8 }, (_, idx) =>
+      fetch(`${baseUrl}/api/reports/export`, { method: 'POST', headers: headersFor(10 + idx), body }).then((r) => r.status),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    releaseFirst()
+
+    const statuses = await Promise.all(queued)
+    await Promise.all([p1, p2])
+    assert.deepEqual(statuses, Array(8).fill(200))
+
+    const extraSummary = await requestJson(baseUrl, '/api/reports/summary?category=regular&type=daily&date=2026-08-09&unexpected=1', {
+      headers: authHeader('Admin', uid(30)),
+    })
+    assert.equal(extraSummary.response.status, 400)
+
+    const extraExport = await requestJson(baseUrl, '/api/reports/export', {
+      method: 'POST',
+      headers: authHeader('Admin', uid(31)),
+      body: { category: 'regular', type: 'daily', date: '2026-08-09', format: 'pdf', extra: true },
+    })
+    assert.equal(extraExport.response.status, 400)
   })
 })

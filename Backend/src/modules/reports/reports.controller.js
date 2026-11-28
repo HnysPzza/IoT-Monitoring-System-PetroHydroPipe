@@ -15,22 +15,38 @@ const MAX_XLSX_EXPORT_LOGS = 25_000
 let activeExports = 0
 const exportWaiters = []
 
-async function acquireExportSlot() {
+async function acquireExportSlot(signal) {
+  if (signal?.aborted) {
+    return 'aborted'
+  }
   if (activeExports < MAX_CONCURRENT_EXPORTS) {
     activeExports += 1
-    return true
+    return 'acquired'
   }
   if (exportWaiters.length >= MAX_QUEUED_EXPORTS) {
-    return false
+    return 'busy'
   }
-  await new Promise((resolve) => exportWaiters.push(resolve))
-  return true
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      const idx = exportWaiters.indexOf(waiter)
+      if (idx !== -1) exportWaiters.splice(idx, 1)
+      resolve('aborted')
+    }
+    const waiter = {
+      grant() {
+        signal?.removeEventListener('abort', onAbort)
+        resolve('acquired')
+      },
+    }
+    exportWaiters.push(waiter)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 function releaseExportSlot() {
   if (exportWaiters.length > 0) {
     const next = exportWaiters.shift()
-    next()
+    next.grant()
     return
   }
   activeExports = Math.max(0, activeExports - 1)
@@ -43,7 +59,11 @@ async function getSummary(req, res) {
 }
 
 async function exportReport(req, res) {
-  if (!(await acquireExportSlot())) {
+  const slot = await acquireExportSlot(req.requestSignal)
+  if (slot === 'aborted') {
+    return
+  }
+  if (slot === 'busy') {
     return res.set('Retry-After', '5').status(429).json({
       error: {
         code: 'EXPORT_BUSY',
@@ -52,20 +72,24 @@ async function exportReport(req, res) {
     })
   }
 
+  const isDisconnected = () => Boolean(
+    req.requestSignal?.aborted || res.destroyed || res.writableEnded || res.headersSent,
+  )
+
   try {
-    if (res.destroyed || res.writableEnded || res.headersSent) return
+    if (isDisconnected()) return
 
     const { category = 'regular', type, date, format } = req.validated.body
     const maxLogs = format === 'pdf' ? MAX_PDF_EXPORT_LOGS : MAX_XLSX_EXPORT_LOGS
     const report = await reportsService.getSummary({ category, type, date }, { isExport: true, maxLogs })
 
-    if (res.destroyed || res.writableEnded || res.headersSent) return
+    if (isDisconnected()) return
 
     const content = format === 'pdf'
       ? await toPdf(report)
       : await toXlsx(report)
 
-    if (res.destroyed || res.writableEnded || res.headersSent) return
+    if (isDisconnected()) return
 
     const filename = buildExportFilename({
       category: report.category || category,
@@ -92,7 +116,7 @@ async function exportReport(req, res) {
       },
     })
 
-    if (res.destroyed || res.writableEnded || res.headersSent) return
+    if (isDisconnected()) return
 
     res.set('Cache-Control', 'no-store')
     res.set('Content-Type', contentTypeFor(format))
