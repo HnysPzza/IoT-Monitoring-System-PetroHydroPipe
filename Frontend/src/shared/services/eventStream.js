@@ -4,6 +4,7 @@ import { API_BASE_URL } from './apiClient.js'
 import { getSessionContext, refreshSessionOnce } from './sessionRefresh.js'
 
 const LIVE_STABILITY_WINDOW_MS = 5000
+const STREAM_CONNECT_TIMEOUT_MS = 15000
 const DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS = 75000
 const MIN_STREAM_INACTIVITY_TIMEOUT_MS = 15000
 const MAX_STREAM_INACTIVITY_TIMEOUT_MS = 300000
@@ -92,7 +93,9 @@ export function subscribeToServerEvents(path, token, {
   let retryTimer = null
   let fallbackStarted = false
   let activeReader = null
+  let activeAttemptController = null
   let stabilityTimer = null
+  let connectTimer = null
   let inactivityTimer = null
   let lastStatus = null
   let retryAfterMs = 0
@@ -154,6 +157,12 @@ export function subscribeToServerEvents(path, token, {
       stabilityTimer = null
       if (!isClosed && activeReader === reader) confirmLive()
     }, LIVE_STABILITY_WINDOW_MS)
+  }
+
+  function clearConnectTimer() {
+    if (connectTimer === null) return
+    window.clearTimeout(connectTimer)
+    connectTimer = null
   }
 
   function clearInactivityTimer() {
@@ -222,13 +231,28 @@ export function subscribeToServerEvents(path, token, {
     retryTimer = null
     if (retryCount === 0 && lastStatus !== 'live') updateStatus('connecting')
 
+    let connectTimedOut = false
+    const attemptController = new AbortController()
+    activeAttemptController = attemptController
+
     try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
-        headers: {
-          Authorization: `Bearer ${activeToken}`,
-        },
-        signal: controller.signal,
-      })
+      connectTimer = window.setTimeout(() => {
+        connectTimer = null
+        connectTimedOut = true
+        attemptController.abort(createApiError('Event stream connection timed out.', 0, null, 'SSE_CONNECT_TIMEOUT'))
+      }, STREAM_CONNECT_TIMEOUT_MS)
+
+      let response
+      try {
+        response = await fetch(`${API_BASE_URL}${path}`, {
+          headers: {
+            Authorization: `Bearer ${activeToken}`,
+          },
+          signal: attemptController.signal,
+        })
+      } finally {
+        clearConnectTimer()
+      }
 
       if (isClosed) {
         try {
@@ -354,6 +378,9 @@ export function subscribeToServerEvents(path, token, {
         throw error
       }
     } catch (error) {
+      if (connectTimedOut && !isClosed) {
+        error = createApiError('Event stream connection timed out.', 0, null, 'SSE_CONNECT_TIMEOUT')
+      }
       if (activeReader && timedOutReaders.has(activeReader) && error.code !== 'SSE_INACTIVITY_TIMEOUT') {
         error = createApiError(
           'Event stream became inactive.',
@@ -451,11 +478,14 @@ export function subscribeToServerEvents(path, token, {
   return () => {
     isClosed = true
     clearStabilityTimer()
+    clearConnectTimer()
     clearInactivityTimer()
     if (activeReader) {
       releaseActiveReader({ cancel: true })
     } else {
-      controller.abort(Object.assign(new Error('Event stream closed.'), { name: 'AbortError' }))
+      const abortReason = Object.assign(new Error('Event stream closed.'), { name: 'AbortError' })
+      activeAttemptController?.abort(abortReason)
+      controller.abort(abortReason)
     }
 
     if (retryTimer !== null) {

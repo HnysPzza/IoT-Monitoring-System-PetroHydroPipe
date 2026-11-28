@@ -1033,4 +1033,29 @@ describe('subscribeToServerEvents', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     unsubscribe()
   })
+
+  it('times out stalled connection attempts after 15s and triggers fallback after 3 timeouts', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })), { once: true })
+    }))
+    const onError = vi.fn()
+    const onFallback = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', { onError, onFallback })
+
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'SSE_CONNECT_TIMEOUT' }))
+    expect(onFallback).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2000 + 15000)
+    expect(onError).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(4000 + 15000)
+    expect(onError).toHaveBeenCalledTimes(3)
+    expect(onFallback).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+  })
 })
