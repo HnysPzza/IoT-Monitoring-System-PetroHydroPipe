@@ -61,6 +61,14 @@ export default function UsersSection() {
   const confirmDialog = useRef(null)
   const confirmCancelButton = useRef(null)
   const mutation = useRef(false)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useLayoutEffect(() => {
     if (!confirmAction || !confirmDialog.current) return
@@ -117,18 +125,22 @@ export default function UsersSection() {
     setNotice(null)
     try {
       const payload = await action()
-      setNotice({ type: payload.delivery === 'unconfirmed' ? 'error' : 'success', message: payload.delivery === 'unconfirmed'
-        ? unconfirmedMessage
-        : success })
+      if (mountedRef.current) {
+        setNotice({ type: payload.delivery === 'unconfirmed' ? 'error' : 'success', message: payload.delivery === 'unconfirmed'
+          ? unconfirmedMessage
+          : success })
+      }
       return true
     } catch (error) {
-      setNotice({ type: 'error', message: `${error.message} If the request timed out, check the directory before retrying.` })
+      if (mountedRef.current) {
+        setNotice({ type: 'error', message: `${error.message} If the request timed out, check the directory before retrying.` })
+      }
       return false
     } finally {
       void queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       mutation.current = false
-      setIsMutating(false)
+      if (mountedRef.current) setIsMutating(false)
     }
   }
 
@@ -153,9 +165,9 @@ export default function UsersSection() {
     const saved = await runMutation(() => createUser(token, {
       ...form, name: form.name.trim(), username: normalizeUsername(form.username), email: form.email.trim().toLowerCase(),
     }), 'Invitation sent. Brevo accepted the email; inbox delivery is not guaranteed.')
-    if (saved) {
+    if (saved && mountedRef.current) {
       setIsCreateOpen(false)
-      dialog.current.close()
+      dialog.current?.close()
       setForm(initialUserForm)
     }
   }

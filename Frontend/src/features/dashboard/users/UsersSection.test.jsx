@@ -491,3 +491,29 @@ it('blocks duplicate username or email against loaded directory accounts and foc
   expect(within(dialog).getByText('This email already exists.')).toBeInTheDocument()
   expect(createUser).not.toHaveBeenCalled()
 })
+
+it('does not throw if unmounted before createUser resolves', async () => {
+  let resolveCreate
+  createUser.mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve }))
+  const user = userEvent.setup()
+  const view = renderUsers()
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add user' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: 'Add user' }))
+
+  const dialog = screen.getByRole('dialog')
+  await user.type(within(dialog).getByLabelText('Full name'), 'Late User')
+  await user.type(within(dialog).getByLabelText('Username'), 'lateuser')
+  await user.type(within(dialog).getByLabelText('Email'), 'late@example.test')
+  await user.selectOptions(within(dialog).getByLabelText('Role'), 'Production Supervisor')
+  await user.click(within(dialog).getByRole('button', { name: 'Add user' }))
+
+  await waitFor(() => expect(createUser).toHaveBeenCalledTimes(1))
+  view.unmount()
+
+  await act(async () => {
+    resolveCreate({ user: { id: 'late-1' }, delivery: 'sent' })
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+})
