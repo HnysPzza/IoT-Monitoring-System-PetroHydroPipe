@@ -112,9 +112,13 @@ export function subscribeToServerEvents(path, token, {
     try {
       const result = handler?.(...args)
       if (result && typeof result.catch === 'function') {
-        result.catch(() => {})
+        result.catch((error) => {
+          console.error('SSE event handler rejected:', error)
+        })
       }
-    } catch {}
+    } catch (error) {
+      console.error('SSE event handler threw:', error)
+    }
   }
 
   function updateStatus(status) {

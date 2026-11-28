@@ -1058,4 +1058,34 @@ describe('subscribeToServerEvents', () => {
 
     unsubscribe()
   })
+
+  it('logs sync and async consumer callback errors instead of swallowing them silently', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const encoder = new TextEncoder()
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: first\ndata: {"n":1}\n\n'))
+        controller.enqueue(encoder.encode('event: second\ndata: {"n":2}\n\n'))
+        controller.enqueue(encoder.encode('event: third\ndata: {"n":3}\n\n'))
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })))
+
+    const seen = []
+    const onEvent = vi.fn((event) => {
+      seen.push(event.type)
+      if (event.type === 'first') throw new Error('sync callback boom')
+      if (event.type === 'second') return Promise.reject(new Error('async callback boom'))
+      return undefined
+    })
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onEvent })
+    try {
+      await waitFor(() => expect(seen).toEqual(['first', 'second', 'third']))
+      await waitFor(() => expect(errorSpy).toHaveBeenCalledTimes(2))
+    } finally {
+      unsubscribe()
+      errorSpy.mockRestore()
+    }
+  })
 })
