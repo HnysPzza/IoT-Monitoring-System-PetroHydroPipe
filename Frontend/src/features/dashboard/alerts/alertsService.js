@@ -1,8 +1,8 @@
 import { apiRequest } from '../../../shared/services/apiClient.js'
 import { subscribeToServerEvents } from '../../../shared/services/eventStream.js'
 
-export function getAlerts(token) {
-  return apiRequest('/api/alerts', { token })
+export function getAlerts(token, { signal } = {}) {
+  return apiRequest('/api/alerts', { token, signal })
 }
 
 export function acknowledgeAlert(token, alertId) {

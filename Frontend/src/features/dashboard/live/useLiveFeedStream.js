@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { onlineManager, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../shared/services/queryClient.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
@@ -7,6 +7,8 @@ import { presentLiveSensors } from './livePresentation.js'
 
 const RECONCILE_INTERVAL_MS = 60000
 const FALLBACK_INTERVAL_MS = 10000
+const EMPTY_SENSORS = []
+const DEFAULT_MONITORING = { mode: 'unknown', capturedAt: null }
 
 function normalizeLivePayload(payload) {
   if (!payload) return null
@@ -42,6 +44,7 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
 
   const inFlightRef = useRef(false)
   const requestIdRef = useRef(0)
+  const abortControllerRef = useRef(null)
   const latestCapturedAtRef = useRef(getTimestamp(cached?.data?.monitoring?.capturedAt))
   const mountedRef = useRef(true)
   const hasSuccessfulDataRef = useRef(Boolean(cached?.data?.machine))
@@ -52,13 +55,16 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
     if (inFlightRef.current && !initial) return false
     inFlightRef.current = true
     const requestId = ++requestIdRef.current
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     if (initial && !hasSuccessfulDataRef.current) setState('loading')
     else setIsRefreshing(true)
 
     try {
-      const payload = await getLiveFeed(token)
-      if (!mountedRef.current || requestId !== requestIdRef.current) return false
+      const payload = await getLiveFeed(token, { signal: controller.signal })
+      if (!mountedRef.current || requestId !== requestIdRef.current || controller.signal.aborted) return false
       if (!onlineManager.isOnline()) return false
 
       const feedCapturedAt = getTimestamp(payload.monitoring?.capturedAt)
@@ -79,13 +85,24 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
       setState(normalized?.machine ? 'success' : 'empty')
       return true
     } catch (requestError) {
-      if (!mountedRef.current || requestId !== requestIdRef.current) return false
+      if (
+        !mountedRef.current
+        || requestId !== requestIdRef.current
+        || controller.signal.aborted
+        || requestError?.code === 'REQUEST_ABORTED'
+        || requestError?.name === 'AbortError'
+      ) {
+        return false
+      }
 
       const errorMessage = requestError.message || 'Unable to load live machine status.'
       setError(errorMessage)
       setState(hasSuccessfulDataRef.current ? 'stale' : 'error')
       return false
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
       if (requestId === requestIdRef.current) {
         inFlightRef.current = false
       }
@@ -149,6 +166,8 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
 
     return () => {
       mountedRef.current = false
+      abortControllerRef.current?.abort()
+      abortControllerRef.current = null
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
@@ -156,11 +175,11 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
 
   const reload = useCallback(() => loadFeed({ initial: !hasSuccessfulDataRef.current }), [loadFeed])
 
-  return {
+  return useMemo(() => ({
     data,
     machine: data?.machine || null,
-    sensors: data?.sensors || [],
-    monitoring: data?.monitoring || { mode: 'unknown', capturedAt: null },
+    sensors: data?.sensors || EMPTY_SENSORS,
+    monitoring: data?.monitoring || DEFAULT_MONITORING,
     state,
     isLoading: state === 'loading' && !data,
     isRefreshing,
@@ -168,5 +187,5 @@ export function useLiveFeedStream(token, { isFallbackPolling = false } = {}) {
     lastUpdated,
     reload,
     applyEvent,
-  }
+  }), [applyEvent, data, error, isRefreshing, lastUpdated, reload, state])
 }

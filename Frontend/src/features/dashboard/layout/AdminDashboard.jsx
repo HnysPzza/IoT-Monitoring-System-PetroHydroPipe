@@ -162,7 +162,9 @@ export default function AdminDashboard() {
   const applyAlertDeltaRef = useRef(() => { })
   const { token, user, logout } = useAuth()
   const { theme, setTheme } = useTheme()
-  sessionTokenRef.current = token
+  useLayoutEffect(() => {
+    sessionTokenRef.current = token
+  }, [token])
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -178,11 +180,18 @@ export default function AdminDashboard() {
   )
 
   const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/'
-  const activeAlerts = alerts.filter((alert) => alert.status === 'Active')
-  const acknowledgedAlerts = alerts.filter((alert) => alert.status === 'Acknowledged')
-  const unresolvedAlerts = alerts.filter((alert) => (
-    alert.status === 'Active' || alert.status === 'Acknowledged'
-  ))
+  const activeAlerts = useMemo(
+    () => alerts.filter((alert) => alert.status === 'Active'),
+    [alerts],
+  )
+  const acknowledgedAlerts = useMemo(
+    () => alerts.filter((alert) => alert.status === 'Acknowledged'),
+    [alerts],
+  )
+  const unresolvedAlerts = useMemo(
+    () => alerts.filter((alert) => alert.status === 'Active' || alert.status === 'Acknowledged'),
+    [alerts],
+  )
   const [bellSwingState, setBellSwingState] = useState({ count: 0, isSwinging: false })
   const [expandedAlertIds, setExpandedAlertIds] = useState(() => new Set())
   const previousActiveCountRef = useRef(null)
@@ -213,7 +222,13 @@ export default function AdminDashboard() {
     isFallbackPolling: alertConnectionStatus === 'polling',
   })
   const liveFeedRef = useRef(liveFeed)
-  liveFeedRef.current = liveFeed
+  useLayoutEffect(() => {
+    liveFeedRef.current = liveFeed
+  }, [liveFeed])
+  const outletContext = useMemo(
+    () => ({ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }),
+    [activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed],
+  )
 
   useEffect(() => {
     if (!online) {
@@ -288,7 +303,7 @@ export default function AdminDashboard() {
     }
     window.addEventListener('resize', syncTopbarOffset)
     return () => window.removeEventListener('resize', syncTopbarOffset)
-  }, [isAlertsOpen, isMobileViewport, normalizedPathname])
+  }, [isRouteForbidden])
 
   useEffect(() => {
     if (!isAlertsOpen) return
@@ -454,6 +469,7 @@ export default function AdminDashboard() {
     let pollingId = null
     let resyncTimerId = null
     let activeListRequest = null
+    let activeAbortController = null
     let reloadQueued = false
     let lastReloadStartedAt = null
     let currentAlerts = []
@@ -519,11 +535,13 @@ export default function AdminDashboard() {
         bufferedByRevision: new Map(),
         hasUntrustedBuffer: false,
       }
+      const controller = new AbortController()
+      activeAbortController = controller
       activeListRequest = listRequest
       lastReloadStartedAt = Date.now()
 
       try {
-        const payload = await getAlerts(token)
+        const payload = await getAlerts(token, { signal: controller.signal })
         if (isMounted && onlineManager.isOnline() && activeListRequest === listRequest) {
           const reconciliation = reconcileAlertSnapshot(
             payload,
@@ -551,10 +569,19 @@ export default function AdminDashboard() {
           }
         }
       } catch (error) {
-        if (isMounted && activeListRequest === listRequest) {
+        if (
+          isMounted
+          && activeListRequest === listRequest
+          && !controller.signal.aborted
+          && error?.code !== 'REQUEST_ABORTED'
+          && error?.name !== 'AbortError'
+        ) {
           setAlertLoadError(error.message || 'Unable to load alerts. Please try again.')
         }
       } finally {
+        if (activeAbortController === controller) {
+          activeAbortController = null
+        }
         if (activeListRequest === listRequest) {
           activeListRequest = null
           if (reloadQueued) scheduleAlertReload()
@@ -685,6 +712,8 @@ export default function AdminDashboard() {
 
     return () => {
       isMounted = false
+      activeAbortController?.abort()
+      activeAbortController = null
       activeListRequest = null
       reloadQueued = false
       retryAlertsRef.current = () => { }
@@ -800,7 +829,7 @@ export default function AdminDashboard() {
   if (isRouteForbidden) {
     return (
       <main className="dashboard-shell">
-        <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
+        <Outlet context={outletContext} />
       </main>
     )
   }
@@ -1256,7 +1285,7 @@ export default function AdminDashboard() {
         <main className={`dashboard-content ${normalizedPathname === '/dashboard' ? 'overview-content' : ''}`}>
           {/* Nested /dashboard routes render here. */}
           <UsersActionProvider>
-            <Outlet context={{ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }} />
+            <Outlet context={outletContext} />
           </UsersActionProvider>
         </main>
       </div>
