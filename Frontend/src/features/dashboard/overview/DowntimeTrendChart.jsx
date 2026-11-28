@@ -176,8 +176,8 @@ export default function DowntimeTrendChart({ data, thresholdMinutes = 30, lossEs
           </tr>
         </thead>
         <tbody>
-          {observedPeriods.map((item, index) => (
-            <tr key={`${item.label || 'period'}-${index}`}>
+          {observedPeriods.map((item) => (
+            <tr key={item.startAt || item.label}>
               <th scope="row">{item.label}</th>
               <td>{formatDowntimeDuration(item.minutes, item.periodState)}</td>
               <td>{typeof item.estimatedLoss === 'number' && Number.isFinite(item.estimatedLoss) ? `${item.estimatedLoss} pcs` : '—'}</td>

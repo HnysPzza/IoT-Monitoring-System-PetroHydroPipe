@@ -267,23 +267,19 @@ export default function AnalyticsDateRangePicker({
   }
 
   function handlePrevMonth() {
-    setViewDate((prev) => {
-      const next = new Date(prev.getFullYear(), prev.getMonth() - 1, 1, 12)
-      if (pendingPreset === 'month') {
-        setPendingRange(getMonthSpan(next))
-      }
-      return next
-    })
+    const next = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1, 12)
+    setViewDate(next)
+    if (pendingPreset === 'month') {
+      setPendingRange(getMonthSpan(next))
+    }
   }
 
   function handleNextMonth() {
-    setViewDate((prev) => {
-      const next = new Date(prev.getFullYear(), prev.getMonth() + 1, 1, 12)
-      if (pendingPreset === 'month') {
-        setPendingRange(getMonthSpan(next))
-      }
-      return next
-    })
+    const next = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1, 12)
+    setViewDate(next)
+    if (pendingPreset === 'month') {
+      setPendingRange(getMonthSpan(next))
+    }
   }
 
   function handleCancel() {
@@ -426,8 +422,8 @@ export default function AnalyticsDateRangePicker({
                 className={`analytics-calendar-grid ${pendingPreset === 'all' ? 'is-all-time' : ''}`}
                 onMouseLeave={handleGridMouseLeave}
               >
-                {weeks.map((week, wIndex) => (
-                  <div key={wIndex} className="analytics-calendar-week-row">
+                {weeks.map((week) => (
+                  <div key={week[0].toISOString()} className="analytics-calendar-week-row">
                     {week.map((day) => {
                       const isOutside = day.getMonth() !== viewDate.getMonth()
                       const isStart = Boolean(activeSpan.start && isSameDay(day, activeSpan.start))

@@ -222,9 +222,10 @@ export default function DashboardSection() {
   const overviewDisplayState = overviewState
   const downtimeImpact = chartQuery.data
   const hasCurrentDowntimeChart = chartQuery.data !== undefined
-  const hasLoadedChartRef = useRef(false)
-  if (hasCurrentDowntimeChart) hasLoadedChartRef.current = true
-  const hasLoadedInitialChart = hasLoadedChartRef.current
+  const [hasLoadedInitialChart, setHasLoadedInitialChart] = useState(false)
+  if (hasCurrentDowntimeChart && !hasLoadedInitialChart) {
+    setHasLoadedInitialChart(true)
+  }
   const downtimeChartLastUpdated = chartQuery.dataUpdatedAt ? new Date(chartQuery.dataUpdatedAt) : null
   const downtimeChartError = chartQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load downtime chart.')
   const downtimeChartState = chartQuery.isError || !online ? (hasCurrentDowntimeChart ? 'stale' : 'error') : chartQuery.isFetching || !hasCurrentDowntimeChart ? 'loading' : downtimeImpact?.points?.length ? 'success' : 'empty'

@@ -89,8 +89,8 @@ export default function ProductionAnalytics({ analytics }) {
               </tr>
             </thead>
             <tbody>
-              {visiblePoints.map((point, index) => (
-                <tr key={`${point.label || 'period'}-${index}`}>
+              {visiblePoints.map((point) => (
+                <tr key={point.startAt || point.label}>
                   <th scope="row">{point.label}</th>
                   <td>{formatMetricTotal(point.current, unitLabel)}</td>
                   <td>{formatMetricTotal(point.previous, unitLabel)}</td>
