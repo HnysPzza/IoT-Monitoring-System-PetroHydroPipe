@@ -23,14 +23,23 @@ function errorHandler(err, req, res, next) {
   const isServerError = status >= 500
   const isSafeTimeout = effectiveError.code === 'UPSTREAM_TIMEOUT'
 
+  const path = (req.originalUrl || req.url || '').split('?')[0]
+
   if (isSafeTimeout) {
     logger.warn('Upstream request timed out.', {
       method: req.method,
-      path: req.originalUrl.split('?')[0],
+      path,
     })
   } else if (isServerError) {
     // Log server errors internally, but do not expose details to clients.
-    logger.error(effectiveError.stack || effectiveError.message || 'Unexpected server error.')
+    logger.error('Unexpected server error.', {
+      method: req.method,
+      path,
+      code: effectiveError.code || 'INTERNAL_SERVER_ERROR',
+      error: effectiveError instanceof Error
+        ? effectiveError
+        : { message: String(effectiveError?.message || effectiveError || 'Unexpected server error.') },
+    })
   }
 
   return res.status(status).json({
