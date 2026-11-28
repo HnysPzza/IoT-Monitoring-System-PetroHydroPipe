@@ -27,7 +27,7 @@ test('render.yaml deploys a single Node web service with no Static Site /api rew
   assert.match(renderYaml, /buildCommand:.*npm --prefix Frontend run build/)
   assert.match(renderYaml, /startCommand:\s*npm --prefix Backend start\b/)
 
-  assert.match(renderYaml, /- key:\s*NODE_VERSION\s+value:\s*["']?22\.x["']?/)
+  assert.match(renderYaml, /- key:\s*NODE_VERSION\s+value:\s*["']?26\.x["']?/)
   assert.match(renderYaml, /- key:\s*TRUST_PROXY\s+value:\s*["']?1["']?/)
   assert.match(renderYaml, /- key:\s*CORS_ORIGIN\s+sync:\s*false\b/)
   assert.match(renderYaml, /- key:\s*ACCOUNT_SETUP_ORIGIN\s+sync:\s*false\b/)
