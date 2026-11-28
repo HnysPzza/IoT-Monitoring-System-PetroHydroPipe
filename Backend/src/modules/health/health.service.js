@@ -1,7 +1,7 @@
 const env = require('../../config/env')
 const { getSupabaseClient } = require('../../database/client')
 
-const EXPECTED_SCHEMA_VERSION = 63
+const EXPECTED_SCHEMA_VERSION = 64
 const READINESS_SUCCESS_TTL_MS = 5_000
 const READINESS_FAILURE_TTL_MS = 2_000
 

@@ -32,16 +32,16 @@ test('public documentation index links only to tracked public documents', () => 
   }
 })
 
-test('database guide documents current v63 migrations and readiness', () => {
+test('database guide documents current v64 migrations and readiness', () => {
   const content = fs.readFileSync(path.resolve(__dirname, '../../database/README.md'), 'utf8')
 
   for (let migration = 8; migration <= 18; migration += 1) {
     assert.match(content, new RegExp(`0${migration}_`))
   }
-  for (let migration = 59; migration <= 63; migration += 1) {
+  for (let migration = 59; migration <= 64; migration += 1) {
     assert.match(content, new RegExp(`0${migration}_`))
   }
-  assert.match(content, /readiness version 63|returns `63`/i)
+  assert.match(content, /readiness version 64|returns `64`/i)
   assert.doesNotMatch(content, /through 058|readiness version 58|returns `58`/i)
   assert.match(content, /S-02 Inside Filler Wire/)
   assert.match(content, /S-04 Outside Filler Wire/)
@@ -49,14 +49,14 @@ test('database guide documents current v63 migrations and readiness', () => {
   assert.match(content, /POST \/api\/iot\/heartbeats/)
 })
 
-test('public docs align on schema v63, Brevo email, and five integrated ESP32 nodes', () => {
+test('public docs align on schema v64, Brevo email, and five integrated ESP32 nodes', () => {
   const docsReadme = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8')
   const architecture = fs.readFileSync(path.join(root, 'docs/ARCHITECTURE.md'), 'utf8')
   const runbook = fs.readFileSync(path.join(root, 'docs/RUNBOOK.md'), 'utf8')
   const prd = fs.readFileSync(path.join(root, 'docs/PRD.md'), 'utf8')
 
   for (const content of [docsReadme, architecture, runbook]) {
-    assert.match(content, /\b(?:v|0)?63\b/)
+    assert.match(content, /\b(?:v|0)?64\b/)
     assert.doesNotMatch(content, /v58|through `058`|through 058|readiness version: \*\*58\*\*|056–058|returns `58`|return `58`/i)
   }
   for (const content of [prd]) {

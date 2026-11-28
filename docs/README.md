@@ -12,7 +12,7 @@ This folder contains the technical documentation for the React + Node/Express + 
 
 ## Current System Summary
 
-The system monitors **Spiral Mill 01 (`M-01`)** using five ESP32-backed sensors (`S-01` to `S-05`). The frontend is a React/Vite dashboard, the backend is Node/Express, and Supabase PostgreSQL stores users, roles, machines, sensors, events, downtime records, production specifications, alerts, operational settings, and audit logs (current schema readiness: **v63**).
+The system monitors **Spiral Mill 01 (`M-01`)** using five ESP32-backed sensors (`S-01` to `S-05`). The frontend is a React/Vite dashboard, the backend is Node/Express, and Supabase PostgreSQL stores users, roles, machines, sensors, events, downtime records, production specifications, alerts, operational settings, and audit logs (current schema readiness: **v64**).
 
 ## What Works Now
 
@@ -24,7 +24,7 @@ The system monitors **Spiral Mill 01 (`M-01`)** using five ESP32-backed sensors 
 
 ## Still Deferred (Cloud Cutover Gate)
 
-- Applying migrations `059`–`063` to the live hosted Supabase project (`select public.get_backend_readiness();` = `63`).
+- Applying migrations `059`–`064` to the live hosted Supabase project (`select public.get_backend_readiness();` = `64`).
 - Setting production `CORS_ORIGIN` and `ACCOUNT_SETUP_ORIGIN` on Render for the single Node web service in `render.yaml` (which builds and serves `Frontend/dist` directly from Express).
 - Flashing production HTTPS (`WiFiClientSecure`) and rotated gitignored device secrets onto physical shop-floor ESP32 boards.
 - Hosted Supabase backup and restore verification drill on a disposable target.
