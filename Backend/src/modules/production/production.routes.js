@@ -2,6 +2,7 @@ const express = require('express')
 const asyncHandler = require('../../utils/asyncHandler')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
+const { heavyReadRateLimiter, userWriteRateLimiter } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const productionController = require('./production.controller')
 const {
@@ -21,6 +22,7 @@ router.use(authenticate)
 router.get(
   '/',
   authorizeRole(PRODUCTION_VIEW_ROLES),
+  heavyReadRateLimiter,
   validateRequest(listProductionLogsSchema),
   asyncHandler(productionController.listProductionLogs),
 )
@@ -28,6 +30,7 @@ router.get(
 router.patch(
   '/batch',
   authorizeRole(PRODUCTION_EDIT_ROLES),
+  userWriteRateLimiter,
   validateRequest(batchUpdateProductionSpecSchema),
   asyncHandler(productionController.batchUpdateProductionLogSpecs),
 )
@@ -35,6 +38,7 @@ router.patch(
 router.patch(
   '/:eventId',
   authorizeRole(PRODUCTION_EDIT_ROLES),
+  userWriteRateLimiter,
   validateRequest(updateProductionSpecSchema),
   asyncHandler(productionController.updateProductionLogSpec),
 )

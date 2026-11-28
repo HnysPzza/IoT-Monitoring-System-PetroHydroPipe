@@ -120,6 +120,17 @@ const heavyReadRateLimiter = rateLimit({
   },
 })
 
+const userWriteRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  passOnStoreError: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.authenticatedUser?.id || req.user?.sub || ipKeyGenerator(req.ip),
+  handler: (req, res) => {
+    res.status(429).json(rateLimitResponse('Too many update requests. Please try again shortly.'))
+  },
+})
 
 const analyticsRateLimiter = rateLimit({
   windowMs: env.ANALYTICS_RATE_LIMIT_WINDOW_MS,
@@ -188,4 +199,5 @@ module.exports = {
   refreshRateLimiter,
   setupCheckLimiter,
   setupLimiter,
+  userWriteRateLimiter,
 }
