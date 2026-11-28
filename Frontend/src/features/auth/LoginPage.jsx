@@ -51,6 +51,7 @@ export default function LoginPage() {
   const [submitState, setSubmitState] = useState('idle')
   const [shake, setShake] = useState(false)
   const mountedRef = useRef(true)
+  const submittingRef = useRef(false)
   const usernameRef = useRef(null)
   const passwordRef = useRef(null)
   const pendingFocusRef = useRef(null)
@@ -69,6 +70,7 @@ export default function LoginPage() {
     }
     return () => {
       mountedRef.current = false
+      submittingRef.current = false
       window.clearTimeout(redirectTimerRef.current)
     }
   }, [])
@@ -136,7 +138,7 @@ export default function LoginPage() {
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (submitState !== 'idle') return
+    if (submittingRef.current || submitState !== 'idle') return
     setTouched({ username: true, password: true })
     setServerError('')
     setServerErrorWrongPassword(false)
@@ -156,6 +158,7 @@ export default function LoginPage() {
       return
     }
 
+    submittingRef.current = true
     try {
       setSubmitState('loading')
       const nextAuth = await login({
@@ -175,6 +178,7 @@ export default function LoginPage() {
         navigateWithTransition(requiresPasswordChange ? '/change-password' : intendedRoute)
       }, 300)
     } catch (error) {
+      submittingRef.current = false
       if (!mountedRef.current) return
       setSubmitState('idle')
       const message = error.message || 'Unable to sign in. Please try again.'

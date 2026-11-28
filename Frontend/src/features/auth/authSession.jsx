@@ -90,36 +90,37 @@ export function AuthProvider({ children }) {
 
   // Silent restore: a valid HttpOnly refresh cookie brings the session back
   // after a page reload without ever exposing a token to storage.
-  const runSessionRestore = useCallback(async (isCancelled = () => false) => {
+  const runSessionRestore = useCallback(async ({ signal } = {}) => {
     const generation = getSessionGeneration()
-    if (!isCancelled()) {
+    if (!signal?.aborted) {
       setIsRestoring(true)
       setSessionError(null)
     }
 
     try {
-      await refreshSessionOnce()
+      await refreshSessionOnce(undefined, { signal })
     } catch (error) {
       if (
-        !isCancelled()
+        !signal?.aborted
         && !explicitlyLoggedOutRef.current
         && generation === getSessionGeneration()
         && error?.code !== 'REQUEST_ABORTED'
+        && error?.name !== 'AbortError'
         && (error?.status === 0 || error?.status >= 500 || isTransientApiError(error))
       ) {
         setSessionError(error)
       }
     } finally {
-      if (!isCancelled()) setIsRestoring(false)
+      if (!signal?.aborted) setIsRestoring(false)
     }
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-    runSessionRestore(() => cancelled)
+    const controller = new AbortController()
+    runSessionRestore({ signal: controller.signal })
 
     return () => {
-      cancelled = true
+      controller.abort(Object.assign(new Error('Session restore cancelled.'), { name: 'AbortError' }))
     }
   }, [runSessionRestore])
 
