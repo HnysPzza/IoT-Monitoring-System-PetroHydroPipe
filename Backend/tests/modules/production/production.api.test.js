@@ -1590,3 +1590,40 @@ test('PATCH /api/production/:eventId and /batch support explicit manual tonnage 
     assert.equal(batchTonsRes.body.updatedCount, 2)
   })
 })
+
+test('GET /api/production caps single-sided dateFrom window at 366 days and rejects pipeNumber exceeding INT4', async () => {
+  let queriedWindow = null
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      findProductionEvents: async (params) => {
+        queriedWindow = params
+        return []
+      },
+    }),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const { response } = await requestJson(baseUrl, '/api/production?dateFrom=2000-01-01', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(response.status, 200)
+    const spanDays = (Date.parse(queriedWindow.endIso) - Date.parse(queriedWindow.startIso)) / (24 * 60 * 60 * 1000)
+    assert.ok(spanDays <= 366, `Expected <= 366 days, got ${spanDays}`)
+
+    const overflowRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { pipeNumber: 9999999999 },
+    })
+    assert.equal(overflowRes.response.status, 400)
+    assertError(overflowRes.body, 'VALIDATION_ERROR')
+
+    const maxIntRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { pipeNumber: 2147483647 },
+    })
+    assert.equal(maxIntRes.response.status, 200)
+    assert.equal(maxIntRes.body.spec.pipeNumber, 2147483647)
+  })
+})

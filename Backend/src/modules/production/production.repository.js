@@ -54,6 +54,8 @@ async function findOutputSensor(suppliedClient) {
 async function findProductionEvents({ sensorId, startIso, endIso }, suppliedClient) {
   const supabase = suppliedClient || getSupabaseClient()
   const records = []
+  // ponytail: paginated query capped at 100k events ceiling: 100000 events upgrade: cursor pagination
+  const MAX_PAGES = 200
 
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
@@ -74,6 +76,12 @@ async function findProductionEvents({ sensorId, startIso, endIso }, suppliedClie
     const page = data || []
     records.push(...page)
     if (page.length < PAGE_SIZE) break
+    if (from / PAGE_SIZE + 1 >= MAX_PAGES) {
+      throw createRepositoryError(
+        'PRODUCTION_EVENT_LIMIT_EXCEEDED',
+        'Production log query exceeded maximum limit of 100,000 events.',
+      )
+    }
   }
 
   return records

@@ -40,6 +40,7 @@ const pipeNumber = z.preprocess(
     .number()
     .int('Pipe number must be an integer.')
     .gt(0, 'Pipe number must be greater than zero.')
+    .max(2147483647, 'Pipe number cannot exceed 2147483647.')
     .nullable()
     .optional(),
 )
