@@ -3,6 +3,7 @@ const { OUTPUT_SENSOR_CODE } = require('../../shared/sensorIdentity')
 
 const PAGE_SIZE = 500
 const CHUNK_SIZE = 100
+const MAX_SPEC_CHUNK_CONCURRENCY = 4
 
 function createRepositoryError(code, message, dbError = null) {
   const error = new Error(message)
@@ -82,22 +83,26 @@ async function findProductionSpecsByEventIds(eventIds = [], suppliedClient) {
     chunks.push(uniqueIds.slice(i, i + CHUNK_SIZE))
   }
 
-  const results = await Promise.all(
-    chunks.map(async (chunk) => {
-      const { data, error } = await supabase
-        .from('production_item_specs')
-        .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, tonnage, label, size, radius, circumference, updated_at, updated_by')
-        .in('sensor_event_id', chunk)
+  const rows = []
+  for (let i = 0; i < chunks.length; i += MAX_SPEC_CHUNK_CONCURRENCY) {
+    const batchResults = await Promise.all(
+      chunks.slice(i, i + MAX_SPEC_CHUNK_CONCURRENCY).map(async (chunk) => {
+        const { data, error } = await supabase
+          .from('production_item_specs')
+          .select('sensor_event_id, customer, diameter, thickness, length, pipe_number, tonnage, label, size, radius, circumference, updated_at, updated_by')
+          .in('sensor_event_id', chunk)
 
-      if (error) {
-        throw createRepositoryError('REPORT_PRODUCTION_SPECS_QUERY_FAILED', 'Unable to load production specifications.', error)
-      }
+        if (error) {
+          throw createRepositoryError('REPORT_PRODUCTION_SPECS_QUERY_FAILED', 'Unable to load production specifications.', error)
+        }
 
-      return data || []
-    }),
-  )
+        return data || []
+      }),
+    )
+    for (const batchRows of batchResults) rows.push(...batchRows)
+  }
 
-  return new Map(results.flat().map((row) => [row.sensor_event_id, row]))
+  return new Map(rows.map((row) => [row.sensor_event_id, row]))
 }
 
 async function findAcceptedCuttingEventsWithSpecs({ sensorId, startIso, endIso }, suppliedClient) {

@@ -606,4 +606,38 @@ describe('DowntimeSection', () => {
     expect(screen.queryByText('Schedule status')).not.toBeInTheDocument()
     expect(screen.queryByText(/occurred outside scheduled production time/i)).not.toBeInTheDocument()
   })
+
+  it('tracks in-flight row updates independently so sibling completion does not unlock another pending row', async () => {
+    const user = userEvent.setup()
+    let resolveRow1
+    let resolveRow2
+    const row1 = downtimeRecord({ id: 'row-1', displayLabel: 'S-03 08:00 AM', cause: 'Pending Cause Review' })
+    const row2 = downtimeRecord({ id: 'row-2', displayLabel: 'S-03 09:00 AM', cause: 'Pending Cause Review' })
+
+    getDowntimeRecords.mockResolvedValue({
+      records: [row1, row2],
+      summary: { open: 2, resolved: 0, minutes: 24, loss: 56 },
+    })
+    updateDowntimeRecord.mockImplementation((_token, id, body) => new Promise((resolve) => {
+      if (id === 'row-1') resolveRow1 = () => resolve({ record: { ...row1, ...body } })
+      else resolveRow2 = () => resolve({ record: { ...row2, ...body } })
+    }))
+
+    renderWithAuth(<DowntimeSection />)
+    const select1 = await screen.findByLabelText('Cause for S-03 08:00 AM')
+    const select2 = screen.getByLabelText('Cause for S-03 09:00 AM')
+
+    await user.selectOptions(select1, 'Misalignment')
+    await user.selectOptions(select2, 'Electrical Failure')
+
+    expect(select1).toBeDisabled()
+    expect(select2).toBeDisabled()
+
+    await act(async () => { resolveRow2() })
+    await waitFor(() => expect(select2).toBeEnabled())
+    expect(select1).toBeDisabled()
+
+    await act(async () => { resolveRow1() })
+    await waitFor(() => expect(select1).toBeEnabled())
+  })
 })

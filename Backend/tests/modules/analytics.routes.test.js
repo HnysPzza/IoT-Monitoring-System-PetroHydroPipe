@@ -129,5 +129,16 @@ test('GET /api/analytics propagates production_calendar_days through getSettings
     assert.equal(mixedResult.body.analytics.selected.trends[1].metrics.availabilityPercent, null)
     assert.equal(mixedResult.body.analytics.selected.trends[2].metrics.availabilityPercent, 83)
     assert.equal(mixedResult.body.analytics.selected.summary.availabilityPercent, 83)
+
+    for (const invalidQuery of [
+      'startDate=1999-12-31&endDate=2000-01-05',
+      'startDate=2101-01-01&endDate=2101-01-05',
+    ]) {
+      const outOfBounds = await requestJson(baseUrl, `/api/analytics?${invalidQuery}`, {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(outOfBounds.response.status, 400, invalidQuery)
+      assert.equal(outOfBounds.body?.error?.code, 'VALIDATION_ERROR')
+    }
   })
 })

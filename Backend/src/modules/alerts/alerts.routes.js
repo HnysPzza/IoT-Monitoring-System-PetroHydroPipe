@@ -3,6 +3,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
 const admitSseConnection = require('../../middleware/admitSseConnection')
+const { userWriteRateLimiter } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const alertsController = require('./alerts.controller')
 const { alertIdSchema } = require('./alerts.model')
@@ -13,6 +14,6 @@ router.use(authenticate)
 
 router.get('/', authorizeRole(DASHBOARD_STREAM_ROLES), asyncHandler(alertsController.listAlerts))
 router.get('/stream', authorizeRole(DASHBOARD_STREAM_ROLES), admitSseConnection, asyncHandler(alertsController.streamAlerts))
-router.patch('/:id/acknowledge', authorizeRole(DASHBOARD_STREAM_ROLES), validateRequest(alertIdSchema), asyncHandler(alertsController.acknowledgeAlert))
+router.patch('/:id/acknowledge', authorizeRole(DASHBOARD_STREAM_ROLES), userWriteRateLimiter, validateRequest(alertIdSchema), asyncHandler(alertsController.acknowledgeAlert))
 
 module.exports = router

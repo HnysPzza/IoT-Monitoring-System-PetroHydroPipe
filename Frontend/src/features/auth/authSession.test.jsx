@@ -210,16 +210,56 @@ describe('AuthProvider memory-only sessions', () => {
     expect(screen.getByText('settled')).toBeInTheDocument()
   })
 
-  it.each([
-    createApiError('Missing refresh token.', 401, null, 'UNAUTHENTICATED'),
-    createApiError('Offline.', 0, null, 'NETWORK_ERROR'),
-  ])('does not report a server error when restore fails with $code', async (error) => {
-    apiRequest.mockRejectedValue(error)
+  it('does not report a session error when restore fails with 401 UNAUTHENTICATED', async () => {
+    apiRequest.mockRejectedValue(
+      createApiError('Missing refresh token.', 401, null, 'UNAUTHENTICATED'),
+    )
 
     renderProvider()
 
     await waitFor(() => expect(screen.getByText('settled')).toBeInTheDocument())
     expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(screen.getByText('no-session-error')).toBeInTheDocument()
+  })
+
+  it.each([
+    { error: createApiError('Offline.', 0, null, 'NETWORK_ERROR'), expected: 'session-error-0' },
+    { error: createApiError('Timed out.', 0, null, 'REQUEST_TIMEOUT'), expected: 'session-error-0' },
+    { error: createApiError('Auth service unavailable.', 503, null, 'AUTH_SERVICE_UNAVAILABLE'), expected: 'session-error-503' },
+  ])('exposes recoverable sessionError instead of false sign-out when restore fails with $error.code and recovers on retry', async ({ error, expected }) => {
+    apiRequest.mockRejectedValueOnce(error)
+
+    renderProvider()
+
+    await waitFor(() => expect(screen.getByText('settled')).toBeInTheDocument())
+    expect(screen.getByText('signed-out')).toBeInTheDocument()
+    expect(screen.getByText(expected)).toBeInTheDocument()
+
+    apiRequest.mockResolvedValueOnce({ token: 'recovered-after-drop', user: { id: 'user-1', role: 'Admin' } })
+    await act(async () => {
+      screen.getByText('do-retry-restore').click()
+    })
+
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+    expect(screen.getByText('recovered-after-drop')).toBeInTheDocument()
+    expect(screen.getByText('no-session-error')).toBeInTheDocument()
+  })
+
+  it.each([
+    createApiError('Offline.', 0, null, 'NETWORK_ERROR'),
+    createApiError('Auth service unavailable.', 503, null, 'AUTH_SERVICE_UNAVAILABLE'),
+  ])('keeps the active session when a background refresh fails with $code', async (error) => {
+    apiRequest.mockResolvedValueOnce({ token: 'live-token', user: { id: 'user-1', role: 'Admin' } })
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('authenticated')).toBeInTheDocument())
+
+    apiRequest.mockRejectedValueOnce(error)
+    await act(async () => {
+      await expect(registeredRefresher()).rejects.toMatchObject({ code: error.code })
+    })
+
+    expect(screen.getByText('authenticated')).toBeInTheDocument()
+    expect(screen.getByText('live-token')).toBeInTheDocument()
     expect(screen.getByText('no-session-error')).toBeInTheDocument()
   })
 

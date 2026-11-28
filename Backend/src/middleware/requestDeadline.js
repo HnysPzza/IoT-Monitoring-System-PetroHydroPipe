@@ -1,3 +1,4 @@
+const crypto = require('node:crypto')
 const env = require('../config/env')
 const { runWithRequestSignal } = require('../shared/requestContext')
 
@@ -42,12 +43,18 @@ function requestDeadline(req, res, next) {
   }, env.API_REQUEST_TIMEOUT_MS)
   timeoutId.unref?.()
 
+  const requestId = crypto.randomUUID()
+  req.requestId = requestId
+  if (!res.headersSent) {
+    res.setHeader('X-Request-Id', requestId)
+  }
+
   req.requestSignal = controller.signal
   req.once('aborted', handleClientDisconnect)
   res.once('close', handleResponseClose)
   res.once('finish', cleanup)
 
-  runWithRequestSignal(controller.signal, next)
+  runWithRequestSignal(controller.signal, next, requestId)
 }
 
 module.exports = requestDeadline

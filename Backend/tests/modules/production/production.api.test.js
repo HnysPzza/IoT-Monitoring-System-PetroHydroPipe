@@ -1175,6 +1175,40 @@ test('Validation rejects invalid payloads on PATCH /api/production/:eventId and 
     })
     assert.equal(over500Res.response.status, 400)
     assertError(over500Res.body, 'VALIDATION_ERROR')
+
+    const oversizedBatchIsoRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        startedAt: '2025-01-01T00:00:00.000Z',
+        endedAt: '2026-06-01T00:00:00.000Z',
+        label: 'Over 366 days',
+      },
+    })
+    assert.equal(oversizedBatchIsoRes.response.status, 400)
+    assertError(oversizedBatchIsoRes.body, 'VALIDATION_ERROR')
+
+    for (const outOfRange of [
+      { startedAt: '1999-12-31T00:00:00.000Z', endedAt: '2000-01-02T00:00:00.000Z', label: 'Pre-2000 ISO' },
+      { startedAt: '2101-01-01T00:00:00.000Z', endedAt: '2101-01-02T00:00:00.000Z', label: 'Post-2100 ISO' },
+      { dateFrom: '1999-12-31', dateTo: '2000-01-02', label: 'Pre-2000 date' },
+    ]) {
+      const res = await requestJson(baseUrl, '/api/production/batch', {
+        method: 'PATCH',
+        headers: authHeader('Admin'),
+        body: outOfRange,
+      })
+      assert.equal(res.response.status, 400)
+      assertError(res.body, 'VALIDATION_ERROR')
+    }
+
+    for (const invalidQuery of ['page=10001', 'date=1999-12-31', 'dateFrom=2101-01-01']) {
+      const res = await requestJson(baseUrl, `/api/production?${invalidQuery}`, {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(res.response.status, 400, invalidQuery)
+      assertError(res.body, 'VALIDATION_ERROR')
+    }
   })
 })
 
@@ -1554,5 +1588,42 @@ test('PATCH /api/production/:eventId and /batch support explicit manual tonnage 
     assert.equal(batchTonsRes.response.status, 200)
     assert.equal(batchParams.tonnage, 1.85)
     assert.equal(batchTonsRes.body.updatedCount, 2)
+  })
+})
+
+test('GET /api/production caps single-sided dateFrom window at 366 days and rejects pipeNumber exceeding INT4', async () => {
+  let queriedWindow = null
+  const app = loadAppWithMocks({
+    'src/modules/production/production.repository.js': createMockRepository({
+      findProductionEvents: async (params) => {
+        queriedWindow = params
+        return []
+      },
+    }),
+  })
+
+  await withTestServer(app, async (baseUrl) => {
+    const { response } = await requestJson(baseUrl, '/api/production?dateFrom=2000-01-01', {
+      headers: authHeader('Admin'),
+    })
+    assert.equal(response.status, 200)
+    const spanDays = (Date.parse(queriedWindow.endIso) - Date.parse(queriedWindow.startIso)) / (24 * 60 * 60 * 1000)
+    assert.ok(spanDays <= 366, `Expected <= 366 days, got ${spanDays}`)
+
+    const overflowRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { pipeNumber: 9999999999 },
+    })
+    assert.equal(overflowRes.response.status, 400)
+    assertError(overflowRes.body, 'VALIDATION_ERROR')
+
+    const maxIntRes = await requestJson(baseUrl, '/api/production/e0000000-0000-4000-8000-000000000001', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: { pipeNumber: 2147483647 },
+    })
+    assert.equal(maxIntRes.response.status, 200)
+    assert.equal(maxIntRes.body.spec.pipeNumber, 2147483647)
   })
 })

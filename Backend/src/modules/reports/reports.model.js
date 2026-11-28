@@ -10,7 +10,7 @@ const reportSummarySchema = z.object({
     type: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
     date: reportDateSchema.optional(),
     compare: z.enum(['true', 'false']).transform((value) => value === 'true').default(false),
-  }),
+  }).strict(),
 })
 
 const exportReportSchema = z.object({
@@ -19,7 +19,7 @@ const exportReportSchema = z.object({
     type: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
     date: reportDateSchema.optional(),
     format: z.enum(['pdf', 'xlsx']),
-  }),
+  }).strict(),
 })
 
 module.exports = {

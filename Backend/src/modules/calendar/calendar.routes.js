@@ -1,6 +1,7 @@
 const express = require('express')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
+const { userWriteRateLimiter } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const asyncHandler = require('../../utils/asyncHandler')
 const calendarController = require('./calendar.controller')
@@ -35,6 +36,7 @@ router.get(
 router.put(
   '/days/:calendarDate',
   authorizeRole(calendarEditRoles),
+  userWriteRateLimiter,
   validateRequest(putCalendarDaySchema),
   asyncHandler(calendarController.setProductionCalendarDay),
 )
@@ -42,6 +44,7 @@ router.put(
 router.post(
   ['/ranges', '/range'],
   authorizeRole(calendarEditRoles),
+  userWriteRateLimiter,
   validateRequest(postCalendarRangeSchema),
   asyncHandler(calendarController.setProductionCalendarRange),
 )
@@ -49,6 +52,7 @@ router.post(
 router.delete(
   '/days/:calendarDate',
   authorizeRole(calendarEditRoles),
+  userWriteRateLimiter,
   validateRequest(deleteCalendarDaySchema),
   asyncHandler(calendarController.removeProductionCalendarDay),
 )
@@ -56,6 +60,7 @@ router.delete(
 router.delete(
   ['/groups/:groupId', '/ranges/:groupId'],
   authorizeRole(calendarEditRoles),
+  userWriteRateLimiter,
   validateRequest(deleteCalendarRangeSchema),
   asyncHandler(calendarController.removeProductionCalendarRange),
 )

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, Undo2, X } from 'lucide-react'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useQueryClient } from '@tanstack/react-query'
@@ -22,9 +22,14 @@ export default function UsersActionProvider({ children }) {
   const [notice, setNotice] = useState(null)
   const [revision, setRevision] = useState(0)
   const pendingActionRef = useRef(null)
+  const tokenRef = useRef(token)
   const actionTimer = useRef(null)
   const noticeTimer = useRef(null)
   const undoButton = useRef(null)
+
+  useLayoutEffect(() => {
+    tokenRef.current = token
+  }, [token])
 
   useEffect(() => {
     if (!notice) return undefined
@@ -35,12 +40,22 @@ export default function UsersActionProvider({ children }) {
   useEffect(() => () => window.clearTimeout(actionTimer.current), [])
 
   useEffect(() => {
+    if (!pendingAction) return undefined
+    const handleBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [pendingAction])
+
+  useEffect(() => {
     if (pendingAction?.phase === 'undo' && pendingAction.removesFromResults) {
       undoButton.current?.focus()
     }
   }, [pendingAction])
 
-  function scheduleAccountAction(type, account, removesFromResults) {
+  const scheduleAccountAction = useCallback((type, account, removesFromResults) => {
     if (pendingActionRef.current) return false
 
     const pending = { type, account, removesFromResults, startedAt: Date.now(), phase: 'undo' }
@@ -59,9 +74,10 @@ export default function UsersActionProvider({ children }) {
 
       let nextNotice
       try {
+        const currentToken = tokenRef.current
         const payload = type === 'archive'
-          ? await archiveUser(token, account.id)
-          : await updateUserStatus(token, account.id, 'Inactive')
+          ? await archiveUser(currentToken, account.id)
+          : await updateUserStatus(currentToken, account.id, 'Inactive')
         nextNotice = payload.delivery === 'unconfirmed'
           ? { type: 'error', message: 'Account saved, but email delivery is unconfirmed. Check the inbox, or resend after one minute. Do not add the account again.' }
           : { type: 'success', message: type === 'archive' ? 'Account archived.' : 'Account deactivated.' }
@@ -78,7 +94,12 @@ export default function UsersActionProvider({ children }) {
     }, ACCOUNT_ACTION_UNDO_MS)
 
     return true
-  }
+  }, [queryClient])
+
+  const contextValue = useMemo(
+    () => ({ pendingAction, revision, scheduleAccountAction }),
+    [pendingAction, revision, scheduleAccountAction],
+  )
 
   function undoAccountAction() {
     if (pendingActionRef.current?.phase !== 'undo') return
@@ -97,7 +118,7 @@ export default function UsersActionProvider({ children }) {
     : notice?.message
 
   return (
-    <UsersActionContext.Provider value={{ pendingAction, revision, scheduleAccountAction }}>
+    <UsersActionContext.Provider value={contextValue}>
       {children}
       {message ? (
         <div

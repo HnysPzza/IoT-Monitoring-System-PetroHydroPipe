@@ -3,7 +3,7 @@ import TrendCalendarControl from '../overview/TrendCalendarControl.jsx'
 import Status from '../../../shared/components/Status.jsx'
 import RefreshStatus from '../../../shared/components/RefreshStatus.jsx'
 import { fromDateInputValue, toDateInputValue } from '../overview/DowntimeTrendChart.jsx'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useAuthenticatedQuery } from '../../../shared/hooks/useAuthenticatedQuery.js'
 import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
@@ -119,12 +119,14 @@ export default function DowntimeSection() {
   const [dateFilter, setDateFilter] = useState(getManilaDateInputValue)
   const [dateRange, setDateRange] = useState({ dateFrom: '', dateTo: '' })
   const [notice, setNotice] = useState(null)
-  const [updatingRecordId, setUpdatingRecordId] = useState('')
+  const [updatingRecordIds, setUpdatingRecordIds] = useState(() => new Set())
+  const updatingIdsRef = useRef(new Set())
   const [expandedRecordId, setExpandedRecordId] = useState('')
   const [draftNotes, setDraftNotes] = useState({})
   const [recentlySavedId, setRecentlySavedId] = useState('')
   const [recentStreamRecordId, setRecentStreamRecordId] = useState('')
   const highlightTimersRef = useRef({ saved: null, stream: null })
+  const mountedRef = useRef(true)
   const queryClient = useQueryClient()
   const online = useNetworkOnline()
   const baseFilters = dateRange.dateFrom && dateRange.dateTo
@@ -158,13 +160,17 @@ export default function DowntimeSection() {
     await queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
   }
   const reconcileRef = useRef(reconcileDowntime)
-  reconcileRef.current = reconcileDowntime
   const invalidateRef = useRef(invalidateAll)
-  invalidateRef.current = invalidateAll
+  useLayoutEffect(() => {
+    reconcileRef.current = reconcileDowntime
+    invalidateRef.current = invalidateAll
+  })
 
   useEffect(() => {
+    mountedRef.current = true
     const timers = highlightTimersRef.current
     return () => {
+      mountedRef.current = false
       if (timers.saved) window.clearTimeout(timers.saved)
       if (timers.stream) window.clearTimeout(timers.stream)
     }
@@ -235,34 +241,58 @@ export default function DowntimeSection() {
   }, [token])
 
   async function updateCause(recordId, cause) {
-    setUpdatingRecordId(recordId)
+    if (updatingIdsRef.current.has(recordId)) return
+    updatingIdsRef.current.add(recordId)
+    setUpdatingRecordIds((prev) => new Set(prev).add(recordId))
     setNotice(null)
 
     try {
       const payload = await updateDowntimeRecord(token, recordId, { cause })
-      triggerSavedHighlight(recordId)
       void invalidateAll()
+      if (!mountedRef.current) return
+      triggerSavedHighlight(recordId)
       setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} cause updated to ${payload.record.cause}.` })
     } catch (error) {
+      if (!mountedRef.current) return
       setNotice({ type: 'error', message: error.message || 'Unable to update downtime cause.' })
     } finally {
-      setUpdatingRecordId('')
+      updatingIdsRef.current.delete(recordId)
+      if (mountedRef.current) {
+        setUpdatingRecordIds((prev) => {
+          if (!prev.has(recordId)) return prev
+          const next = new Set(prev)
+          next.delete(recordId)
+          return next
+        })
+      }
     }
   }
 
   async function saveNotes(recordId) {
-    setUpdatingRecordId(recordId)
+    if (updatingIdsRef.current.has(recordId)) return
+    updatingIdsRef.current.add(recordId)
+    setUpdatingRecordIds((prev) => new Set(prev).add(recordId))
     setNotice(null)
 
     try {
       const payload = await updateDowntimeRecord(token, recordId, { notes: draftNotes[recordId] || '' })
-      triggerSavedHighlight(recordId)
       void invalidateAll()
+      if (!mountedRef.current) return
+      triggerSavedHighlight(recordId)
       setNotice({ type: 'success', message: `${getRecordLabel(payload.record)} notes saved.` })
     } catch (error) {
+      if (!mountedRef.current) return
       setNotice({ type: 'error', message: error.message || 'Unable to update downtime notes.' })
     } finally {
-      setUpdatingRecordId('')
+      updatingIdsRef.current.delete(recordId)
+      if (mountedRef.current) {
+        setUpdatingRecordIds((prev) => {
+          if (!prev.has(recordId)) return prev
+          const next = new Set(prev)
+          next.delete(recordId)
+          return next
+        })
+      }
     }
   }
 
@@ -274,18 +304,14 @@ export default function DowntimeSection() {
   }
 
   function toggleRecordDetails(record) {
-    setExpandedRecordId((currentId) => {
-      const nextId = currentId === record.id ? '' : record.id
-
-      if (nextId) {
-        setDraftNotes((currentDrafts) => ({
-          ...currentDrafts,
-          [record.id]: currentDrafts[record.id] ?? record.notes ?? '',
-        }))
-      }
-
-      return nextId
-    })
+    const nextId = expandedRecordId === record.id ? '' : record.id
+    setExpandedRecordId(nextId)
+    if (nextId) {
+      setDraftNotes((currentDrafts) => ({
+        ...currentDrafts,
+        [record.id]: currentDrafts[record.id] ?? record.notes ?? '',
+      }))
+    }
   }
 
   if (!online && !query.data) {
@@ -540,6 +566,7 @@ export default function DowntimeSection() {
                 ) : (
                   records.map((record) => {
                     const isExpanded = expandedRecordId === record.id
+                    const isUpdating = updatingRecordIds.has(record.id)
                     const currentNotesValue = draftNotes[record.id] ?? record.notes ?? ''
                     const hasUnsavedNotes = draftNotes[record.id] !== undefined && currentNotesValue !== (record.notes ?? '')
                     const rowClasses = [
@@ -569,7 +596,7 @@ export default function DowntimeSection() {
                                     name={`downtimeCause-${record.id}`}
                                     className="inline-select"
                                     value={record.cause}
-                                    disabled={!canEditDowntime || updatingRecordId === record.id}
+                                    disabled={!canEditDowntime || isUpdating}
                                     onChange={(event) => updateCause(record.id, event.target.value)}
                                     autoComplete="off"
                                     title={!hasEditRole ? 'Supervisor or Admin role required to edit downtime causes' : undefined}
@@ -583,7 +610,7 @@ export default function DowntimeSection() {
                                   </select>
                                   <ChevronDown size={15} className="select-chevron-icon" aria-hidden="true" />
                                 </div>
-                                {updatingRecordId === record.id ? <RotateCw className="spin-icon downtime-inline-spinner" size={14} aria-hidden="true" /> : null}
+                                {isUpdating ? <RotateCw className="spin-icon downtime-inline-spinner" size={14} aria-hidden="true" /> : null}
                               </div>
                             ) : (
                               <span className="table-muted">{record.cause}</span>
@@ -670,7 +697,7 @@ export default function DowntimeSection() {
                                       }))}
                                       rows={3}
                                       maxLength={1000}
-                                      disabled={!canEditDowntime || updatingRecordId === record.id}
+                                      disabled={!canEditDowntime || isUpdating}
                                       aria-describedby={`downtime-notes-meta-${record.id}`}
                                     />
                                   </label>
@@ -689,7 +716,7 @@ export default function DowntimeSection() {
                                       <button
                                         className="btn btn-secondary table-action-button"
                                         type="button"
-                                        disabled={updatingRecordId === record.id}
+                                        disabled={isUpdating}
                                         onClick={() => discardNotes(record.id, record.notes)}
                                       >
                                         Discard changes
@@ -698,10 +725,10 @@ export default function DowntimeSection() {
                                     <button
                                       className="btn btn-secondary table-action-button"
                                       type="button"
-                                      disabled={updatingRecordId === record.id || !hasUnsavedNotes}
+                                      disabled={isUpdating || !hasUnsavedNotes}
                                       onClick={() => saveNotes(record.id)}
                                     >
-                                      {updatingRecordId === record.id ? 'Saving' : 'Save notes'}
+                                      {isUpdating ? 'Saving' : 'Save notes'}
                                     </button>
                                   </div>
                                 ) : null}

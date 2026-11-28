@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import fs from 'fs'
 import path from 'path'
@@ -389,6 +389,107 @@ describe('Challenger 2 Adversarial Stress Suite — Production Module M4', () =>
       const alerts = screen.getAllByRole('alert')
       const conflictAlerts = alerts.filter((a) => a.classList.contains('production-conflict-notice'))
       expect(conflictAlerts.length).toBe(1)
+    })
+
+    it('guards bulk confirm against synchronous double-clicks', async () => {
+      const user = userEvent.setup()
+      let resolveBatch
+      const mockBatch = vi.fn(() => new Promise((resolve) => { resolveBatch = resolve }))
+      const mockLoad = vi.fn().mockResolvedValue({
+        summary: { totalAccepted: 1, specifiedCount: 0, unspecifiedCount: 1, rejectedCount: 0, totalTonnage: 0 },
+        records: [{
+          id: 'bulk-row-1',
+          sensorEventId: 'bulk-row-1',
+          outputAccepted: true,
+          status: 'accepted',
+          isSpecified: false,
+          customer: null,
+          recordedAt: '2026-10-31T01:00:00.000Z',
+          updatedAt: '2026-10-31T01:00:00.000Z',
+        }],
+        pagination: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
+      })
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} batchUpdateProductionSpecs={mockBatch} />)
+      const checkbox = await screen.findByRole('checkbox', { name: /select cut at/i })
+      await user.click(checkbox)
+      await user.type(screen.getByLabelText('Bulk customer'), 'Acme')
+      await user.click(screen.getByRole('button', { name: /apply to 1 cut/i }))
+
+      const confirmBtn = screen.getByRole('button', { name: 'Confirm' })
+      act(() => {
+        confirmBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        confirmBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(mockBatch).toHaveBeenCalledTimes(1)
+      await act(async () => { resolveBatch({ updatedCount: 1 }) })
+    })
+
+    it('rolls back only the failed row without clobbering concurrent edits to another row', async () => {
+      const user = userEvent.setup()
+      let rejectRowA
+      const serverRecords = [
+        {
+          id: 'row-a',
+          sensorEventId: 'row-a',
+          outputAccepted: true,
+          status: 'accepted',
+          isSpecified: true,
+          customer: 'Original A',
+          recordedAt: '2026-10-31T01:00:00.000Z',
+          updatedAt: '2026-10-31T01:00:00.000Z',
+        },
+        {
+          id: 'row-b',
+          sensorEventId: 'row-b',
+          outputAccepted: true,
+          status: 'accepted',
+          isSpecified: true,
+          customer: 'Original B',
+          recordedAt: '2026-10-31T01:05:00.000Z',
+          updatedAt: '2026-10-31T01:05:00.000Z',
+        },
+      ]
+      const mockUpdate = vi.fn((_token, rowId, payload) => {
+        if (rowId === 'row-a') {
+          return new Promise((_resolve, reject) => { rejectRowA = reject })
+        }
+        serverRecords[1] = { ...serverRecords[1], customer: payload.customer, updatedAt: '2026-10-31T02:00:00.000Z' }
+        return Promise.resolve({ spec: { customer: payload.customer, updatedAt: '2026-10-31T02:00:00.000Z' } })
+      })
+      const mockLoad = vi.fn(async () => ({
+        summary: { totalAccepted: 2, specifiedCount: 2, unspecifiedCount: 0, rejectedCount: 0, totalTonnage: 0 },
+        records: serverRecords.map((r) => ({ ...r })),
+        pagination: { page: 1, pageSize: 25, total: 2, totalPages: 1 },
+      }))
+
+      renderWithAuth(<ProductionSection loadProduction={mockLoad} updateProductionSpec={mockUpdate} />)
+      await screen.findByText('Original A')
+
+      const editButtons = screen.getAllByRole('button', { name: 'Edit specification' })
+      await user.click(editButtons[0])
+      const inputA = screen.getByLabelText('Specification customer')
+      await user.clear(inputA)
+      await user.type(inputA, 'Pending A')
+      await user.click(screen.getByRole('button', { name: 'Save specification' }))
+
+      const editButtonsAfterA = screen.getAllByRole('button', { name: 'Edit specification' })
+      await user.click(editButtonsAfterA[1])
+      const inputB = screen.getByLabelText('Specification customer')
+      await user.clear(inputB)
+      await user.type(inputB, 'Saved B')
+      await user.click(screen.getByRole('button', { name: 'Save specification' }))
+
+      await waitFor(() => expect(screen.getByText('Saved B')).toBeInTheDocument())
+
+      await act(async () => {
+        rejectRowA(new Error('Network failure on row A'))
+      })
+
+      expect(await screen.findByText('Network failure on row A')).toBeInTheDocument()
+      expect(screen.getByText('Saved B')).toBeInTheDocument()
+      expect(screen.queryByText('Original B')).not.toBeInTheDocument()
     })
   })
 })

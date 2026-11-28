@@ -1,6 +1,7 @@
 const express = require('express')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
+const { userWriteRateLimiter } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const asyncHandler = require('../../utils/asyncHandler')
 const settingsController = require('./settings.controller')
@@ -27,6 +28,7 @@ router.get(
 router.patch(
   '/',
   authorizeRole(settingsEditRoles),
+  userWriteRateLimiter,
   validateRequest(patchSettingsSchema),
   asyncHandler(settingsController.updateMachineSettings),
 )

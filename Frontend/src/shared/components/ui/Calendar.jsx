@@ -1,6 +1,18 @@
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DayPicker, getDefaultClassNames } from 'react-day-picker'
 
+function CalendarChevron({ orientation, ...chevronProps }) {
+  if (orientation === 'left') {
+    return <ChevronLeft size={16} aria-hidden="true" {...chevronProps} />
+  }
+
+  if (orientation === 'right') {
+    return <ChevronRight size={16} aria-hidden="true" {...chevronProps} />
+  }
+
+  return <ChevronDown size={16} aria-hidden="true" {...chevronProps} />
+}
+
 export function Calendar({
   className = '',
   classNames = {},
@@ -49,17 +61,7 @@ export function Calendar({
         ...classNames,
       }}
       components={{
-        Chevron: ({ orientation, ...chevronProps }) => {
-          if (orientation === 'left') {
-            return <ChevronLeft size={16} aria-hidden="true" {...chevronProps} />
-          }
-
-          if (orientation === 'right') {
-            return <ChevronRight size={16} aria-hidden="true" {...chevronProps} />
-          }
-
-          return <ChevronDown size={16} aria-hidden="true" {...chevronProps} />
-        },
+        Chevron: CalendarChevron,
         ...components,
       }}
       {...props}

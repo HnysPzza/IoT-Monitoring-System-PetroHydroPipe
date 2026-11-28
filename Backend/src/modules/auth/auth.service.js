@@ -74,24 +74,6 @@ async function findUserByUsername(username) {
   return data
 }
 
-async function findUserById(userId, { signal } = {}) {
-  const supabase = getSupabaseClient()
-  let query = supabase
-    .from('users')
-    .select(getSessionUserSelect())
-    .eq('id', userId)
-
-  if (signal) query = query.abortSignal(signal)
-
-  const { data, error } = await query.maybeSingle()
-
-  if (error) {
-    throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to load authenticated user.')
-  }
-
-  return data
-}
-
 async function verifyPassword(password, passwordHash) {
   // bcrypt compares the raw login password with the stored hash.
   return bcrypt.compare(password, passwordHash)
@@ -170,7 +152,22 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (typeof tokenPayload.sid !== 'string' || !/^[0-9a-f-]{36}$/i.test(tokenPayload.sid)) {
     throw createAuthError(401, 'UNAUTHENTICATED', 'Sign in again to start a verified session.')
   }
-  const userRecord = await findUserById(tokenPayload.sub, options)
+
+  let query = getSupabaseClient()
+    .from('users')
+    .select(`${getSessionUserSelect()}, auth_sessions(id)`)
+    .eq('id', tokenPayload.sub)
+    .eq('auth_sessions.id', tokenPayload.sid)
+    .is('auth_sessions.revoked_at', null)
+    .gt('auth_sessions.expires_at', new Date().toISOString())
+
+  if (options.signal) query = query.abortSignal(options.signal)
+
+  const { data: userRecord, error } = await query.maybeSingle()
+
+  if (error) {
+    throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to load authenticated user.')
+  }
 
   if (!userRecord) {
     throw createAuthError(401, 'UNAUTHENTICATED', 'Authenticated user no longer exists.')
@@ -187,12 +184,10 @@ async function getAuthenticatedUser(tokenPayload, options = {}) {
   if (userRecord.onboarding_state === 'Invited') {
     throw createAuthError(403, 'ACCOUNT_SETUP_REQUIRED', 'Finish account setup before signing in.')
   }
-  let query = getSupabaseClient().from('auth_sessions').select('id').eq('id', tokenPayload.sid)
-    .eq('user_id', userRecord.id).is('revoked_at', null).gt('expires_at', new Date().toISOString())
-  if (options.signal) query = query.abortSignal(options.signal)
-  const { data, error } = await query.maybeSingle()
-  if (error) throw createAuthError(500, 'AUTH_QUERY_FAILED', 'Unable to verify session.')
-  if (!data) throw createAuthError(401, 'UNAUTHENTICATED', 'Session has ended. Sign in again.')
+
+  if (!Array.isArray(userRecord.auth_sessions) || userRecord.auth_sessions.length === 0) {
+    throw createAuthError(401, 'UNAUTHENTICATED', 'Session has ended. Sign in again.')
+  }
 
   return toAuthUser(userRecord)
 }

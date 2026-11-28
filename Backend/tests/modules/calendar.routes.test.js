@@ -865,6 +865,27 @@ test('calendar endpoints enforce authentication, query validation, 404 mapping, 
     )
     assert.equal(malformedGet.response.status, 500)
     assertError(malformedGet.body, 'CALENDAR_QUERY_FAILED')
+    calendarRows = [sampleDbEntry()]
+
+    const outOfRangeGet = await requestJson(
+      baseUrl,
+      `/api/machines/${machineId}/calendar?from=1999-12-31`,
+      { headers: authHeader('Admin') },
+    )
+    assert.equal(outOfRangeGet.response.status, 400)
+    assertError(outOfRangeGet.body, 'VALIDATION_ERROR')
+
+    const outOfRangePut = await requestJson(
+      baseUrl,
+      `/api/machines/${machineId}/calendar/days/2101-01-01`,
+      {
+        method: 'PUT',
+        headers: authHeader('Admin'),
+        body: { dayType: 'day_off', name: 'Future Out of Range' },
+      },
+    )
+    assert.equal(outOfRangePut.response.status, 400)
+    assertError(outOfRangePut.body, 'VALIDATION_ERROR')
   })
 })
 

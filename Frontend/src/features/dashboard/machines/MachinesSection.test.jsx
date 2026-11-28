@@ -238,7 +238,7 @@ describe('MachinesSection live snapshot', () => {
       .toHaveAttribute('dateTime', '2026-08-10T02:00:00.000Z')
     expect(screen.queryByText(/Physical input:/)).not.toBeInTheDocument()
     expect(screen.getAllByText('Downtime')).toHaveLength(2)
-    expect(getLiveFeed).toHaveBeenCalledWith('test-token')
+    expect(getLiveFeed).toHaveBeenCalledWith('test-token', { signal: expect.any(AbortSignal) })
     expect(screen.queryByLabelText('Machine status')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Sensor status')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reconcile recovery' })).not.toBeInTheDocument()
@@ -316,8 +316,8 @@ describe('MachinesSection live snapshot', () => {
       expect(screen.queryByText('Late prior-token machine')).not.toBeInTheDocument()
     })
     expect(screen.getByRole('heading', { name: 'Current token machine' })).toBeInTheDocument()
-    expect(getLiveFeed).toHaveBeenCalledWith('first-token')
-    expect(getLiveFeed).toHaveBeenCalledWith('second-token')
+    expect(getLiveFeed).toHaveBeenCalledWith('first-token', { signal: expect.any(AbortSignal) })
+    expect(getLiveFeed).toHaveBeenCalledWith('second-token', { signal: expect.any(AbortSignal) })
   })
 
   it('portals header controls into the topbar immediately on initial mount when liveFeed is already loaded', () => {

@@ -13,6 +13,7 @@ const {
 
 // ponytail: Default window is fixed to 30 days; upgrade to cursor pagination or date partitions when event volume exceeds 50k per month.
 const DEFAULT_LIST_WINDOW_DAYS = 30
+const MAX_LIST_WINDOW_DAYS = 366
 const STEEL_DENSITY_KG_PER_M3 = 7850
 
 function resolveDateWindow(filters, asOf) {
@@ -28,11 +29,12 @@ function resolveDateWindow(filters, asOf) {
 
   if (filters.dateFrom) {
     const start = parseBusinessDate(filters.dateFrom)
+    const unconstrainedEndMs = Math.max(
+      addBusinessDays(startOfBusinessDay(asOf), 1).getTime(),
+      addBusinessDays(start, DEFAULT_LIST_WINDOW_DAYS).getTime(),
+    )
     const end = new Date(
-      Math.max(
-        addBusinessDays(startOfBusinessDay(asOf), 1).getTime(),
-        addBusinessDays(start, DEFAULT_LIST_WINDOW_DAYS).getTime(),
-      ),
+      Math.min(unconstrainedEndMs, addBusinessDays(start, MAX_LIST_WINDOW_DAYS).getTime()),
     )
     return { start, end }
   }

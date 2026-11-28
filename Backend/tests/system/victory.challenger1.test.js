@@ -4,9 +4,6 @@ const { calculatePipeTonnage } = require('../../src/modules/production/productio
 const reportsService = require('../../src/modules/reports/reports.service')
 const reportsExportSerializer = require('../../src/modules/reports/reportsExport.serializer')
 const reportsXlsxSerializer = require('../../src/modules/reports/reportsXlsx.serializer')
-const { PGlite } = require('@electric-sql/pglite')
-const fs = require('node:fs')
-const path = require('node:path')
 
 // Exact reference oracle formula:
 // Weight (kg/m) = (OD - Thickness) * Thickness * 0.02466
@@ -129,176 +126,13 @@ describe('Milestone 6 Challenger Victory 1: Empirical Full Stack Verification', 
     assert.ok(Number.isFinite(hugeTonnage))
 
     // Valid small positive: OD 10mm, t 0.1mm, L 100mm
-    // (10 - 0.1) * 0.1 * 0.02466 * 100 / 1e6 = 9.9 * 0.1 * 0.02466 * 100 / 1e6 = 0.000244134 / 1e2 = 0.00000244...
-    // rounds to 0.0000
+    // (10 - 0.1) * 0.1 * 0.02466 * 100 / 1e6 = 0.000244134 / 1e2 = 0.00000244...
+    // rounds to 0.0000, which calculatePipeTonnage normalizes to null.
     const tinyTonnage = calculatePipeTonnage(10, 0.1, 100)
-    assert.equal(tinyTonnage, 0) // Rounded to 4 decimal places is 0.0000 = 0
+    assert.equal(tinyTonnage, null)
   })
 
-  test('Challenge 3: Database RPC Batch Update Strictly Preserves Physical Pipe Numbers', async () => {
-    // Setup in-memory PGlite with schema and migration 051
-    const pglite = new PGlite()
-
-    // Create required roles for migration grants
-    await pglite.exec(`
-      create role anon;
-      create role authenticated;
-      create role service_role bypassrls;
-    `)
-
-    // Create minimal schema prerequisite for migration 051
-    await pglite.exec(`
-      create table if not exists public.machines (
-        id uuid primary key default gen_random_uuid(),
-        machine_code text unique not null,
-        name text not null
-      );
-      create table if not exists public.sensors (
-        id uuid primary key default gen_random_uuid(),
-        sensor_code text unique not null,
-        machine_id uuid references public.machines(id)
-      );
-      create table if not exists public.sensor_events (
-        id uuid primary key default gen_random_uuid(),
-        machine_id uuid references public.machines(id),
-        sensor_id uuid references public.sensors(id),
-        event_type text not null,
-        output_accepted boolean,
-        output_rejection_reason text,
-        device_event_id text,
-        recorded_at timestamptz not null default now()
-      );
-      create table if not exists public.production_item_specs (
-        sensor_event_id uuid primary key references public.sensor_events(id),
-        label text,
-        size text,
-        radius numeric,
-        circumference numeric,
-        diameter numeric(10, 2),
-        updated_at timestamptz not null default now(),
-        updated_by uuid
-      );
-      create table if not exists public.audit_logs (
-        id uuid primary key default gen_random_uuid(),
-        user_id uuid,
-        action text not null,
-        entity_type text not null,
-        entity_id uuid,
-        metadata jsonb,
-        created_at timestamptz not null default now()
-      );
-      create or replace function public.get_backend_readiness() returns integer language sql as $$ select 50; $$;
-    `)
-
-    // Apply migration 051
-    const migrationPath = path.resolve(__dirname, '../../database/migrations/051_align_production_specs_pipe_manufacturing.sql')
-    const migrationSql = fs.readFileSync(migrationPath, 'utf8')
-    await pglite.exec(migrationSql)
-
-    // Verify readiness bumped to 51
-    const readinessRes = await pglite.query('select public.get_backend_readiness() as readiness')
-    assert.equal(readinessRes.rows[0].readiness, 51)
-
-    // Seed test machine and S-05 sensor
-    const machineRes = await pglite.query(`
-      insert into public.machines (machine_code, name) values ('M-01', 'Spiral Mill 01') returning id
-    `)
-    const machineId = machineRes.rows[0].id
-
-    const sensorRes = await pglite.query(`
-      insert into public.sensors (sensor_code, machine_id) values ('S-05', $1) returning id
-    `, [machineId])
-    const sensorId = sensorRes.rows[0].id
-
-    // Seed 3 accepted cutting events
-    const event1Res = await pglite.query(`
-      insert into public.sensor_events (machine_id, sensor_id, event_type, output_accepted, recorded_at)
-      values ($1, $2, 'pulse', true, now() - interval '30 minutes') returning id
-    `, [machineId, sensorId])
-    const event1Id = event1Res.rows[0].id
-
-    const event2Res = await pglite.query(`
-      insert into public.sensor_events (machine_id, sensor_id, event_type, output_accepted, recorded_at)
-      values ($1, $2, 'pulse', true, now() - interval '20 minutes') returning id
-    `, [machineId, sensorId])
-    const event2Id = event2Res.rows[0].id
-
-    const event3Res = await pglite.query(`
-      insert into public.sensor_events (machine_id, sensor_id, event_type, output_accepted, recorded_at)
-      values ($1, $2, 'pulse', true, now() - interval '10 minutes') returning id
-    `, [machineId, sensorId])
-    const event3Id = event3Res.rows[0].id
-
-    // Assign specs to event 1 (pipe_number = 101) and event 2 (pipe_number = 102) using single update RPC
-    await pglite.query(`
-      select * from public.update_production_log_spec(
-        p_sensor_event_id := $1,
-        p_customer := 'Client Alpha',
-        p_diameter := 625.4,
-        p_thickness := 10.0,
-        p_length := 6000,
-        p_pipe_number := 101
-      )
-    `, [event1Id])
-
-    await pglite.query(`
-      select * from public.update_production_log_spec(
-        p_sensor_event_id := $1,
-        p_customer := 'Client Beta',
-        p_diameter := 812.8,
-        p_thickness := 12.7,
-        p_length := 12000,
-        p_pipe_number := 102
-      )
-    `, [event2Id])
-
-    // Event 3 has NO spec row initially (unlabeled/unspecified)
-
-    // Verify initial state
-    const init1 = (await pglite.query('select * from public.production_item_specs where sensor_event_id = $1', [event1Id])).rows[0]
-    const init2 = (await pglite.query('select * from public.production_item_specs where sensor_event_id = $1', [event2Id])).rows[0]
-    assert.equal(init1.pipe_number, 101)
-    assert.equal(init2.pipe_number, 102)
-
-    // NOW execute batch update over all 3 events to assign new Customer, Diameter, Thickness, Length
-    const batchRes = await pglite.query(`
-      select * from public.batch_update_production_log_specs(
-        p_sensor_event_ids := $1,
-        p_customer := 'Universal Mega Corp',
-        p_diameter := 1020.0,
-        p_thickness := 12.7,
-        p_length := 12000
-      )
-    `, [[event1Id, event2Id, event3Id]])
-
-    assert.equal(batchRes.rows[0].matched_count, 3)
-    assert.equal(batchRes.rows[0].updated_count, 3)
-
-    // EMPIRICAL INVARIANT CHECK:
-    // Event 1 specs: updated dimensions/customer, pipe_number PRESERVED as 101
-    const post1 = (await pglite.query('select * from public.production_item_specs where sensor_event_id = $1', [event1Id])).rows[0]
-    assert.equal(post1.customer, 'Universal Mega Corp')
-    assert.equal(Number(post1.diameter), 1020.0)
-    assert.equal(Number(post1.thickness), 12.7)
-    assert.equal(Number(post1.length), 12000.0)
-    assert.equal(post1.pipe_number, 101, 'CRITICAL FAILURE: Event 1 pipe_number was altered by batch update!')
-
-    // Event 2 specs: updated dimensions/customer, pipe_number PRESERVED as 102
-    const post2 = (await pglite.query('select * from public.production_item_specs where sensor_event_id = $1', [event2Id])).rows[0]
-    assert.equal(post2.customer, 'Universal Mega Corp')
-    assert.equal(Number(post2.diameter), 1020.0)
-    assert.equal(Number(post2.thickness), 12.7)
-    assert.equal(Number(post2.length), 12000.0)
-    assert.equal(post2.pipe_number, 102, 'CRITICAL FAILURE: Event 2 pipe_number was altered by batch update!')
-
-    // Event 3 specs: updated dimensions/customer, pipe_number remains null (not invented)
-    const post3 = (await pglite.query('select * from public.production_item_specs where sensor_event_id = $1', [event3Id])).rows[0]
-    assert.equal(post3.customer, 'Universal Mega Corp')
-    assert.equal(Number(post3.diameter), 1020.0)
-    assert.equal(post3.pipe_number, null, 'Event 3 should have null pipe_number')
-
-    await pglite.close()
-  })
+  // Removed redundant Challenge 3 (pipe_number preservation covered in production-specs-v51 and challenger2 PGlite tests).
 
   test('Challenge 4: Serializers Data Flow and Formatting Precision Consistency', async () => {
     // Construct mock production report representing diverse edge cases

@@ -11,7 +11,6 @@ const routes = require('./routes')
 const healthRoutes = require('./modules/health/health.routes')
 
 const DEFAULT_FRONTEND_DIST_DIR = path.resolve(__dirname, '..', '..', 'Frontend', 'dist')
-const THEME_SCRIPT_SHA256 = 'sha256-pR6qyqiNC8ISMA6JPIIWYdqe1ewinuEoCHXA9VdtCao='
 const HASHED_ASSET_PATTERN = /-[A-Za-z0-9_-]{8}\.(?:js|css)$/i
 const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
 const isDevelopment = env.NODE_ENV === 'development'
@@ -62,7 +61,7 @@ function createApp({ frontendDistDir = DEFAULT_FRONTEND_DIST_DIR } = {}) {
         connectSrc: ["'self'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'", `'${THEME_SCRIPT_SHA256}'`],
+        scriptSrc: ["'self'"],
         scriptSrcAttr: ["'none'"],
         fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"],
@@ -75,7 +74,7 @@ function createApp({ frontendDistDir = DEFAULT_FRONTEND_DIST_DIR } = {}) {
   app.use(cors({
     origin: corsOrigin,
     credentials: true,
-    exposedHeaders: ['Retry-After'],
+    exposedHeaders: ['Retry-After', 'Content-Disposition'],
   }))
   app.use(express.json({ limit: '100kb' }))
 

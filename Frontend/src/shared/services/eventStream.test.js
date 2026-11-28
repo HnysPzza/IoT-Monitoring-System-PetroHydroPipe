@@ -394,6 +394,26 @@ describe('subscribeToServerEvents', () => {
     unsubscribe()
   })
 
+  it('aborts and reports SSE_BUFFER_OVERFLOW before parsing when an oversized chunk contains a boundary', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: {"pad":"${'x'.repeat(70 * 1024)}"}\n\n`))
+      },
+    })
+    const onError = vi.fn()
+    const onEvent = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })))
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onError, onEvent })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onEvent).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'SSE_BUFFER_OVERFLOW' }))
+    unsubscribe()
+  })
+
   it('confirms live only after a parsed heartbeat and allows a future fallback cycle after recovery', async () => {
     vi.useFakeTimers()
     const encoder = new TextEncoder()
@@ -1012,5 +1032,60 @@ describe('subscribeToServerEvents', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(fetchMock).toHaveBeenCalledTimes(2)
     unsubscribe()
+  })
+
+  it('times out stalled connection attempts after 15s and triggers fallback after 3 timeouts', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })), { once: true })
+    }))
+    const onError = vi.fn()
+    const onFallback = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'active-token', { onError, onFallback })
+
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'SSE_CONNECT_TIMEOUT' }))
+    expect(onFallback).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2000 + 15000)
+    expect(onError).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(4000 + 15000)
+    expect(onError).toHaveBeenCalledTimes(3)
+    expect(onFallback).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+  })
+
+  it('logs sync and async consumer callback errors instead of swallowing them silently', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const encoder = new TextEncoder()
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: first\ndata: {"n":1}\n\n'))
+        controller.enqueue(encoder.encode('event: second\ndata: {"n":2}\n\n'))
+        controller.enqueue(encoder.encode('event: third\ndata: {"n":3}\n\n'))
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })))
+
+    const seen = []
+    const onEvent = vi.fn((event) => {
+      seen.push(event.type)
+      if (event.type === 'first') throw new Error('sync callback boom')
+      if (event.type === 'second') return Promise.reject(new Error('async callback boom'))
+      return undefined
+    })
+
+    const unsubscribe = subscribeToServerEvents('/api/alerts/stream', 'test-token', { onEvent })
+    try {
+      await waitFor(() => expect(seen).toEqual(['first', 'second', 'third']))
+      await waitFor(() => expect(errorSpy).toHaveBeenCalledTimes(2))
+    } finally {
+      unsubscribe()
+      errorSpy.mockRestore()
+    }
   })
 })

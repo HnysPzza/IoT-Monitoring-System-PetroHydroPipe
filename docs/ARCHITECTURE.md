@@ -54,7 +54,7 @@ Node.js and Express server handling security, validation, and coordination:
 - **Realtime SSE & Watchdog**: Publishes post-commit Server-Sent Events (SSE) for instant dashboard refreshes and runs the production-enforced background watchdog evaluator (`WATCHDOG_MODE=enforce` required in `NODE_ENV=production`).
 
 ### 3. Database (`Backend/database/`)
-Supabase PostgreSQL schema (current readiness version: **63**):
+Supabase PostgreSQL schema (current readiness version: **64**):
 - **Core tables**: `roles`, `users`, `machines`, `sensors`, `sensor_events`, `downtime_events`, `production_outputs`, `alerts`, `alert_revision_state`, `machine_operational_settings`, `machine_operational_settings_history`, `sensor_watchdog_state`, `sensor_watchdog_transitions`, and `audit_logs`.
 - **RPC-only mutations**: Direct `INSERT`, `UPDATE`, and `DELETE` privileges are revoked from client roles and restricted on `service_role` so state changes must pass through audited PostgreSQL functions.
 

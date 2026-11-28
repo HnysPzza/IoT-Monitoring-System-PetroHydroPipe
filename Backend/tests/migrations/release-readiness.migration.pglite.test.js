@@ -5,7 +5,7 @@ const test = require('node:test')
 
 const { randomUUID } = require('node:crypto')
 const databaseRoot = path.resolve(__dirname, '../../database')
-const releaseSchemaVersion = 63
+const releaseSchemaVersion = 64
 
 async function database(t, migrationEnd = releaseSchemaVersion) {
   const migrations = fs.readdirSync(path.join(databaseRoot, 'migrations'))
@@ -1315,6 +1315,13 @@ test('migration 061 rejects S-05 output outside schedule, during breaks, on rest
     'utf8',
   )
   await db.exec(migration063)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 63)
+
+  const migration064 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '064_index_visible_audit_logs.sql'),
+    'utf8',
+  )
+  await db.exec(migration064)
   assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
 })
 
@@ -2079,7 +2086,7 @@ test('migration 062 preserves S-05 cuts across same-boot S-03 ISP outages and 2-
 
 test('migration 063 promotes retried S-05 WAN-outage cuts after S-03 recovers and keeps sameBootRecovery when HB#2 stops', async (t) => {
   const db = await database(t)
-  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 63)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, releaseSchemaVersion)
 
   const s03 = (await db.query("select id, machine_id from public.sensors where sensor_code = 'S-03'")).rows[0]
   const boot1 = randomUUID()
@@ -2174,6 +2181,66 @@ test('migration 063 preserves v62 heartbeat payload hash so in-flight retries de
   )).rows[0]
   assert.equal(retried.duplicate, true)
   assert.equal(retried.state_applied, false)
+})
+
+test('migration 064 indexes visible audit_logs for index-only counts and ordered pagination', async (t) => {
+  const db = await database(t)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 64)
+
+  const migration064 = fs.readFileSync(
+    path.join(databaseRoot, 'migrations', '064_index_visible_audit_logs.sql'),
+    'utf8',
+  )
+  await db.exec(migration064)
+  assert.equal((await db.query('select public.get_backend_readiness() as version')).rows[0].version, 64)
+
+  await db.query(`
+    insert into public.audit_logs (action, entity_type, metadata, created_at)
+    select
+      case
+        when g % 5 = 0 then 'SENSOR_PULSE'
+        when g % 5 = 1 then 'IOT_EVENT_RECEIVED'
+        else 'PRODUCTION_SPEC_UPDATED'
+      end,
+      'sensor_event',
+      case
+        when g % 5 = 1 and g % 2 = 0 then '{"eventType":"pulse"}'::jsonb
+        when g % 5 = 1 then '{"eventType":"fault"}'::jsonb
+        else '{}'::jsonb
+      end,
+      now() - (g || ' seconds')::interval
+    from generate_series(1, 2000) g
+  `)
+  await db.query('vacuum analyze public.audit_logs')
+
+  const visiblePredicate = `
+    action <> 'SENSOR_PULSE'
+    and (
+      action <> 'IOT_EVENT_RECEIVED'
+      or (
+        (metadata->>'eventType' is null or not (metadata->>'eventType' ilike 'pulse'))
+        and (metadata->>'event_type' is null or not (metadata->>'event_type' ilike 'pulse'))
+        and (metadata->>'signal' is null or not (metadata->>'signal' ilike 'pulse'))
+      )
+    )
+  `
+
+  const countPlan = (await db.query(`explain select count(*) from public.audit_logs where ${visiblePredicate}`))
+    .rows.map((row) => row['QUERY PLAN']).join('\n')
+  assert.match(countPlan, /Index Only Scan using idx_audit_logs_visible_created_at/i)
+
+  const pagePlan = (await db.query(`
+    explain
+    select id, user_id, action, entity_type, entity_id, metadata, created_at
+    from public.audit_logs
+    where ${visiblePredicate}
+    order by created_at desc
+    limit 25 offset 0
+  `)).rows.map((row) => row['QUERY PLAN']).join('\n')
+  assert.match(pagePlan, /Index Scan using idx_audit_logs_visible_created_at/i)
+
+  await db.exec('drop index public.idx_audit_logs_visible_created_at;')
+  await assert.rejects(db.query('select public.get_backend_readiness()'), /audit log pagination index is missing/i)
 })
 
 

@@ -63,6 +63,25 @@ describe('LoginPage', () => {
     expect(usernameInput).toHaveAttribute('aria-invalid', 'false')
   })
 
+  it('skips mount autofocus on coarse-pointer mobile devices', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn((query) => ({ matches: query === '(pointer: coarse)' })),
+    })
+
+    renderWithAuth(<LoginPage />, {
+      authValue: {
+        isAuthenticated: false,
+        token: null,
+        user: null,
+        login: vi.fn(),
+      },
+      route: '/login',
+    })
+
+    expect(screen.getByLabelText(/username/i)).not.toHaveFocus()
+  })
+
   it('shows validation errors without calling login when fields are empty', async () => {
     const user = userEvent.setup()
     const login = vi.fn()

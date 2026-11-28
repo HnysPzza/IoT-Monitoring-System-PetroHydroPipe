@@ -110,7 +110,7 @@ test('alerts and downtime share the per-user stream cap and release slots on clo
     assert.equal(limited.response.status, 429)
     assert.equal(limited.body.error.code, 'SSE_CONNECTION_LIMITED')
     assert.match(limited.response.headers.get('retry-after'), /^\d+$/)
-    assert.equal(limited.response.headers.get('access-control-expose-headers'), 'Retry-After')
+    assert.equal(limited.response.headers.get('access-control-expose-headers'), 'Retry-After,Content-Disposition')
 
     await alerts.body.cancel()
     alertsAbort.abort()

@@ -172,12 +172,14 @@ export default function DashboardSection() {
   const { token, user } = useAuth()
   const canOpenLiveFeed = canAccessDashboardRoute(user?.role, '/dashboard/live')
   const alertContext = useOutletContext()
-  const [liveState, setLiveState] = useState('loading')
-  const [liveData, setLiveData] = useState({ machine: null, sensors: [], monitoringMode: 'unknown' })
+  const outletLiveFeed = alertContext?.liveFeed || null
+  const hasOutletLiveFeed = Boolean(outletLiveFeed)
+  const [localLiveState, setLiveState] = useState('loading')
+  const [localLiveData, setLiveData] = useState({ machine: null, sensors: [], monitoringMode: 'unknown' })
   const [liveRequestKey, setLiveRequestKey] = useState('')
-  const [liveError, setLiveError] = useState('')
+  const [localLiveError, setLiveError] = useState('')
   const [liveErrorKey, setLiveErrorKey] = useState('')
-  const [liveLastUpdated, setLiveLastUpdated] = useState(null)
+  const [localLiveLastUpdated, setLiveLastUpdated] = useState(null)
   const [liveRefresh, setLiveRefresh] = useState(0)
   const liveRequestIdRef = useRef(0)
   const successfulLiveRef = useRef(null)
@@ -189,6 +191,7 @@ export default function DashboardSection() {
   const calendarValue = trendMode === 'month' ? toMonthInputValue(trendAnchorDate) : toDateInputValue(trendAnchorDate)
   const online = useNetworkOnline()
   useEffect(() => {
+    if (hasOutletLiveFeed) return
     if (!online) {
       wasOfflineRef.current = true
       if (successfulLiveRef.current) {
@@ -199,7 +202,7 @@ export default function DashboardSection() {
       wasOfflineRef.current = false
       setLiveRefresh((current) => current + 1)
     }
-  }, [online])
+  }, [hasOutletLiveFeed, online])
   const overviewQuery = useAuthenticatedQuery({
     queryKey: queryKeys.overview.summary,
     queryFn: ({ token: currentToken, signal }) => getDashboardOverview(currentToken, {}, { signal }),
@@ -210,6 +213,8 @@ export default function DashboardSection() {
     queryFn: async ({ token: currentToken, signal }) => (await getDashboardDowntimeImpact(currentToken, { trendMode, date: calendarValue }, { signal })).downtimeImpact || null,
     staleTime: 20000,
   })
+  const { refetch: refetchOverview } = overviewQuery
+  const { refetch: refetchChart } = chartQuery
   const overviewData = overviewQuery.data
   const hasCurrentOverview = Boolean(overviewData)
   const overviewError = overviewQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load dashboard overview.')
@@ -217,15 +222,30 @@ export default function DashboardSection() {
   const overviewDisplayState = overviewState
   const downtimeImpact = chartQuery.data
   const hasCurrentDowntimeChart = chartQuery.data !== undefined
-  const hasLoadedChartRef = useRef(false)
-  if (hasCurrentDowntimeChart) hasLoadedChartRef.current = true
-  const hasLoadedInitialChart = hasLoadedChartRef.current
+  const [hasLoadedInitialChart, setHasLoadedInitialChart] = useState(false)
+  if (hasCurrentDowntimeChart && !hasLoadedInitialChart) {
+    setHasLoadedInitialChart(true)
+  }
   const downtimeChartLastUpdated = chartQuery.dataUpdatedAt ? new Date(chartQuery.dataUpdatedAt) : null
   const downtimeChartError = chartQuery.error?.message || (!online ? 'Unable to refresh while offline.' : 'Unable to load downtime chart.')
   const downtimeChartState = chartQuery.isError || !online ? (hasCurrentDowntimeChart ? 'stale' : 'error') : chartQuery.isFetching || !hasCurrentDowntimeChart ? 'loading' : downtimeImpact?.points?.length ? 'success' : 'empty'
   const chartDisplayState = downtimeChartState
   const liveKey = `${token || 'anonymous'}:live`
-  const hasCurrentLive = liveRequestKey === liveKey
+  const localHasCurrentLive = liveRequestKey === liveKey
+  const liveData = hasOutletLiveFeed
+    ? {
+        machine: outletLiveFeed.data?.machine || null,
+        sensors: outletLiveFeed.data?.sensors || [],
+        monitoringMode: outletLiveFeed.data?.monitoring?.mode || 'unknown',
+      }
+    : localLiveData
+  const liveState = hasOutletLiveFeed ? (outletLiveFeed.state || 'loading') : localLiveState
+  const liveError = hasOutletLiveFeed ? (outletLiveFeed.error || '') : localLiveError
+  const liveLastUpdated = hasOutletLiveFeed ? (outletLiveFeed.lastUpdated || null) : localLiveLastUpdated
+  const hasCurrentLive = hasOutletLiveFeed ? Boolean(outletLiveFeed.data) : localHasCurrentLive
+  const isLiveRefreshing = hasOutletLiveFeed
+    ? Boolean(outletLiveFeed.isRefreshing || outletLiveFeed.state === 'loading')
+    : localLiveState === 'loading'
   const trendData = hasCurrentDowntimeChart ? downtimeImpact?.points || [] : []
   const trustedOverviewAlerts = alertContext?.unresolvedAlerts ?? alertContext?.activeAlerts ?? []
   const overviewAlerts = orderOverviewAlerts(alertContext?.hasTrustedAlertList
@@ -244,14 +264,17 @@ export default function DashboardSection() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      void overviewQuery.refetch()
-      void chartQuery.refetch()
-      setLiveRefresh((current) => current + 1)
+      void refetchOverview()
+      void refetchChart()
+      if (!hasOutletLiveFeed) {
+        setLiveRefresh((current) => current + 1)
+      }
     }, AUTO_REFRESH_MS)
     return () => window.clearInterval(intervalId)
-  }, [liveKey, overviewQuery.refetch, chartQuery.refetch])
+  }, [hasOutletLiveFeed, liveKey, refetchOverview, refetchChart])
 
   useEffect(() => {
+    if (hasOutletLiveFeed) return undefined
     const requestId = liveRequestIdRef.current + 1
     liveRequestIdRef.current = requestId
     let isCancelled = false
@@ -319,14 +342,16 @@ export default function DashboardSection() {
     return () => {
       isCancelled = true
     }
-  }, [liveKey, liveRefresh, token])
+  }, [hasOutletLiveFeed, liveKey, liveRefresh, token])
 
-  const liveDisplayState = getRequestDisplayState({
-    state: liveState,
-    hasCurrentData: hasCurrentLive,
-    errorKey: liveErrorKey,
-    currentKey: liveKey,
-  })
+  const liveDisplayState = hasOutletLiveFeed
+    ? liveState
+    : getRequestDisplayState({
+        state: localLiveState,
+        hasCurrentData: localHasCurrentLive,
+        errorKey: liveErrorKey,
+        currentKey: liveKey,
+      })
   const overviewIsReady = hasCurrentOverview
     && (overviewDisplayState === 'success' || overviewDisplayState === 'loading' || overviewDisplayState === 'stale')
   const rawSelectedAnalytics = overviewIsReady ? overviewData.productionAnalytics?.day : null
@@ -440,12 +465,20 @@ export default function DashboardSection() {
       tone: productionDifference > 0 ? 'success' : productionDifference < 0 ? 'warning' : 'neutral',
     },
   ]
-  const isUnifiedRefreshing = overviewState === 'loading' || liveState === 'loading' || downtimeChartState === 'loading'
+  const isUnifiedRefreshing = overviewState === 'loading' || isLiveRefreshing || downtimeChartState === 'loading'
+
+  const reloadLive = () => {
+    if (outletLiveFeed?.reload) {
+      void outletLiveFeed.reload()
+      return
+    }
+    setLiveRefresh((current) => current + 1)
+  }
 
   const handleUnifiedRefresh = () => {
-    void overviewQuery.refetch()
-    setLiveRefresh((current) => current + 1)
-    void chartQuery.refetch()
+    void refetchOverview()
+    reloadLive()
+    void refetchChart()
   }
 
   const resolvedMachineName = hasCurrentLive && liveData.machine ? (liveData.machine.name || 'Spiral Mill 01') : 'Spiral Mill 01'
@@ -488,7 +521,7 @@ export default function DashboardSection() {
   useLayoutEffect(() => {
     const slot = document.getElementById('overview-header-controls')
     if (slot !== headerSlot) setHeaderSlot(slot)
-  })
+  }, [headerSlot])
   const resolvedHeaderSlot = headerSlot?.isConnected ? headerSlot : document.getElementById('overview-header-controls')
 
   return (
@@ -717,7 +750,7 @@ export default function DashboardSection() {
             >
               {liveError}
             </p>
-            <button className="btn btn-secondary" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
+            <button className="btn btn-secondary" type="button" onClick={reloadLive}>
               Retry live status
             </button>
           </div>
@@ -749,7 +782,7 @@ export default function DashboardSection() {
             <p className="section-eyebrow">No live source</p>
             <h2 id="live-source-empty-title">No live machine is available</h2>
             <p>No monitored machine was returned by the last successful live-status request.</p>
-            {liveState === 'loading' ? (
+            {isLiveRefreshing ? (
               <div className="sr-only" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>Refreshing live status...</div>
             ) : null}
             {liveState === 'stale' ? (
@@ -762,7 +795,7 @@ export default function DashboardSection() {
                   </time>
                   . {liveError}
                 </span>
-                <button className="btn btn-secondary table-action-button" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
+                <button className="btn btn-secondary table-action-button" type="button" onClick={reloadLive}>
                   Retry live status
                 </button>
               </div>
@@ -777,7 +810,7 @@ export default function DashboardSection() {
             </div>
             <div className="live-refresh">
               <span className="overview-refresh-status" role="status" aria-live={hasPoliteStatusAbove ? 'off' : 'polite'}>
-                {liveState === 'loading' ? 'Refreshing...' : ''}
+                {isLiveRefreshing ? 'Refreshing...' : ''}
               </span>
               <Status
                 value={reportingSensorCount === 5 ? 'active' : ''}
@@ -798,7 +831,7 @@ export default function DashboardSection() {
                 </time>
                 {' '}(updated <UpdatedAgo updatedAt={liveLastUpdated} />). {liveError}
               </span>
-              <button className="btn btn-secondary table-action-button" type="button" onClick={() => setLiveRefresh((current) => current + 1)}>
+              <button className="btn btn-secondary table-action-button" type="button" onClick={reloadLive}>
                 Retry live status
               </button>
             </div>

@@ -3,7 +3,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const authenticate = require('../../middleware/authenticate')
 const authorizeRole = require('../../middleware/authorizeRole')
 const admitSseConnection = require('../../middleware/admitSseConnection')
-const { heavyReadRateLimiter } = require('../../middleware/rateLimiters')
+const { heavyReadRateLimiter, userWriteRateLimiter } = require('../../middleware/rateLimiters')
 const validateRequest = require('../../middleware/validateRequest')
 const downtimeController = require('./downtime.controller')
 const { listDowntimeSchema, updateDowntimeSchema } = require('./downtime.model')
@@ -17,6 +17,6 @@ router.use(authenticate)
 
 router.get('/', authorizeRole(downtimeViewRoles), heavyReadRateLimiter, validateRequest(listDowntimeSchema), asyncHandler(downtimeController.listDowntime))
 router.get('/stream', authorizeRole(downtimeViewRoles), admitSseConnection, asyncHandler(downtimeController.streamDowntime))
-router.patch('/:id', authorizeRole(downtimeEditRoles), validateRequest(updateDowntimeSchema), asyncHandler(downtimeController.updateDowntime))
+router.patch('/:id', authorizeRole(downtimeEditRoles), userWriteRateLimiter, validateRequest(updateDowntimeSchema), asyncHandler(downtimeController.updateDowntime))
 
 module.exports = router

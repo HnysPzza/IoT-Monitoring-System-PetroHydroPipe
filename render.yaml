@@ -10,7 +10,7 @@ services:
     healthCheckPath: /api/health/ready
     envVars:
       - key: NODE_VERSION
-        value: 22.x
+        value: 26.x
       - key: NODE_ENV
         value: production
       - key: PORT

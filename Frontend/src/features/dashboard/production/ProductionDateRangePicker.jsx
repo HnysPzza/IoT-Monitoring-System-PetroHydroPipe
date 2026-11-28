@@ -62,7 +62,7 @@ export function formatRangeDisplay(startDate, endDate) {
   if (sYear === eYear) {
     return `${sMonth} ${sDay} – ${eMonth} ${eDay}, ${sYear}`
   }
-  return `${sMonth} ${sDay}, ${sYear} – ${eMonth} ${eDay}, ${sYear}`
+  return `${sMonth} ${sDay}, ${sYear} – ${eMonth} ${eDay}, ${eYear}`
 }
 
 export function normalizeFilter(filter) {
@@ -169,31 +169,6 @@ export default function ProductionDateRangePicker({
     return initialDate.getFullYear()
   })
 
-  // Synchronize draft state whenever popover opens
-  useEffect(() => {
-    if (!isOpen) return
-
-    const norm = normalizeFilter(value)
-    if (!norm || norm.type === 'all' || (!norm.startDate && !norm.date)) {
-      setDraftPreset('all')
-      setDraftStartDate(null)
-      setDraftEndDate(null)
-    } else {
-      const start = parseDate(norm.startDate || norm.date)
-      const end = parseDate(norm.endDate || norm.startDate || norm.date)
-      setDraftStartDate(start)
-      setDraftEndDate(end)
-      setDraftPreset(norm.type || 'custom')
-      if (start) {
-        setViewMonth(new Date(start.getFullYear(), start.getMonth(), 1))
-        setViewYear(start.getFullYear())
-      }
-    }
-    setIsSelectingRange(false)
-    setHoverDate(null)
-    setHoverWeek(null)
-  }, [isOpen, value])
-
   // Handle outside click, initial dialog focus, Tab containment, & Escape key
   useEffect(() => {
     if (!isOpen) return
@@ -246,6 +221,27 @@ export default function ProductionDateRangePicker({
   }, [isOpen])
 
   const handleTriggerClick = () => {
+    if (!isOpen) {
+      const norm = normalizeFilter(value)
+      if (!norm || norm.type === 'all' || (!norm.startDate && !norm.date)) {
+        setDraftPreset('all')
+        setDraftStartDate(null)
+        setDraftEndDate(null)
+      } else {
+        const start = parseDate(norm.startDate || norm.date)
+        const end = parseDate(norm.endDate || norm.startDate || norm.date)
+        setDraftStartDate(start)
+        setDraftEndDate(end)
+        setDraftPreset(norm.type || 'custom')
+        if (start) {
+          setViewMonth(new Date(start.getFullYear(), start.getMonth(), 1))
+          setViewYear(start.getFullYear())
+        }
+      }
+      setIsSelectingRange(false)
+      setHoverDate(null)
+      setHoverWeek(null)
+    }
     setIsOpen((prev) => !prev)
   }
 

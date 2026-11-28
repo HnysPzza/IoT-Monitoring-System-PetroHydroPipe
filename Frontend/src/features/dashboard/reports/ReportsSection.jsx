@@ -228,7 +228,7 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
-        const items = containerRef.current?.querySelectorAll('[role="menuitem"]')
+        const items = containerRef.current?.querySelectorAll('[role="menuitemradio"]')
         if (!items || items.length === 0) return
         const activeIdx = Array.from(items).indexOf(document.activeElement)
         const nextIdx = event.key === 'ArrowDown'
@@ -302,7 +302,7 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
       {isOpen ? (
         <div
           id="reports-filter-menu"
-          className="reports-filter-popover rounded-2xl p-2 min-w-[220px] shadow-lg"
+          className="reports-filter-popover"
           role="menu"
           aria-label="Report category"
         >
@@ -312,10 +312,9 @@ function ReportCategoryFilter({ category, onSelectCategory }) {
               return (
                 <button
                   key={cat.id}
-                  className={`reports-filter-popover-item flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors ${isSelected ? 'is-active' : ''
-                    }`}
+                  className={`reports-filter-popover-item ${isSelected ? 'is-active' : ''}`.trim()}
                   type="button"
-                  role="menuitem"
+                  role="menuitemradio"
                   aria-checked={isSelected}
                   onClick={() => handleSelect(cat.id)}
                 >
@@ -344,6 +343,13 @@ export default function ReportsSection() {
   const [exportState, setExportState] = useState('idle')
   const [exportingFormat, setExportingFormat] = useState(null)
   const [exportErrorMessage, setExportErrorMessage] = useState('')
+  const exportingRef = useRef(false)
+  const exportAbortRef = useRef(null)
+
+  useEffect(() => () => {
+    exportAbortRef.current?.abort()
+    exportAbortRef.current = null
+  }, [])
   const currentDate = getManilaDateInputValue()
   const selectedCalendarDate = parseLocalDate(selectedDate)
   const maxCalendarDate = parseLocalDate(currentDate)
@@ -386,22 +392,36 @@ export default function ReportsSection() {
   const isExportBlocked = !isCurrentSuccess || report?.periodState === 'future' || exportState === 'exporting'
 
   async function handleExport(format) {
-    if (isExportBlocked) return
+    if (isExportBlocked || exportingRef.current) return
 
+    exportingRef.current = true
+    const controller = new AbortController()
+    exportAbortRef.current = controller
     setExportState('exporting')
     setExportingFormat(format)
     setExportErrorMessage('')
 
     try {
-      const { blob, filename } = await exportReport(token, { category, reportType, selectedDate, format })
+      const { blob, filename } = await exportReport(
+        token,
+        { category, reportType, selectedDate, format },
+        { signal: controller.signal },
+      )
+      if (controller.signal.aborted) return
       void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
       downloadBlob(blob, filename)
       setExportState('idle')
       setExportingFormat(null)
     } catch (error) {
+      if (controller.signal.aborted || error?.code === 'REQUEST_ABORTED' || error?.name === 'AbortError') return
       setExportErrorMessage(error.message || 'Unable to export the report.')
       setExportState('error')
       setExportingFormat(null)
+    } finally {
+      if (exportAbortRef.current === controller) {
+        exportAbortRef.current = null
+      }
+      exportingRef.current = false
     }
   }
 
@@ -526,8 +546,8 @@ export default function ReportsSection() {
                     ) : hasCurrentReport && (!report.specBreakdown || report.specBreakdown.length === 0) ? (
                       <tr><td colSpan="7">{report.periodState === 'future' ? 'Output not observed yet.' : 'No accepted pipe cutting events recorded for this period.'}</td></tr>
                     ) : hasCurrentReport ? (
-                      report.specBreakdown.map((group, index) => (
-                        <tr key={group.customer || group.label || group.size || index}>
+                      report.specBreakdown.map((group) => (
+                        <tr key={[group.customer ?? '', group.label ?? '', group.size ?? '', group.diameter ?? '', group.thickness ?? '', group.length ?? '', group.isSpecified ? '1' : '0'].join('|')}>
                           <td data-label="Customer">{renderSpecCustomer(group)}</td>
                           <td data-label="Diameter (OD mm)" className="production-col-num tabular-data" style={{ textAlign: 'right' }}>
                             {renderDimension(group.diameter)}
@@ -588,8 +608,8 @@ export default function ReportsSection() {
                     ) : hasCurrentReport && (!report.productionLogs || report.productionLogs.length === 0) ? (
                       <tr><td colSpan="8">{report.periodState === 'future' ? 'Pipe cuts not observed yet.' : 'No pipe cutting events registered for this period.'}</td></tr>
                     ) : hasCurrentReport ? (
-                      report.productionLogs.map((log, index) => (
-                        <tr key={log.id || log.deviceEventId || log.sensorEventId || index}>
+                      report.productionLogs.map((log) => (
+                        <tr key={log.id || log.deviceEventId || log.sensorEventId || `${log.recordedAt || ''}-${log.pipeNumber ?? log.pipe_number ?? ''}-${log.customer || ''}`}>
                           <td data-label="Cut Time" className="production-col-timestamp tabular-data">
                             {log.recordedAt && !Number.isNaN(new Date(log.recordedAt).getTime())
                               ? formatSuccessfulUpdate(new Date(log.recordedAt))
@@ -688,8 +708,8 @@ export default function ReportsSection() {
                         <td colSpan="5">{report.periodState === 'future' ? 'Downtime not observed yet.' : <span className="reports-empty-state"><Check size={16} aria-hidden="true" /><span>No downtime events</span></span>}</td>
                       </tr>
                     ) : hasCurrentReport ? (
-                      report.rows.map((row, index) => (
-                        <tr key={`${row.cause || ''}-${row.sensor || ''}-${row.id || index}`}>
+                      report.rows.map((row) => (
+                        <tr key={row.id || `${row.cause || ''}-${row.sensor || ''}`}>
                           <td data-label="Cause">{row.cause}</td>
                           <td data-label="Sensor">{row.sensor === 'Unassigned' ? row.sensor : formatSensorName(row.sensor)}</td>
                           <td data-label="Events">{row.events}</td>

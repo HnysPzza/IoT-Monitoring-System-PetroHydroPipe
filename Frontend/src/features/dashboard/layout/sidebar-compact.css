@@ -4,8 +4,8 @@
 .sidebar-brand { gap:8px; }
 .sidebar-logo { width:32px; height:32px; object-fit:contain; }
 .sidebar-brand-name { font-size:13.5px; color:white; }
-.panel-toggle-btn.sidebar-toggle,.panel-toggle-btn.sidebar-toggle:hover,.panel-toggle-btn.sidebar-toggle:active { width:44px; height:44px; min-width:44px; min-height:44px; border:0; border-radius:6px; color:#94a3b8; }
-.panel-toggle-btn.sidebar-toggle:hover { color:white; background:#ffffff0f; }
+.panel-toggle-btn.sidebar-toggle,.panel-toggle-btn.sidebar-toggle:hover,.panel-toggle-btn.sidebar-toggle:active { width:32px; height:32px; min-width:32px; min-height:32px; border:1px solid #ffffff1a; border-radius:8px; background:#ffffff08; box-shadow:none; color:#94a3b8; }
+.panel-toggle-btn.sidebar-toggle:hover { color:white; background:#ffffff14; border-color:#ffffff2e; }
 .panel-toggle-btn.sidebar-toggle .panel-chevron { transition:transform 180ms var(--ease-out), stroke 160ms var(--ease-std); }
 .dashboard-sidebar .sidebar-nav {
   container-type: size;

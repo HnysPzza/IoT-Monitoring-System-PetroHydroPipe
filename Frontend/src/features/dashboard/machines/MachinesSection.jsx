@@ -86,7 +86,7 @@ export default function MachinesSection() {
   useLayoutEffect(() => {
     const slot = document.getElementById('machines-header-controls')
     if (slot !== headerSlot) setHeaderSlot(slot)
-  }, [])
+  }, [headerSlot])
 
   const machine = liveFeed.machine
   const rawSensors = liveFeed.sensors

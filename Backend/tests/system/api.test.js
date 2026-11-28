@@ -207,6 +207,29 @@ test('watchdog diagnostics reject invalid, expired, inactive, and archived authe
   }
 })
 
+test('authenticate maps raw network/upstream drops to 503 and AbortError to 504 instead of 401', async () => {
+  const cases = [
+    { err: new TypeError('fetch failed'), expectedStatus: 503, expectedCode: 'AUTH_SERVICE_UNAVAILABLE' },
+    { err: Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }), expectedStatus: 504, expectedCode: 'UPSTREAM_TIMEOUT' },
+  ]
+
+  for (const { err, expectedStatus, expectedCode } of cases) {
+    const app = loadAppWithMocks({
+      'src/modules/auth/auth.service.js': {
+        login: async () => ({}),
+        getAuthenticatedUser: async () => { throw err },
+      },
+    })
+    await withTestServer(app, async (baseUrl) => {
+      const result = await requestJson(baseUrl, '/api/operations/watchdog', {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(result.response.status, expectedStatus)
+      assertError(result.body, expectedCode)
+    })
+  }
+})
+
 test('POST /api/auth/login succeeds with valid credentials', async () => {
   const app = loadAppWithMocks({
     'src/modules/auth/auth.service.js': {
@@ -403,7 +426,7 @@ test('app middleware applies JSON body limit and CORS allowlist behavior', async
     })
 
     assert.equal(allowedOrigin.response.headers.get('access-control-allow-origin'), 'http://localhost:5173')
-    assert.equal(allowedOrigin.response.headers.get('access-control-expose-headers'), 'Retry-After')
+    assert.equal(allowedOrigin.response.headers.get('access-control-expose-headers'), 'Retry-After,Content-Disposition')
 
     const blockedOrigin = await requestJson(baseUrl, '/api/health', {
       headers: { Origin: 'https://not-allowed.example.com' },
@@ -838,6 +861,18 @@ test('dashboard overview route returns backend summary for allowed roles', async
 
     assert.equal(invalid.response.status, 400)
     assertError(invalid.body, 'VALIDATION_ERROR')
+
+    for (const invalidPath of [
+      '/api/dashboard/overview?date=1999-12-31',
+      '/api/dashboard/overview?date=2101-01-01',
+      '/api/dashboard/overview?extra=1',
+      '/api/dashboard/downtime-impact?date=1999-12-31',
+      '/api/dashboard/downtime-impact?extra=1',
+    ]) {
+      const rejected = await requestJson(baseUrl, invalidPath, { headers: authHeader('Production Supervisor') })
+      assert.equal(rejected.response.status, 400, invalidPath)
+      assertError(rejected.body, 'VALIDATION_ERROR')
+    }
   })
 })
 
@@ -1534,6 +1569,17 @@ test('audit list is admin-only and returns paginated response', async () => {
     assert.equal(allowed.response.status, 200)
     assert.equal(allowed.body.logs.length, 1)
     assert.equal(allowed.body.pagination.limit, 25)
+
+    for (const invalidQuery of [
+      `action=${'A'.repeat(101)}`,
+      `entityType=${'B'.repeat(65)}`,
+      'extra=1',
+      'dateFrom=2026-06-10&dateTo=2026-06-01',
+    ]) {
+      const rejected = await requestJson(baseUrl, `/api/audit?${invalidQuery}`, { headers: authHeader() })
+      assert.equal(rejected.response.status, 400, invalidQuery)
+      assertError(rejected.body, 'VALIDATION_ERROR')
+    }
   })
 })
 

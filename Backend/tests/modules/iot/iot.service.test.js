@@ -1565,7 +1565,9 @@ test('getDeviceOperationalThresholds disables absenceDetectionEnabled outside wo
           if (table === 'production_calendar_days') {
             return {
               select() { return this },
-              eq() { return Promise.resolve({ data: calendarRows, error: null }) },
+              eq() { return this },
+              gte() { return this },
+              lte() { return Promise.resolve({ data: calendarRows, error: null }) },
             }
           }
           throw new Error(`Unexpected table ${table}`)
@@ -1628,7 +1630,9 @@ test('getDeviceOperationalThresholds disables absenceDetectionEnabled outside wo
         if (table === 'production_calendar_days') {
           return {
             select() { return this },
-            eq() { return Promise.resolve({ data: null, error: { message: 'calendar read failed' } }) },
+            eq() { return this },
+            gte() { return this },
+            lte() { return Promise.resolve({ data: null, error: { message: 'calendar read failed' } }) },
           }
         }
         throw new Error(`Unexpected table ${table}`)
@@ -1672,7 +1676,9 @@ test('getDeviceOperationalThresholds disables absenceDetectionEnabled outside wo
         if (table === 'production_calendar_days') {
           return {
             select() { return this },
-            eq() {
+            eq() { return this },
+            gte() { return this },
+            lte() {
               if (throwCalendar) return Promise.reject(new Error('calendar connection reset'))
               return Promise.resolve({ data: calendarRows, error: null })
             },
@@ -1737,7 +1743,9 @@ test('createSensorEvent downgrades ESP32 on-device absence fault to idle and con
           if (table === 'production_calendar_days') {
             return {
               select() { return this },
-              eq() { return Promise.resolve({ data: [], error: null }) },
+              eq() { return this },
+              gte() { return this },
+              lte() { return Promise.resolve({ data: [], error: null }) },
             }
           }
           throw new Error(`Unexpected table ${table}`)
@@ -1914,6 +1922,74 @@ test('createSensorEvent downgrades ESP32 on-device absence fault to idle and con
     assert.equal(afterHoursProcess.rpcCalls[0].args.p_event_type, 'idle')
     assert.equal(afterHoursProcess.rpcCalls[0].args.p_event_value.metadata.detectionState, 'IDLE')
   }
+})
+
+test('getDeviceOperationalThresholds scopes calendar scan to today +-1 day and coalesces concurrent cold misses', async () => {
+  clearSourceCache()
+  const currentEnv = require(path.join(backendRoot, 'src', 'config', 'env.js'))
+  mockModule('src/config/env.js', { ...currentEnv, WATCHDOG_MODE: 'enforce' })
+
+  let settingsQueries = 0
+  let calendarQueries = 0
+  const calendarBounds = []
+  mockModule('src/database/client.js', {
+    getSupabaseClient: () => ({
+      from(table) {
+        if (table === 'machine_operational_settings') {
+          settingsQueries += 1
+          return {
+            select() { return this },
+            eq() { return this },
+            async maybeSingle() {
+              await new Promise((resolve) => setTimeout(resolve, 10))
+              return {
+                data: {
+                  version: 1,
+                  shift_schedule: { workStart: '08:00', workEnd: '17:30', rampUpGraceMinutes: 10, restDays: ['sunday'], breaks: [] },
+                  sensor_thresholds: {
+                    'S-01': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 60 },
+                    'S-03': { absenceDetectionEnabled: true, triggerSeconds: 60, recoverySeconds: 60, rotationStallMs: 3000 },
+                  },
+                },
+                error: null,
+              }
+            },
+          }
+        }
+        if (table === 'production_calendar_days') {
+          calendarQueries += 1
+          const bounds = {}
+          return {
+            select() { return this },
+            eq() { return this },
+            gte(column, value) { bounds.gte = [column, value]; return this },
+            lte(column, value) {
+              bounds.lte = [column, value]
+              calendarBounds.push(bounds)
+              return Promise.resolve({ data: [], error: null })
+            },
+          }
+        }
+        throw new Error(`Unexpected table ${table}`)
+      },
+    }),
+  })
+
+  const service = require(path.join(backendRoot, 'src', 'modules', 'iot', 'iot.service.js'))
+  const asOf = new Date('2026-11-18T09:00:00+08:00')
+  const [r1, r2] = await Promise.all([
+    service.getDeviceOperationalThresholds({ ...createSensorRecord(), sensor_code: 'S-01' }, { useCache: true, asOf }),
+    service.getDeviceOperationalThresholds({ ...createSensorRecord(), sensor_code: 'S-03' }, { useCache: true, asOf }),
+  ])
+
+  assert.equal(r1.absenceDetectionEnabled, true)
+  assert.equal(r2.absenceDetectionEnabled, true)
+  assert.equal(settingsQueries, 1)
+  assert.equal(calendarQueries, 1)
+  assert.deepEqual(calendarBounds, [{
+    gte: ['calendar_date', '2026-11-17'],
+    lte: ['calendar_date', '2026-11-19'],
+  }])
 })
 
 

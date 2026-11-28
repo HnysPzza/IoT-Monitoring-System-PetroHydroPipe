@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from './useAuth.js'
 
@@ -6,10 +6,12 @@ import { useAuth } from './useAuth.js'
 export function useAuthenticatedQuery({ queryFn, enabled = true, ...options }) {
   const { token, user, isAuthenticated, isRestoring } = useAuth()
   const tokenRef = useRef(token)
-  tokenRef.current = token
-  const previousRef = useRef(null)
+  useLayoutEffect(() => {
+    tokenRef.current = token
+  }, [token])
+  const [previous, setPrevious] = useState(null)
   const identity = `${user?.id || ''}:${user?.role || ''}`
-  if (!isAuthenticated || previousRef.current?.identity !== identity) previousRef.current = null
+  const validPrevious = isAuthenticated && previous?.identity === identity ? previous : null
 
   const query = useQuery({
     ...options,
@@ -17,10 +19,14 @@ export function useAuthenticatedQuery({ queryFn, enabled = true, ...options }) {
     queryFn: (context) => queryFn({ ...context, token: tokenRef.current }),
   })
   if (isAuthenticated && query.data !== undefined && !query.isPlaceholderData) {
-    previousRef.current = { identity, data: query.data, updatedAt: query.dataUpdatedAt }
+    if (validPrevious?.data !== query.data || validPrevious?.updatedAt !== query.dataUpdatedAt) {
+      setPrevious({ identity, data: query.data, updatedAt: query.dataUpdatedAt })
+    }
+  } else if (previous !== null && !validPrevious) {
+    setPrevious(null)
   }
-  if (options.placeholderData && query.isError && query.data === undefined && previousRef.current) {
-    return { ...query, data: previousRef.current.data, dataUpdatedAt: previousRef.current.updatedAt, isPlaceholderData: true }
+  if (options.placeholderData && query.isError && query.data === undefined && validPrevious) {
+    return { ...query, data: validPrevious.data, dataUpdatedAt: validPrevious.updatedAt, isPlaceholderData: true }
   }
   return query
 }

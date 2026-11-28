@@ -30,8 +30,8 @@ export function ProtectedRoute({ children }) {
     return <DashboardLoadingFallback />
   }
 
-  if (!isAuthenticated && sessionError?.status >= 500) {
-    return <ServerErrorPage onRetry={retrySessionRestore} />
+  if (!isAuthenticated && sessionError && (sessionError.status === 0 || sessionError.status >= 500 || sessionError.status === 429)) {
+    return <ServerErrorPage onRetry={retrySessionRestore} status={sessionError.status} />
   }
 
   // Guard dashboard pages; unauthenticated users see the 401 sign-in required page.

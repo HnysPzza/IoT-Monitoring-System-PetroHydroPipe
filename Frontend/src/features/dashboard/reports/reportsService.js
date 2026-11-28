@@ -47,7 +47,7 @@ function getExportFilename(disposition, fallback) {
 }
 
 // Exports stream a file, not JSON, so this cannot reuse apiRequest's JSON parsing.
-export async function exportReport(token, { category = 'regular', reportType, selectedDate, format }) {
+export async function exportReport(token, { category = 'regular', reportType, selectedDate, format }, { signal } = {}) {
   const normalizedDate = selectedDate?.length === 7 ? `${selectedDate}-01` : selectedDate
   const path = '/api/reports/export'
   const sessionContext = getSessionContext(token)
@@ -59,7 +59,14 @@ export async function exportReport(token, { category = 'regular', reportType, se
   const requestBody = JSON.stringify({ category, type: reportType, date: normalizedDate, format })
 
   const controller = new AbortController()
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS)
+  const abortRequest = () => controller.abort(signal?.reason ?? Object.assign(new Error('The export request was cancelled.'), { name: 'AbortError' }))
+  if (signal?.aborted) abortRequest()
+  else signal?.addEventListener('abort', abortRequest, { once: true })
+  let timedOut = false
+  const timeoutId = globalThis.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, DEFAULT_REQUEST_TIMEOUT_MS)
 
   try {
     let response
@@ -89,7 +96,13 @@ export async function exportReport(token, { category = 'regular', reportType, se
         }
       }
     } catch (error) {
-      if (error?.code === 'SESSION_CHANGED') throw error
+      if (error?.code === 'SESSION_CHANGED' || error?.status) throw error
+      if (timedOut) {
+        throw createApiError('The export request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
+      }
+      if (signal?.aborted) {
+        throw createApiError('The export request was cancelled.', 0, null, 'REQUEST_ABORTED')
+      }
       if (error?.name === 'AbortError') {
         throw createApiError('The export request timed out. Please try again.', 0, null, 'REQUEST_TIMEOUT')
       }
@@ -127,6 +140,7 @@ export async function exportReport(token, { category = 'regular', reportType, se
 
     return { blob, filename }
   } finally {
+    signal?.removeEventListener('abort', abortRequest)
     globalThis.clearTimeout(timeoutId)
   }
 }

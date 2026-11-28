@@ -555,6 +555,8 @@ test('Scale Suite 5.1: 5,000 simulated cuts are capped at 200 for summary but fu
   assert.equal(summaryReport.metrics.totalProductionOutput, 5000)
   assert.equal(summaryReport.productionLogs.length, 200, 'Summary MUST cap productionLogs at 200 to protect DOM')
   assert.equal(summaryReport.rows.length, 200)
+  assert.equal(summaryReport.productionLogs[0].deviceEventId, 4801)
+  assert.equal(summaryReport.productionLogs[199].deviceEventId, 5000)
 
   // 2. Export call (maxLogs: null)
   const exportReport = await reportsService.getSummary(

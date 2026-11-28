@@ -22,7 +22,7 @@ vi.mock('./reportsService.js', async () => {
 async function openFilterAndSelectProduction(user) {
   const filterBtn = screen.getByRole('button', { name: /filter report type/i })
   await user.click(filterBtn)
-  const prodItem = await screen.findByRole('menuitem', { name: 'Production Report' })
+  const prodItem = await screen.findByRole('menuitemradio', { name: 'Production Report' })
   await user.click(prodItem)
 }
 
