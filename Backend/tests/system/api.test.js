@@ -207,6 +207,7 @@ test('watchdog diagnostics reject invalid, expired, inactive, and archived authe
   }
 })
 
+
 test('POST /api/auth/login succeeds with valid credentials', async () => {
   const app = loadAppWithMocks({
     'src/modules/auth/auth.service.js': {
@@ -838,6 +839,18 @@ test('dashboard overview route returns backend summary for allowed roles', async
 
     assert.equal(invalid.response.status, 400)
     assertError(invalid.body, 'VALIDATION_ERROR')
+
+    for (const invalidPath of [
+      '/api/dashboard/overview?date=1999-12-31',
+      '/api/dashboard/overview?date=2101-01-01',
+      '/api/dashboard/overview?extra=1',
+      '/api/dashboard/downtime-impact?date=1999-12-31',
+      '/api/dashboard/downtime-impact?extra=1',
+    ]) {
+      const rejected = await requestJson(baseUrl, invalidPath, { headers: authHeader('Production Supervisor') })
+      assert.equal(rejected.response.status, 400, invalidPath)
+      assertError(rejected.body, 'VALIDATION_ERROR')
+    }
   })
 })
 
@@ -1534,6 +1547,17 @@ test('audit list is admin-only and returns paginated response', async () => {
     assert.equal(allowed.response.status, 200)
     assert.equal(allowed.body.logs.length, 1)
     assert.equal(allowed.body.pagination.limit, 25)
+
+    for (const invalidQuery of [
+      `action=${'A'.repeat(101)}`,
+      `entityType=${'B'.repeat(65)}`,
+      'extra=1',
+      'dateFrom=2026-06-10&dateTo=2026-06-01',
+    ]) {
+      const rejected = await requestJson(baseUrl, `/api/audit?${invalidQuery}`, { headers: authHeader() })
+      assert.equal(rejected.response.status, 400, invalidQuery)
+      assertError(rejected.body, 'VALIDATION_ERROR')
+    }
   })
 })
 

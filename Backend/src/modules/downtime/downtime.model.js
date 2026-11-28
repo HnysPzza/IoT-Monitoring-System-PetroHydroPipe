@@ -17,13 +17,13 @@ const downtimeCauseSchema = z.enum([
 const listDowntimeSchema = z.object({
   query: z.object({
     status: z.enum(['All', 'Open', 'Resolved']).optional(),
-    cause: z.string().trim().optional(),
+    cause: z.string().trim().max(100, 'Cause filter is too long.').optional(),
     date: businessDateSchema('Invalid downtime date.').optional(),
     dateFrom: businessDateSchema('Invalid start date.').optional(),
     dateTo: businessDateSchema('Invalid end date.').optional(),
     page: z.coerce.number().int().positive().max(10000).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(25),
-  }).refine((query) => !query.dateFrom || !query.dateTo || query.dateFrom <= query.dateTo, {
+  }).strict().refine((query) => !query.dateFrom || !query.dateTo || query.dateFrom <= query.dateTo, {
     message: 'Start date must be on or before end date.',
     path: ['dateFrom'],
   }).refine(
@@ -39,7 +39,7 @@ const listDowntimeSchema = z.object({
 const updateDowntimeSchema = z.object({
   params: z.object({
     id: z.string().uuid('Invalid downtime id.'),
-  }),
+  }).strict(),
   body: z.object({
     cause: downtimeCauseSchema.optional(),
     notes: z.string().trim().max(1000, 'Notes are too long.').optional(),

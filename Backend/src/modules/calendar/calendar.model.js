@@ -1,4 +1,5 @@
 const { z } = require('zod')
+const { isBusinessDateInRange } = require('../../shared/businessTime')
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_CALENDAR_VERSION = 9223372036854775807n
@@ -36,6 +37,7 @@ function isValidBusinessDate(value) {
     && parsed.getUTCFullYear() === year
     && parsed.getUTCMonth() + 1 === month
     && parsed.getUTCDate() === day
+    && isBusinessDateInRange(value)
   )
 }
 

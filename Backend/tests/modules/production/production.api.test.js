@@ -1175,6 +1175,40 @@ test('Validation rejects invalid payloads on PATCH /api/production/:eventId and 
     })
     assert.equal(over500Res.response.status, 400)
     assertError(over500Res.body, 'VALIDATION_ERROR')
+
+    const oversizedBatchIsoRes = await requestJson(baseUrl, '/api/production/batch', {
+      method: 'PATCH',
+      headers: authHeader('Admin'),
+      body: {
+        startedAt: '2025-01-01T00:00:00.000Z',
+        endedAt: '2026-06-01T00:00:00.000Z',
+        label: 'Over 366 days',
+      },
+    })
+    assert.equal(oversizedBatchIsoRes.response.status, 400)
+    assertError(oversizedBatchIsoRes.body, 'VALIDATION_ERROR')
+
+    for (const outOfRange of [
+      { startedAt: '1999-12-31T00:00:00.000Z', endedAt: '2000-01-02T00:00:00.000Z', label: 'Pre-2000 ISO' },
+      { startedAt: '2101-01-01T00:00:00.000Z', endedAt: '2101-01-02T00:00:00.000Z', label: 'Post-2100 ISO' },
+      { dateFrom: '1999-12-31', dateTo: '2000-01-02', label: 'Pre-2000 date' },
+    ]) {
+      const res = await requestJson(baseUrl, '/api/production/batch', {
+        method: 'PATCH',
+        headers: authHeader('Admin'),
+        body: outOfRange,
+      })
+      assert.equal(res.response.status, 400)
+      assertError(res.body, 'VALIDATION_ERROR')
+    }
+
+    for (const invalidQuery of ['page=10001', 'date=1999-12-31', 'dateFrom=2101-01-01']) {
+      const res = await requestJson(baseUrl, `/api/production?${invalidQuery}`, {
+        headers: authHeader('Admin'),
+      })
+      assert.equal(res.response.status, 400, invalidQuery)
+      assertError(res.body, 'VALIDATION_ERROR')
+    }
   })
 })
 

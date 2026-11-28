@@ -1,6 +1,12 @@
 const { z } = require('zod')
+const { formatBusinessDate, isBusinessDateInRange } = require('../../shared/businessTime')
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+const businessDate = (message) => z.string().date(message).refine(isBusinessDateInRange, message)
+const boundedIsoTimestamp = (message) => z.string()
+  .datetime({ offset: true, message })
+  .refine((val) => isBusinessDateInRange(formatBusinessDate(val)), message)
 
 const label = z.preprocess(
   (val) => (typeof val === 'string' && val.trim() === '' ? null : val),
@@ -85,12 +91,12 @@ const tonnage = z.preprocess(
 const listProductionLogsSchema = z.object({
   query: z
     .object({
-      page: z.coerce.number().int().min(1, 'Page must be 1 or greater.').default(1),
+      page: z.coerce.number().int().min(1, 'Page must be 1 or greater.').max(10000, 'Page cannot exceed 10000.').default(1),
       pageSize: z.coerce.number().int().min(1, 'Page size must be 1 or greater.').max(100, 'Page size cannot exceed 100.').optional(),
       limit: z.coerce.number().int().min(1, 'Limit must be 1 or greater.').max(100, 'Limit cannot exceed 100.').optional(),
-      date: z.string().date('Invalid production date.').optional(),
-      dateFrom: z.string().date('Invalid start date.').optional(),
-      dateTo: z.string().date('Invalid end date.').optional(),
+      date: businessDate('Invalid production date.').optional(),
+      dateFrom: businessDate('Invalid start date.').optional(),
+      dateTo: businessDate('Invalid end date.').optional(),
       status: z.enum(['accepted', 'rejected', 'all']).default('accepted'),
       specStatus: z.enum(['all', 'specified', 'unspecified']).default('all'),
       search: z.string().trim().max(100, 'Search query is too long.').optional(),
@@ -181,10 +187,10 @@ const batchUpdateBodySchema = z
       .min(1, 'Select at least one production record.')
       .max(500, 'Batch specification update cannot exceed 500 records.')
       .optional(),
-    startedAt: z.string().datetime({ offset: true, message: 'Invalid start timestamp.' }).optional(),
-    endedAt: z.string().datetime({ offset: true, message: 'Invalid end timestamp.' }).optional(),
-    dateFrom: z.string().date('Invalid start date.').optional(),
-    dateTo: z.string().date('Invalid end date.').optional(),
+    startedAt: boundedIsoTimestamp('Invalid start timestamp.').optional(),
+    endedAt: boundedIsoTimestamp('Invalid end timestamp.').optional(),
+    dateFrom: businessDate('Invalid start date.').optional(),
+    dateTo: businessDate('Invalid end date.').optional(),
     onlyUnlabeled: z.boolean().default(false),
     customer,
     diameter: dimension,
@@ -222,7 +228,9 @@ const batchUpdateBodySchema = z
   })
   .refine((data) => {
     if (data.startedAt && data.endedAt) {
-      return new Date(data.startedAt).getTime() < new Date(data.endedAt).getTime()
+      const startMs = new Date(data.startedAt).getTime()
+      const endMs = new Date(data.endedAt).getTime()
+      return startMs < endMs && (endMs - startMs) <= 366 * DAY_MS
     }
     if (data.dateFrom && data.dateTo) {
       if (data.dateFrom > data.dateTo) {
@@ -230,14 +238,11 @@ const batchUpdateBodySchema = z
       }
       const from = new Date(`${data.dateFrom}T00:00:00Z`).getTime()
       const to = new Date(`${data.dateTo}T00:00:00Z`).getTime()
-      if ((to - from) / DAY_MS > 366) {
-        return false
-      }
-      return true
+      return (to - from) <= 366 * DAY_MS
     }
     return true
   }, {
-    message: 'Start of range must be earlier than end of range.',
+    message: 'Start of range must be earlier than end of range, and time range cannot exceed 366 days.',
   })
   .refine((data) => {
     return (

@@ -65,4 +65,8 @@ test('downtime list schema accepts up to 366 days and rejects oversized multi-ye
   const elapsedMs = performance.now() - t0
   assert.equal(century.success, false)
   assert.ok(elapsedMs < 50, `Expected immediate schema rejection, took ${elapsedMs}ms`)
+
+  assert.equal(listDowntimeSchema.safeParse({ query: { cause: 'x'.repeat(101) } }).success, false)
+  assert.equal(listDowntimeSchema.safeParse({ query: { extra: '1' } }).success, false)
+  assert.equal(listDowntimeSchema.safeParse({ query: { cause: 'Corrective Maintenance' } }).success, true)
 })

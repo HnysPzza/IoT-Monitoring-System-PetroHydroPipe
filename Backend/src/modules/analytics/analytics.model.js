@@ -1,8 +1,11 @@
 const { z } = require('zod')
+const { isBusinessDateInRange } = require('../../shared/businessTime')
+
+const analyticsDateSchema = (message) => z.string().date(message).refine(isBusinessDateInRange, message)
 
 const datedAnalyticsQuery = z.strictObject({
-  startDate: z.string().date('Invalid Analytics start date.'),
-  endDate: z.string().date('Invalid Analytics end date.'),
+  startDate: analyticsDateSchema('Invalid Analytics start date.'),
+  endDate: analyticsDateSchema('Invalid Analytics end date.'),
 }).superRefine((query, context) => {
   const start = new Date(`${query.startDate}T00:00:00Z`)
   const end = new Date(`${query.endDate}T00:00:00Z`)
