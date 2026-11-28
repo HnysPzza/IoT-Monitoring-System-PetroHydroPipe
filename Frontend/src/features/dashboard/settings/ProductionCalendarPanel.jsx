@@ -248,6 +248,7 @@ export default function ProductionCalendarPanel({
   const removeTriggerRef = useRef(null)
   const undoButtonRef = useRef(null)
   const pendingRemovalRef = useRef(null)
+  const mutatingRef = useRef(false)
   const undoTimerRef = useRef(null)
   const snackbarNoticeTimerRef = useRef(null)
 
@@ -432,7 +433,8 @@ export default function ProductionCalendarPanel({
   }
 
   async function executeAddEntry({ targetMode, payload, confirmOverwrite = false }) {
-    if (!machine?.id) return
+    if (!machine?.id || mutatingRef.current) return
+    mutatingRef.current = true
     setIsMutating(true)
     setPanelNotice(null)
     try {
@@ -475,12 +477,13 @@ export default function ProductionCalendarPanel({
         })
       }
     } finally {
+      mutatingRef.current = false
       setIsMutating(false)
     }
   }
 
   function handleAddEntry() {
-    if (!validateForm() || isMutating || !canEditCalendar || !online) return
+    if (mutatingRef.current || !validateForm() || isMutating || !canEditCalendar || !online) return
     const resolvedName = name.trim() || getDefaultEntryName(dayType, mode)
     const resolvedReason = reason.trim() ? reason.trim() : null
 
@@ -510,7 +513,8 @@ export default function ProductionCalendarPanel({
   }
 
   async function handleToggleHoliday(entry, rowKey) {
-    if (!machine?.id || isMutating || pendingRemovalRef.current || !canEditCalendar || !online || entry.calendarDate <= manilaToday) return
+    if (!machine?.id || mutatingRef.current || isMutating || pendingRemovalRef.current || !canEditCalendar || !online || entry.calendarDate <= manilaToday) return
+    mutatingRef.current = true
     setIsMutating(true)
     setMutatingKey(rowKey)
     setPanelNotice(null)
@@ -532,6 +536,7 @@ export default function ProductionCalendarPanel({
         message: error?.message || 'Unable to update holiday status.',
       })
     } finally {
+      mutatingRef.current = false
       setIsMutating(false)
       setMutatingKey(null)
     }

@@ -1043,4 +1043,25 @@ describe('SettingsSection operational settings', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(updateOperationalSettings).toHaveBeenCalledTimes(1))
   })
+
+  it('prevents duplicate saves on rapid Ctrl+S key presses', async () => {
+    const user = userEvent.setup()
+    let resolveSave
+    updateOperationalSettings.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve }))
+    renderWithAuth(<SettingsSection />)
+
+    const trigger = await screen.findByLabelText('S-01 trigger minutes')
+    await user.clear(trigger)
+    await user.type(trigger, '5')
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+    })
+
+    expect(updateOperationalSettings).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveSave({ settings: settingsFixture({ version: '2' }) })
+    })
+  })
 })
