@@ -1,77 +1,20 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router'
+import { Moon, Sun } from 'lucide-react'
 import Status from '../../../shared/components/Status.jsx'
-import { useExitPresence } from '../../../shared/hooks/useExitPresence.js'
-
-const LONG_ALERT_THRESHOLD = 110
-import {
-  BarChart3,
-  Bell,
-  History,
-  LogOut,
-  Logs,
-  Monitor,
-  Moon,
-  MoveRight,
-  Rss,
-  Settings,
-  Sun,
-  TriangleAlert,
-  UserRound,
-  UserRoundCheck,
-  Users,
-  X,
-} from 'lucide-react'
-import './sidebar-compact.css'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
 import { useMobileViewport } from '../../../shared/hooks/useMobileViewport.js'
-import { onlineManager, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '../../../shared/services/queryClient.js'
-import { getRoleDisplayName } from '../../../shared/constants/roleLabels.js'
 import { useTheme } from '../../../shared/hooks/useTheme.js'
-import { getNavItemLabel, navGroups, navItems } from '../../../shared/constants/dashboardMeta.js'
-import { PanelToggle } from '../../../shared/components/PanelToggle.jsx'
-import { getAlertDestination, getAlertKind } from '../../../shared/utils/alertPresentation.js'
-import {
-  applyLiveAlertDelta,
-  areAlertDeltasEquivalent,
-  isAlertEventCompatible,
-  parseAlertRevision,
-  reconcileAlertSnapshot,
-} from '../alerts/alertReconciliation.js'
-import { acknowledgeAlert, getAlerts, subscribeToAlerts } from '../alerts/alertsService.js'
-
-import { AnimatedGauge } from '../../../shared/components/AnimatedGauge.jsx'
-import { AnimatedAnalytics } from '../../../shared/components/AnimatedAnalytics.jsx'
-import { NotebookDot } from '../../../shared/components/NotebookDot.jsx'
+import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
+import { navItems } from '../../../shared/constants/dashboardMeta.js'
 import UsersActionProvider from '../users/UsersActionProvider.jsx'
 import { useLiveFeedStream } from '../live/useLiveFeedStream.js'
-import UpdatedAgo from '../../../shared/components/UpdatedAgo.jsx'
-import { useNetworkOnline } from '../../../shared/hooks/useNetworkOnline.js'
-
-const ALERT_RESYNC_MIN_INTERVAL_MS = 5000 //ratelimiting 5 sec to prevent spam on backend
-const MAX_BUFFERED_ALERT_DELTAS = 256 //caps the maximum number of incoming alerts update payloads at 256
-const SIDEBAR_SCROLL_ACTIVE_MS = 500 // transition duration active window for sidebar scroll animations
-const ALERT_STREAM_EVENT_TYPES = new Set([ //event filtering SSE
-  'alert.acknowledged',
-  'alert.created',
-  'alert.resolved',
-  'alert.updated',
-])
-const ACKNOWLEDGEMENT_RESPONSE_STATUSES = new Set(['Acknowledged', 'Resolved']) //backend api can only return two valid result
-
-const icons = {
-  gauge: AnimatedGauge,
-  rss: Rss,
-  'triangle-alert': TriangleAlert,
-  'bar-chart-3': BarChart3,
-  'chart-no-axes-combined': AnimatedAnalytics,
-  users: Users,
-  monitor: Monitor,
-  logs: Logs,
-  'notebook-dot': NotebookDot,
-  settings: Settings,
-}
+import { useAlertsStream } from '../alerts/useAlertsStream.js'
+import AlertsPopover from '../alerts/AlertsPopover.jsx'
+import DashboardSidebar from './DashboardSidebar.jsx'
+import LogoutConfirmDialog from './LogoutConfirmDialog.jsx'
+import './sidebar-compact.css'
 
 function DashboardClock() {
   const [now, setNow] = useState(() => new Date())
@@ -113,176 +56,94 @@ function DashboardClock() {
     </time>
   )
 }
-//for notif case 1 - recover not yet acknowledge
-function getAlertStatusLabel(alert) {
-  if (alert.status === 'Active' && alert.metadata?.recoveryPending) {
-    return 'Recovered, waiting for acknowledgement'
-  }
-
-  return alert.status
-}
 
 export default function AdminDashboard() {
-  const queryClient = useQueryClient()
   const online = useNetworkOnline()
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const [alerts, setAlerts] = useState([])
-  const [acknowledgingAlertIds, setAcknowledgingAlertIds] = useState([])
-  const [alertLoadError, setAlertLoadError] = useState('')
-  const [alertAcknowledgementErrors, setAlertAcknowledgementErrors] = useState({})
-  const [hasTrustedAlertList, setHasTrustedAlertList] = useState(false)
-  const [cachedAlertsAt, setCachedAlertsAt] = useState(null)
-  const [alertConnectionStatus, setAlertConnectionStatus] = useState('connecting')
-  const [isAlertsOpen, setIsAlertsOpen] = useState(false)
   const isMobileViewport = useMobileViewport()
-  const [isSidebarScrolling, setIsSidebarScrolling] = useState(false)
-  const [hoveredTooltip, setHoveredTooltip] = useState(null)
-  const [focusedTooltip, setFocusedTooltip] = useState(null)
-  const [ackStatusMessage, setAckStatusMessage] = useState('')
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
-  const pointerFocusedToRef = useRef(null)
-  const collapsedTooltip = hoveredTooltip || focusedTooltip
-  const topbarRef = useRef(null)
-  const alertsButtonRef = useRef(null)
-  const alertsPopoverRef = useRef(null)
-  const sidebarRef = useRef(null)
-  const logoutButtonRef = useRef(null)
-  const logoutDialogRef = useRef(null)
-  const logoutCancelButtonRef = useRef(null)
-  const shouldRestoreLogoutFocusRef = useRef(false)
-  const desktopSidebarToggleRef = useRef(null)
-  const mobileMenuButtonRef = useRef(null)
-  const mobileCloseButtonRef = useRef(null)
-  const sidebarScrollTimerRef = useRef(null)
-  const retryAlertsRef = useRef(() => { })
-  const sessionTokenRef = useRef(null)
-  const acknowledgementIdRef = useRef(0)
-  const acknowledgementOperationsRef = useRef(new Map())
-  const applyAlertDeltaRef = useRef(() => { })
   const { token, user, logout } = useAuth()
   const { theme, setTheme } = useTheme()
-  useLayoutEffect(() => {
-    sessionTokenRef.current = token
-  }, [token])
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Sidebar items are filtered by the role stored in the auth token response.
-  const visibleNavGroups = useMemo(
-    () => navGroups
-      .map((group) => ({
-        ...group,
-        items: navItems.filter((item) => item.group === group.id && item.roles.includes(user?.role)),
-      }))
-      .filter((group) => group.items.length > 0),
-    [user?.role],
-  )
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false)
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
+
+  const topbarRef = useRef(null)
+  const alertsButtonRef = useRef(null)
+  const sidebarRef = useRef(null)
+  const logoutButtonRef = useRef(null)
+  const mobileMenuButtonRef = useRef(null)
+  const liveFeedRef = useRef(null)
 
   const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/'
-  const activeAlerts = useMemo(
-    () => alerts.filter((alert) => alert.status === 'Active'),
-    [alerts],
-  )
-  const acknowledgedAlerts = useMemo(
-    () => alerts.filter((alert) => alert.status === 'Acknowledged'),
-    [alerts],
-  )
-  const unresolvedAlerts = useMemo(
-    () => alerts.filter((alert) => alert.status === 'Active' || alert.status === 'Acknowledged'),
-    [alerts],
-  )
-  const [bellSwingState, setBellSwingState] = useState({ count: 0, isSwinging: false })
-  const [expandedAlertIds, setExpandedAlertIds] = useState(() => new Set())
-  const previousActiveCountRef = useRef(null)
-  const bellSwingTimerRef = useRef(null)
-  const pendingFocusRestoreRef = useRef(null)
-  const {
-    isPresent: isAlertsPopoverPresent,
-    isExiting: isAlertsPopoverExiting,
-    handleAnimationEnd: handleAlertsPopoverAnimationEnd,
-  } = useExitPresence(isAlertsOpen, alertsPopoverRef, 140)
-  const alertDestinations = Array.from(new Map(alerts.map((alert) => {
-    const destination = getAlertDestination(alert)
-    return [destination.to, destination]
-  })).values())
-  const activeAlertCount = activeAlerts.length
-  const isDesktopSidebarCollapsed = !isMobileViewport && isSidebarCollapsed
-
-  useEffect(() => {
-    if (!isDesktopSidebarCollapsed) {
-      setHoveredTooltip(null)
-      setFocusedTooltip(null)
-      pointerFocusedToRef.current = null
-    }
-  }, [isDesktopSidebarCollapsed])
   const matchedNavItem = navItems.find((item) => item.to === normalizedPathname)
   const isRouteForbidden = Boolean(matchedNavItem && !matchedNavItem.roles.includes(user?.role))
+
+  const handleSensorStatus = useCallback((incomingLive) => {
+    if (incomingLive) liveFeedRef.current?.applyEvent(incomingLive)
+    else liveFeedRef.current?.reload()
+  }, [])
+
+  const handleStreamOpen = useCallback(() => {
+    liveFeedRef.current?.reload()
+  }, [])
+
+  const {
+    acknowledgeAlertById,
+    acknowledgedAlerts,
+    acknowledgingAlertIds,
+    activeAlerts,
+    alertAcknowledgementErrors,
+    alertConnectionStatus,
+    alertLoadError,
+    alerts,
+    cachedAlertsAt,
+    hasTrustedAlertList,
+    retryAlerts,
+    unresolvedAlerts,
+  } = useAlertsStream({
+    token,
+    enabled: !isRouteForbidden,
+    online,
+    onSensorStatus: handleSensorStatus,
+    onStreamOpen: handleStreamOpen,
+  })
+
   const liveFeed = useLiveFeedStream(isRouteForbidden ? null : token, {
     isFallbackPolling: alertConnectionStatus === 'polling',
   })
-  const liveFeedRef = useRef(liveFeed)
+
   useLayoutEffect(() => {
     liveFeedRef.current = liveFeed
   }, [liveFeed])
+
   const outletContext = useMemo(
     () => ({ activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed }),
     [activeAlerts, unresolvedAlerts, hasTrustedAlertList, liveFeed],
   )
 
-  useEffect(() => {
-    if (!online) {
-      setHasTrustedAlertList(false)
-      setCachedAlertsAt(queryClient.getQueryData(queryKeys.alerts.snapshot)?.updatedAt || null)
-    }
-  }, [online, queryClient])
+  const closeDrawer = useCallback(() => {
+    setIsDrawerOpen(false)
+  }, [])
 
-  // Close the mobile drawer whenever a nested dashboard route changes.
+  const closeAlerts = useCallback(() => {
+    setIsAlertsOpen(false)
+  }, [])
+
+  const closeLogoutConfirm = useCallback(() => {
+    setIsLogoutConfirmOpen(false)
+  }, [])
+
+  // Close transient overlays whenever a nested dashboard route changes.
   useEffect(() => {
     if (sidebarRef.current?.contains(document.activeElement)) {
       document.activeElement?.blur?.()
     }
     setIsDrawerOpen(false)
     setIsAlertsOpen(false)
-    shouldRestoreLogoutFocusRef.current = false
     setIsLogoutConfirmOpen(false)
   }, [location.pathname])
-
-  useLayoutEffect(() => {
-    const dialog = logoutDialogRef.current
-    if (!dialog) return
-
-    if (isLogoutConfirmOpen) {
-      if (!dialog.hasAttribute('open')) {
-        if (typeof dialog.showModal === 'function') dialog.showModal()
-        else dialog.setAttribute('open', '')
-      }
-      logoutCancelButtonRef.current?.focus({ preventScroll: true })
-    } else if (dialog.hasAttribute('open')) {
-      if (typeof dialog.close === 'function') dialog.close()
-      else dialog.removeAttribute('open')
-    }
-  }, [isLogoutConfirmOpen])
-
-  useEffect(() => {
-    if (!isMobileViewport || isDrawerOpen) return
-    if (sidebarRef.current?.contains(document.activeElement)) {
-      mobileMenuButtonRef.current?.focus({ preventScroll: true })
-    }
-  }, [isDrawerOpen, isMobileViewport])
-
-  useEffect(() => {
-    if (isMobileViewport || !isDrawerOpen) return
-
-    setIsDrawerOpen(false)
-    desktopSidebarToggleRef.current?.focus({ preventScroll: true })
-  }, [isDrawerOpen, isMobileViewport])
-
-  useEffect(() => {
-    if (!isMobileViewport || !isDrawerOpen) return
-
-    mobileCloseButtonRef.current?.focus({ preventScroll: true })
-  }, [isDrawerOpen, isMobileViewport])
 
   useLayoutEffect(() => {
     const headerEl = topbarRef.current
@@ -306,131 +167,10 @@ export default function AdminDashboard() {
   }, [isRouteForbidden])
 
   useEffect(() => {
-    if (!isAlertsOpen) return
-
-    alertsPopoverRef.current?.focus({ preventScroll: true })
-
-    function handlePointerDown(event) {
-      if (alertsPopoverRef.current?.contains(event.target) || alertsButtonRef.current?.contains(event.target)) {
-        return
-      }
-
-      setIsAlertsOpen(false)
-    }
-
-    function handleFocusTrap(event) {
-      if (event.key !== 'Tab' || !alertsPopoverRef.current) return
-      const focusable = Array.from(
-        alertsPopoverRef.current.querySelectorAll(
-          'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-        ),
-      )
-      if (focusable.length === 0) {
-        event.preventDefault()
-        alertsPopoverRef.current.focus({ preventScroll: true })
-        return
-      }
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === alertsPopoverRef.current)) {
-        event.preventDefault()
-        last.focus({ preventScroll: true })
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus({ preventScroll: true })
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleFocusTrap)
-
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleFocusTrap)
-    }
-  }, [isAlertsOpen])
-
-  useEffect(() => {
-    if (!hasTrustedAlertList) {
-      previousActiveCountRef.current = null
-      return undefined
-    }
-
-    const prevCount = previousActiveCountRef.current
-    previousActiveCountRef.current = activeAlertCount
-
-    const shouldSwing = activeAlertCount > 0 && !isAlertsOpen && (
-      prevCount === null || activeAlertCount > prevCount
-    )
-
-    if (shouldSwing) {
-      if (bellSwingTimerRef.current !== null) {
-        clearTimeout(bellSwingTimerRef.current)
-      }
-      setBellSwingState((prev) => ({ count: prev.count + 1, isSwinging: true }))
-      bellSwingTimerRef.current = setTimeout(() => {
-        bellSwingTimerRef.current = null
-        setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))
-      }, 1150)
-    } else if (activeAlertCount === 0 || isAlertsOpen) {
-      if (bellSwingTimerRef.current !== null) {
-        clearTimeout(bellSwingTimerRef.current)
-        bellSwingTimerRef.current = null
-      }
-      setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))
-    }
-
-    return undefined
-  }, [activeAlertCount, hasTrustedAlertList, isAlertsOpen])
-
-  useEffect(() => () => {
-    if (bellSwingTimerRef.current !== null) {
-      clearTimeout(bellSwingTimerRef.current)
-      bellSwingTimerRef.current = null
-    }
-  }, [])
-
-  useLayoutEffect(() => {
-    const pending = pendingFocusRestoreRef.current
-    if (!pending || !isAlertsOpen) return
-
-    const stillActiveButton = alertsPopoverRef.current?.querySelector(`[data-alert-ack-id="${pending.alertId}"]`)
-    if (stillActiveButton) return
-
-    pendingFocusRestoreRef.current = null
-    if (!pending.shouldRestoreFocus) return
-
-    const container = alertsPopoverRef.current
-    if (!container) return
-
-    const buttons = Array.from(container.querySelectorAll('[data-alert-ack-id]'))
-    if (buttons.length > 0) {
-      const startIndex = pending.snapshotOrder.indexOf(pending.alertId)
-      const nextId = startIndex >= 0
-        ? pending.snapshotOrder
-          .slice(startIndex + 1)
-          .find((candidateId) => buttons.some((btn) => btn.getAttribute('data-alert-ack-id') === String(candidateId)))
-        : null
-      const targetButton = buttons.find((btn) => btn.getAttribute('data-alert-ack-id') === String(nextId))
-        || buttons[buttons.length - 1]
-      targetButton.focus({ preventScroll: true })
-      return
-    }
-
-    const footerLink = container.querySelector('.alerts-popover-footer a')
-    if (footerLink) {
-      footerLink.focus({ preventScroll: true })
-      return
-    }
-    container.focus({ preventScroll: true })
-  }, [isAlertsOpen, unresolvedAlerts])
-
-  useEffect(() => {
-    if (!isDrawerOpen && !isAlertsOpen && !collapsedTooltip) return undefined
+    if (!isDrawerOpen && !isAlertsOpen) return undefined
 
     function handleEscape(event) {
-      if (event.key !== 'Escape') return
-      if (isLogoutConfirmOpen) return
+      if (event.key !== 'Escape' || isLogoutConfirmOpen) return
 
       if (isAlertsOpen) {
         setIsAlertsOpen(false)
@@ -441,389 +181,23 @@ export default function AdminDashboard() {
       if (isDrawerOpen) {
         setIsDrawerOpen(false)
         mobileMenuButtonRef.current?.focus({ preventScroll: true })
-        return
       }
-
-      setHoveredTooltip(null)
-      setFocusedTooltip(null)
     }
 
     document.addEventListener('keydown', handleEscape)
-
     return () => {
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [collapsedTooltip, isAlertsOpen, isDrawerOpen, isLogoutConfirmOpen])
-
-  useEffect(() => () => {
-    if (sidebarScrollTimerRef.current !== null) {
-      window.clearTimeout(sidebarScrollTimerRef.current)
-      sidebarScrollTimerRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!token || isRouteForbidden || !online) return undefined
-
-    let isMounted = true
-    let pollingId = null
-    let resyncTimerId = null
-    let activeListRequest = null
-    let activeAbortController = null
-    let reloadQueued = false
-    let lastReloadStartedAt = null
-    let currentAlerts = []
-    let currentRevision = 0n
-    let hasTrustedSnapshot = false
-
-    const cachedAlerts = queryClient.getQueryData(queryKeys.alerts.snapshot)
-    setAlerts(cachedAlerts?.alerts || [])
-    setCachedAlertsAt(cachedAlerts?.updatedAt || null)
-    setAcknowledgingAlertIds([])
-    setAlertAcknowledgementErrors({})
-    setAlertLoadError('')
-    setHasTrustedAlertList(false)
-    setAlertConnectionStatus('connecting')
-    acknowledgementOperationsRef.current = new Map()
-
-    function replaceAlertState(nextAlerts, nextRevision) {
-      currentAlerts = nextAlerts
-      currentRevision = nextRevision
-      setAlerts(nextAlerts)
-      if (hasTrustedSnapshot) queryClient.setQueryData(queryKeys.alerts.snapshot, { alerts: nextAlerts, updatedAt: Date.now() })
-    }
-
-    function scheduleAlertReload() {
-      if (!isMounted) return
-
-      if (activeListRequest) {
-        reloadQueued = true
-        return
-      }
-
-      const elapsed = lastReloadStartedAt === null
-        ? ALERT_RESYNC_MIN_INTERVAL_MS
-        : Date.now() - lastReloadStartedAt
-      const delay = Math.max(0, ALERT_RESYNC_MIN_INTERVAL_MS - elapsed)
-
-      if (delay > 0) {
-        reloadQueued = true
-        if (!resyncTimerId) {
-          resyncTimerId = window.setTimeout(() => {
-            resyncTimerId = null
-            if (!isMounted || !reloadQueued) return
-            reloadQueued = false
-            void loadAlertState()
-          }, delay)
-        }
-        return
-      }
-
-      reloadQueued = false
-      void loadAlertState()
-    }
-
-    async function loadAlertState() {
-      if (!isMounted || !token) return
-
-      if (activeListRequest) {
-        reloadQueued = true
-        return
-      }
-
-      const listRequest = {
-        bufferedByRevision: new Map(),
-        hasUntrustedBuffer: false,
-      }
-      const controller = new AbortController()
-      activeAbortController = controller
-      activeListRequest = listRequest
-      lastReloadStartedAt = Date.now()
-
-      try {
-        const payload = await getAlerts(token, { signal: controller.signal })
-        if (isMounted && onlineManager.isOnline() && activeListRequest === listRequest) {
-          const reconciliation = reconcileAlertSnapshot(
-            payload,
-            [...listRequest.bufferedByRevision.values()],
-          )
-
-          if (!reconciliation.trusted) {
-            reloadQueued = true
-            setAlertLoadError('Alert state could not be verified. Retrying...')
-          } else if (reconciliation.revision < currentRevision) {
-            reloadQueued = true
-            if (!hasTrustedSnapshot) {
-              setAlertLoadError('Alert state could not be verified. Retrying...')
-            }
-          } else {
-            replaceAlertState(reconciliation.alerts, reconciliation.revision)
-            if (reconciliation.needsResync || listRequest.hasUntrustedBuffer) {
-              reloadQueued = true
-            }
-            hasTrustedSnapshot = true
-            queryClient.setQueryData(queryKeys.alerts.snapshot, { alerts: reconciliation.alerts, updatedAt: Date.now() })
-            setCachedAlertsAt(null)
-            setHasTrustedAlertList(true)
-            setAlertLoadError('')
-          }
-        }
-      } catch (error) {
-        if (
-          isMounted
-          && activeListRequest === listRequest
-          && !controller.signal.aborted
-          && error?.code !== 'REQUEST_ABORTED'
-          && error?.name !== 'AbortError'
-        ) {
-          setAlertLoadError(error.message || 'Unable to load alerts. Please try again.')
-        }
-      } finally {
-        if (activeAbortController === controller) {
-          activeAbortController = null
-        }
-        if (activeListRequest === listRequest) {
-          activeListRequest = null
-          if (reloadQueued) scheduleAlertReload()
-        }
-      }
-    }
-
-    function bufferAlertDelta(alert) {
-      if (!activeListRequest) return
-
-      const revision = parseAlertRevision(alert?.revision)
-      if (revision === null) {
-        activeListRequest.hasUntrustedBuffer = true
-        return
-      }
-
-      const existing = activeListRequest.bufferedByRevision.get(alert.revision)
-      if (existing) {
-        if (!areAlertDeltasEquivalent(existing, alert)) {
-          activeListRequest.hasUntrustedBuffer = true
-        }
-        return
-      }
-
-      if (activeListRequest.bufferedByRevision.size >= MAX_BUFFERED_ALERT_DELTAS) {
-        activeListRequest.hasUntrustedBuffer = true
-        return
-      }
-
-      activeListRequest.bufferedByRevision.set(alert.revision, alert)
-    }
-
-    function applyAlertDelta(alert, { fromAcknowledgement = false } = {}) {
-      if (!isMounted) return
-
-      if (!alert) {
-        if (fromAcknowledgement) scheduleAlertReload()
-        return
-      }
-
-      const isBufferedByActiveRequest = Boolean(activeListRequest)
-
-      if (fromAcknowledgement && !ACKNOWLEDGEMENT_RESPONSE_STATUSES.has(alert.status)) {
-        if (activeListRequest) {
-          activeListRequest.hasUntrustedBuffer = true
-        } else {
-          scheduleAlertReload()
-        }
-        return
-      }
-
-      bufferAlertDelta(alert)
-      const result = applyLiveAlertDelta(currentAlerts, currentRevision, alert)
-
-      if (result.applied) {
-        replaceAlertState(result.alerts, result.revision)
-      }
-
-      if (result.needsResync && !isBufferedByActiveRequest) scheduleAlertReload()
-    }
-
-    function startFallbackPolling() {
-      if (!isMounted || pollingId !== null) return
-
-      setAlertConnectionStatus('polling')
-      pollingId = window.setInterval(scheduleAlertReload, 10000)
-    }
-
-    function stopFallbackPolling() {
-      if (!isMounted) return
-      if (pollingId !== null) {
-        window.clearInterval(pollingId)
-        pollingId = null
-      }
-      setAlertConnectionStatus('live')
-    }
-
-    retryAlertsRef.current = scheduleAlertReload
-    applyAlertDeltaRef.current = applyAlertDelta
-    void loadAlertState()
-    const unsubscribe = subscribeToAlerts(token, {
-      onEvent: (event) => {
-        if (!isMounted || !onlineManager.isOnline() || typeof event?.type !== 'string') return
-        if (event.type === 'sensor.status' || event.type.startsWith('alert.')) {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
-        }
-
-        if (event.type === 'sensor.status') {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
-          if (event.payload?.live) liveFeedRef.current.applyEvent(event.payload.live)
-          else liveFeedRef.current.reload()
-          return
-        }
-
-        if (!event.type.startsWith('alert.')) return
-
-        if (
-          !ALERT_STREAM_EVENT_TYPES.has(event.type)
-          || !event.payload?.alert
-          || !isAlertEventCompatible(event.type, event.payload.alert)
-        ) {
-          scheduleAlertReload()
-          return
-        }
-
-        applyAlertDeltaRef.current(event.payload.alert)
-      },
-      onFallback: startFallbackPolling,
-      onOpen: ({ isReconnect, isRetry } = {}) => {
-        if (isMounted) {
-          if (isReconnect || isRetry) {
-            void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
-            void queryClient.invalidateQueries({ queryKey: queryKeys.production.all })
-          }
-          scheduleAlertReload()
-          liveFeedRef.current.reload()
-        }
-      },
-      onRecovery: stopFallbackPolling,
-      onStatusChange: (status) => {
-        if (!isMounted) return
-        if (status === 'live') setAlertConnectionStatus('live')
-        if (status === 'connecting') setAlertConnectionStatus('connecting')
-        if (status === 'reconnecting') setAlertConnectionStatus('reconnecting')
-        if (status === 'degraded') setAlertConnectionStatus('degraded')
-      },
-    })
-
-    return () => {
-      isMounted = false
-      activeAbortController?.abort()
-      activeAbortController = null
-      activeListRequest = null
-      reloadQueued = false
-      retryAlertsRef.current = () => { }
-      applyAlertDeltaRef.current = () => { }
-      unsubscribe()
-
-      if (pollingId !== null) {
-        window.clearInterval(pollingId)
-      }
-
-      if (resyncTimerId !== null) {
-        window.clearTimeout(resyncTimerId)
-      }
-    }
-  }, [isRouteForbidden, token, queryClient, online])
-
-  async function handleAcknowledgeAlert(alertId) {
-    if (!token || acknowledgementOperationsRef.current.has(alertId)) return
-
-    const wasFocused = typeof document !== 'undefined' && (
-      document.activeElement?.getAttribute?.('data-alert-ack-id') === String(alertId)
-      || (isAlertsOpen && document.activeElement === document.body)
-    )
-    const snapshotOrder = unresolvedAlerts.map((item) => item.id)
-
-    const operationId = acknowledgementIdRef.current + 1
-    acknowledgementIdRef.current = operationId
-    acknowledgementOperationsRef.current.set(alertId, operationId)
-    setAcknowledgingAlertIds((currentIds) => [...currentIds, alertId])
-    setAlertAcknowledgementErrors((current) => ({ ...current, [alertId]: '' }))
-
-    try {
-      const payload = await acknowledgeAlert(token, alertId)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.audit.all })
-      if (sessionTokenRef.current !== token || acknowledgementOperationsRef.current.get(alertId) !== operationId) return
-      if (wasFocused || (typeof document !== 'undefined' && isAlertsOpen && document.activeElement === document.body)) {
-        pendingFocusRestoreRef.current = { alertId, snapshotOrder, shouldRestoreFocus: true }
-      }
-      setAckStatusMessage(`Alert acknowledged: ${payload.alert?.title || payload.alert?.message || alertId}`)
-      applyAlertDeltaRef.current(payload.alert, { fromAcknowledgement: true })
-    } catch (error) {
-      if (sessionTokenRef.current === token && acknowledgementOperationsRef.current.get(alertId) === operationId) {
-        setAlertAcknowledgementErrors((current) => ({
-          ...current,
-          [alertId]: error.message || 'Unable to acknowledge alert.',
-        }))
-      }
-    } finally {
-      if (acknowledgementOperationsRef.current.get(alertId) === operationId) {
-        acknowledgementOperationsRef.current.delete(alertId)
-        setAcknowledgingAlertIds((currentIds) => currentIds.filter((id) => id !== alertId))
-      }
-    }
-  }
+  }, [isAlertsOpen, isDrawerOpen, isLogoutConfirmOpen])
 
   function openLogoutConfirm() {
-    setHoveredTooltip(null)
-    setFocusedTooltip(null)
-    pointerFocusedToRef.current = null
     setIsAlertsOpen(false)
-    shouldRestoreLogoutFocusRef.current = true
     setIsLogoutConfirmOpen(true)
   }
 
-  function handleLogoutDialogClose() {
-    setIsLogoutConfirmOpen(false)
-    if (!shouldRestoreLogoutFocusRef.current) return
-    shouldRestoreLogoutFocusRef.current = false
-    if (logoutButtonRef.current?.isConnected) {
-      logoutButtonRef.current.focus({ preventScroll: true })
-    }
-  }
-
-  function closeLogoutConfirm() {
-    const dialog = logoutDialogRef.current
-    if (dialog?.hasAttribute('open') && typeof dialog.close === 'function') {
-      dialog.close()
-      return
-    }
-    handleLogoutDialogClose()
-  }
-
   function confirmLogout() {
-    shouldRestoreLogoutFocusRef.current = false
-    const dialog = logoutDialogRef.current
-    if (dialog?.hasAttribute('open') && typeof dialog.close === 'function') {
-      dialog.close()
-    } else {
-      setIsLogoutConfirmOpen(false)
-    }
-    // Clears local auth, then returns the user to the login page.
     logout()
     navigate('/login', { replace: true, state: { from: '/dashboard' } })
-  }
-
-  function handleSidebarScroll() {
-    setIsSidebarScrolling(true)
-    setHoveredTooltip(null)
-    setFocusedTooltip(null)
-    pointerFocusedToRef.current = null
-
-    if (sidebarScrollTimerRef.current !== null) {
-      window.clearTimeout(sidebarScrollTimerRef.current)
-    }
-
-    sidebarScrollTimerRef.current = window.setTimeout(() => {
-      sidebarScrollTimerRef.current = null
-      setIsSidebarScrolling(false)
-    }, SIDEBAR_SCROLL_ACTIVE_MS)
   }
 
   if (isRouteForbidden) {
@@ -836,180 +210,16 @@ export default function AdminDashboard() {
 
   return (
     <div className="dashboard-shell">
-      <aside
-        ref={sidebarRef}
-        className={`dashboard-sidebar ${isDesktopSidebarCollapsed ? 'is-collapsed' : ''} ${isDrawerOpen ? 'is-open' : ''}`}
-        aria-hidden={isMobileViewport && !isDrawerOpen ? 'true' : undefined}
-        inert={isMobileViewport && !isDrawerOpen}
-      >
-        <div className="sidebar-header">
-          <div className="sidebar-brand">
-            <img className="sidebar-logo" src="/assets/logo.png" alt="PetroHydroPipe logo" />
-            <div className="sidebar-brand-copy">
-              <span className="sidebar-brand-name">PetroHydroPipe</span>
-            </div>
-          </div>
-          <PanelToggle
-            ref={desktopSidebarToggleRef}
-            className="sidebar-toggle desktop-only"
-            size={16}
-            isCollapsed={isDesktopSidebarCollapsed}
-            ariaLabel={isDesktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            onClick={() => setIsSidebarCollapsed((value) => !value)}
-          />
-          <PanelToggle
-            ref={mobileCloseButtonRef}
-            className="sidebar-toggle mobile-only"
-            isOpen={true}
-            ariaLabel="Close navigation"
-            onClick={() => {
-              setIsDrawerOpen(false)
-              mobileMenuButtonRef.current?.focus({ preventScroll: true })
-            }}
-          />
-        </div>
-
-        <nav
-          className={`sidebar-nav ${isSidebarScrolling ? 'is-scrolling' : ''}`}
-          aria-label="Dashboard sections"
-          onScroll={handleSidebarScroll}
-        >
-          {visibleNavGroups.map((group) => (
-            <div className="sidebar-nav-group" key={group.id}>
-              <p className="sidebar-nav-heading">{group.label}</p>
-              <div className="sidebar-nav-links">
-                {group.items.map((item) => {
-                  const Icon = icons[item.icon]
-                  const itemLabel = getNavItemLabel(item, user?.role)
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.to === '/dashboard'}
-                      title={isDesktopSidebarCollapsed ? itemLabel : undefined}
-                      data-label={itemLabel}
-                      aria-label={isDesktopSidebarCollapsed ? itemLabel : undefined}
-                      aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === item.to ? 'sidebar-collapsed-tooltip' : undefined}
-                      onPointerDown={() => {
-                        pointerFocusedToRef.current = item.to
-                        setFocusedTooltip((current) => (current?.to === item.to ? null : current))
-                      }}
-                      onMouseEnter={(event) => {
-                        if (!isDesktopSidebarCollapsed) return
-                        const rect = event.currentTarget.getBoundingClientRect()
-                        setHoveredTooltip({ to: item.to, label: itemLabel, top: rect.top + rect.height / 2 })
-                      }}
-                      onMouseLeave={() => {
-                        if (pointerFocusedToRef.current === item.to) {
-                          pointerFocusedToRef.current = null
-                        }
-                        setHoveredTooltip((current) => (current?.to === item.to ? null : current))
-                      }}
-                      onFocus={(event) => {
-                        const isPointerFocus = pointerFocusedToRef.current === item.to
-                        pointerFocusedToRef.current = null
-                        if (!isDesktopSidebarCollapsed || isPointerFocus) return
-                        const rect = event.currentTarget.getBoundingClientRect()
-                        setFocusedTooltip({ to: item.to, label: itemLabel, top: rect.top + rect.height / 2 })
-                      }}
-                      onBlur={() => {
-                        pointerFocusedToRef.current = null
-                        setFocusedTooltip((current) => (current?.to === item.to ? null : current))
-                      }}
-                      onClick={(event) => {
-                        if (isMobileViewport) event.currentTarget.blur()
-                      }}
-                      className={({ isActive }) => `sidebar-link ${isActive ? 'is-active' : ''} is-${item.icon}`}
-                    >
-                      <Icon
-                        className="sidebar-link-icon"
-                        size={16}
-                        strokeWidth={item.icon === 'logs' ? 2.25 : 1.75}
-                        aria-hidden="true"
-                      />
-                      <span className="sidebar-link-copy">
-                        <span className="sidebar-link-label">{itemLabel}</span>
-                      </span>
-                    </NavLink>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="sidebar-user">
-            <span className="sidebar-avatar" aria-hidden="true">
-              <UserRound size={16} strokeWidth={1.85} />
-            </span>
-            <div className="sidebar-user-copy">
-              <span className="sidebar-user-name">{user?.name || 'Administrator'}</span>
-              <span className="sidebar-user-role">{getRoleDisplayName(user?.role || 'Admin')}</span>
-            </div>
-            <button
-              ref={logoutButtonRef}
-              className="sidebar-logout"
-              type="button"
-              aria-label="Logout"
-              title={isDesktopSidebarCollapsed ? undefined : 'Log out'}
-              aria-describedby={isDesktopSidebarCollapsed && collapsedTooltip?.to === '__logout__' ? 'sidebar-collapsed-tooltip' : undefined}
-              onPointerDown={() => {
-                pointerFocusedToRef.current = '__logout__'
-                setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
-              }}
-              onMouseEnter={(event) => {
-                if (!isDesktopSidebarCollapsed) return
-                const rect = event.currentTarget.getBoundingClientRect()
-                setHoveredTooltip({ to: '__logout__', label: 'Log out', top: rect.top + rect.height / 2 })
-              }}
-              onMouseLeave={() => {
-                if (pointerFocusedToRef.current === '__logout__') {
-                  pointerFocusedToRef.current = null
-                }
-                setHoveredTooltip((current) => (current?.to === '__logout__' ? null : current))
-              }}
-              onFocus={(event) => {
-                const isPointerFocus = pointerFocusedToRef.current === '__logout__'
-                pointerFocusedToRef.current = null
-                if (!isDesktopSidebarCollapsed || isPointerFocus) return
-                const rect = event.currentTarget.getBoundingClientRect()
-                setFocusedTooltip({ to: '__logout__', label: 'Log out', top: rect.top + rect.height / 2 })
-              }}
-              onBlur={() => {
-                pointerFocusedToRef.current = null
-                setFocusedTooltip((current) => (current?.to === '__logout__' ? null : current))
-              }}
-              onClick={openLogoutConfirm}
-            >
-              <LogOut className="sidebar-logout-icon" size={16} strokeWidth={1.85} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {isDesktopSidebarCollapsed && collapsedTooltip ? (
-        <div
-          id="sidebar-collapsed-tooltip"
-          className="sidebar-collapsed-tooltip"
-          role="tooltip"
-          style={{ top: `${collapsedTooltip.top}px` }}
-        >
-          {collapsedTooltip.label}
-        </div>
-      ) : null}
-
-      <button
-        className={`sidebar-backdrop mobile-only ${isDrawerOpen ? 'is-open' : ''}`}
-        type="button"
-        aria-label="Close navigation overlay"
-        aria-hidden={!isDrawerOpen || undefined}
-        tabIndex={isDrawerOpen ? 0 : -1}
-        disabled={!isDrawerOpen}
-        onClick={() => {
-          setIsDrawerOpen(false)
-          mobileMenuButtonRef.current?.focus({ preventScroll: true })
-        }}
+      <DashboardSidebar
+        user={user}
+        isMobileViewport={isMobileViewport}
+        isDrawerOpen={isDrawerOpen}
+        isEscapeBlocked={isLogoutConfirmOpen || isAlertsOpen || isDrawerOpen}
+        onCloseDrawer={closeDrawer}
+        onOpenLogoutConfirm={openLogoutConfirm}
+        sidebarRef={sidebarRef}
+        logoutButtonRef={logoutButtonRef}
+        mobileMenuButtonRef={mobileMenuButtonRef}
       />
 
       <div className="dashboard-main">
@@ -1068,217 +278,26 @@ export default function AdminDashboard() {
               )}
             </button>
             <div className="topbar-divider" aria-hidden="true" />
-            <button
-              ref={alertsButtonRef}
-              className={`icon-button dashboard-icon-button notification-button ${activeAlertCount > 0 ? 'is-alerting' : ''}`}
-              type="button"
-              data-bell-swing={bellSwingState.isSwinging && !isAlertsOpen ? 'true' : 'false'}
-              aria-label={
-                !hasTrustedAlertList
-                  ? 'Open alerts, status unavailable'
-                  : activeAlertCount > 0
-                    ? `Open alerts, ${activeAlertCount} active`
-                    : 'Open alerts, none active'
-              }
-              aria-expanded={isAlertsOpen}
-              onClick={() => {
+            <AlertsPopover
+              isOpen={isAlertsOpen}
+              onToggle={() => {
                 setIsDrawerOpen(false)
                 setIsAlertsOpen((value) => !value)
               }}
-            >
-              <Bell
-                key={`bell-${bellSwingState.count}`}
-                className={`bell-icon ${bellSwingState.isSwinging && !isAlertsOpen ? 'is-swinging' : ''}`.trim()}
-                size={20}
-                aria-hidden="true"
-                onAnimationEnd={() => setBellSwingState((prev) => (prev.isSwinging ? { ...prev, isSwinging: false } : prev))}
-              />
-              {hasTrustedAlertList && activeAlertCount > 0 ? (
-                <span key={`badge-${activeAlertCount}`} className="notification-badge" aria-hidden="true">
-                  {activeAlertCount > 99 ? '99+' : activeAlertCount}
-                </span>
-              ) : null}
-              <span className="sr-only">
-                {!hasTrustedAlertList
-                  ? 'Alert status unavailable'
-                  : activeAlertCount > 0
-                    ? `${activeAlertCount} active alerts`
-                    : 'No active alerts'}
-              </span>
-            </button>
-            {isAlertsPopoverPresent ? (
-              <div
-                ref={alertsPopoverRef}
-                data-state={isAlertsOpen ? 'open' : 'closed'}
-                inert={isAlertsPopoverExiting || undefined}
-                onAnimationEnd={handleAlertsPopoverAnimationEnd}
-                className="alerts-popover"
-                role="dialog"
-                aria-label="Active alerts"
-                tabIndex="-1"
-              >
-                <div className="alerts-popover-header">
-                  <div className="alerts-header-title-wrap">
-                    <strong>Notifications</strong>
-                    <span
-                      className="alerts-header-count"
-                      aria-label={!hasTrustedAlertList ? 'Alert count unavailable' : `${activeAlertCount} active alerts`}
-                    >
-                      {hasTrustedAlertList ? (activeAlertCount > 99 ? '99+' : activeAlertCount) : '—'}
-                    </span>
-                  </div>
-                  <div className="alerts-header-actions">
-                    {hasTrustedAlertList && acknowledgedAlerts.length > 0 ? (
-                      <span className="alerts-header-acknowledged">
-                        {acknowledgedAlerts.length} acknowledged
-                      </span>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="alerts-popover-close-btn"
-                      aria-label="Close alerts"
-                      onClick={() => {
-                        setIsAlertsOpen(false)
-                        alertsButtonRef.current?.focus({ preventScroll: true })
-                      }}
-                    >
-                      <X size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-                {ackStatusMessage ? (
-                  <div className="sr-only" aria-live="polite" aria-atomic="true">
-                    {ackStatusMessage}
-                  </div>
-                ) : null}
-                {cachedAlertsAt && !hasTrustedAlertList ? (
-                  <div className="alert-load-error" role="status">Cached alerts are stale. Updated <UpdatedAgo updatedAt={cachedAlertsAt} />.</div>
-                ) : null}
-                {alertLoadError ? (
-                  <div className="alert-load-error" role="alert">
-                    <span>{alertLoadError}</span>
-                    <button className="btn btn-secondary" type="button" onClick={() => retryAlertsRef.current()}>
-                      Retry
-                    </button>
-                  </div>
-                ) : null}
-                {alerts.length > 0 ? (
-                  <ul className="alerts-popover-list">
-                    {[...activeAlerts, ...acknowledgedAlerts].map((alert) => {
-                      const isAcked = alert.status === 'Acknowledged'
-                      const isRecoveryPending = alert.status === 'Active' && Boolean(alert.metadata?.recoveryPending)
-                      const statusLabel = getAlertStatusLabel(alert)
-                      const alertKind = getAlertKind(alert)
-                      const rowStateClass = isRecoveryPending
-                        ? 'is-recovered'
-                        : isAcked
-                          ? 'is-acknowledged'
-                          : 'is-active'
-                      const primaryText = alert.title || alert.message || ''
-                      const secondaryMessage = alert.title && alert.message && alert.title !== alert.message
-                        ? alert.message
-                        : ''
-                      const hasExpandableCopy = secondaryMessage.length > LONG_ALERT_THRESHOLD
-                        || (!secondaryMessage && primaryText.length > LONG_ALERT_THRESHOLD)
-                      const isExpanded = expandedAlertIds.has(alert.id)
-                      return (
-                        <li key={alert.id} className={`alert-row ${rowStateClass} ${alertKind?.className || ''}`}>
-                          <div className="alert-row-indicator">
-                            {isRecoveryPending ? (
-                              <History size={14} className="alert-icon-recovered" aria-hidden="true" />
-                            ) : isAcked ? (
-                              <UserRoundCheck size={14} className="alert-icon-acked" aria-hidden="true" />
-                            ) : (
-                              <span className="alert-dot-active" aria-hidden="true" />
-                            )}
-                          </div>
-                          <div className="alert-row-body">
-                            <div className="alert-row-heading">
-                              <p className={`alert-row-primary ${!secondaryMessage && hasExpandableCopy && !isExpanded ? 'is-clamped' : ''}`.trim()}>
-                                {primaryText}
-                              </p>
-                              {alertKind ? (
-                                <span className={`alert-kind-tag ${alertKind.className}`}>{alertKind.label}</span>
-                              ) : null}
-                            </div>
-                            {secondaryMessage ? (
-                              <p className={`alert-row-message ${hasExpandableCopy && !isExpanded ? 'is-clamped' : ''}`.trim()}>
-                                {secondaryMessage}
-                              </p>
-                            ) : null}
-                            {hasExpandableCopy ? (
-                              <button
-                                type="button"
-                                className="alert-expand-btn"
-                                aria-expanded={isExpanded}
-                                onClick={() => setExpandedAlertIds((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(alert.id)) {
-                                    next.delete(alert.id)
-                                  } else {
-                                    next.add(alert.id)
-                                  }
-                                  return next
-                                })}
-                              >
-                                {isExpanded ? 'Show less' : 'Show more'}
-                              </button>
-                            ) : null}
-                            <div className="alert-row-meta">
-                              <span>{alert.machineName || 'Spiral Mill 01'}</span>
-                              <span className="meta-separator">·</span>
-                              <span className="alert-status-text">{statusLabel}</span>
-                              {alertAcknowledgementErrors[alert.id] ? (
-                                <span className="alert-acknowledgement-error" role="alert">
-                                  {alertAcknowledgementErrors[alert.id]}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          {!isAcked ? (
-                            <button
-                              className="alert-acknowledge-ghost-btn"
-                              type="button"
-                              data-alert-ack-id={alert.id}
-                              disabled={!hasTrustedAlertList || acknowledgingAlertIds.includes(alert.id)}
-                              onClick={() => handleAcknowledgeAlert(alert.id)}
-                            >
-                              Acknowledge
-                            </button>
-                          ) : (
-                            <span className="alert-acked-tag">
-                              <UserRoundCheck size={12} aria-hidden="true" /> Confirmed
-                            </span>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : hasTrustedAlertList ? (
-                  <div className="alerts-empty-state">
-                    <p>No active alerts.</p>
-                  </div>
-                ) : null}
-                <div className="alerts-popover-footer">
-                  {alertDestinations.length > 0 ? alertDestinations.map((destination) => (
-                    <NavLink
-                      key={destination.to}
-                      to={destination.to}
-                      className="alerts-footer-link"
-                      onClick={() => setIsAlertsOpen(false)}
-                    >
-                      <span>{destination.label}</span>
-                      <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
-                    </NavLink>
-                  )) : (
-                    <NavLink to="/dashboard/downtime" className="alerts-footer-link" onClick={() => setIsAlertsOpen(false)}>
-                      <span>View downtime records</span>
-                      <MoveRight size={14} className="alerts-footer-icon" aria-hidden="true" />
-                    </NavLink>
-                  )}
-                </div>
-              </div>
-            ) : null}
+              onClose={closeAlerts}
+              buttonRef={alertsButtonRef}
+              alerts={alerts}
+              activeAlerts={activeAlerts}
+              acknowledgedAlerts={acknowledgedAlerts}
+              unresolvedAlerts={unresolvedAlerts}
+              hasTrustedAlertList={hasTrustedAlertList}
+              cachedAlertsAt={cachedAlertsAt}
+              alertLoadError={alertLoadError}
+              acknowledgingAlertIds={acknowledgingAlertIds}
+              alertAcknowledgementErrors={alertAcknowledgementErrors}
+              onRetryAlerts={retryAlerts}
+              onAcknowledgeAlert={acknowledgeAlertById}
+            />
           </div>
         </header>
 
@@ -1290,46 +309,12 @@ export default function AdminDashboard() {
         </main>
       </div>
 
-      <dialog
-        ref={logoutDialogRef}
-        className="confirm-dialog"
-        aria-labelledby="logout-confirm-title"
-        aria-describedby="logout-confirm-message"
-        onClose={handleLogoutDialogClose}
-      >
-        {isLogoutConfirmOpen ? (
-          <div className="confirm-dialog-content">
-            <div className="confirm-dialog-header">
-              <div className="confirm-dialog-icon danger">
-                <LogOut size={17} aria-hidden="true" />
-              </div>
-              <div>
-                <h3 id="logout-confirm-title" className="confirm-dialog-title">Log out</h3>
-                <p id="logout-confirm-message" className="confirm-dialog-message">
-                  Are you sure you want to logout?
-                </p>
-              </div>
-            </div>
-            <div className="confirm-dialog-actions">
-              <button
-                ref={logoutCancelButtonRef}
-                type="button"
-                className="btn btn-secondary confirm-cancel-btn"
-                onClick={closeLogoutConfirm}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={confirmLogout}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </dialog>
+      <LogoutConfirmDialog
+        isOpen={isLogoutConfirmOpen}
+        onClose={closeLogoutConfirm}
+        onConfirm={confirmLogout}
+        triggerButtonRef={logoutButtonRef}
+      />
     </div>
   )
 }
