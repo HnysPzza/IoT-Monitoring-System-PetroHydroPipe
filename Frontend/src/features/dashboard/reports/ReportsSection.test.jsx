@@ -314,7 +314,7 @@ describe('ReportsSection request states', () => {
       reportType: 'daily',
       selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       format: 'pdf',
-    })
+    }, { signal: expect.any(AbortSignal) })
   })
 
   it('exports an Excel workbook through the same server endpoint', async () => {
@@ -337,7 +337,7 @@ describe('ReportsSection request states', () => {
       reportType: 'daily',
       selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       format: 'xlsx',
-    })
+    }, { signal: expect.any(AbortSignal) })
   })
 
   it('surfaces export failures without discarding the loaded report', async () => {
@@ -573,7 +573,7 @@ describe('ReportsSection request states', () => {
       reportType: 'daily',
       selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       format: 'pdf',
-    })
+    }, { signal: expect.any(AbortSignal) })
   })
 
   it('displays unobserved production report state when period is future', async () => {
@@ -779,7 +779,7 @@ describe('ReportsSection request states', () => {
       reportType: 'daily',
       selectedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       format: 'xlsx',
-    })
+    }, { signal: expect.any(AbortSignal) })
   })
 
   it('verifies numeric columns in production tables are right-aligned with tabular-data class', async () => {
