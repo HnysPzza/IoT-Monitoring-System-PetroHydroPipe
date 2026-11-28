@@ -1,4 +1,4 @@
-import { createContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
 const THEME_STORAGE_KEY = 'iot_monitoring_theme'
@@ -29,7 +29,7 @@ export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(getInitialTheme)
   const themeRef = useRef(theme)
 
-  const setTheme = (nextThemeOrUpdater) => {
+  const setTheme = useCallback((nextThemeOrUpdater) => {
     const currentTheme = themeRef.current
     const nextTheme = typeof nextThemeOrUpdater === 'function'
       ? nextThemeOrUpdater(currentTheme)
@@ -55,7 +55,7 @@ export function ThemeProvider({ children }) {
     }
 
     updateTheme()
-  }
+  }, [])
 
   // The CSS uses data-theme on <html> to switch dashboard colors.
   useEffect(() => {
@@ -65,5 +65,7 @@ export function ThemeProvider({ children }) {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
 
-  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }

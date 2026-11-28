@@ -16,13 +16,13 @@ createRoot(document.getElementById('root')).render(
   <>
     {/* BrowserRouter handles URL routes; providers share theme and login state across every page. */}
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <ThemeProvider>
+      <ThemeProvider>
+        <BrowserRouter>
           <AuthProvider>
             <App />
           </AuthProvider>
-        </ThemeProvider>
-      </BrowserRouter>
+        </BrowserRouter>
+      </ThemeProvider>
       {QueryDevtools ? <Suspense fallback={null}><QueryDevtools initialIsOpen={false} /></Suspense> : null}
     </QueryClientProvider>
   </>,

@@ -4,18 +4,6 @@ import { useExitPresence } from '../../hooks/useExitPresence.js'
 
 const PopoverPresenceContext = createContext(null)
 
-function mergeRefs(...refs) {
-  return (node) => {
-    for (const ref of refs) {
-      if (typeof ref === 'function') {
-        ref(node)
-      } else if (ref && typeof ref === 'object') {
-        ref.current = node
-      }
-    }
-  }
-}
-
 export function Popover({ open, defaultOpen = false, onOpenChange, ...props }) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen)
   const resolvedOpen = open !== undefined ? open : internalOpen
@@ -50,6 +38,14 @@ export function PopoverContent({ className = '', align = 'end', sideOffset = 8, 
   const isOpen = isManaged ? contextOpen : true
   const contentRef = useRef(null)
   const { isPresent, isExiting, handleAnimationEnd } = useExitPresence(isOpen, contentRef, 150)
+  const setContentNode = useCallback((node) => {
+    contentRef.current = node
+    if (typeof ref === 'function') {
+      ref(node)
+    } else if (ref && typeof ref === 'object') {
+      ref.current = node
+    }
+  }, [ref])
 
   if (isManaged && !isPresent) {
     return null
@@ -58,7 +54,7 @@ export function PopoverContent({ className = '', align = 'end', sideOffset = 8, 
   return (
     <PopoverPrimitive.Portal forceMount={isManaged ? true : undefined}>
       <PopoverPrimitive.Content
-        ref={mergeRefs(ref, contentRef)}
+        ref={setContentNode}
         forceMount={isManaged ? true : undefined}
         data-slot="popover-content"
         align={align}
